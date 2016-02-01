@@ -1,0 +1,21 @@
+*.sw*
+*.log
+*.log.[0-9]
+*.out
+*.pyc
+
+# temp data
+/data/
+/schemas/
+/tmp/
+*.RData
+
+# virtual environment and local install
+/venv/
+*.egg-info
+
+# In case you accidentally download your credentials here
+credentials.csv
+
+# Mac stuff
+.DS_Store

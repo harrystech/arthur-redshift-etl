@@ -1,0 +1,5 @@
+simplejson==3.8.2
+jsonschema==2.5.1
+PyYAML==3.11
+boto3==1.2.3
+psycopg2==2.6.1

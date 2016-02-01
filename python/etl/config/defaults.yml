@@ -1,0 +1,61 @@
+{
+    # Target (Redshift) cluster
+    "data-warehouse": {
+        # The admin user who can create additional databases and users.
+        # The environment variable must contain a full connection string for user with 'Create DB' priviliges.
+        "admin_access": {
+            "ENV": "DATA_WAREHOUSE_ADMIN"
+        },
+        # The ETL user is the owner of schemas and tables.
+        # The environment variable must contain a full connection string for this user.
+        "etl_user": {
+            "ENV": "DATA_WAREHOUSE",
+            "name": "etl"
+        },
+        # Groups should end in `_rw` for read/write-access or `_ro` for read-only access.
+        "groups": {
+            "etl": "etl_rw",
+            "users": "analyst_ro"
+        }
+    },
+    # Type information from source (PostgreSQL) to target (Redshift)
+    "map": {
+        # Types that may be used "as-is", see also
+        # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
+        # The keys are regular expression (with escaped backslashes!) and the
+        # values are the serialization formats in Avro files.
+        "as_is_att_type": {
+            "integer": "int",
+            "bigint": "long",
+            "double precision": "double",
+            "boolean": "boolean",
+            "character\\(\\d+\\)": "string",
+            "character varying\\(\\d+\\)": "string",
+            "date": "string",
+            "timestamp without time zone": "string",
+            "numeric\\(\\d+,\\d+\\)": "string",
+        },
+        # Map of known PostgreSQL attribute types to usable types in Redshift.  Missing types will cause an exception
+        # The first element in the list is the new type, the second element is the necessary cast expression,
+        # the third element is the serialization format in Avro files.
+        # Note that in any expression, %s is replaced by the column name within quotes.
+        "cast_needed_att_type": {
+            "int4range": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            "bigint\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            # NOTE varchar counts characters but Redshift is byte limitations
+            "character varying": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            "text": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
+            "timestamp with time zone": ["timestamp without time zone", "%s AT TIME ZONE 'America/New_York'", "string"],
+            "hstore": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
+            # TODO The numeric datatype without precision and scale should not be used!
+            "numeric": ["decimal(12,4)", "%s::decimal(12,4)", "string"]
+        },
+        # Assuming it's the same timezone for all sourcees... (make sure this is consistent with the map above)
+        # TODO Make this configurable so that it propagates to the cast_needed_att_type
+        "timezone": "America/New_York"
+    }
+}

@@ -1,0 +1,153 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "Schema for Table Designs (which is somewhat of a superset of an Avro schema)",
+    "type" : "object",
+    "properties" : {
+        "type" : {
+            "type" : "string",
+            "enum": ["record"]
+        },
+        "name" : {
+            "type" : "string",
+            "pattern": "^\\w[^.]*[.]\\w[^.]*$"
+        },
+        "source_name" : {
+            "type" : "string",
+            "pattern": "^(ctas|CTAS|^\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
+        },
+        "fields": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "type": {
+                        "oneOf": [
+                            {
+                                "type": "string",
+                                "enum": [
+                                    "boolean",
+                                    "int",
+                                    "long",
+                                    "float",
+                                    "double",
+                                    "string"
+                                ]
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "null",
+                                        "boolean",
+                                        "int",
+                                        "long",
+                                        "float",
+                                        "double",
+                                        "string"
+                                    ]
+                                }
+                            }
+
+                        ]
+                    },
+                    "expression": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "source_sql_type": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "sql_type": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "encode": {
+                        "type": "string",
+                        "enum": [
+                            "raw",
+                            "bytedict",
+                            "delta",
+                            "delta32k",
+                            "lzo",
+                            "mostly8",
+                            "mostly16",
+                            "mostly32",
+                            "runlength",
+                            "text255",
+                            "text32k"
+                        ]
+                    },
+                    "not_null": {
+                        "type": "boolean"
+                    }
+                },
+                "required": ["name", "type", "sql_type"],
+                "additionalProperties": false
+            },
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "table_constraints": {
+            "type": "object",
+            "properties": {
+                "primary_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                "unique": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                "foreign_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "minItems": 2,
+                    "maxItems": 3
+                }
+            },
+            "additionalProperties": false
+        },
+        "table_attributes": {
+            "type": "object",
+            "properties": {
+                "diststyle": {
+                    "type": "string",
+                    "enum": [ "all", "even", "key" ]
+                },
+                "distkey": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "sortkey": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "required": ["type", "name", "fields"],
+    "additionalProperties": false
+}
