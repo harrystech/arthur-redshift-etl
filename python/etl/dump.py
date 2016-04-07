@@ -26,7 +26,7 @@ import etl.s3
 
 
 # List of options for COPY statement that dictates CSV format
-CSV_WRITE_FORMAT = "FORMAT csv, HEADER true, NULL '\\N'"
+CSV_WRITE_FORMAT = "FORMAT CSV, HEADER true, NULL '\\N'"
 
 # How to create an "id" column that may be a primary key if none exists in the table
 ID_EXPRESSION = "row_number() OVER()"
@@ -57,7 +57,7 @@ def fetch_tables(cx, table_whitelist, table_blacklist, table_pattern=None):
                                   JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
                                  WHERE cls.relname NOT LIKE 'tmp%%'
                                    AND cls.relkind IN ('r', 'm')
-                                 ORDER BY nsp.nspname, cls.relname""", debug=True)
+                                 ORDER BY nsp.nspname, cls.relname""")
     tables = []
     for row in found:
         for pattern in table_blacklist:
@@ -96,7 +96,7 @@ def fetch_columns(cx, tables):
                                          AND ns.nspname = %s
                                          AND cls.relname = %s
                                    ORDER BY ca.attnum""",
-                           (table_name.schema, table_name.table), debug=True)
+                           (table_name.schema, table_name.table))
         columns[table_name] = ddl
         logging.getLogger(__name__).info("Found {} column(s) in {}".format(len(ddl), table_name.identifier))
     return columns
@@ -161,49 +161,54 @@ def map_types_in_ddl(columns_by_table, as_is_att_type, cast_needed_att_type):
     return defs
 
 
-def save_table_design(source_name, table_name, columns, output_dir, overwrite=False, dry_run=False):
+def save_table_design(source_name, table_name, columns, output_dir, dry_run=False):
     """
     Write new YAML file that defines table columns (starting point for table
-    design files) or picks up existing file.  Return filename of new file (or
-    None if no file was actually written).
+    design files) or picks up existing file. Return filename of existing or new file.
     """
     target_table_name = etl.TableName(source_name, table_name.table)
-    filename = os.path.join(output_dir, "{}-{}.yml".format(table_name.schema, table_name.table))
+    filename = os.path.join(output_dir, "{}-{}.yaml".format(table_name.schema, table_name.table))
     logger = logging.getLogger(__name__)
-    if dry_run:
-        logger.info("Dry-run: Skipping writing new table design file for %s", target_table_name.identifier)
-    elif not overwrite and os.path.exists(filename):
+    if os.path.exists(filename):
         # TODO Validate table design against columns found for this table
-        logger.warning("Skipping table design for %s since '%s' already exists", table_name.identifier, filename)
+        logger.warning("Skipping new table design for %s since '%s' already exists", table_name.identifier, filename)
     else:
-        logger.info("Writing new table design file for %s (was %s) to '%s'",
-                    target_table_name.identifier, table_name.identifier, filename)
         table_design = {
-            "type": "record",
             "name": "%s" % target_table_name.identifier,
             "source_name": "%s.%s" % (source_name, table_name.identifier),
-            "fields": [column._asdict() for column in columns],
-            "table_constraints": {
+            "columns": [column._asdict() for column in columns],
+            "constraints": {
                 "primary_key": ["id"]
             },
-            "table_attributes": {
-                "diststyle": "even",
-                "sortkey": ["id"]
+            "attributes": {
+                "distribution": "even",
+                "compound_sort": ["id"]
             }
         }
-        # Remove empty expressions since columns can be selected by name and redundant source_sql_type.
-        for column in table_design["fields"]:
+        # Remove empty expressions (since columns can be selected by name) and default settings
+        for column in table_design["columns"]:
             if column["expression"] is None:
                 del column["expression"]
             if column["source_sql_type"] == column["sql_type"]:
                 del column["source_sql_type"]
-        etl.load.validate_table_design(table_design, target_table_name)
-        with open(filename, 'w') as o:
-            # JSON pretty printing is prettier than o.write(json.dump(table_design, ...))
-            json.dump(table_design, o, indent="    ", sort_keys=True)
-            o.write('\n')
-        return filename
-    return None
+            if not column["not_null"]:
+                del column["not_null"]
+        try:
+            etl.load.validate_table_design(table_design, target_table_name)
+            if dry_run:
+                logger.info("Dry-run: Skipping writing new table design file for %s", target_table_name.identifier)
+            else:
+                logger.info("Writing new table design file for %s (was %s) to '%s'",
+                            target_table_name.identifier, table_name.identifier, filename)
+                with open(filename, 'w') as o:
+                    # JSON pretty printing is prettier than o.write(json.dump(table_design, ...))
+                    json.dump(table_design, o, indent="    ", sort_keys=True)
+                    o.write('\n')
+        except Exception:
+            # This catches all exceptions so that they don't get lost from worker threads.
+            logger.exception("Something terrible happened")
+            return None
+    return filename
 
 
 def create_copy_statement(table_name, columns, row_limit=None):
@@ -216,15 +221,15 @@ def create_copy_statement(table_name, columns, row_limit=None):
         if column.expression:
             select_column.append(column.expression + ' AS "%s"' % column.name)
         else:
-            select_column.append(column.name)
+            select_column.append('"%s"' % column.name)
     if row_limit:
         limit = "LIMIT {:d}".format(row_limit)
     else:
         limit = ""
-    return "COPY (SELECT {}\n  FROM {}\n{}) TO STDOUT WITH ({})".format(",\n".join(select_column),
-                                                                        table_name,
-                                                                        limit,
-                                                                        CSV_WRITE_FORMAT)
+    return "COPY (SELECT {}\n    FROM {}\n{}) TO STDOUT WITH ({})".format(",\n    ".join(select_column),
+                                                                          table_name,
+                                                                          limit,
+                                                                          CSV_WRITE_FORMAT)
 
 
 def download_table_data(cx, source_name, table_name, columns, output_dir, limit=None, overwrite=False, dry_run=False):
@@ -243,19 +248,21 @@ def download_table_data(cx, source_name, table_name, columns, output_dir, limit=
     if dry_run:
         logger.info("Dry-run: Skipping writing CSV file for %s", target_table_name.identifier)
     elif not overwrite and os.path.exists(filename):
-        logger.warning("Skipping CSV data for %s since '%s' already exists", target_table_name.identifier, filename)
+        logger.warning("Skipping CSV copy of %s since '%s' already exists", target_table_name.identifier, filename)
     else:
         logger.info("Writing CSV data for %s to '%s'", target_table_name.identifier, filename)
         try:
-            with gzip.open(filename, 'wb') as o:
-                o.write("# Timestamp: {:%Y-%m-%d %H:%M:%S}\n".format(datetime.now()).encode())
-                if limit:
-                    o.write("# Copy options with LIMIT {:d}: {}\n".format(limit, CSV_WRITE_FORMAT).encode())
-                else:
-                    o.write("# Copy options: {}\n".format(CSV_WRITE_FORMAT).encode())
-                sql = create_copy_statement(table_name, columns, limit)
-                with cx.cursor() as cursor:
-                    cursor.copy_expert(sql, o)
+            with open(filename, 'wb') as f:
+                with gzip.open(f, 'wt') as o:
+                    o.write("# Timestamp: {:%Y-%m-%d %H:%M:%S}\n".format(datetime.now()))
+                    if limit:
+                        o.write("# Copy options with LIMIT {:d}: {}\n".format(limit, CSV_WRITE_FORMAT))
+                    else:
+                        o.write("# Copy options: {}\n".format(CSV_WRITE_FORMAT))
+                    sql = create_copy_statement(table_name, columns, limit)
+                    logger.debug("Copy statement for %s: %s", target_table_name.identifier, sql)
+                    with cx.cursor() as cursor:
+                        cursor.copy_expert(sql, o)
         except (Exception, KeyboardInterrupt) as exc:
             logger.warning("Deleting '%s' because it is incomplete", filename)
             os.remove(filename)
@@ -263,18 +270,23 @@ def download_table_data(cx, source_name, table_name, columns, output_dir, limit=
                 etl.pg.log_sql_error(exc)
                 if exc.pgcode == errorcodes.INSUFFICIENT_PRIVILEGE:
                     logger.warning("Ignoring denied access for %s", table_name.identifier)
+                    # Signal to S3 uploader that there isn't a file coming
                     return None
                 else:
                     raise
             else:
                 logger.exception("Trouble while downloading table data: %s", exc)
                 raise
-        return filename
-    return None
+    return filename
 
 
-def download_table_data_with_sem(sem, cx, source_name, table_name, columns, output_dir,
-                                 limit=None, overwrite=False, dry_run=False):
+def download_table_data_bounded(sem, cx, source_name, table_name, columns, output_dir,
+                                limit=None, overwrite=False, dry_run=False):
+    """
+    "Bounded" version of a table download -- psycopg2 cannot run more than one
+    copy operation at a time.  So we need a semaphore to switch between threads that
+    want to use copy.
+    """
     with sem:
         return download_table_data(cx, source_name, table_name, columns, output_dir,
                                    limit=limit, overwrite=overwrite, dry_run=dry_run)

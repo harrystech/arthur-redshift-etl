@@ -27,7 +27,7 @@ def load_settings(config_file):
     """
     settings = defaultdict(dict)
     logger = logging.getLogger(__name__)
-    default_file = pkg_resources.resource_filename(__name__, "defaults.yml")
+    default_file = pkg_resources.resource_filename(__name__, "defaults.yaml")
     for filename in (default_file, config_file):
         with open(filename) as f:
             logger.info("Loading configuration file '%s'", filename)

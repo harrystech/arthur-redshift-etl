@@ -29,6 +29,9 @@ def argument_parser(options, **kwargs):
         parser.add_argument("-s", "--table-design-dir",
                             help="path to directory with table design files (default: '%(default)s')",
                             default="schemas")
+    if "drop-table" in options:
+        parser.add_argument("-d", "--drop-table",
+                            help="drop table to force update of table definition", default=False, action="store_true")
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not actually copy data", default=False, action="store_true")
     if "force" in options:

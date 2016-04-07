@@ -1,17 +1,12 @@
 {
     # Target (Redshift) cluster
     "data-warehouse": {
-        # The admin user who can create additional databases and users.
-        # The environment variable must contain a full connection string for user with 'Create DB' priviliges.
-        "admin_access": {
-            "ENV": "DATA_WAREHOUSE_ADMIN"
-        },
-        # The ETL user is the owner of schemas and tables.
-        # The environment variable must contain a full connection string for this user.
-        "etl_user": {
-            "ENV": "DATA_WAREHOUSE",
-            "name": "etl"
-        },
+        # The environment variable must contain a full connection string for an admin user to create a database.
+        "admin_access": "DATA_WAREHOUSE_ADMIN",
+        # The environment variable must contain a full connection string for an ETL user.
+        "etl_access": "DATA_WAREHOUSE",
+        # All schemas, tables, etc. will be assigned to this user.
+        "owner": "etl",
         # Groups should end in `_rw` for read/write-access or `_ro` for read-only access.
         "groups": {
             "etl": "etl_rw",
@@ -19,7 +14,7 @@
         }
     },
     # Type information from source (PostgreSQL) to target (Redshift)
-    "map": {
+    "type_maps": {
         # Types that may be used "as-is", see also
         # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
         # The keys are regular expression (with escaped backslashes!) and the

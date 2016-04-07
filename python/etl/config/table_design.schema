@@ -1,74 +1,66 @@
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
-    "title": "Schema for Table Designs (which is somewhat of a superset of an Avro schema)",
+    "title": "Table Design",
+    "description": "Description of a table design",
+    "definitions": {
+        "identifier": {
+            "type": "string",
+            "pattern": "^\\w"
+        },
+        "column_list": {
+            "type": "array",
+            "items": { "$ref:": "#/definitions/identifier" },
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "avro_types": {
+            "enum": [
+                "boolean",
+                "int",
+                "long",
+                "float",
+                "double",
+                "string"
+            ]
+        }
+    },
     "type" : "object",
     "properties" : {
-        "type" : {
-            "type" : "string",
-            "enum": ["record"]
-        },
         "name" : {
+            "description": "Fully qualified name of the table, <schema name>.<table name>",
             "type" : "string",
             "pattern": "^\\w[^.]*[.]\\w[^.]*$"
         },
         "source_name" : {
+            "description": "Either <source name>.<schema name>.<table name> or \"CTAS\"",
             "type" : "string",
-            "pattern": "^(ctas|CTAS|^\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
+            "pattern": "^(CTAS|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },
-        "fields": {
+        "columns": {
+            "description": "columns of the table",
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "name": {
-                        "type": "string",
-                        "minLength": 1
-                    },
+                    "name": { "$ref:": "#/definitions/identifier" },
                     "type": {
                         "oneOf": [
-                            {
-                                "type": "string",
-                                "enum": [
-                                    "boolean",
-                                    "int",
-                                    "long",
-                                    "float",
-                                    "double",
-                                    "string"
-                                ]
-                            },
+                            { "$ref": "#/definitions/avro_types" },
                             {
                                 "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "enum": [
-                                        "null",
-                                        "boolean",
-                                        "int",
-                                        "long",
-                                        "float",
-                                        "double",
-                                        "string"
-                                    ]
-                                }
+                                "items": [
+                                    { "enum": [ "null" ] },
+                                    { "$ref": "#/definitions/avro_types" }
+                                ],
+                                "additionalItems": false
                             }
 
                         ]
                     },
-                    "expression": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "source_sql_type": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "sql_type": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "encode": {
-                        "type": "string",
+                    "expression": { "type": "string" },
+                    "source_sql_type": { "$ref:": "#/definitions/identifier" },
+                    "sql_type": { "$ref:": "#/definitions/identifier" },
+                    "encoding": {
                         "enum": [
                             "raw",
                             "bytedict",
@@ -83,9 +75,7 @@
                             "text32k"
                         ]
                     },
-                    "not_null": {
-                        "type": "boolean"
-                    }
+                    "not_null": { "type": "boolean" }
                 },
                 "required": ["name", "type", "sql_type"],
                 "additionalProperties": false
@@ -93,61 +83,48 @@
             "minItems": 1,
             "uniqueItems": true
         },
-        "table_constraints": {
+        "constraints": {
             "type": "object",
             "properties": {
-                "primary_key": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
-                },
-                "unique": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
-                },
+                "primary_key": { "$ref": "#/definitions/column_list" },
+                "natural_key": { "$ref": "#/definitions/column_list" },
                 "foreign_key": {
                     "type": "array",
-                    "items": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "minItems": 2,
-                    "maxItems": 3
-                }
+                    "items": [
+                        { "$ref": "#/definitions/column_list" },
+                        { "$ref": "#/definitions/identifier" },
+                        { "$ref": "#/definitions/column_list" }
+                    ],
+                    "additionalItems": false
+                },
+                "unique": { "$ref": "#/definitions/column_list" }
             },
             "additionalProperties": false
         },
-        "table_attributes": {
+        "attributes": {
             "type": "object",
             "properties": {
-                "diststyle": {
-                    "type": "string",
-                    "enum": [ "all", "even", "key" ]
+                "distribution": {
+                    "oneOf": [
+                        {
+                            "enum": [ "all" ]
+                        },
+                        {
+                            "enum": [ "even" ]
+                        },
+                        { "$ref": "#/definitions/column_list" }
+                    ]
                 },
-                "distkey": {
-                    "type": "string",
-                    "minLength": 1
-                },
-                "sortkey": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                }
+                "compound_sort": { "$ref": "#/definitions/column_list" },
+                "interleaved_sort": { "$ref": "#/definitions/column_list" }
             },
+            "oneOf": [
+                { "required": [ "distribution", "compound_sort" ] },
+                { "required": [ "distribution", "interleaved_sort" ] }
+            ],
             "additionalProperties": false
         }
     },
-    "required": ["type", "name", "fields"],
+    "required": ["name", "columns"],
     "additionalProperties": false
 }

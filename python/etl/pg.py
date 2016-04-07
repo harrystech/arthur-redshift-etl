@@ -2,8 +2,8 @@
 
 """
 Thin wrapper around PostgreSQL API, adding niceties like logging,
-transaction handling, simple DSN strings, as well simple commands
-like for schema creation.
+transaction handling, simple DSN strings, as well as simple commands
+(for new users, schema creation, etc.)
 
 Example:
     >>> from etl import pg
@@ -24,10 +24,12 @@ import psycopg2
 import psycopg2.extras
 
 
-def connection(dsn_string, application_name=psycopg2.__name__, readonly=False):
+def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
     Open a connection to the database described by dsn_string which needs to
     be of the format "postgres://user:password@host:port/database"
+
+    By default, this turns on autocommit on the connection.
     """
     # Extract connection value from jdbc-style connection string. (Some people, when confronted with a problem,
     # think "I know, I'll use regular expressions." Now they have two problems.)
@@ -47,8 +49,7 @@ def connection(dsn_string, application_name=psycopg2.__name__, readonly=False):
     logging.getLogger(__name__).info("Connecting to: host={host} port={port} database={database} "
                                      "user={user} password=***".format(**dsn_values))
     cx = psycopg2.connect(cursor_factory=psycopg2.extras.DictCursor, **dsn_values)
-    # Avoid having a new transaction with every command by setting autocommit to True.
-    cx.set_session(readonly=readonly, autocommit=True)
+    cx.set_session(autocommit=autocommit, readonly=readonly)
     return cx
 
 
@@ -95,16 +96,16 @@ def _seconds_since(start_time):
     return (datetime.now() - start_time).total_seconds()
 
 
-def query(cx, stmt, args=(), debug=False):
+def query(cx, stmt, args=(), debug=True):
     """
     Send query stmt to connection (with parameters) and return rows.
 
     If debug is True, then the statement is sent to the log as well.
     """
-    return execute(cx, stmt, args, debug, return_result=True)
+    return execute(cx, stmt, args, debug=debug, return_result=True)
 
 
-def execute(cx, stmt, args=(), debug=False, return_result=False):
+def execute(cx, stmt, args=(), debug=True, return_result=False):
     """
     Execute query in 'stmt' over connection 'cx' (with parameters in 'args').
 
@@ -128,36 +129,48 @@ def execute(cx, stmt, args=(), debug=False, return_result=False):
             return cursor.fetchall()
 
 
-def create_group(cx, group, debug=False):
-    execute(cx, """CREATE GROUP "{}" """.format(group), debug=debug)
+def create_group(cx, group):
+    execute(cx, """CREATE GROUP "{}" """.format(group))
 
 
-def create_user(cx, user, password, group, debug=False):
-    execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,), debug=debug)
+def create_user(cx, user, password, group):
+    execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
-def create_schema(cx, schema, owner, debug=False):
-    execute(cx, """CREATE SCHEMA "{}" AUTHORIZATION "{}" """.format(schema, owner), debug=debug)
+def alter_group_add_user(cx, group, user):
+    execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
 
 
-def grant_usage(cx, schema, group, debug=False):
-    execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group), debug=debug)
+def create_schema(cx, schema, owner):
+    execute(cx, """CREATE SCHEMA "{}" AUTHORIZATION "{}" """.format(schema, owner))
 
 
-def grant_all(cx, schema, group, debug=False):
-    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group), debug=debug)
+def grant_usage(cx, schema, group):
+    execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
 
-def grant_select(cx, schema, table, group, debug=False):
-    execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group), debug=debug)
+def grant_all_on_schema(cx, schema, group):
+    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
 
-def alter_search_path(cx, user, schemas, debug=False):
-    execute(cx, """ALTER USER {} SET SEARCH_PATH = {}""".format(user, ', '.join(schemas)), debug=debug)
+def grant_select(cx, schema, table, group):
+    execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
 
 
-def set_search_path(cx, schemas, debug=False):
-    execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)), debug=debug)
+def grant_all(cx, schema, table, group):
+    execute(cx, """GRANT ALL PRIVILEGES ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
+
+
+def alter_table_owner(cx, schema, table, owner):
+    execute(cx, """ALTER TABLE "{}"."{}" OWNER TO {} """.format(schema, table, owner))
+
+
+def alter_search_path(cx, user, schemas):
+    execute(cx, """ALTER USER {} SET SEARCH_PATH = {}""".format(user, ', '.join(schemas)))
+
+
+def set_search_path(cx, schemas):
+    execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
 
 
 def log_sql_error(exc, as_warning=False):
@@ -234,8 +247,7 @@ if __name__ == "__main__":
     with measure_elapsed_time():
         with connection(sys.argv[1], readonly=True) as conn:
             for row in query(conn,
-                             # "select application_name from pg_stat_activity where pid = pg_backend_pid();",
-                             "SELECT DISTINCT datname, usename FROM pg_stat_activity WHERE procpid = pg_backend_pid()",
+                             "SELECT now() AS local_server_time",
                              debug=True):
                 for k, v in row.items():
                     print("*** {} = {} ***".format(k, v))

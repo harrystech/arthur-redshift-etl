@@ -3,8 +3,9 @@
 """
 Create new user in the "users group" and add a personal schema in the database.
 
-The search path is set to the user's own schema and all the schemas from the
-configuration.  (Note the order.)
+The search path is set to the user's own schema (if created) and all the schemas
+from the configuration in the order they are defined.  (Note that the user's
+schema comes first.)
 """
 
 import getpass
@@ -18,24 +19,35 @@ import etl.pg
 
 def create_user(args, settings):
     """
-    Add new user to database within user group and with given password
+    Add new user to database within user group and with given password.
+    If so advised, creates a schema for the user.
+    If so advised, adds the user to the ETL group, giving R/W access.
     """
-    dsn_admin = etl.env_value(settings("data-warehouse", "admin_access", "ENV"))
+    dsn_admin = etl.env_value(settings("data-warehouse", "admin_access"))
     new_user = args.username
     user_group = settings("data-warehouse", "groups", "users")
-    search_path = ["'$user'"] + [source["name"] for source in settings("sources")]
+    etl_group = settings("data-warehouse", "groups", "etl")
+    search_path = [source["name"] for source in settings("sources")]
 
     with etl.pg.connection(dsn_admin) as conn:
         logging.info("Creating user %s in user group %s", new_user, user_group)
-        etl.pg.create_user(conn, new_user, args.password, user_group, debug=True)
-        logging.info("Creating schema %s with owner %s", new_user, new_user)
-        etl.pg.create_schema(conn, new_user, new_user, debug=True)
+        etl.pg.create_user(conn, new_user, args.password, user_group)
+        if args.etl_user:
+            logging.info("Adding user %s to ETL group %s", new_user, user_group)
+            etl.pg.alter_group_add_user(conn, etl_group, new_user)
+        if args.add_user_schema:
+            logging.info("Creating schema %s with owner %s", new_user, new_user)
+            etl.pg.create_schema(conn, new_user, new_user)
+            search_path[:0] = ["'$user'"]
         logging.info("Setting search path to: %s", search_path)
         etl.pg.alter_search_path(conn, new_user, search_path)
 
 
 def build_parser():
-    return etl.arguments.argument_parser(["config", "username", "password"], description=__doc__)
+    parser = etl.arguments.argument_parser(["config", "username", "password"], description=__doc__)
+    parser.add_argument("-e", "--etl-user", help="Add user also to ETL group", action="store_true")
+    parser.add_argument("-a", "--add-user-schema", help="Add new schema writable for the user", action="store_true")
+    return parser
 
 
 if __name__ == "__main__":
