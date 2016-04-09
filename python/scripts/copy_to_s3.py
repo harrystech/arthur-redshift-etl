@@ -25,11 +25,13 @@ def copy_to_s3(args, settings):
     """
     schemas = [source["name"] for source in settings("sources")]
     bucket_name = settings("s3", "bucket_name")
-    tables_with_files = etl.s3.find_local_files(args.table_design_dir, args.data_dir,
+    tables_with_files = etl.s3.find_local_files(args.data_dir, args.table_design_dir,
                                                 schemas=schemas, pattern=args.table)
     if len(tables_with_files) == 0:
-        logging.error("No applicable files found in directory '%s'", args.table_design_dir)
+        logging.error("No applicable files found in directory '%s' and '%s'",
+                      args.data_dir, args.table_design_dir)
     else:
+        logging.info("Found files for %d tables.", len(tables_with_files))
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             for table_name, files in tables_with_files:
                 for file_type in ("Design", "SQL", "Data"):

@@ -1,0 +1,46 @@
+{
+    "version": 1,
+    "formatters": {
+        "console": {
+            "format": "%(asctime)s %(levelname)s %(message)s"
+        },
+        "file": {
+            "format": "%(asctime)s %(name)s %(levelname)-8s %(process)d.%(threadName)s [%(filename)s:%(lineno)d] %(message)s"
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "console",
+            "level": "INFO",
+            "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "file",
+            "level": "DEBUG",
+            "filename": "etl.log",
+            "mode": "a",
+            "maxBytes": 1000000,
+            "backupCount": 5
+        }
+    },
+    "root": {
+        "handlers": [ "console", "file" ],
+        "level": "NOTSET"
+    },
+    "loggers": {
+        "botocore": {
+            "qualname": "botocore",
+            "handlers": [ "file" ],
+            "level": "WARN",
+            "propagate": 0
+        },
+        "boto3": {
+            "qualname": "boto3",
+            "handlers": [ "console", "file" ],
+            "level": "INFO",
+            "propagate": 0
+        }
+    }
+}

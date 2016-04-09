@@ -23,10 +23,10 @@ def create_user(args, settings):
     If so advised, creates a schema for the user.
     If so advised, adds the user to the ETL group, giving R/W access.
     """
-    dsn_admin = etl.env_value(settings("data-warehouse", "admin_access"))
+    dsn_admin = etl.env_value(settings("data_warehouse", "admin_access"))
     new_user = args.username
-    user_group = settings("data-warehouse", "groups", "users")
-    etl_group = settings("data-warehouse", "groups", "etl")
+    user_group = settings("data_warehouse", "groups", "users")
+    etl_group = settings("data_warehouse", "groups", "etl")
     search_path = [source["name"] for source in settings("sources")]
 
     with etl.pg.connection(dsn_admin) as conn:

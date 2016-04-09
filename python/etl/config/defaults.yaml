@@ -1,13 +1,14 @@
 {
     # Target (Redshift) cluster
-    "data-warehouse": {
+    "data_warehouse": {
         # The environment variable must contain a full connection string for an admin user to create a database.
         "admin_access": "DATA_WAREHOUSE_ADMIN",
         # The environment variable must contain a full connection string for an ETL user.
         "etl_access": "DATA_WAREHOUSE",
-        # All schemas, tables, etc. will be assigned to this user.
-        "owner": "etl",
-        # Groups should end in `_rw` for read/write-access or `_ro` for read-only access.
+        # All schemas, tables, etc. will be assigned to this user.  The owner's group should have R/W access.
+        "owner": "dw",
+        # Groups should end in `_rw` for read/write-access or `_ro` for read-only access, although
+        # this is not enforced.
         "groups": {
             "etl": "etl_rw",
             "users": "analyst_ro"
@@ -28,7 +29,7 @@
             "character varying\\(\\d+\\)": "string",
             "date": "string",
             "timestamp without time zone": "string",
-            "numeric\\(\\d+,\\d+\\)": "string",
+            "numeric\\(\\d+,\\d+\\)": "string"
         },
         # Map of known PostgreSQL attribute types to usable types in Redshift.  Missing types will cause an exception
         # The first element in the list is the new type, the second element is the necessary cast expression,
@@ -42,15 +43,13 @@
             "character varying": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "text": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
+            # TODO Make the time zone configurable
             "timestamp with time zone": ["timestamp without time zone", "%s AT TIME ZONE 'America/New_York'", "string"],
             "hstore": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
-            # TODO The numeric datatype without precision and scale should not be used!
+            # The numeric datatype without precision and scale should not be used upstream!
             "numeric": ["decimal(12,4)", "%s::decimal(12,4)", "string"]
-        },
-        # Assuming it's the same timezone for all sourcees... (make sure this is consistent with the map above)
-        # TODO Make this configurable so that it propagates to the cast_needed_att_type
-        "timezone": "America/New_York"
+        }
     }
 }

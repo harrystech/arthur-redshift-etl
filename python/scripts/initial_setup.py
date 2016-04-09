@@ -19,10 +19,10 @@ import etl.pg
 
 def initial_setup(args, settings):
 
-    dsn_admin = etl.env_value(settings("data-warehouse", "admin_access"))
-    etl_user = settings("data-warehouse", "owner")
-    etl_group = settings("data-warehouse", "groups", "etl")
-    users_group = settings("data-warehouse", "groups", "users")
+    dsn_admin = etl.env_value(settings("data_warehouse", "admin_access"))
+    etl_user = settings("data_warehouse", "owner")
+    etl_group = settings("data_warehouse", "groups", "etl")
+    users_group = settings("data_warehouse", "groups", "users")
     schemas = [source["name"] for source in settings("sources")]
 
     conn = etl.pg.connection(dsn_admin)
@@ -66,6 +66,6 @@ if __name__ == "__main__":
     etl.config.configure_logging()
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None and not main_args.skip_user_creation:
-        main_args.password = getpass.getpass("Password for %s: " % main_settings("data-warehouse", "owner"))
+        main_args.password = getpass.getpass("Password for %s: " % main_settings("data_warehouse", "owner"))
     with etl.pg.measure_elapsed_time():
         initial_setup(main_args, main_settings)

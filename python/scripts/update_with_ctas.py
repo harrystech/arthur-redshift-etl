@@ -24,10 +24,10 @@ import etl.s3
 
 
 def update_with_ctas(args, settings):
-    dw = etl.env_value(settings("data-warehouse", "etl_access"))
-    table_owner = settings("data-warehouse", "owner")
-    etl_group = settings("data-warehouse", "groups", "etl")
-    user_group = settings("data-warehouse", "groups", "users")
+    dw = etl.env_value(settings("data_warehouse", "etl_access"))
+    table_owner = settings("data_warehouse", "owner")
+    etl_group = settings("data_warehouse", "groups", "etl")
+    user_group = settings("data_warehouse", "groups", "users")
     bucket = etl.s3.get_bucket(settings("s3", "bucket_name"))
     schemas = [source["name"] for source in settings("sources")]
     files = etl.s3.find_files(bucket, args.prefix, schemas=schemas, pattern=args.table)
@@ -47,6 +47,7 @@ def update_with_ctas(args, settings):
                 etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
                 etl.load.create_temp_table_as_and_copy(conn, table_name, bucket, design_file, sql_file,
                                                        dry_run=args.dry_run)
+                etl.load.analyze(conn, table_name, dry_run=args.dry_run)
         conn.close()
 
 

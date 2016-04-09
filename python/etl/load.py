@@ -1,5 +1,6 @@
 import configparser
 import io
+from itertools import chain
 import logging
 import os.path
 import simplejson as json
@@ -39,11 +40,11 @@ def validate_table_design(table_design, table_name):
         raise ValueError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
 
 
-def format_column_list(columns):
+def format_column_list(columns, sep=", "):
     """
     Return string with comma-separated, delimited column names
     """
-    return ", ".join('"{}"'.format(column) for column in columns)
+    return sep.join('"{}"'.format(column) for column in columns)
 
 
 def _build_constraints(table_design):
@@ -55,9 +56,10 @@ def _build_constraints(table_design):
         if nk in constraints:
             ddl_constraints.append('UNIQUE ( {} )'.format(format_column_list(constraints[nk])))
     if "foreign_key" in constraints:
-        local_columns, reference, reference_columns = constraints["foreign key"]
+        local_columns, reference, reference_columns = constraints["foreign_key"]
+        reference_table = TableName(*reference.split('.', 1))
         ddl_constraints.append('FOREIGN KEY ( {} ) REFERENCES {} ( {} )'.format(format_column_list(local_columns),
-                                                                                reference,
+                                                                                reference_table,
                                                                                 format_column_list(reference_columns)))
     return ddl_constraints
 
@@ -96,24 +98,20 @@ def assemble_table_ddl(table_design):
     # Pick up name and SQL type.  Column attribute may be 'encoding' and constraint may be 'not_null'
     s_columns = []
     for column in columns:
-        if 'encoding' in column:
-            if column.get('not_null', False):
-                s_column = '"{name}" {sql_type} NOT NULL ENCODE {encoding}'
-            else:
-                s_column = '"{name}" {sql_type} ENCODE {encoding}'
-        else:
-            if column.get('not_null', False):
-                s_column = '"{name}" {sql_type} NOT NULL'
-            else:
-                s_column = '"{name}" {sql_type}'
-        s_columns.append(s_column.format(**column))
+        f_column = '"{name}" {sql_type}'
+        if column.get('identity', False):
+            f_column += " IDENTITY(1, 1)"
+        if column.get('not_null', False):
+            f_column += " NOT NULL"
+        if "encoding" in column:
+            f_column += " ENCODE {encoding}"
+        s_columns.append(f_column.format(**column))
     s_constraints = _build_constraints(table_design)
     s_attributes = _build_attributes(table_design)
 
-    return "CREATE TABLE IF NOT EXISTS {} (\n    {},\n    {})\n    {}".format(table_name,
-                                                                              ",\n    ".join(s_columns),
-                                                                              " \n    ".join(s_constraints),
-                                                                              " \n    ".join(s_attributes))
+    return "CREATE TABLE IF NOT EXISTS {} (\n{})\n{}".format(table_name,
+                                                             ",\n".join(chain(s_columns, s_constraints)),
+                                                             " \n".join(s_attributes)).replace('\n', "\n    ")
 
 
 def create_table(conn, table_name, table_owner, bucket, ddl_file, drop_table=False, dry_run=False):
@@ -134,7 +132,7 @@ def create_table(conn, table_name, table_owner, bucket, ddl_file, drop_table=Fal
     else:
         if drop_table:
             logger.info("Dropping table first: %s", table_name.identifier)
-            etl.pg.execute(conn, "DROP TABLE IF EXISTS {}".format(table_name))
+            etl.pg.execute(conn, "DROP TABLE IF EXISTS {} CASCADE".format(table_name))
 
         logger.info("Creating table (if not exists): %s", table_name.identifier)
         etl.pg.execute(conn, ddl_stmt)
@@ -204,15 +202,34 @@ def copy_data(conn, table_name, bucket, csv_file, credentials, dry_run=False):
             raise
 
 
+def _format_non_identity_columns(table_design):
+    return format_column_list([column["name"]
+                               for column in table_design["columns"]
+                               if not column.get("identity", False)],
+                              sep=",\n")
+
+
 def assemble_ctas_ddl(table_design, temp_name):
     """
     Return statement to create table based on a query, something like:
     CREATE TEMP TABLE table_name ( column_name [, ... ] ) table_attributes AS query
     """
-    s_columns = format_column_list([column["name"] for column in table_design["columns"]])
+    s_columns = _format_non_identity_columns(table_design)
+    # TODO Measure whether adding attributes helps or hurts performance.
     s_attributes = _build_attributes(table_design)
-    return "CREATE TEMP TABLE {} (\n    {})\n    {}\n    AS\n".format(temp_name, s_columns,
-                                                                      "\n    ".join(s_attributes))
+    return "CREATE TEMP TABLE {} (\n{})\n{}\nAS\n".format(temp_name, s_columns,
+                                                          " \n".join(s_attributes)).replace('\n', "\n    ")
+
+
+def assemble_insert_into_dml(table_design, temp_name):
+    """
+    Create an INSERT statement to copy data from temp table to new table.
+    """
+    s_columns = _format_non_identity_columns(table_design)
+    return "INSERT INTO {} (\n{})\n(SELECT {}\nFROM {})".format(table_design["name"],
+                                                                s_columns,
+                                                                s_columns,
+                                                                temp_name).replace('\n', "\n    ")
 
 
 def create_temp_table_as_and_copy(conn, table_name, bucket, design_file, sql_file, dry_run=False):
@@ -223,9 +240,11 @@ def create_temp_table_as_and_copy(conn, table_name, bucket, design_file, sql_fil
     logger = logging.getLogger(__name__)
     content = etl.s3.get_file_content(bucket, design_file)
     table_design = load_table_design(io.StringIO(content), table_name)
+
     temp_table = '"{}${}"'.format("staging", table_name.table)
     query_stmt = etl.s3.get_file_content(bucket, sql_file)
     ddl_stmt = assemble_ctas_ddl(table_design, temp_table) + query_stmt
+    dml_stmt = assemble_insert_into_dml(table_design, temp_table)
 
     if dry_run:
         logger.info("Dry-run: Skipping loading of %s", table_name.identifier)
@@ -234,7 +253,7 @@ def create_temp_table_as_and_copy(conn, table_name, bucket, design_file, sql_fil
         etl.pg.execute(conn, ddl_stmt)
         logger.info("Loading table %s from staging table", table_name.identifier)
         etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
-        etl.pg.execute(conn, """INSERT INTO {} (SELECT * FROM {})""".format(table_name, temp_table))
+        etl.pg.execute(conn, dml_stmt)
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_table))
 
 

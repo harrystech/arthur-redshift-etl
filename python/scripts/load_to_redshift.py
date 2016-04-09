@@ -19,10 +19,10 @@ import etl.s3
 
 
 def load_to_redshift(args, settings):
-    dw = etl.env_value(settings("data-warehouse", "etl_access"))
-    table_owner = settings("data-warehouse", "owner")
-    etl_group = settings("data-warehouse", "groups", "etl")
-    user_group = settings("data-warehouse", "groups", "users")
+    dw = etl.env_value(settings("data_warehouse", "etl_access"))
+    table_owner = settings("data_warehouse", "owner")
+    etl_group = settings("data_warehouse", "groups", "etl")
+    user_group = settings("data_warehouse", "groups", "users")
     bucket = etl.s3.get_bucket(settings("s3", "bucket_name"))
     schemas = [source["name"] for source in settings("sources")]
     files = etl.s3.find_files(bucket, args.prefix, schemas=schemas, pattern=args.table)

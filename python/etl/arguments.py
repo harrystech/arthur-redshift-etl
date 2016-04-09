@@ -1,7 +1,9 @@
 import argparse
-from datetime import datetime
+import getpass
 import os
 import uuid
+
+import pkg_resources
 
 
 def argument_parser(options, **kwargs):
@@ -9,6 +11,9 @@ def argument_parser(options, **kwargs):
     Create default argument parser with standard set of options for our ETL
     """
     parser = argparse.ArgumentParser(**kwargs)
+    package = "redshift-etl v{}".format(pkg_resources.get_distribution("redshift-etl").version)
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s ({})".format(package))
+
     example_password = uuid.uuid4().hex.title()
     default_config = os.environ["DATA_WAREHOUSE_CONFIG"] if "DATA_WAREHOUSE_CONFIG" in os.environ else None
 
@@ -18,11 +23,12 @@ def argument_parser(options, **kwargs):
                                 help="path to configuration file (required if DATA_WAREHOUSE_CONFIG is not set)",
                                 required=True)
         else:
-            parser.add_argument("-c", "--config", help="path to configuration file (default: '%(default)s')",
+            parser.add_argument("-c", "--config",
+                                help="path to configuration file (default: DATA_WAREHOUSE_CONFIG=%(default)s)",
                                 default=default_config)
     if "prefix" in options:
-        parser.add_argument("-p", "--prefix", help="prefix in S3 bucket (default based on date: '%(default)s')",
-                            default=datetime.now().strftime("%Y-%m-%d"))
+        parser.add_argument("-p", "--prefix", help="prefix in S3 bucket (default is user name: '%(default)s')",
+                            default=getpass.getuser())
     if "data-dir" in options:
         parser.add_argument("-o", "--data-dir", help="path to data directory (default: '%(default)s')", default="data")
     if "table-design-dir" in options:

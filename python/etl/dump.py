@@ -177,9 +177,7 @@ def save_table_design(source_name, table_name, columns, output_dir, dry_run=Fals
             "name": "%s" % target_table_name.identifier,
             "source_name": "%s.%s" % (source_name, table_name.identifier),
             "columns": [column._asdict() for column in columns],
-            "constraints": {
-                "primary_key": ["id"]
-            },
+            "constraints": {"primary_key": ["id"]},
             "attributes": {
                 "distribution": "even",
                 "compound_sort": ["id"]
@@ -204,6 +202,7 @@ def save_table_design(source_name, table_name, columns, output_dir, dry_run=Fals
                     # JSON pretty printing is prettier than o.write(json.dump(table_design, ...))
                     json.dump(table_design, o, indent="    ", sort_keys=True)
                     o.write('\n')
+                logger.info("Completed writing '%s'", filename)
         except Exception:
             # This catches all exceptions so that they don't get lost from worker threads.
             logger.exception("Something terrible happened")
@@ -263,6 +262,8 @@ def download_table_data(cx, source_name, table_name, columns, output_dir, limit=
                     logger.debug("Copy statement for %s: %s", target_table_name.identifier, sql)
                     with cx.cursor() as cursor:
                         cursor.copy_expert(sql, o)
+                    o.flush()
+            logger.debug("Done writing CSV data to '%s'", filename)
         except (Exception, KeyboardInterrupt) as exc:
             logger.warning("Deleting '%s' because it is incomplete", filename)
             os.remove(filename)

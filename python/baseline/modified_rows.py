@@ -49,7 +49,7 @@ def count_updated_rows(conn, tables, begin_time, end_time, check_modified=False)
 
 
 def modified_rows(args, settings):
-    dw = etl.env_value(settings("data-warehouse", "etl_user", "ENV"))
+    dw = etl.env_value(settings("data_warehouse", "etl_user", "ENV"))
     schemas = [source["name"] for source in settings("sources")]
     with etl.pg.connection(dw, readonly=True) as cx:
         tables = find_tables(cx, schemas)

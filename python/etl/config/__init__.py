@@ -5,6 +5,7 @@ import logging.config
 import sys
 
 import pkg_resources
+import jsonschema
 import simplejson as json
 import yaml
 
@@ -12,13 +13,10 @@ import yaml
 def configure_logging():
     """
     Setup logging to go to console and application file, etl.log
-
-    Suppresses noisy logging from boto3 and botocore.
     """
-    config_file = pkg_resources.resource_filename(__name__, "logging.cfg")
-    logging.config.fileConfig(config_file)
+    logging.config.dictConfig(load_json("logging.json"))
     logging.captureWarnings(True)
-    logging.getLogger(__name__).info("Appending to log 'etl.log' for: %s", sys.argv[0])
+    logging.getLogger(__name__).info("Starting log for: %s", sys.argv[0])
 
 
 def load_settings(config_file):
@@ -34,10 +32,13 @@ def load_settings(config_file):
             new_settings = yaml.safe_load(f)
             for key in new_settings:
                 # Try to update only update-able settings
-                if not (key in settings and isinstance(settings[key], dict)):
-                    settings[key] = new_settings[key]
-                else:
+                if key in settings and isinstance(settings[key], dict):
                     settings[key].update(new_settings[key])
+                else:
+                    settings[key] = new_settings[key]
+
+    schema = load_json("settings.schema")
+    jsonschema.validate(settings, schema)
 
     class Accessor(object):
         def __init__(self, data):

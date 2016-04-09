@@ -1,0 +1,87 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "Settings",
+    "description": "Validation of ETL settings",
+    "definitions": {
+        "identifier": {
+            "type": "string",
+            "pattern": "^\\w"
+        }
+    },
+    "type": "object",
+    "properties": {
+        "data_warehouse": {
+            "type": "object",
+            "properties": {
+                "admin_access": { "$ref": "#/definitions/identifier" },
+                "etl_access": { "$ref": "#/definitions/identifier" },
+                "owner": { "$ref": "#/definitions/identifier" },
+                "groups": {
+                    "type": "object",
+                    "additionalProperties": { "$ref": "#/definitions/identifier" },
+                    "minProperties": 2
+                }
+            },
+            "required": [ "admin_access", "etl_access", "owner", "groups" ],
+            "additionalProperties": false
+        },
+        "s3": {
+            "type": "object",
+            "properties": {
+                "bucket_name": { "$ref": "#/definitions/identifier" }
+            },
+            "required": [ "bucket_name" ],
+            "additionalProperties": false
+        },
+        "sources": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": { "$ref": "#/definitions/identifier" },
+                    "read_access": { "$ref": "#/definitions/identifier" },
+                    "include_tables": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1
+                    },
+                    "exclude_tables": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    }
+                },
+                "required": [ "name" ],
+                "additionalProperties": false,
+                "dependencies": {
+                    "read_access": [ "include_tables" ],
+                    "include_tables": [ "read_access" ],
+                    "exclude_tables": [ "include_tables" ]
+                }
+            },
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "type_maps": {
+            "type": "object",
+            "properties": {
+                "as_is_att_type": {
+                    "type": "object",
+                    "additionalProperties": { "$ref": "#/definitions/identifier" }
+                },
+                "cast_needed_att_type": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 3,
+                        "maxItems": 3
+                    }
+                }
+            },
+            "required": [ "as_is_att_type", "cast_needed_att_type" ],
+            "additionalProperties": false
+        }
+    },
+    "required": [ "data_warehouse", "s3", "sources", "type_maps" ],
+    "additionalProperties": false
+}

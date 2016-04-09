@@ -13,7 +13,7 @@
             "minItems": 1,
             "uniqueItems": true
         },
-        "avro_types": {
+        "avro_type": {
             "enum": [
                 "boolean",
                 "int",
@@ -45,12 +45,12 @@
                     "name": { "$ref:": "#/definitions/identifier" },
                     "type": {
                         "oneOf": [
-                            { "$ref": "#/definitions/avro_types" },
+                            { "$ref": "#/definitions/avro_type" },
                             {
                                 "type": "array",
                                 "items": [
                                     { "enum": [ "null" ] },
-                                    { "$ref": "#/definitions/avro_types" }
+                                    { "$ref": "#/definitions/avro_type" }
                                 ],
                                 "additionalItems": false
                             }
@@ -75,9 +75,10 @@
                             "text32k"
                         ]
                     },
-                    "not_null": { "type": "boolean" }
+                    "not_null": { "type": "boolean" },
+                    "identity": { "type": "boolean" }
                 },
-                "required": ["name", "type", "sql_type"],
+                "required": [ "name", "type", "sql_type" ],
                 "additionalProperties": false
             },
             "minItems": 1,
@@ -106,12 +107,8 @@
             "properties": {
                 "distribution": {
                     "oneOf": [
-                        {
-                            "enum": [ "all" ]
-                        },
-                        {
-                            "enum": [ "even" ]
-                        },
+                        { "enum": [ "all" ] },
+                        { "enum": [ "even" ] },
                         { "$ref": "#/definitions/column_list" }
                     ]
                 },
@@ -125,6 +122,6 @@
             "additionalProperties": false
         }
     },
-    "required": ["name", "columns"],
+    "required": [ "name", "columns" ],
     "additionalProperties": false
 }
