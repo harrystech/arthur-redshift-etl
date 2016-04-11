@@ -8,6 +8,7 @@ from the configuration in the order they are defined.  (Note that the user's
 schema comes first.)
 """
 
+from contextlib import closing
 import getpass
 import logging
 
@@ -29,21 +30,23 @@ def create_user(args, settings):
     etl_group = settings("data_warehouse", "groups", "etl")
     search_path = [source["name"] for source in settings("sources")]
 
-    with etl.pg.connection(dsn_admin) as conn:
+    with closing(etl.pg.connection(dsn_admin)) as conn:
         logging.info("Creating user %s in user group %s", new_user, user_group)
         etl.pg.create_user(conn, new_user, args.password, user_group)
         if args.etl_user:
-            logging.info("Adding user %s to ETL group %s", new_user, user_group)
+            logging.info("Adding user %s to ETL group %s", new_user, etl_group)
             etl.pg.alter_group_add_user(conn, etl_group, new_user)
         if args.add_user_schema:
             logging.info("Creating schema %s with owner %s", new_user, new_user)
             etl.pg.create_schema(conn, new_user, new_user)
+            etl.pg.grant_usage(conn, new_user, user_group)
+            etl.pg.grant_usage(conn, new_user, etl_group)
             search_path[:0] = ["'$user'"]
         logging.info("Setting search path to: %s", search_path)
         etl.pg.alter_search_path(conn, new_user, search_path)
 
 
-def build_parser():
+def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "username", "password"], description=__doc__)
     parser.add_argument("-e", "--etl-user", help="Add user also to ETL group", action="store_true")
     parser.add_argument("-a", "--add-user-schema", help="Add new schema writable for the user", action="store_true")
@@ -51,8 +54,8 @@ def build_parser():
 
 
 if __name__ == "__main__":
-    main_args = build_parser().parse_args()
-    etl.config.configure_logging()
+    main_args = build_argument_parser().parse_args()
+    etl.config.configure_logging(main_args.verbose)
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None:
         main_args.password = getpass.getpass("Password for %s: " % main_args.username)

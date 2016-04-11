@@ -21,18 +21,23 @@ pip3 install -r python/requirements.txt
 
 ### Hints
 
-If pip complains about being out-of-date, simply follow its instructions:
+* Don't worry if you get assertion violations while building a wheel for PyYAML.
+* If pip complains about being out-of-date, simply follow its instructions:
 ```shell
 pip3 install --upgrade pip
 ```
 
-Don't worry if you get assertion violations while building a wheel for PyYAML.
-
 ## Developing
 
-Pull requests are welcomed.
+Pull requests are welcome!
 
-Consider installing [iPython](https://ipython.org/index.html).
+* Please run code through [pep8](https://www.python.org/dev/peps/pep-0008/) (see [local config](.pep8)):
+```shell
+pip3 install pep8
+pep8 python
+```
+
+* Consider installing [iPython](https://ipython.org/index.html).
 ```shell
 pip3 install ipython
 ```

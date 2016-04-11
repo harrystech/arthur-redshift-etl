@@ -4,8 +4,8 @@
         # The environment variable must contain a full connection string for an admin user to create a database.
         "admin_access": "DATA_WAREHOUSE_ADMIN",
         # The environment variable must contain a full connection string for an ETL user.
-        "etl_access": "DATA_WAREHOUSE",
-        # All schemas, tables, etc. will be assigned to this user.  The owner's group should have R/W access.
+        "etl_access": "DATA_WAREHOUSE_ETL",
+        # All schemas, tables, etc. will be assigned to this user.  The owner's group will be the ETL group.
         "owner": "dw",
         # Groups should end in `_rw` for read/write-access or `_ro` for read-only access, although
         # this is not enforced.

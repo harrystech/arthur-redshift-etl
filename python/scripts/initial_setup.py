@@ -8,6 +8,7 @@ Requires passing the password for the new ETL user on the command line
 or when prompted.
 """
 
+from contextlib import closing
 import getpass
 import logging
 
@@ -22,39 +23,34 @@ def initial_setup(args, settings):
     dsn_admin = etl.env_value(settings("data_warehouse", "admin_access"))
     etl_user = settings("data_warehouse", "owner")
     etl_group = settings("data_warehouse", "groups", "etl")
-    users_group = settings("data_warehouse", "groups", "users")
+    user_group = settings("data_warehouse", "groups", "users")
     schemas = [source["name"] for source in settings("sources")]
 
-    conn = etl.pg.connection(dsn_admin)
-    if not args.skip_user_creation:
+    with closing(etl.pg.connection(dsn_admin)) as conn:
+        if not args.skip_user_creation:
+            with conn:
+                logging.info("Creating groups (%s, %s) and user (%s)", etl_group, user_group, etl_user)
+                etl.pg.create_group(conn, etl_group)
+                etl.pg.create_group(conn, user_group)
+                etl.pg.create_user(conn, etl_user, args.password, etl_group)
         with conn:
-            logging.info("Creating groups (%s, %s) and user (%s)", etl_group, users_group, etl_user)
-            etl.pg.create_group(conn, etl_group)
-            etl.pg.create_group(conn, users_group)
-            etl.pg.create_user(conn, etl_user, args.password, etl_group)
-
-    with conn:
-        database_name = etl.pg.dbname(conn)
-        logging.info("Changing database %s to belong to the ETL owner (%s)", database_name, etl_user)
-        etl.pg.execute(conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, etl_user))
-        etl.pg.execute(conn, """REVOKE TEMP ON DATABASE "{}" FROM PUBLIC""".format(database_name))
-        etl.pg.execute(conn, """GRANT TEMP ON DATABASE "{}" TO GROUP "{}" """.format(database_name, etl_group))
-        etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
-
-        # Create one schema for every source database
-        for schema in schemas:
-            logging.info("Creating schema %s with owner %s and usage grant for %s", schema, etl_user, users_group)
-            etl.pg.create_schema(conn, schema, etl_user)
-            etl.pg.grant_all_on_schema(conn, schema, etl_group)
-            etl.pg.grant_usage(conn, schema, users_group)
-        logging.info("Setting search path to: %s", schemas)
-        etl.pg.alter_search_path(conn, etl_user, schemas)
-
-    # Turn off the lights.
-    conn.close()
+            database_name = etl.pg.dbname(conn)
+            logging.info("Changing database %s to belong to the ETL owner (%s)", database_name, etl_user)
+            etl.pg.execute(conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, etl_user))
+            etl.pg.execute(conn, """REVOKE TEMP ON DATABASE "{}" FROM PUBLIC""".format(database_name))
+            etl.pg.execute(conn, """GRANT TEMP ON DATABASE "{}" TO GROUP "{}" """.format(database_name, etl_group))
+            etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
+            # Create one schema for every source database
+            for schema in schemas:
+                logging.info("Creating schema %s with owner %s and usage grant for %s", schema, etl_user, user_group)
+                etl.pg.create_schema(conn, schema, etl_user)
+                etl.pg.grant_all_on_schema(conn, schema, etl_group)
+                etl.pg.grant_usage(conn, schema, user_group)
+            logging.info("Setting search path to: %s", schemas)
+            etl.pg.alter_search_path(conn, etl_user, schemas)
 
 
-def build_parser():
+def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "password"], description=__doc__)
     parser.add_argument("-s", "--skip-user-creation", help="Skip user and groups, only create schemas",
                         default=False, action="store_true")
@@ -62,8 +58,8 @@ def build_parser():
 
 
 if __name__ == "__main__":
-    main_args = build_parser().parse_args()
-    etl.config.configure_logging()
+    main_args = build_argument_parser().parse_args()
+    etl.config.configure_logging(main_args.verbose)
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None and not main_args.skip_user_creation:
         main_args.password = getpass.getpass("Password for %s: " % main_settings("data_warehouse", "owner"))

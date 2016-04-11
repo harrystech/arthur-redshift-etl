@@ -12,10 +12,11 @@ def argument_parser(options, **kwargs):
     """
     parser = argparse.ArgumentParser(**kwargs)
     package = "redshift-etl v{}".format(pkg_resources.get_distribution("redshift-etl").version)
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s ({})".format(package))
+    parser.add_argument("--version", action="version", version="%(prog)s ({})".format(package))
+    parser.add_argument("-v", "--verbose", action="store_true", help="increase verbosity")
 
     example_password = uuid.uuid4().hex.title()
-    default_config = os.environ["DATA_WAREHOUSE_CONFIG"] if "DATA_WAREHOUSE_CONFIG" in os.environ else None
+    default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
 
     if "config" in options:
         if default_config is None:

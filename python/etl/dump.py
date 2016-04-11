@@ -40,7 +40,7 @@ class MissingMappingError(ValueError):
     pass
 
 
-def fetch_tables(cx, table_whitelist, table_blacklist, table_pattern=None):
+def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
     """
     Retrieve all tables that match the given list of tables (which look like
     schema.name or schema.*) and return them as a list of (schema, table) tuples.
@@ -60,18 +60,17 @@ def fetch_tables(cx, table_whitelist, table_blacklist, table_pattern=None):
                                  ORDER BY nsp.nspname, cls.relname""")
     tables = []
     for row in found:
-        for pattern in table_blacklist:
-            if fnmatch(row['table_name'], pattern):
+        for reject_pattern in table_blacklist:
+            if fnmatch(row['table_name'], reject_pattern):
                 break
         else:
-            for pattern in table_whitelist:
-                if fnmatch(row['table_name'], pattern):
-                    if table_pattern is None or fnmatch(row['table'], table_pattern):
+            for accept_pattern in table_whitelist:
+                if fnmatch(row['table_name'], accept_pattern):
+                    if pattern.match_table(row['table']):
                         tables.append(etl.TableName(row['schema'], row['table']))
 
     logging.getLogger(__name__).info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset=%s",
-                                     len(tables), table_whitelist, table_blacklist,
-                                     table_pattern if table_pattern else '*')
+                                     len(tables), table_whitelist, table_blacklist, pattern)
     return tables
 
 
@@ -191,22 +190,18 @@ def save_table_design(source_name, table_name, columns, output_dir, dry_run=Fals
                 del column["source_sql_type"]
             if not column["not_null"]:
                 del column["not_null"]
-        try:
-            etl.load.validate_table_design(table_design, target_table_name)
-            if dry_run:
-                logger.info("Dry-run: Skipping writing new table design file for %s", target_table_name.identifier)
-            else:
-                logger.info("Writing new table design file for %s (was %s) to '%s'",
-                            target_table_name.identifier, table_name.identifier, filename)
-                with open(filename, 'w') as o:
-                    # JSON pretty printing is prettier than o.write(json.dump(table_design, ...))
-                    json.dump(table_design, o, indent="    ", sort_keys=True)
-                    o.write('\n')
-                logger.info("Completed writing '%s'", filename)
-        except Exception:
-            # This catches all exceptions so that they don't get lost from worker threads.
-            logger.exception("Something terrible happened")
-            return None
+        # Make sure schema and code to create table design files is in sync.
+        etl.load.validate_table_design(table_design, target_table_name)
+        if dry_run:
+            logger.info("Dry-run: Skipping writing new table design file for %s", target_table_name.identifier)
+        else:
+            logger.info("Writing new table design file for %s (was %s) to '%s'",
+                        target_table_name.identifier, table_name.identifier, filename)
+            with open(filename, 'w') as o:
+                # JSON pretty printing is prettier than YAML printing.
+                json.dump(table_design, o, indent="    ", sort_keys=True)
+                o.write('\n')
+            logger.info("Completed writing '%s'", filename)
     return filename
 
 
@@ -216,7 +211,7 @@ def create_copy_statement(table_name, columns, row_limit=None):
     """
     select_column = []
     for column in columns:
-        # This is either as-is or an expression with cast or function.
+        # This is either as-is or an expression with cast or function. Either way, make sure name is delimited.
         if column.expression:
             select_column.append(column.expression + ' AS "%s"' % column.name)
         else:
@@ -271,23 +266,19 @@ def download_table_data(cx, source_name, table_name, columns, output_dir, limit=
                 etl.pg.log_sql_error(exc)
                 if exc.pgcode == errorcodes.INSUFFICIENT_PRIVILEGE:
                     logger.warning("Ignoring denied access for %s", table_name.identifier)
-                    # Signal to S3 uploader that there isn't a file coming
+                    # Signal to S3 uploader that there isn't a file coming but that we handled the exception.
                     return None
-                else:
-                    raise
-            else:
-                logger.exception("Trouble while downloading table data: %s", exc)
-                raise
+            raise
     return filename
 
 
-def download_table_data_bounded(sem, cx, source_name, table_name, columns, output_dir,
+def download_table_data_bounded(semaphore, cx, source_name, table_name, columns, output_dir,
                                 limit=None, overwrite=False, dry_run=False):
     """
     "Bounded" version of a table download -- psycopg2 cannot run more than one
     copy operation at a time.  So we need a semaphore to switch between threads that
     want to use copy.
     """
-    with sem:
+    with semaphore:
         return download_table_data(cx, source_name, table_name, columns, output_dir,
                                    limit=limit, overwrite=overwrite, dry_run=dry_run)

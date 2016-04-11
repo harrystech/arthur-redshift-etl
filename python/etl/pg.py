@@ -117,6 +117,7 @@ def execute(cx, stmt, args=(), debug=True, return_result=False):
 
     If debug is True, then the statement is sent to the log as well.
     """
+    logger = logging.getLogger(__name__)
     with cx.cursor() as cursor:
         stmt = _log_stmt(cursor, stmt, args, debug)
         start_time = datetime.now()
@@ -124,7 +125,11 @@ def execute(cx, stmt, args=(), debug=True, return_result=False):
             cursor.execute(stmt, args)
         else:
             cursor.execute(stmt)
-        logging.getLogger(__name__).debug("STATUS: %s (%.1fs)", cursor.statusmessage, _seconds_since(start_time))
+        logger.debug("QUERY STATUS: %s (%.1fs)", cursor.statusmessage, _seconds_since(start_time))
+        if cx.notices and logger.isEnabledFor(logging.DEBUG):
+            for msg in cx.notices:
+                logger.debug("QUERY " + msg.rstrip('\n'))
+            del cx.notices[:]
         if return_result:
             return cursor.fetchall()
 

@@ -9,8 +9,8 @@ is that there are upstream PostgreSQL databases which should be collected
 into a single data warehouse where their data is made available to BI users.
 
 The tools in this repo fall into two categories:
-1. Prototyping code to bring up the warehouse and experiment with table designs.
-1. Production code to bring over data (on, say, a daily basis)
+    1. Prototyping code to bring up the warehouse and experiment with table designs.
+    1. Production code to bring over data (on, say, a daily basis)
 
 Either tool set expects that
 * data sits in S3 bucket between dump and load,
@@ -32,21 +32,16 @@ Make sure the virtual environment is active:
 ```shell
 source venv/bin/activate
 ```
-
-All examples below will show the path `python/scripts/...`.  You can make
-your life easier by adding the scripts to your `PATH` variable:
-```shell
-PATH=$PWD/python/scripts:$PATH
-```
+This will also pull in the scripts to your path.
 
 ### Creating a configuration file for the data warehouse
 
 The configuration file describes
 * Connection information to the data warehouse
-* Conneciton information for upstream data along with information
+* Connection information for upstream data along with information
   which tables to pull (or not to pull)
 
-There's a reasonable default so this might be  as simple as this example:
+There's a reasonable default so this might be as simple as this example:
 ```
 {
     "s3": {
@@ -54,12 +49,11 @@ There's a reasonable default so this might be  as simple as this example:
     },
     "sources": [
         {
-            "name": "dw",
-            "CTAS": true
+            "name": "dw"
         },
         {
             "name": "www",
-            "config": "DATABASE_PRODUCTION",
+            "read_access": "DATABASE_PRODUCTION",
             "include_tables": ["public.*"]
         }
     ]
@@ -104,19 +98,19 @@ python/scripts/initial_setup.py "horse_battery_staple"
 for a random password.)
 
 This creates the new owner / ETL user, the ETL group and end user group, and
-the schemas.
+the schemas, one per source.
 
 (_Hint_: If you instead get an error message about a missing module "etl", then you
 probably need to (re-)activate the virtual environment.)
 
 Set the environment variable for DW access with the ETL user.
 ```shell
-DATA_WAREHOUSE=postgres://<etl user>:<password>@<host>:5439/<dbname>?sslmode=require
-export DATA_WAREHOUSE
+DATA_WAREHOUSE_ETL=postgres://<etl user>:<password>@<host>:5439/<dbname>?sslmode=require
+export DATA_WAREHOUSE_ETL
 ```
 And maybe store the password in your `~/.pgpass` file for good measure.
 
-This is a good point to also create a user for yourself to test access.
+This is a good point to also create a user for yourself (or me) to test access:
 ```shell
 python/scripts/create_user.py tom
 ```
@@ -128,6 +122,9 @@ this is useful for users of ETL tools, e.g. our Spark-based ETL described below.
 ```shell
 python/scripts/create_user.py --etl-user spark_etl
 ```
+
+Finally, some developers might benefit from having a schema where they can
+create tables.  See the options of `create_user.py`.
 
 #### Download data into S3
 
@@ -143,18 +140,25 @@ AWS_SECRET_ACCESS_KEY= ...
 export AWS_ACCESS_KEY_ID  AWS_SECRET_ACCESS_KEY
 ```
 
-Now go for it:
+By default, `dump_to_s3.py` will download table designs to your local
+`schemas` directory.  This may be a good place to start.
 ```shell
-python/scripts/dump_to_s3.py
+dump_to_s3.py
+```
+
+Once you created some table designs and added them to a repo,
+adjust the path (here, my Git repositories are under `~/gits`):
+```shell
+dump_to_s3.py -s ~/gits/table-designs
 ```
 
 If you have to interrupt the download, that's ok.  No files will be created twice.
-(This means, however, that you must clean out the data directory to retrieve newer
-data or use the `-f` option.)
+This means, however, that you must clean out the data directory to retrieve newer
+data or use the `-f` option.
 
 If you need data for just one or a few tables, pass in a glob pattern.
 ```shell
-python/scripts/dump_to_s3.py www.orders*
+dump_to_s3.py www.orders*
 ```
 This will connect to only the `www` source database and download all tables
 starting with `orders`.
@@ -165,71 +169,53 @@ For tables that are based on views, you need to update the definitions
 separately.  These tables are refered to as *CTAS* after the DDL statement
 that creates them (`CREATE TABLE ... AS SELECT ...`).
 
-Adjust the path in the example below to match your setup.
-(My Git repositories are all under `~/gits`.)
 ```shell
-python/scripts/copy_to_s3.py ~/gits/analytics
+copy_to_s3.py -s ~/gits/analytics
 ```
 
 #### Create tables and copy data from S3 into them
 
 With the environment variables still set, run:
 ```shell
-python/scripts/load_to_redshift.py
-python/scripts/update_with_ctas.py
+load_to_redshift.py
+update_with_ctas.py
 ```
 
 #### Hints
 
 * Many scripts allow to preview steps using a `--dry-run` command line option.
-  Some will also allow you to keep running even in presence of errors,
-  look for `--keep-going`.
 
 * Also, you can often specify a specific source (meaning target schema).
 ```shell
-python/scripts/load_to_redshift.py www
+load_to_redshift.py www
 ```
 
 * And you can specify specific tables.  The scripts accept
   a ["glob" pattern](https://en.wikipedia.org/wiki/Glob_(programming))
   (also known as a shell pattern).  Examples:
 ```shell
-python/scripts/load_to_redshift.py hyppo.sent_emails
-python/scripts/update_with_ctas.py *.viewable_product*
+load_to_redshift.py hyppo.sent_emails
+update_with_ctas.py www.product*
 ```
 
 * And don't forget that the prefix for S3 files is automatically picked on the
-  current date, not based on your last data dump or upload. So you may have to
+  user name, not based on your last data dump or upload. So you may have to
   specify the `--prefix` option.
 
-* But the prefix doesn't have to be a date.  To test changes on some query, you can
-  also set the prefix to, say, `wip`. Example work flow to work on the `order_margins` query,
-  where you will have to replace the directory of Git repos (in my example: `~/gits/`):
-```shell
-( cd ~/gits/harrys-redshift-etl &&
-  source venv/bin/activate &&
-  python/scripts/copy_to_s3.py -p wip -s ~/gits/analytics analytics.order_margins &&
-  python/scripts/update_with_ctas.py -p wip analytics.order_margins )
-```
-
-* Did I mention this is easier when you've setup your `PATH` variable and
-  virtual environment correctly?
+* This allows to iterate quickly over changes before committing:
 ```shell
 cd ~/gits/analytics
-copy_to_s3.py -p wip analytics.order_margins &&
-update_with_ctas.py -p wip analytics.order_margins )
+copy_to_s3.py -p wip analytics.dim_order &&
+update_with_ctas.py -p wip analytics.dim_order
 ```
 
 ### Working on the table design
 
 To optimize query performance, tables should be loaded with a defined
-distribution style and sort keys. You can write table descriptions that
-will replace the `.ddl` files when creating tables in Redshift.  In order
-to leverage them, specify their location with the `load_to_redshift.py` script.
-
-The design files should **not** live within the data directory to make sure
-that the design files are not accidentally deleted when deleting the data
-dumps.  The design files must be organized the same way that the data files are.
+distribution style and sort keys. The design files should **not** live
+within the data directory to make sure that the design files are not
+accidentally deleted when deleting the data dumps. The design files
+must be organized the same way that the data files are.
 
 There are a number of useful queries in the
 [Amazon Redshift Utilities](https://github.com/awslabs/amazon-redshift-utils)
