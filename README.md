@@ -4,13 +4,20 @@ ETL Code for Loading Data Into a Redshift-based Data Warehouse
 
 ## Overview
 
-See [ETL Flow diagram](doc/etl_flow.svg) for a basic overview.  The idea
-is that there are upstream PostgreSQL databases which should be collected
-into a single data warehouse where their data is made available to BI users.
+### Data Flow
+
+See the flow diagram below for a basic overview.
+The idea is that there are upstream PostgreSQL databases, which should be collected
+into a single data warehouse, where their data is made available to BI users.
+
+![ETL Flow diagram](/doc/etl_flow.png)
+
+### Tools
 
 The tools in this repo fall into two categories:
-    1. Prototyping code to bring up the warehouse and experiment with table designs.
-    1. Production code to bring over data (on, say, a daily basis)
+
+1. Prototyping code to bring up the warehouse and experiment with table designs.
+2. Production code to bring over data (on, say, a daily basis)
 
 Either tool set expects that
 * data sits in S3 bucket between dump and load,
@@ -74,7 +81,7 @@ or afterwards using:
 ```sql
 CREATE DATABASE <dbname>;
 ```
-(_Hint_: You can always connect to the `dev` database in your Redshift cluster.)
+_Hint_: You can always connect to the `dev` database in your Redshift cluster.
 
 
 Set the environment variable that gives access as your cluster admin user:
@@ -92,16 +99,16 @@ Pick a password for the owner of schemas and tables.
 Either add it on the command line or type it when prompted.
 a [random password](https://xkcd.com/936/).)
 ```shell
-python/scripts/initial_setup.py "horse_battery_staple"
+initial_setup.py "horse_battery_staple"
 ```
-(_Hint_: Running `initial_setup.py -h` without arguments will make a suggestion
-for a random password.)
+_Hint_: Running `initial_setup.py -h` without arguments will make a suggestion
+for a random password.
 
 This creates the new owner / ETL user, the ETL group and end user group, and
 the schemas, one per source.
 
-(_Hint_: If you instead get an error message about a missing module "etl", then you
-probably need to (re-)activate the virtual environment.)
+_Hint_: If you instead get an error message about a missing module "etl", then you
+probably need to (re-)activate the virtual environment.
 
 Set the environment variable for DW access with the ETL user.
 ```shell
@@ -112,7 +119,7 @@ And maybe store the password in your `~/.pgpass` file for good measure.
 
 This is a good point to also create a user for yourself (or me) to test access:
 ```shell
-python/scripts/create_user.py tom
+create_user.py tom
 ```
 Then type the password when prompted (or provide it on the command line if you
 feel like nobody could be possibly watching running processes on your machine).
@@ -120,7 +127,7 @@ feel like nobody could be possibly watching running processes on your machine).
 There are also options to add the user to the ETL group (which has r/w access) --
 this is useful for users of ETL tools, e.g. our Spark-based ETL described below.
 ```shell
-python/scripts/create_user.py --etl-user spark_etl
+create_user.py --etl-user spark_etl
 ```
 
 Finally, some developers might benefit from having a schema where they can
