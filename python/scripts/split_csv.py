@@ -3,16 +3,14 @@
 """
 Split input file into multiple files (suitable for parallel loading).
 
-This assumes the input file
-(1) is a compressed CSV file,
-(2) has a preamble (lines that start with #), and
-(3) has a header row.
+This assumes the input file is a compressed CSV file and has a preamble
+consisting of 0 or more comments (lines that start with #) and a header.
 
-If there are fewer than n*n lines in the input file, only one output
-file is created.  So the number of output files is really either one
-or the number of desired partitions.
+If there are fewer than n*n data rows in the input file (or no data rows),
+no output file is created.
 
-NB Make sure that no old partition files exist if you reduce the number of partitions!
+NB Make sure that no old partition files exist if you reduce the number of
+partitions!
 """
 
 import argparse
@@ -26,52 +24,52 @@ import os.path
 MAX_PARTITIONS = 128
 
 
-def split_csv_file(filename, n, part_name):
+def split_csv_file(filename, n, part_name, min_lines=None):
     """
     Split input file into (up to) N partitions, keeping preamble and header intact.
+
+    If min_lines is None, then a minimum of n*n is selected.
     """
     logging.info("Splitting '{}' into up to {:d} partitions using '{}'".format(filename, n, part_name))
-
-    preamble = []
-    files = []
-    writers = []
-    buffer = []
-
+    if min_lines is None:
+        min_lines = n * n
     try:
         with open(filename, "rb") as readable:
             with gzip.open(readable, mode="rt", newline="") as csv_file:
+                preamble = []
                 for line in csv_file:
-                    if line.startswith("#"):
-                        preamble.append(line)
-                    else:
-                        header = line
+                    preamble.append(line)
+                    if not line.startswith("#"):
                         break
                 else:
-                    raise ValueError("Found no header line in %s" % filename)
+                    raise ValueError("Found no header line in '%s'" % filename)
                 reader = csv.reader(csv_file)
-                for row_number, row in zip(range(n * n), reader):
+                buffer = []
+                for row_number, row in zip(range(min_lines), reader):
                     buffer.append(row)
-                if len(buffer) < n * n:
-                    # Use just one partition if there aren't many lines
-                    n = 1
-                for row_number, row in enumerate(chain(buffer, reader)):
-                    index = row_number % n
-                    if len(writers) == index:
-                        f = open(part_name.format(index), 'wb')
-                        g = gzip.open(f, 'wt')
-                        for line in preamble:
-                            g.write(line)
-                        g.write(header)
-                        files.append((g, f))
-                        writers.append(csv.writer(g))
-                    writers[index].writerow(row)
-            if len(files) == 0:
-                raise ValueError("Found no data rows in %s" % filename)
-            for g, f in files:
-                g.close()
-                f.close()
-            logging.info("Wrote %d file(s) for '%s' to '%s'", len(files), filename, os.path.dirname(part_name))
-
+                if len(buffer) == 0:
+                    logging.warning("Found no data rows in '%s'", filename)
+                elif len(buffer) < min_lines:
+                    logging.warning("Only %d data rows in '%s', skipping partitioning", len(buffer), filename)
+                else:
+                    files = []
+                    writers = []
+                    try:
+                        for row_number, row in enumerate(chain(buffer, reader)):
+                            index = row_number % n
+                            if len(writers) == index:
+                                f = open(part_name.format(index), 'wb')
+                                g = gzip.open(f, 'wt')
+                                for line in preamble:
+                                    g.write(line)
+                                files.append((g, f))
+                                writers.append(csv.writer(g))
+                            writers[index].writerow(row)
+                    finally:
+                        for g, f in files:
+                            g.close()
+                            f.close()
+                    logging.info("Wrote %d file(s) for '%s' to '%s'", len(files), filename, os.path.dirname(part_name))
     except Exception:
         logging.exception("Something terrible happened while processing '%s'", filename)
         raise

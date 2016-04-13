@@ -25,12 +25,11 @@ def load_to_redshift(args, settings):
     etl_group = settings("data_warehouse", "groups", "etl")
     user_group = settings("data_warehouse", "groups", "users")
     bucket_name = settings("s3", "bucket_name")
-    schemas = [source["name"] for source in settings("sources")]
     selection = etl.TableNamePattern(args.table)
-    files = etl.s3.find_files(bucket_name, args.prefix, schemas, selection)
-
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    files_in_s3 = etl.s3.find_files(bucket_name, args.prefix, schemas, selection)
     tables_with_data = [(table_name, table_files["Design"], table_files["Data"])
-                        for table_name, table_files in files
+                        for table_name, table_files in files_in_s3
                         if len(table_files["Data"])]
     if len(tables_with_data) == 0:
         logging.error("No applicable files found in 's3://%s/%s'", bucket_name, args.prefix)
@@ -40,13 +39,18 @@ def load_to_redshift(args, settings):
 
         with closing(etl.pg.connection(dw)) as conn:
             for table_name, design_file, csv_files in tables_with_data:
+                with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
+                    table_design = etl.load.load_table_design(content, table_name)
+                if table_design["source_name"] in ("CTAS", "VIEW"):
+                    continue
                 with conn:
-                    etl.load.create_table(conn, table_name, table_owner, bucket_name, design_file,
+                    etl.load.create_table(conn, table_design, table_name, table_owner,
                                           drop_table=args.drop_table, dry_run=args.dry_run)
                     etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
                     # TODO Use manifest file with multiple CSV files
                     csv_file = os.path.commonprefix(csv_files)
-                    etl.load.copy_data(conn, table_name, bucket_name, csv_file, credentials, dry_run=args.dry_run)
+                    location = "s3://{}/{}".format(bucket_name, csv_file)
+                    etl.load.copy_data(conn, credentials, table_name, location, dry_run=args.dry_run)
                     etl.load.analyze(conn, table_name, dry_run=args.dry_run)
 
 

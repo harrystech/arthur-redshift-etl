@@ -10,7 +10,7 @@ import simplejson as json
 import yaml
 
 
-def configure_logging(verbose=False):
+def configure_logging(verbose: bool=False) -> None:
     """
     Setup logging to go to console and application log file
     """
@@ -19,16 +19,16 @@ def configure_logging(verbose=False):
         config["handlers"]["console"]["level"] = "DEBUG"
     logging.config.dictConfig(load_json("logging.json"))
     logging.captureWarnings(True)
-    logging.getLogger(__name__).info("Starting log for: %s", sys.argv[0])
+    logging.getLogger(__name__).info("Starting log for '%s'", sys.argv[0])
 
 
-def load_settings(config_file):
+def load_settings(config_file: str, default_file: str="defaults.yaml"):
     """
     Load settings from defaults and config file.
     """
     settings = defaultdict(dict)
     logger = logging.getLogger(__name__)
-    default_file = pkg_resources.resource_filename(__name__, "defaults.yaml")
+    default_file = pkg_resources.resource_filename(__name__, default_file)
     for filename in (default_file, config_file):
         with open(filename) as f:
             logger.info("Loading configuration file '%s'", filename)
@@ -43,7 +43,7 @@ def load_settings(config_file):
     schema = load_json("settings.schema")
     jsonschema.validate(settings, schema)
 
-    class Accessor(object):
+    class Accessor:
         def __init__(self, data):
             self._data = data
 

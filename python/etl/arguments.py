@@ -6,9 +6,13 @@ import uuid
 import pkg_resources
 
 
-def argument_parser(options, **kwargs):
+def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
     """
     Create default argument parser with standard set of options for our ETL
+
+    :param options: List of command line options to be constructed
+    :param kwargs: Arguments for the ArgumentParser
+    :return: Instance of an ArgumentParser
     """
     parser = argparse.ArgumentParser(**kwargs)
     package = "redshift-etl v{}".format(pkg_resources.get_distribution("redshift-etl").version)
@@ -44,7 +48,7 @@ def argument_parser(options, **kwargs):
     if "force" in options:
         parser.add_argument("-f", "--force", help="allow overwriting files", default=False, action="store_true")
     if "table" in options:
-        parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='?')
+        parser.add_argument("table", help="glob pattern or identifier to select target table(s) (or view)", nargs='?')
     if "username" in options:
         parser.add_argument("username", help="name for new user")
     if "password" in options:

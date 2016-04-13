@@ -6,6 +6,9 @@ Create groups, users, schemas in database.
 Assumes that the database has already been created.  Drops PUBLIC schema.
 Requires passing the password for the new ETL user on the command line
 or when prompted.
+
+If you need to re-run this (after changing the available schemas), you
+should skip the user and group creation.
 """
 
 from contextlib import closing
@@ -29,20 +32,21 @@ def initial_setup(args, settings):
     with closing(etl.pg.connection(dsn_admin)) as conn:
         if not args.skip_user_creation:
             with conn:
-                logging.info("Creating groups (%s, %s) and user (%s)", etl_group, user_group, etl_user)
+                logging.info("Creating groups ('%s', '%s') and user ('%s')", etl_group, user_group, etl_user)
                 etl.pg.create_group(conn, etl_group)
                 etl.pg.create_group(conn, user_group)
                 etl.pg.create_user(conn, etl_user, args.password, etl_group)
         with conn:
             database_name = etl.pg.dbname(conn)
-            logging.info("Changing database %s to belong to the ETL owner (%s)", database_name, etl_user)
+            logging.info("Changing database '%s' to belong to the ETL owner '%s'", database_name, etl_user)
             etl.pg.execute(conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, etl_user))
             etl.pg.execute(conn, """REVOKE TEMP ON DATABASE "{}" FROM PUBLIC""".format(database_name))
             etl.pg.execute(conn, """GRANT TEMP ON DATABASE "{}" TO GROUP "{}" """.format(database_name, etl_group))
             etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
             # Create one schema for every source database
             for schema in schemas:
-                logging.info("Creating schema %s with owner %s and usage grant for %s", schema, etl_user, user_group)
+                logging.info("Creating schema '%s' with owner '%s' and usage grant for '%s'",
+                             schema, etl_user, user_group)
                 etl.pg.create_schema(conn, schema, etl_user)
                 etl.pg.grant_all_on_schema(conn, schema, etl_group)
                 etl.pg.grant_usage(conn, schema, user_group)

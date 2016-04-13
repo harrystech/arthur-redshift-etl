@@ -185,7 +185,11 @@ copy_to_s3.py -s ~/gits/analytics
 With the environment variables still set, run:
 ```shell
 load_to_redshift.py
-update_with_ctas.py
+```
+Now you can add tables based on queries and views:
+```shell
+update_from_ctas.py
+update_views.py
 ```
 
 #### Hints
@@ -202,7 +206,7 @@ load_to_redshift.py www
   (also known as a shell pattern).  Examples:
 ```shell
 load_to_redshift.py hyppo.sent_emails
-update_with_ctas.py www.product*
+update_from_ctas.py www.product*
 ```
 
 * And don't forget that the prefix for S3 files is automatically picked on the
@@ -213,7 +217,7 @@ update_with_ctas.py www.product*
 ```shell
 cd ~/gits/analytics
 copy_to_s3.py -p wip analytics.dim_order &&
-update_with_ctas.py -p wip analytics.dim_order
+update_from_ctas.py -p wip analytics.dim_order
 ```
 
 ### Working on the table design

@@ -45,8 +45,9 @@
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
             # TODO Make the time zone configurable
             "timestamp with time zone": ["timestamp without time zone", "%s AT TIME ZONE 'America/New_York'", "string"],
-            "hstore": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            # TODO Newer versions of PostgreSQL have a more useful hstore_to_json function
+            "hstore": ["varchar(65535)", "public.hstore_to_matrix(%s)::varchar(65535)", "string"],
             "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
             # The numeric datatype without precision and scale should not be used upstream!
             "numeric": ["decimal(12,4)", "%s::decimal(12,4)", "string"]

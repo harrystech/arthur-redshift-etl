@@ -5,17 +5,18 @@ from setuptools import setup, find_packages
 
 setup(
     name="redshift-etl",
-    version="0.2",
+    version="0.3",
     packages=find_packages(),
     package_data={'etl': ["config/*"]},
     scripts=[
-        "scripts/copy_to_s3.py",
+        "scripts/initial_setup.py",
         "scripts/create_user.py",
         "scripts/dump_to_s3.py",
-        "scripts/initial_setup.py",
-        "scripts/load_to_redshift.py",
         "scripts/split_csv.py",
-        "scripts/update_with_ctas.py",
+        "scripts/load_to_redshift.py",
+        "scripts/copy_to_s3.py",
+        "scripts/update_from_ctas.py",
+        "scripts/update_views.py",
         "baseline/modified_rows.py"
     ]
 )

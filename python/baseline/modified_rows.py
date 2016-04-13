@@ -45,9 +45,9 @@ def count_updated_rows(conn, tables, begin_time, end_time, check_modified=False)
         rows = etl.pg.query(conn, stmt, (begin_time, end_time), debug=True)
         count = int(rows[0]['count'])
         if check_modified:
-            logging.info("Table %s has %d modified row(s)", table_name.identifier, count)
+            logging.info("Table '%s' has %d modified row(s)", table_name.identifier, count)
         else:
-            logging.info("Table %s has %d updated row(s)", table_name.identifier, count)
+            logging.info("Table '%s' has %d updated row(s)", table_name.identifier, count)
         total += count
     return total
 

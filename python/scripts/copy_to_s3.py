@@ -4,8 +4,8 @@
 Upload local table design, SQL and (split) CSV files to S3 bucket.
 
 This should be run after making changes to the table design files or the
-(CTAS) SQL files in the local repo.  Or splitting CSV files.
-The table design files are validated even during a dry-run.
+SQL files describing CTAS or VIEWs in the local repo.  Or after splitting CSV
+files. The table design files are validated even during a dry-run.
 """
 
 import concurrent.futures
@@ -26,8 +26,8 @@ def copy_to_s3(args, settings):
     """
     bucket_name = settings("s3", "bucket_name")
     local_dirs = [args.table_design_dir, args.data_dir]
-    schemas = [source["name"] for source in settings("sources")]
     selection = etl.TableNamePattern(args.table)
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
     tables_with_files = etl.s3.find_local_files(local_dirs, schemas, selection)
 
     if len(tables_with_files) == 0:
@@ -36,26 +36,23 @@ def copy_to_s3(args, settings):
         logging.info("Found files for %d tables.", len(tables_with_files))
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             for table_name, files in tables_with_files:
-                for file_type in ("Design", "SQL", "Data"):
-                    if file_type == "Data":
-                        if args.with_data:
-                            for local_filename in files[file_type]:
-                                remote_directory = os.path.basename(os.path.dirname(local_filename))
-                                prefix = "{}/{}".format(args.prefix, remote_directory)
-                                executor.submit(etl.s3.upload_to_s3,
-                                                local_filename, bucket_name, prefix, dry_run=args.dry_run)
-                    else:
-                        local_filename = files[file_type]
-                        if local_filename is not None:
-                            if file_type == "Design":
-                                table_design = etl.load.load_table_design(open(local_filename, 'r'), table_name)
-                                logging.debug("Validated table design %s", table_design["name"])
-                            remote_directory = os.path.basename(os.path.dirname(local_filename))
-                            prefix = "{}/{}".format(args.prefix, remote_directory)
-                            executor.submit(etl.s3.upload_to_s3,
-                                            local_filename, bucket_name, prefix, dry_run=args.dry_run)
+                for file_type in ("Design", "SQL"):
+                    local_filename = files[file_type]
+                    if file_type == "Design":
+                        # find_local_files will always return at least a design file, so local_filename != None
+                        table_design = etl.load.load_table_design(open(local_filename, 'r'), table_name)
+                        logging.debug("Validated table design for '%s'", table_design["name"])
+                    if local_filename is not None:
+                        remote_directory = os.path.basename(os.path.dirname(local_filename))
+                        prefix = "{}/{}".format(args.prefix, remote_directory)
+                        executor.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
+                if args.with_data:
+                    for local_filename in files["Data"]:
+                        remote_directory = os.path.basename(os.path.dirname(local_filename))
+                        prefix = "{}/{}".format(args.prefix, remote_directory)
+                        executor.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
         if not args.dry_run:
-            logging.info("Uploaded all files to 's3://%s/%s", bucket_name, args.prefix)
+            logging.info("Uploaded all files to 's3://%s/%s/'", bucket_name, args.prefix)
 
 
 def build_argument_parser():

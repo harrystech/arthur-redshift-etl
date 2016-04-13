@@ -4,7 +4,6 @@ import logging
 import os
 import os.path
 import re
-import tempfile
 import threading
 
 import boto3
@@ -14,9 +13,9 @@ from etl import TableName
 
 # Split file names into schema name, old schema, table name, and file types:
 TABLE_RE = re.compile(r"""/(?P<schema>\w+)
-                              /(?P<old_schema>\w+)-(?P<table>\w+)[.]
-                              (?P<filetype>yaml|sql|csv(.part_\d+)?.gz)$
-                          """, re.VERBOSE)
+                          /(?P<old_schema>\w+)-(?P<table>\w+)[.]
+                          (?P<filetype>yaml|sql|csv(.part_\d+)?.gz)$
+                      """, re.VERBOSE)
 
 _resources_for_thread = threading.local()
 
@@ -42,18 +41,19 @@ def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
     of a file. Exceptions from futures are propagated. If filename is None,
     then no upload will be attempted.
     """
+    logger = logging.getLogger(__name__)
     if isinstance(filename, concurrent.futures.Future):
         try:
             filename = filename.result()
         except Exception:
-            logging.getLogger(__name__).exception("Something terrible happened in the future's past")
+            logger.exception("Something terrible happened in the future's past")
             raise
     if filename is not None:
         object_key = "{}/{}".format(prefix, os.path.basename(filename))
         if dry_run:
-            logging.getLogger(__name__).info("Dry-run: Skipping upload to 's3://%s/%s'", bucket_name, object_key)
+            logger.info("Dry-run: Skipping upload to 's3://%s/%s'", bucket_name, object_key)
         else:
-            logging.getLogger(__name__).info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
+            logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
             bucket = _get_bucket(bucket_name)
             bucket.upload_file(filename, object_key)
 
@@ -107,11 +107,11 @@ def find_files_from(iterable, schemas, pattern):
             values = match.groupdict()
             if values['schema'] in source_index:
                 table_name = TableName(values['schema'], values['table'])
-                sort_key = (source_index[table_name.schema], values['old_schema'], table_name.table)
                 # Select based on table name from commandline args
                 if not pattern.match(table_name):
                     continue
                 if values['filetype'] == 'yaml':
+                    sort_key = (source_index[table_name.schema], values['old_schema'], table_name.table)
                     found[table_name] = {"Design": filename, "Data": [], "SQL": None, "_sort_key": sort_key}
                 elif values['filetype'] == 'sql':
                     sql_files[table_name] = filename
@@ -121,15 +121,16 @@ def find_files_from(iterable, schemas, pattern):
         if table_name in found:
             found[table_name]["SQL"] = sql_files[table_name]
         else:
-            logger.warning("Found SQL file without table design for %s", table_name.identifier)
+            logger.warning("Found SQL file without table design for '%s'", table_name.identifier)
     for table_name in data_files:
         if table_name in found:
             if len(data_files[table_name]) > 1:
-                found[table_name]["Data"] = [name for name in data_files[table_name] if '.csv.part_' in name]
+                # If there are more than one file, skip the (original) csv.gz file and pick only partitions.
+                found[table_name]["Data"] = [name for name in data_files[table_name] if not name.endswith(".csv.gz")]
             else:
                 found[table_name]["Data"] = data_files[table_name]
         else:
-            logger.warning("Found data file(s) without table design for %s", table_name.identifier)
+            logger.warning("Found data file(s) without table design for '%s'", table_name.identifier)
     logger.debug("Found files for %d table(s)", len(found))
     # Turn dictionary into sorted list of tuples so that order of schemas (and sort of tables) is preserved.
     return sorted([(table_name, found[table_name]) for table_name in found], key=lambda t: found[t[0]]["_sort_key"])
@@ -137,18 +138,15 @@ def find_files_from(iterable, schemas, pattern):
 
 def get_file_content(bucket_name, object_key):
     """
-    Download file contents from s3://bucket_name/object_key
+    Return stream for content of s3://bucket_name/object_key
+
+    Close the stream when you're done with it.
     """
-    # Download to a temp file, then read that file and remove file before returning.
-    fd, name = tempfile.mkstemp()
-    logging.getLogger(__name__).info("Downloading 's3://%s/%s' (using '%s')", bucket_name, object_key, name)
-    try:
-        bucket = _get_bucket(bucket_name)
-        bucket.download_file(object_key, name)
-        os.fsync(fd)
-        with open(name) as f:
-            content = ''.join(f.readlines())
-    finally:
-        os.close(fd)
-        os.unlink(name)
-    return content
+    logger = logging.getLogger(__name__)
+    logger.info("Downloading 's3://%s/%s'", bucket_name, object_key)
+    bucket = _get_bucket(bucket_name)
+    s3_object = bucket.Object(object_key)
+    response = s3_object.get()
+    logger.debug("Received response from S3: last modified: %s, content length: %s, content type: %s",
+                 response['LastModified'], response['ContentLength'], response['ContentType'])
+    return response['Body']

@@ -31,7 +31,8 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
 
     By default, this turns on autocommit on the connection.
     """
-    # Extract connection value from jdbc-style connection string. (Some people, when confronted with a problem,
+    logger = logging.getLogger(__name__)
+    # Extract connection value from JDBC-style connection string. (Some people, when confronted with a problem,
     # think "I know, I'll use regular expressions." Now they have two problems.)
     dsn_re = re.compile(r"""postgres(?:ql)?://  # be nice and accept either connection type
                             (?P<user>\w+)(?::(?P<password>[-\w]+))?@  # user information with optional password
@@ -46,10 +47,12 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
     dsn_values = dsn_match.groupdict()
     dsn_values["application_name"] = application_name
 
-    logging.getLogger(__name__).info("Connecting to: host={host} port={port} database={database} "
-                                     "user={user} password=***".format(**dsn_values))
+    logger.info("Connecting to: host={host} port={port} database={database} "
+                "user={user} password=***".format(**dsn_values))
     cx = psycopg2.connect(cursor_factory=psycopg2.extras.DictCursor, **dsn_values)
     cx.set_session(autocommit=autocommit, readonly=readonly)
+    logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
+                 cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
     return cx
 
 
@@ -147,7 +150,7 @@ def alter_group_add_user(cx, group, user):
 
 
 def create_schema(cx, schema, owner):
-    execute(cx, """CREATE SCHEMA "{}" AUTHORIZATION "{}" """.format(schema, owner))
+    execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
 
 
 def grant_usage(cx, schema, group):
@@ -187,9 +190,9 @@ def log_sql_error(exc, as_warning=False):
     """
     logger = logging.getLogger(__name__)
     if as_warning:
-        logger.warning('SQL CODE "%s" ERROR "%s"', exc.pgcode, exc.pgerror)
+        logger.warning('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
     else:
-        logger.exception('SQL CODE "%s" ERROR "%s"', exc.pgcode, exc.pgerror)
+        logger.exception('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
     for name in ('severity',
                  'sqlstate',
                  'message_primary',

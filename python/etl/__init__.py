@@ -3,21 +3,34 @@ from fnmatch import fnmatch
 import os
 
 
-def env_value(name):
+def env_value(name: str) -> str:
+    """
+    Retrieve environment variable or error out if variable is not set.
+    This is mildly more readable than direct use of os.environ.
+
+    :param name: Name of environment variable
+    :return: Value of environment variable
+    """
     if name not in os.environ:
-        raise ValueError("Environment variable %s not set" % name)
+        raise KeyError("Environment variable not set for connection: %s" % name)
     return os.environ[name]
 
 
 class TableName(namedtuple('_TableName', ['schema', 'table'])):
-        __slots__ = ()
+    """
+    Class to automatically create delimited identifiers for table.
 
-        @property
-        def identifier(self):
-            return "{0}.{1}".format(*self)
+    Given a table s.t, then the cautious identifier for SQL code "s"."t".
+    But the more readable name is still s.t
+    """
+    __slots__ = ()
 
-        def __str__(self):
-            return '"{0}"."{1}"'.format(*self)
+    @property
+    def identifier(self):
+        return "{0}.{1}".format(*self)
+
+    def __str__(self):
+        return '"{0}"."{1}"'.format(*self)
 
 
 class TableNamePattern(namedtuple('_TableNamePattern', ['schema', 'table'])):
@@ -62,6 +75,11 @@ class TableNamePattern(namedtuple('_TableNamePattern', ['schema', 'table'])):
                 raise ValueError("Schema must be a literal, not pattern")
             return super(TableNamePattern, cls).__new__(cls, schema, table)
 
+    def __str__(self):
+        schema = '*' if self.schema is None else self.schema
+        table = '*' if self.table is None else self.table
+        return "{}.{}".format(schema, table)
+
     def match_schema(self, schema):
         return self.schema is None or schema == self.schema
 
@@ -74,4 +92,7 @@ class TableNamePattern(namedtuple('_TableNamePattern', ['schema', 'table'])):
 
 class ColumnDefinition(namedtuple('_ColumnDefinition',
                                   ['name', 'type', 'sql_type', 'source_sql_type', 'expression', 'not_null'])):
+    """
+    Wrapper for attributes ... describes columns by name, type (for Avro), sql_type.
+    """
     __slots__ = ()
