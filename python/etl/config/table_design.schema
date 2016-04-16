@@ -42,53 +42,61 @@
             "pattern": "^(CTAS|VIEW|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },
         "columns": {
-            "description": "List of the columns of the table (or view)",
+            "description": "List of the columns of this table with their types or of this view with just their names",
             "type": "array",
             "items": {
-                "type": "object",
-                "properties": {
-                    "name": { "$ref": "#/definitions/identifier" },
-                    "description": { "type": "string" },
-                    "type": {
-                        "oneOf": [
-                            { "$ref": "#/definitions/avro_type" },
-                            {
-                                "type": "array",
-                                "items": [
-                                    { "enum": [ "null" ] },
-                                    { "$ref": "#/definitions/avro_type" }
-                                ],
-                                "additionalItems": false
-                            }
-
-                        ]
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "name": { "$ref": "#/definitions/identifier" },
+                            "description": { "type": "string" },
+                            "type": {
+                                "oneOf": [
+                                    { "$ref": "#/definitions/avro_type" },
+                                    {
+                                        "type": "array",
+                                        "items": [
+                                            { "enum": [ "null" ] },
+                                            { "$ref": "#/definitions/avro_type" }
+                                        ],
+                                        "additionalItems": false
+                                    }
+                                ]
+                            },
+                            "sql_type": { "$ref": "#/definitions/identifier" },
+                            "source_sql_type": { "$ref": "#/definitions/identifier" },
+                            "expression": { "$ref": "#/definitions/expression" },
+                            "encoding": {
+                                "enum": [
+                                    "raw",
+                                    "bytedict",
+                                    "delta",
+                                    "delta32k",
+                                    "lzo",
+                                    "mostly8",
+                                    "mostly16",
+                                    "mostly32",
+                                    "runlength",
+                                    "text255",
+                                    "text32k"
+                                ]
+                            },
+                            "not_null": { "type": "boolean" },
+                            "identity": { "type": "boolean" }
+                        },
+                        "required": [ "name", "type", "sql_type" ],
+                        "additionalProperties": false
                     },
-                    "sql_type": { "$ref": "#/definitions/identifier" },
-                    "source_sql_type": { "$ref": "#/definitions/identifier" },
-                    "expression": { "$ref": "#/definitions/expression" },
-                    "encoding": {
-                        "enum": [
-                            "raw",
-                            "bytedict",
-                            "delta",
-                            "delta32k",
-                            "lzo",
-                            "mostly8",
-                            "mostly16",
-                            "mostly32",
-                            "runlength",
-                            "text255",
-                            "text32k"
-                        ]
-                    },
-                    "not_null": { "type": "boolean" },
-                    "identity": { "type": "boolean" }
-                },
-                "anyOf": [
-                    { "required": [ "name" ] },
-                    { "required": [ "name", "type", "sql_type" ] }
-                ],
-                "additionalProperties": false
+                    {
+                        "type": "object",
+                        "properties": {
+                            "name": { "$ref": "#/definitions/identifier" }
+                        },
+                        "required": [ "name" ],
+                        "additionalProperties": false
+                    }
+                ]
             },
             "minItems": 1,
             "uniqueItems": true
