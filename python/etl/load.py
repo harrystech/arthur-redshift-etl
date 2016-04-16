@@ -164,18 +164,21 @@ def create_table(conn, table_design, table_name, table_owner, drop_table=False, 
         etl.pg.alter_table_owner(conn, table_name.schema, table_name.table, table_owner)
 
 
-def create_view(conn, table_name, query_stmt, dry_run=False):
+def create_view(conn, view_name, query_stmt, drop_view=False, dry_run=False):
     """
     Run the CREATE VIEW statement.
     """
     logger = logging.getLogger(__name__)
+    if drop_view:
+        logger.info("Dropping view '%s'", view_name.identifier)
+        etl.pg.execute(conn, "DROP VIEW IF EXISTS {} CASCADE".format(view_name))
     # TODO Make sure ownership is on ETL user
-    ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(table_name, query_stmt)
+    ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(view_name, query_stmt)
     if dry_run:
-        logger.info("Dry-run: Skipping creation of view '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping creation of view '%s'", view_name.identifier)
         logger.debug("Skipped DDL:\n%s", ddl_stmt)
     else:
-        logger.info("Creating view '%s'", table_name.identifier)
+        logger.info("Creating view '%s'", view_name.identifier)
         etl.pg.execute(conn, ddl_stmt)
 
 

@@ -57,7 +57,7 @@ def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "username", "password"], description=__doc__)
     parser.add_argument("-e", "--etl-user", help="Add user also to ETL group", action="store_true")
     parser.add_argument("-a", "--add-user-schema", help="Add new schema, writable for the user", action="store_true")
-    parser.add_argument("-s", "--skip-user-creation", help="Skip new user, change search path of existing user",
+    parser.add_argument("-s", "--skip-user-creation", help="Skip new user; only change search path of existing user",
                         default=False, action="store_true")
     return parser
 

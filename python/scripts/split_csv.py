@@ -30,7 +30,7 @@ def split_csv_file(filename, n, part_name, min_lines=None):
 
     If min_lines is None, then a minimum of n*n is selected.
     """
-    logging.info("Splitting '{}' into up to {:d} partitions using '{}'".format(filename, n, part_name))
+    logging.info("Splitting '{}' into (up to) {:d} partitions with format '{}'".format(filename, n, part_name))
     if min_lines is None:
         min_lines = n * n
     try:
@@ -58,7 +58,7 @@ def split_csv_file(filename, n, part_name, min_lines=None):
                         for row_number, row in enumerate(chain(buffer, reader)):
                             index = row_number % n
                             if len(writers) == index:
-                                f = open(part_name.format(index), 'wb')
+                                f = open(part_name.format(index + 1), 'wb')
                                 g = gzip.open(f, 'wt')
                                 for line in preamble:
                                     g.write(line)

@@ -43,12 +43,17 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
     if "drop-table" in options:
         parser.add_argument("-d", "--drop-table",
                             help="drop table to force update of table definition", default=False, action="store_true")
+    if "drop-view" in options:
+        parser.add_argument("-d", "--drop-view",
+                            help="drop view to force update of view definition", default=False, action="store_true")
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not actually copy data", default=False, action="store_true")
     if "force" in options:
         parser.add_argument("-f", "--force", help="allow overwriting files", default=False, action="store_true")
     if "table" in options:
-        parser.add_argument("table", help="glob pattern or identifier to select target table(s) (or view)", nargs='?')
+        parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='?')
+    if "view" in options:
+        parser.add_argument("view", help="glob pattern or identifier to select target view(s)", nargs='?')
     if "username" in options:
         parser.add_argument("username", help="name for new user")
     if "password" in options:

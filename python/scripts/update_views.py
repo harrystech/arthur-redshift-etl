@@ -20,12 +20,12 @@ def update_views(args, settings):
 
 def _update_sequence(conn, table_design, table_name, table_owner, etl_group, user_group, query, args):
     # TODO Make sure owner of view is table_owner (maybe only create if current user is table owner?)
-    etl.load.create_view(conn, table_name, query, dry_run=args.dry_run)
+    etl.load.create_view(conn, table_name, query, drop_view=args.drop_view, dry_run=args.dry_run)
     etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
 
 
 def build_argument_parser():
-    return etl.arguments.argument_parser(["config", "prefix", "dry-run", "table"], description=__doc__)
+    return etl.arguments.argument_parser(["config", "prefix", "dry-run", "drop-view", "view"], description=__doc__)
 
 
 if __name__ == "__main__":
