@@ -96,19 +96,20 @@ def dump_to_s3(args, settings):
             if source["read_access"] not in os.environ:
                 raise KeyError("Environment variable not set: %s" % source["read_access"])
 
-    for source in settings("sources"):
-        source_name = source["name"]
-        if source_name not in schemas:
-            continue
-        if "read_access" not in source:
-            logging.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
-            continue
-        table_design_files = dict((table_name, table_files["Design"])
-                                  for table_name, table_files in local_files
-                                  if table_name.schema == source_name)
-        dump_source_to_s3(source, table_design_files, settings("type_maps"),
-                          args.table_design_dir, args.data_dir, bucket_name, args.prefix, selection,
-                          dry_run=args.dry_run, limit=args.limit, overwrite=args.force)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs) as pool:
+        for source in settings("sources"):
+            source_name = source["name"]
+            if source_name not in schemas:
+                continue
+            if "read_access" not in source:
+                logging.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
+                continue
+            table_design_files = dict((table_name, table_files["Design"])
+                                      for table_name, table_files in local_files
+                                      if table_name.schema == source_name)
+            pool.submit(dump_source_to_s3, source, table_design_files, settings("type_maps"),
+                        args.table_design_dir, args.data_dir, bucket_name, args.prefix, selection,
+                        dry_run=args.dry_run, limit=args.limit, overwrite=args.force)
     if args.limit:
         logging.warning("The row limit was set to %d!", args.limit)
 
@@ -132,6 +133,7 @@ def build_argument_parser():
                                             "table"], description=__doc__)
     parser.add_argument("-l", "--limit", help="limit number of rows copied (useful for testing)",
                         default=None, type=check_positive_int, action="store")
+    parser.add_argument("-j", "--jobs", help="Number of parallel processes (default: %(default)s)", type=int, default=4)
     return parser
 
 

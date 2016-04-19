@@ -7,8 +7,8 @@ import etl.pg
 import etl.s3
 
 
-def update_table_or_view(args, settings, select_ctas_or_view, cmd_sequence):
-    assert select_ctas_or_view in ("CTAS", "VIEW")
+def update_table_or_view(args, settings, ctas_or_view_selection, cmd_sequence):
+    assert ctas_or_view_selection in ("CTAS", "VIEW")
 
     dw = etl.env_value(settings("data_warehouse", "etl_access"))
     table_owner = settings("data_warehouse", "owner")
@@ -33,7 +33,7 @@ def update_table_or_view(args, settings, select_ctas_or_view, cmd_sequence):
                 with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
                     table_design = etl.load.load_table_design(content, table_name)
                 # Pick either CTAS or VIEW based on parameter:
-                if table_design["source_name"] != select_ctas_or_view:
+                if table_design["source_name"] != ctas_or_view_selection:
                     continue
                 with closing(etl.s3.get_file_content(bucket_name, sql_file)) as content:
                     query = content.read().decode()

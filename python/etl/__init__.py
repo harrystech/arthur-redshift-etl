@@ -16,7 +16,7 @@ def env_value(name: str) -> str:
     return os.environ[name]
 
 
-class TableName(namedtuple('_TableName', ['schema', 'table'])):
+class TableName(namedtuple("_TableName", ["schema", "table"])):
     """
     Class to automatically create delimited identifiers for table.
 
@@ -33,7 +33,7 @@ class TableName(namedtuple('_TableName', ['schema', 'table'])):
         return '"{0}"."{1}"'.format(*self)
 
 
-class TableNamePattern(namedtuple('_TableNamePattern', ['schema', 'table'])):
+class TableNamePattern(namedtuple("_TableNamePattern", ["schema", "table"])):
     """
     Split pattern into schema and table pattern.
     (1) If pattern is empty (None), then both, schema and table, are None.
@@ -90,8 +90,11 @@ class TableNamePattern(namedtuple('_TableNamePattern', ['schema', 'table'])):
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
 
-class ColumnDefinition(namedtuple('_ColumnDefinition',
-                                  ['name', 'type', 'sql_type', 'source_sql_type', 'expression', 'not_null'])):
+class ColumnDefinition(namedtuple("_ColumnDefinition",
+                                  ["name",  # always
+                                   "type", "sql_type",  # always for tables
+                                   "source_sql_type", "expression", "not_null", "references"  # optional
+                                   ])):
     """
     Wrapper for attributes ... describes columns by name, type (for Avro), sql_type.
     """

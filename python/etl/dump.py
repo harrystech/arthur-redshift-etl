@@ -203,12 +203,17 @@ def save_table_design(table_design, table_name, output_dir, dry_run=False):
 
 def create_copy_statement(table_design, source_table_name, row_limit=None):
     """
-    Assemble COPY statement that will extract attributes with their new types
+    Assemble COPY statement that will extract attributes with their new types.
+
+    If there's an expression, then it needs to cast it to the correct column
+    type. Whether there's an expression or just a name the resulting column is always
+    called out delimited.
     """
     select_column = []
     for column in table_design["columns"]:
-        # This is either an expression with cast or function or an as-is. Either way, make sure name is delimited.
-        if column.get("expression"):
+        if column.get("skipped", False):
+            continue
+        elif column.get("expression"):
             select_column.append(column["expression"] + ' AS "%s"' % column["name"])
         else:
             select_column.append('"%s"' % column["name"])

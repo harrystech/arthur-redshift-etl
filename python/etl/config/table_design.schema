@@ -26,6 +26,29 @@
                 "double",
                 "string"
             ]
+        },
+        "avro_type_with_null": {
+            "type": "array",
+            "items": [
+                { "enum": [ "null" ] },
+                { "$ref": "#/definitions/avro_type" }
+            ],
+            "additionalItems": false
+        },
+        "compression_encoding": {
+            "enum": [
+                "raw",
+                "bytedict",
+                "delta",
+                "delta32k",
+                "lzo",
+                "mostly8",
+                "mostly16",
+                "mostly32",
+                "runlength",
+                "text255",
+                "text32k"
+            ]
         }
     },
     "type" : "object",
@@ -54,32 +77,18 @@
                             "type": {
                                 "oneOf": [
                                     { "$ref": "#/definitions/avro_type" },
-                                    {
-                                        "type": "array",
-                                        "items": [
-                                            { "enum": [ "null" ] },
-                                            { "$ref": "#/definitions/avro_type" }
-                                        ],
-                                        "additionalItems": false
-                                    }
+                                    { "$ref": "#/definitions/avro_type_with_null" }
                                 ]
                             },
                             "sql_type": { "$ref": "#/definitions/identifier" },
                             "source_sql_type": { "$ref": "#/definitions/identifier" },
                             "expression": { "$ref": "#/definitions/expression" },
-                            "encoding": {
-                                "enum": [
-                                    "raw",
-                                    "bytedict",
-                                    "delta",
-                                    "delta32k",
-                                    "lzo",
-                                    "mostly8",
-                                    "mostly16",
-                                    "mostly32",
-                                    "runlength",
-                                    "text255",
-                                    "text32k"
+                            "encoding": { "$ref": "#/definitions/compression_encoding" },
+                            "references": {
+                                "type": "array",
+                                "items": [
+                                    { "$ref": "#/definitions/identifier" },
+                                    { "$ref": "#/definitions/column_list" }
                                 ]
                             },
                             "not_null": { "type": "boolean" },
@@ -91,7 +100,8 @@
                     {
                         "type": "object",
                         "properties": {
-                            "name": { "$ref": "#/definitions/identifier" }
+                            "name": { "$ref": "#/definitions/identifier" },
+                            "skipped": { "type": "boolean" }
                         },
                         "required": [ "name" ],
                         "additionalProperties": false

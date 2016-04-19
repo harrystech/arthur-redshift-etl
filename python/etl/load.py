@@ -32,21 +32,29 @@ def validate_table_design(table_design, table_name):
     Phase 2 is built on specific rules that I couldn't figure out how
     to run inside json-schema.
     """
+    logger = logging.getLogger(__name__)
     try:
         table_design_schema = etl.config.load_json("table_design.schema")
     except (jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logging.getLogger(__name__).critical("Internal Error: Schema in 'table_design.schema' is not valid")
+        logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
         raise
     try:
+        logger.debug("Trying to validate table design for '%s'", table_name.identifier)
         jsonschema.validate(table_design, table_design_schema)
     except (jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logging.getLogger(__name__).error("Failed to validate table design for '%s'", table_name.identifier)
+        logger.error("Failed to validate table design for '%s'", table_name.identifier)
         raise
     # TODO Need more rules?
     if table_design["name"] != table_name.identifier:
         raise ValueError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
-    if table_design["source_name"] != "VIEW":
+    if table_design["source_name"] == "VIEW":
         for column in table_design["columns"]:
+            if column.get("skipped", False):
+                raise ValueError("columns may not be skipped in views")
+    else:
+        for column in table_design["columns"]:
+            if column.get("skipped", False):
+                continue
             if column.get("not_null", False):
                 # NOT NULL columns -- may not have "null" as type
                 if isinstance(column["type"], list) or column["type"] == "null":
@@ -119,13 +127,21 @@ def assemble_table_ddl(table_design, table_name, use_identity=False, is_temp=Fal
     """
     s_columns = []
     for column in table_design["columns"]:
+        if column.get("skipped", False):
+            continue
         f_column = '"{name}" {sql_type}'
-        if column.get('identity', False) and use_identity:
+        if column.get("identity", False) and use_identity:
             f_column += " IDENTITY(1, 1)"
         if "encoding" in column:
             f_column += " ENCODE {encoding}"
-        if column.get('not_null', False):
+        if column.get("not_null", False):
             f_column += " NOT NULL"
+        if column.get("references") and not is_temp:
+            # Split column constraint into the table and columns that are referenced
+            foreign_table, foreign_columns = column["references"]
+            column.update({"foreign_table": foreign_table,
+                           "foreign_column": format_column_list(foreign_columns)})
+            f_column += " REFERENCES {foreign_table} ( {foreign_column} )"
         s_columns.append(f_column.format(**column))
     s_constraints = _build_constraints(table_design, exclude_foreign_keys=is_temp)
     s_attributes = _build_attributes(table_design, exclude_distribution=is_temp)
@@ -172,7 +188,7 @@ def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_vie
     if drop_view:
         logger.info("Dropping view '%s'", view_name.identifier)
         etl.pg.execute(conn, "DROP VIEW IF EXISTS {} CASCADE".format(view_name))
-    # TODO Make sure ownership is ETL owner
+    # TODO Make sure ownership is ETL owner!
     s_columns = format_column_list(column["name"] for column in table_design["columns"])
     ddl_stmt = """CREATE OR REPLACE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, query_stmt)
     if dry_run:
@@ -238,7 +254,7 @@ def copy_data(conn, credentials, table_name, csv_file, dry_run=False):
                                               WHERE session = pg_backend_pid()
                                               ORDER BY starttime DESC
                                               LIMIT 1""")
-                values = '  \n'.join(["{}: {}".format(k, row[k]) for row in info for k in row.keys()])
+                values = "  \n".join(["{}: {}".format(k, row[k]) for row in info for k in row.keys()])
                 logger.info("Information from stl_load_errors:\n  %s", values)
             raise
 
@@ -250,7 +266,7 @@ def assemble_ctas_ddl(table_design, temp_name, query_stmt):
     """
     s_columns = format_column_list(column["name"]
                                    for column in table_design["columns"]
-                                   if not column.get("identity", False))
+                                   if not (column.get("identity", False) or column.get("skipped", False)))
     # TODO Measure whether adding attributes helps or hurts performance.
     s_attributes = _build_attributes(table_design, exclude_distribution=True)
     return "CREATE TEMP TABLE {} (\n{})\n{}\nAS\n".format(temp_name, s_columns,
@@ -263,11 +279,15 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
 
     If there is an identity column involved, also add the n/a row with key=0.
     """
-    s_columns = format_column_list(column["name"] for column in table_design["columns"])
+    s_columns = format_column_list(column["name"]
+                                   for column in table_design["columns"]
+                                   if not column.get("skipped", False))
     if add_row_for_key_0:
         na_values_row = []
         for column in table_design["columns"]:
-            if column.get("identity", False):
+            if column.get("skipped", False):
+                continue
+            elif column.get("identity", False):
                 na_values_row.append(0)
             else:
                 if not column.get("not_null", False):
@@ -315,7 +335,7 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, ad
         ddl_temp_stmt = assemble_table_ddl(table_design, temp_name, use_identity=True, is_temp=True)
         s_columns = format_column_list(column["name"]
                                        for column in table_design["columns"]
-                                       if not column.get("identity", False))
+                                       if not (column.get("identity", False) or column.get("skipped", False)))
         dml_temp_stmt = "INSERT INTO {} (\n{}) (\n{})".format(temp_name, s_columns, query_stmt)
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_key_0=True)
     else:
