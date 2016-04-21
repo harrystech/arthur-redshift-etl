@@ -26,7 +26,7 @@ def copy_to_s3(args, settings):
     """
     bucket_name = settings("s3", "bucket_name")
     local_dirs = [args.table_design_dir, args.data_dir]
-    selection = etl.TableNamePattern(args.table)
+    selection = etl.TableNamePatterns.from_list(args.table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
     tables_with_files = etl.s3.find_local_files(local_dirs, schemas, selection)
 

@@ -18,9 +18,9 @@ def update_table_or_view(args, settings, ctas_or_view_selection, cmd_sequence):
 
     schemas = [source["name"] for source in settings("sources")]
     if "view" in args:
-        selection = etl.TableNamePattern(args.view)
+        selection = etl.TableNamePatterns.from_list(args.view)
     else:
-        selection = etl.TableNamePattern(args.table)
+        selection = etl.TableNamePatterns.from_list(args.table)
     files_in_s3 = etl.s3.find_files(bucket_name, args.prefix, schemas, selection)
     tables_with_queries = [(table_name, table_files["Design"], table_files["SQL"])
                            for table_name, table_files in files_in_s3

@@ -86,7 +86,7 @@ def dump_source_to_s3(source, table_design_files, type_maps, design_dir, data_di
 
 def dump_to_s3(args, settings):
     bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePattern(args.table)
+    selection = etl.TableNamePatterns.from_list(args.table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
     local_files = etl.s3.find_local_files([args.table_design_dir], schemas, selection)
 
@@ -107,6 +107,7 @@ def dump_to_s3(args, settings):
             table_design_files = dict((table_name, table_files["Design"])
                                       for table_name, table_files in local_files
                                       if table_name.schema == source_name)
+            logging.debug("Submitting job to download from '%s'", source_name)
             pool.submit(dump_source_to_s3, source, table_design_files, settings("type_maps"),
                         args.table_design_dir, args.data_dir, bucket_name, args.prefix, selection,
                         dry_run=args.dry_run, limit=args.limit, overwrite=args.force)
@@ -133,7 +134,7 @@ def build_argument_parser():
                                             "table"], description=__doc__)
     parser.add_argument("-l", "--limit", help="limit number of rows copied (useful for testing)",
                         default=None, type=check_positive_int, action="store")
-    parser.add_argument("-j", "--jobs", help="Number of parallel processes (default: %(default)s)", type=int, default=4)
+    parser.add_argument("-j", "--jobs", help="Number of parallel processes (default: %(default)s)", type=int, default=1)
     return parser
 
 

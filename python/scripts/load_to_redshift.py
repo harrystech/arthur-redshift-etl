@@ -25,7 +25,7 @@ def load_to_redshift(args, settings):
     etl_group = settings("data_warehouse", "groups", "etl")
     user_group = settings("data_warehouse", "groups", "users")
     bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePattern(args.table)
+    selection = etl.TableNamePatterns.from_list(args.table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
     files_in_s3 = etl.s3.find_files(bucket_name, args.prefix, schemas, selection)
     tables_with_data = [(table_name, table_files["Design"], table_files["Data"])

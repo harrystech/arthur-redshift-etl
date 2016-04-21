@@ -33,60 +33,151 @@ class TableName(namedtuple("_TableName", ["schema", "table"])):
         return '"{0}"."{1}"'.format(*self)
 
 
-class TableNamePattern(namedtuple("_TableNamePattern", ["schema", "table"])):
-    """
-    Split pattern into schema and table pattern.
-    (1) If pattern is empty (None), then both, schema and table, are None.
-    (2) If pattern is a single identifier (not a pattern), then schema is
-    set to that word and table is None.  (This allows to select a single
-    upstream source.)
-    (3) If pattern has a '.', the pattern are the parts to the left and right
-    of '.'.  Again, schema may not be a pattern.
-    (4) Everything else is an error
-
-    >>> tnp = TableNamePattern(None)
-    >>> tnp.schema, tnp.table
-    (None, None)
-    >>> tnp = TableNamePattern("www")
-    >>> tnp.schema, tnp.table
-    ('www', None)
-    >>> tnp = TableNamePattern("www.orders*")
-    >>> tnp.schema, tnp.table
-    ('www', 'orders*')
-    >>> tnp = TableNamePattern("w?w")
-    Traceback (most recent call last):
-    ValueError: Schema must be a literal, not pattern
-    >>> tnp = TableNamePattern("w*.orders")
-    Traceback (most recent call last):
-    ValueError: Schema must be a literal, not pattern
-    """
+class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
     __slots__ = ()
 
-    def __new__(cls, pattern):
-        if pattern is None:
-            return super(TableNamePattern, cls).__new__(cls, None, None)
-        elif '.' not in pattern:
-            if '*' in pattern or '?' in pattern:
-                raise ValueError("Schema must be a literal, not pattern")
-            return super(TableNamePattern, cls).__new__(cls, pattern, None)
+    @classmethod
+    def from_list(cls, patterns):
+        """
+        Split pattern into (list of) schemas and (list of) table patterns.
+
+        (1) If pattern list is empty ([]), then schemas is [] and table_patterns
+        is [].  This will match anything.
+        (2) If any pattern has a '.', then the left hand side is the schema (and
+        must be the same for all patterns) and the right hand side is a pattern.
+        This will match any table that matches any of the patterns in the
+        selected schema.
+        (3) If pattern list is list of single identifiers (no patterns, no '.'),
+        then schemas is set to that list and table_patterns is [].  This allows
+        to select multiple upstream sources and matches every table within the
+        corresponding schemas.
+        (4) Everything else is an error.
+
+        NB. The two lists, schemas and table_patterns, will never both have more
+        than one element.
+
+        You should use the convenience methods (match_schema, match_table) in
+        order not to have to know these nuances.  Just feed it the argument
+        list from a command line option with nargs='*' or nargs='+'.
+        To facilitate case-insensitive matching, patterns are stored in their
+        lower-case form.
+
+        >>> tnp = TableNamePatterns.from_list([])
+        >>> str(tnp)
+        '*.*'
+        >>> tnp.schemas, tnp.table_patterns
+        ([], [])
+        >>> tnp = TableNamePatterns.from_list(["www"])
+        >>> str(tnp)
+        'www.*'
+        >>> tnp.schemas, tnp.table_patterns
+        (['www'], [])
+        >>> tnp = TableNamePatterns.from_list(["www.orders*"])
+        >>> str(tnp)
+        'www.orders*'
+        >>> tnp.schemas, tnp.table_patterns
+        (['www'], ['orders*'])
+        >>> tnp = TableNamePatterns.from_list(["www.Users", "www.Products"])
+        >>> str(tnp)
+        'www.[users,products]'
+        >>> tnp.schemas, tnp.table_patterns
+        (['www'], ['users', 'products'])
+        >>> tnp = TableNamePatterns.from_list(["www", "finance"])
+        >>> str(tnp)
+        '[www.*,finance.*]'
+        >>> tnp.schemas, tnp.table_patterns
+        (['www', 'finance'], [])
+        >>> tnp = TableNamePatterns.from_list(["w?w"])
+        Traceback (most recent call last):
+        ValueError: Schema must be a literal, not pattern
+        >>> tnp = TableNamePatterns.from_list(["w*.orders"])
+        Traceback (most recent call last):
+        ValueError: Schema must be a literal, not pattern
+        >>> tnp = TableNamePatterns.from_list(["www.orders", "finance.budget"])
+        Traceback (most recent call last):
+        ValueError: Schema must be same
+        >>> tnp = TableNamePatterns.from_list(["www.orders", "www"])
+        Traceback (most recent call last):
+        ValueError: Cannot mix schema and table selection
+        >>> tnp = TableNamePatterns.from_list("www.orders")
+        Traceback (most recent call last):
+        ValueError: Patterns must be a list
+        """
+        if not isinstance(patterns, list):
+            raise ValueError("Patterns must be a list")
+        elif len(patterns) == 0:
+            return cls([], [])
+        elif all('.' in pattern for pattern in patterns):
+            selected_schema = None
+            table_patterns = []
+            for schema, table in [pattern.lower().split('.', 1) for pattern in patterns]:
+                if '*' in schema or '?' in schema:
+                    raise ValueError("Schema must be a literal, not pattern")
+                if selected_schema is None:
+                    selected_schema = schema
+                elif selected_schema != schema:
+                    raise ValueError("Schema must be same")
+                table_patterns.append(table)
+            return cls([selected_schema], table_patterns)
+        elif any('.' in pattern for pattern in patterns):
+            raise ValueError("Cannot mix schema and table selection")
         else:
-            schema, table = pattern.split('.', 1)
-            if '*' in schema or '?' in schema:
+            if any('*' in schema or '?' in schema for schema in patterns):
                 raise ValueError("Schema must be a literal, not pattern")
-            return super(TableNamePattern, cls).__new__(cls, schema, table)
+            return cls([schema.lower() for schema in patterns], [])
 
     def __str__(self):
-        schema = '*' if self.schema is None else self.schema
-        table = '*' if self.table is None else self.table
-        return "{}.{}".format(schema, table)
+        if len(self.schemas) == 0:
+            return '*.*'
+        elif len(self.schemas) > 1:
+            return '[{}]'.format(','.join('{}.*'.format(schema) for schema in self.schemas))
+        elif len(self.table_patterns) == 0:
+            return "{}.*".format(self.schemas[0])
+        elif len(self.table_patterns) == 1:
+            return "{}.{}".format(self.schemas[0], self.table_patterns[0])
+        else:
+            return "{}.[{}]".format(self.schemas[0], ','.join(self.table_patterns))
 
     def match_schema(self, schema):
-        return self.schema is None or schema == self.schema
+        """
+        Match against schema.
+
+        >>> tnp = TableNamePatterns.from_list(["www.orders", "www.products"])
+        >>> tnp.match_schema("www")
+        True
+        >>> tnp.match_schema("finance")
+        False
+        """
+        return not self.schemas or schema.lower() in self.schemas
 
     def match_table(self, table):
-        return self.table is None or fnmatch(table, self.table)
+        """
+        Pattern match against table.
+
+        >>> tnp = TableNamePatterns.from_list(["www.order?", "www.products"])
+        >>> tnp.match_table("orders")
+        True
+        >>> tnp.match_schema("users")
+        False
+        """
+        name = table.lower()
+        return not self.table_patterns or any(fnmatch(name, pattern) for pattern in self.table_patterns)
 
     def match(self, table_name):
+        """
+        Match against schema and pattern match against table.
+
+        >>> tnp = TableNamePatterns.from_list(["www.orders", "www.prod*"])
+        >>> name = TableName("www", "products")
+        >>> tnp.match(name)
+        True
+        >>> name = TableName("finance", "products")
+        >>> tnp.match(name)
+        False
+        >>> name = TableName("www", "users")
+        >>> tnp.match(name)
+        False
+        """
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
 

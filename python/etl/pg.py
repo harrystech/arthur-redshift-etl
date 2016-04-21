@@ -34,11 +34,11 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
     logger = logging.getLogger(__name__)
     # Extract connection value from JDBC-style connection string. (Some people, when confronted with a problem,
     # think "I know, I'll use regular expressions." Now they have two problems.)
-    dsn_re = re.compile(r"""postgres(?:ql)?://  # be nice and accept either connection type
+    dsn_re = re.compile(r"""(?:jdbc:)?(redshift|postgresql|postgres)://  # be nice and accept either connection type
                             (?P<user>\w+)(?::(?P<password>[-\w]+))?@  # user information with optional password
                             (?P<host>[-\w.]+)(:?:(?P<port>\d+))?/  # host and optional port information
                             (?P<database>\w+)  # database (and not dbname)
-                            (?:\?sslmode=(?P<sslmode>\w+))?""",  # sslmode is the only option
+                            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option
                         re.VERBOSE)
 
     dsn_match = dsn_re.match(os.path.expandvars(dsn_string))

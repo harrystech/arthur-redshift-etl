@@ -51,9 +51,9 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
     if "force" in options:
         parser.add_argument("-f", "--force", help="allow overwriting files", default=False, action="store_true")
     if "table" in options:
-        parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='?')
+        parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='*')
     if "view" in options:
-        parser.add_argument("view", help="glob pattern or identifier to select target view(s)", nargs='?')
+        parser.add_argument("view", help="glob pattern or identifier to select target view(s)", nargs='*')
     if "username" in options:
         parser.add_argument("username", help="name for new user")
     if "password" in options:
