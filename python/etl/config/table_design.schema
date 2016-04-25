@@ -17,6 +17,12 @@
             "minItems": 1,
             "uniqueItems": true
         },
+        "one_column_as_list": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/identifier" },
+            "minItems": 1,
+            "maxItems": 1
+        },
         "avro_type": {
             "enum": [
                 "boolean",
@@ -88,7 +94,7 @@
                                 "type": "array",
                                 "items": [
                                     { "$ref": "#/definitions/identifier" },
-                                    { "$ref": "#/definitions/column_list" }
+                                    { "$ref": "#/definitions/one_column_as_list" }
                                 ]
                             },
                             "not_null": { "type": "boolean" },
@@ -116,12 +122,13 @@
             "properties": {
                 "primary_key": { "$ref": "#/definitions/column_list" },
                 "natural_key": { "$ref": "#/definitions/column_list" },
+                "surrogate_key": { "$ref": "#/definitions/one_column_as_list" },
                 "foreign_key": {
                     "type": "array",
                     "items": [
                         { "$ref": "#/definitions/column_list" },
                         { "$ref": "#/definitions/identifier" },
-                        { "$ref": "#/definitions/column_list" }
+                        { "$ref": "#/definitions/one_column_as_list" }
                     ],
                     "additionalItems": false
                 },
@@ -136,7 +143,7 @@
                     "oneOf": [
                         { "enum": [ "all" ] },
                         { "enum": [ "even" ] },
-                        { "$ref": "#/definitions/column_list" }
+                        { "$ref": "#/definitions/one_column_as_list" }
                     ]
                 },
                 "compound_sort": { "$ref": "#/definitions/column_list" },

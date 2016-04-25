@@ -29,17 +29,18 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
                                 required=True)
         else:
             parser.add_argument("-c", "--config",
-                                help="path to configuration file (default: DATA_WAREHOUSE_CONFIG=%(default)s)",
+                                help="path to configuration file (using DATA_WAREHOUSE_CONFIG=%(default)s)",
                                 default=default_config)
     if "prefix" in options:
         parser.add_argument("-p", "--prefix", help="prefix in S3 bucket (default is user name: '%(default)s')",
                             default=getpass.getuser())
     if "data-dir" in options:
-        parser.add_argument("-o", "--data-dir", help="path to data directory (default: '%(default)s')", default="data")
+        parser.add_argument("-o", "--data-dir", help="path to data directory (default: '%(default)s')",
+                            default="./data")
     if "table-design-dir" in options:
         parser.add_argument("-s", "--table-design-dir",
                             help="path to directory with table design files (default: '%(default)s')",
-                            default="schemas")
+                            default="./schemas")
     if "drop-table" in options:
         parser.add_argument("-d", "--drop-table",
                             help="drop table to force update of table definition", default=False, action="store_true")

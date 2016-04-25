@@ -50,7 +50,7 @@ def dump_source_to_s3(source, table_design_files, type_maps, design_dir, data_di
     output_dir = normalize_and_create(os.path.join(data_dir, source_name))
     source_prefix = "{}/{}".format(prefix, source_name)
     table_designs = {}
-    # Note that psycopg2 will be able to deal with only one copy at a time.
+    # Note that psycopg2 is able to deal with only one copy at a time.
     single_copy_at_a_time = threading.BoundedSemaphore(1)
 
     logging.info("Connecting to source database '%s'", source_name)
@@ -61,6 +61,7 @@ def dump_source_to_s3(source, table_design_files, type_maps, design_dir, data_di
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             for source_table_name in sorted(columns_by_table):
                 table_name = etl.TableName(source_name, source_table_name.table)
+                # XXX Validate current list of columns against table design
                 if table_name in table_design_files:
                     design_file = table_design_files[table_name]
                     with open(design_file) as f:

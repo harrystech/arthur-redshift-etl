@@ -65,6 +65,12 @@ def validate_table_design(table_design, table_name):
                     raise ValueError('"null" missing as type for null-able column')
                 if column.get("identity", False):
                     raise ValueError("identity column must be set to not null")
+        identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
+        if len(identity_columns) > 1:
+            raise ValueError("only one column should have identity")
+        surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
+        if len(surrogate_keys) and not surrogate_keys == identity_columns:
+            raise ValueError("surrogate key must be identity")
     return table_design
 
 
@@ -78,8 +84,7 @@ def format_column_list(columns):
 def _build_constraints(table_design, exclude_foreign_keys=False):
     constraints = table_design.get("constraints", {})
     ddl_constraints = []
-    # TODO add surrogate key as an additional constraint name?
-    for pk in ("primary_key",):
+    for pk in ("primary_key", "surrogate_key"):
         if pk in constraints:
             ddl_constraints.append('PRIMARY KEY ( {} )'.format(format_column_list(constraints[pk])))
     for nk in ("unique", "natural_key"):
