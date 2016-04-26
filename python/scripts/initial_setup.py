@@ -1,14 +1,14 @@
 #! /usr/bin/env python3
 
 """
-Create groups, users, schemas in database.
+Create groups, users, schemas in the data warehouse.
 
-Assumes that the database has already been created.  Drops PUBLIC schema.
-Requires passing the password for the new ETL user on the command line
-or when prompted.
+Assumes that the database has already been created in the data warehouse.
+Drops PUBLIC schema. Requires passing the password for the new ETL user on
+the command line or entering it when prompted.
 
-If you need to re-run this (after changing the available schemas), you
-should skip the user and group creation.
+If you need to re-run this (after adding available schemas in the
+configuration), you should skip the user and group creation.
 """
 
 from contextlib import closing
@@ -56,14 +56,14 @@ def initial_setup(args, settings):
 
 def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "password"], description=__doc__)
-    parser.add_argument("-s", "--skip-user-creation", help="Skip user and groups, only create schemas",
+    parser.add_argument("-k", "--skip-user-creation", help="Skip user and groups, only create schemas",
                         default=False, action="store_true")
     return parser
 
 
 if __name__ == "__main__":
     main_args = build_argument_parser().parse_args()
-    etl.config.configure_logging(main_args.verbose)
+    etl.config.configure_logging(main_args.log_level)
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None and not main_args.skip_user_creation:
         main_args.password = getpass.getpass("Password for %s: " % main_settings("data_warehouse", "owner"))

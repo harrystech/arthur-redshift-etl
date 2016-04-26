@@ -26,9 +26,6 @@ import etl.s3
 # List of options for COPY statement that dictates CSV format
 CSV_WRITE_FORMAT = "FORMAT CSV, HEADER true, NULL '\\N'"
 
-# How to create an "id" column that may be a primary key if none exists in the table
-ID_EXPRESSION = "row_number() OVER()"
-
 # Total number of header lines written
 N_HEADER_LINES = 3
 
@@ -108,18 +105,11 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
     expression information (where the expression within a SELECT will return
     the value of the attribute with the "new" type), serialization type, and
     not null constraint (boolean).
-
-    If the original table definition is missing an "id" column, then one is
-    added in the target definition.  The type of the original column is set
-    to "none" in this case.
     """
     new_columns = []
-    found_id = False
     for column in columns:
         attribute_name = column["attribute"]
         attribute_type = column["attribute_type"]
-        if attribute_name == "id":
-            found_id = True
         for re_att_type, avro_type in as_is_att_type.items():
             if re.match('^' + re_att_type + '$', attribute_type):
                 # Keep the type, use no expression, and pick Avro type from map.
@@ -144,14 +134,8 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
                                                 # Add "null" to Avro type if column may have nulls.
                                                 type=(mapping[2] if column["not_null_constraint"]
                                                       else ["null", mapping[2]]),
-                                                not_null=column["not_null_constraint"]))
-    if not found_id:
-        new_columns.insert(0, etl.ColumnDefinition(name="id",
-                                                   source_sql_type="none",
-                                                   sql_type="bigint",
-                                                   expression=ID_EXPRESSION,
-                                                   type="long",
-                                                   not_null=True))
+                                                not_null=column["not_null_constraint"],
+                                                references=None))
     return new_columns
 
 
@@ -162,13 +146,11 @@ def create_table_design(source_name, source_table_name, table_name, columns):
     table_design = {
         "name": "%s" % table_name.identifier,
         "source_name": "%s.%s" % (source_name, source_table_name.identifier),
-        "columns": [column._asdict() for column in columns],
-        "constraints": {"primary_key": ["id"]},
-        "attributes": {
-            "distribution": "even",
-            "compound_sort": ["id"]
-        }
+        "columns": [column._asdict() for column in columns]
     }
+    # TODO Extract actual primary keys from pg_catalog
+    if any(column.name == "id" for column in columns):
+        table_design["constraints"] = {"primary_key": ["id"]}
     # Remove empty expressions (since columns can be selected by name) and default settings
     for column in table_design["columns"]:
         if column["expression"] is None:
@@ -177,22 +159,26 @@ def create_table_design(source_name, source_table_name, table_name, columns):
             del column["source_sql_type"]
         if not column["not_null"]:
             del column["not_null"]
+        if not column["references"]:
+            del column["references"]
     # Make sure schema and code to create table design files is in sync.
+    logging.getLogger(__name__).debug("Trying to validate new table design for '%s'", table_name.identifier)
     return etl.load.validate_table_design(table_design, table_name)
 
 
-def save_table_design(table_design, table_name, output_dir, dry_run=False):
+def save_table_design(table_design, source_table_name, output_dir, dry_run=False):
     """
     Write new table design file to local disk.
     """
-    filename = os.path.join(output_dir, "{}-{}.yaml".format(table_name.schema, table_name.table))
+    table = table_design["name"]
+    filename = os.path.join(output_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
     logger = logging.getLogger(__name__)
     if dry_run:
-        logger.info("Dry-run: Skipping writing new table design file for '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping writing new table design file for '%s'", table)
     elif os.path.exists(filename):
-        logger.warning("Skipping new table design for '%s' since '%s' already exists", table_name.identifier, filename)
+        logger.warning("Skipping new table design for '%s' since '%s' already exists", table, filename)
     else:
-        logger.info("Writing new table design file for '%s' to '%s'", table_name.identifier, filename)
+        logger.info("Writing new table design file for '%s' to '%s'", table, filename)
         with open(filename, 'w') as o:
             # JSON pretty printing is prettier than YAML printing.
             json.dump(table_design, o, indent="    ", sort_keys=True)

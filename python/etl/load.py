@@ -20,6 +20,7 @@ def load_table_design(stream, table_name):
     validated before being returned.
     """
     table_design = yaml.safe_load(stream)
+    logging.getLogger(__name__).debug("Trying to validate table design for '%s' from stream", table_name.identifier)
     return validate_table_design(table_design, table_name)
 
 
@@ -39,7 +40,6 @@ def validate_table_design(table_design, table_name):
         logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
         raise
     try:
-        logger.debug("Trying to validate table design for '%s'", table_name.identifier)
         jsonschema.validate(table_design, table_design_schema)
     except (jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
         logger.error("Failed to validate table design for '%s'", table_name.identifier)
@@ -72,6 +72,27 @@ def validate_table_design(table_design, table_name):
         if len(surrogate_keys) and not surrogate_keys == identity_columns:
             raise ValueError("surrogate key must be identity")
     return table_design
+
+
+def compare_columns(live_design, file_design):
+    logger = logging.getLogger(__name__)
+    live_columns = {column["name"] for column in live_design["columns"]}
+    file_columns = {column["name"] for column in file_design["columns"]}
+    # TODO define policy to declare columns "ETL-only"
+    etl_columns = {name for name in file_columns if name.startswith("etl__")}
+    logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
+                 file_design["name"], len(live_columns), len(file_columns), len(etl_columns))
+    not_accounted_for_on_file = live_columns.difference(file_columns)
+    described_but_not_live = file_columns.difference(live_columns).difference(etl_columns)
+    if not_accounted_for_on_file:
+        logger.warning("New columns in '%s' that are not in existing table design: %s",
+                       file_design["name"], sorted(not_accounted_for_on_file))
+        indices = dict((name, i) for i, name in enumerate(column["name"] for column in live_design["columns"]))
+        for name in not_accounted_for_on_file:
+            logger.debug("New column %s.%s: %s", live_design["name"], name,
+                         json.dumps(live_design["columns"][indices[name]], indent="    ", sort_keys=True))
+    if described_but_not_live:
+        logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
 
 
 def format_column_list(columns):
@@ -224,30 +245,33 @@ def read_aws_credentials(from_file="~/.aws/credentials"):
     return {'access_key_id': access_key_id, 'secret_access_key': secret_access_key}
 
 
-def copy_data(conn, credentials, table_name, csv_file, dry_run=False):
+def copy_data(conn, credentials, table_name, filename, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
+
+    If filename ends in ".manifest" then it is assumed to be a manifest.
 
     Tables can only be truncated by their owners, so this will delete all rows
     instead of truncating the tables.
     """
     access = "aws_access_key_id={access_key_id};aws_secret_access_key={secret_access_key}".format(**credentials)
     logger = logging.getLogger(__name__)
+    with_manifest = " MANIFEST" if filename.endswith(".manifest") else ""
     if dry_run:
-        logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, csv_file)
+        logger.info("Dry-run: Skipping copy for '%s' from%s '%s'", table_name.identifier, with_manifest, filename)
     else:
-        logger.info("Copying data into '%s' from '%s'", table_name.identifier, csv_file)
+        logger.info("Copying data into '%s' from%s '%s'", table_name.identifier, with_manifest, filename)
         try:
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             etl.pg.execute(conn, """COPY {}
                                     FROM %s
-                                    CREDENTIALS %s
+                                    CREDENTIALS %s{}
                                     FORMAT AS CSV GZIP IGNOREHEADER {:d}
                                     NULL AS '\\\\N'
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
-                                 """.format(table_name, etl.dump.N_HEADER_LINES), (csv_file, access))
+                                 """.format(table_name, with_manifest, etl.dump.N_HEADER_LINES), (filename, access))
             conn.commit()
         except psycopg2.Error as exc:
             conn.rollback()

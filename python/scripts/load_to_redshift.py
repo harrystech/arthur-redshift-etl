@@ -4,7 +4,7 @@
 Load data into DW tables from S3. Expects for every table a pair of files in S3
 (table design and data).
 
-The data needs to be in a single or in multiple CSV formatted and compressed file(s).
+The data needs to be in a single or in multiple CSV-formatted and compressed file(s).
 """
 
 from contextlib import closing
@@ -47,8 +47,11 @@ def load_to_redshift(args, settings):
                     etl.load.create_table(conn, table_design, table_name, table_owner,
                                           drop_table=args.drop_table, dry_run=args.dry_run)
                     etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
-                    # TODO Use manifest file with multiple CSV files
-                    csv_file = os.path.commonprefix(csv_files)
+                    if csv_files[0].endswith(".manifest"):
+                        csv_file = csv_files[0]
+                    else:
+                        # Extract basename for partitions in lieu of manifest file.
+                        csv_file = os.path.commonprefix(csv_files)
                     location = "s3://{}/{}".format(bucket_name, csv_file)
                     etl.load.copy_data(conn, credentials, table_name, location, dry_run=args.dry_run)
                     etl.load.analyze(conn, table_name, dry_run=args.dry_run)
@@ -60,7 +63,7 @@ def build_argument_parser():
 
 if __name__ == "__main__":
     main_args = build_argument_parser().parse_args()
-    etl.config.configure_logging(main_args.verbose)
+    etl.config.configure_logging(main_args.log_level)
     main_settings = etl.config.load_settings(main_args.config)
     with etl.pg.measure_elapsed_time():
         load_to_redshift(main_args, main_settings)

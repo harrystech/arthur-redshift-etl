@@ -17,7 +17,12 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(**kwargs)
     package = "redshift-etl v{}".format(pkg_resources.get_distribution("redshift-etl").version)
     parser.add_argument("--version", action="version", version="%(prog)s ({})".format(package))
-    parser.add_argument("-v", "--verbose", action="store_true", help="increase verbosity")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-v", "--verbose", help="increase verbosity",
+                       action="store_const", const="DEBUG", dest="log_level")
+    group.add_argument("-s", "--silent", help="decrease verbosity",
+                       action="store_const", const="WARNING", dest="log_level")
 
     example_password = uuid.uuid4().hex.title()
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
@@ -38,7 +43,7 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
         parser.add_argument("-o", "--data-dir", help="path to data directory (default: '%(default)s')",
                             default="./data")
     if "table-design-dir" in options:
-        parser.add_argument("-s", "--table-design-dir",
+        parser.add_argument("-t", "--table-design-dir",
                             help="path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
     if "drop-table" in options:

@@ -10,13 +10,13 @@ import simplejson as json
 import yaml
 
 
-def configure_logging(verbose: bool=False) -> None:
+def configure_logging(log_level: str=None) -> None:
     """
     Setup logging to go to console and application log file
     """
     config = load_json('logging.json')
-    if verbose:
-        config["handlers"]["console"]["level"] = "DEBUG"
+    if log_level:
+        config["handlers"]["console"]["level"] = log_level
     logging.config.dictConfig(load_json("logging.json"))
     logging.captureWarnings(True)
     logging.getLogger(__name__).info("Starting log for '%s'", sys.argv[0])

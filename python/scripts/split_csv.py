@@ -16,12 +16,15 @@ partitions!
 import argparse
 import concurrent.futures
 import csv
+from datetime import datetime, timedelta
 import gzip
 from itertools import chain
 import logging
 import os.path
 
 MAX_PARTITIONS = 128
+
+UPDATE_INTERVAL = timedelta(seconds=60)
 
 
 def split_csv_file(filename, n, part_name, min_lines=None):
@@ -34,6 +37,7 @@ def split_csv_file(filename, n, part_name, min_lines=None):
     if min_lines is None:
         min_lines = n * n
     try:
+        next_update = datetime.now() + UPDATE_INTERVAL
         with open(filename, "rb") as readable:
             with gzip.open(readable, mode="rt", newline="") as csv_file:
                 preamble = []
@@ -65,6 +69,9 @@ def split_csv_file(filename, n, part_name, min_lines=None):
                                 files.append((g, f))
                                 writers.append(csv.writer(g))
                             writers[index].writerow(row)
+                            if row_number % 1000 == 0 and datetime.now() > next_update:
+                                next_update = datetime.now() + UPDATE_INTERVAL
+                                logging.info("Update: wrote %d lines from '%s'", row_number, filename)
                     finally:
                         for g, f in files:
                             g.close()

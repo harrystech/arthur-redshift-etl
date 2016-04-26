@@ -7,14 +7,15 @@ import re
 import threading
 
 import boto3
+import simplejson as json
 
 from etl import TableName
 
 
 # Split file names into schema name, old schema, table name, and file types:
 TABLE_RE = re.compile(r"""/(?P<schema>\w+)
-                          /(?P<old_schema>\w+)-(?P<table>\w+)[.]
-                          (?P<filetype>yaml|sql|csv(.part_\d+)?.gz)$
+                          /(?P<old_schema>\w+)-(?P<table>\w+)
+                          (?P<filetype>\.yaml|\.sql|\.csv(?:\.part_\d+)?(:?\.gz|\.manifest))$
                       """, re.VERBOSE)
 
 _resources_for_thread = threading.local()
@@ -89,7 +90,8 @@ def find_files_from(iterable, schemas, pattern):
     Return a list of tuples (table name, dictionary of files) with dictionary
     containing {"Design": ..., "Data": ..., "SQL": ...} where
     - the value of "Design" is the name of table design file,
-    - the value of "Data" is a (possibly empty) list of compressed CSV files,
+    - the value of "Data" is a (possibly empty) list of compressed CSV files
+      or a list of a manifest file followed by CSV files,
     - the value of "SQL" is the name of a file with a DML which may be used
       within a DDL (see CTAS) or None if no .sql file was found.
 
@@ -110,12 +112,14 @@ def find_files_from(iterable, schemas, pattern):
                 # Select based on table name from commandline args
                 if not pattern.match(table_name):
                     continue
-                if values['filetype'] == 'yaml':
+                if values['filetype'] == '.yaml':
                     sort_key = (source_index[table_name.schema], values['old_schema'], table_name.table)
                     found[table_name] = {"Design": filename, "Data": [], "SQL": None, "_sort_key": sort_key}
-                elif values['filetype'] == 'sql':
+                elif values['filetype'] == '.sql':
                     sql_files[table_name] = filename
-                elif values['filetype'].startswith('csv'):
+                elif values['filetype'].endswith('.manifest'):
+                    data_files[table_name][:0] = [filename]
+                elif values['filetype'].startswith('.csv'):
                     data_files[table_name].append(filename)
     for table_name in sql_files:
         if table_name in found:
@@ -124,8 +128,8 @@ def find_files_from(iterable, schemas, pattern):
             logger.warning("Found SQL file without table design for '%s'", table_name.identifier)
     for table_name in data_files:
         if table_name in found:
-            if len(data_files[table_name]) > 1:
-                # If there are more than one file, skip the (original) csv.gz file and pick only partitions.
+            # If there are multiple partitions, make sure to skip original file.
+            if any("csv.part_" in name for name in data_files[table_name]):
                 found[table_name]["Data"] = [name for name in data_files[table_name] if not name.endswith(".csv.gz")]
             else:
                 found[table_name]["Data"] = data_files[table_name]
@@ -150,3 +154,29 @@ def get_file_content(bucket_name, object_key):
     logger.debug("Received response from S3: last modified: %s, content length: %s, content type: %s",
                  response['LastModified'], response['ContentLength'], response['ContentType'])
     return response['Body']
+
+
+def write_manifest_file(local_files, bucket_name, prefix, dry_run=False):
+    """
+    Create manifest file to load all the given files (after upload
+    to S3) and return name of new manifest file. If there's only one local
+    file, then skip writing a manifest and return None.
+    """
+    logger = logging.getLogger(__name__)
+    if len(local_files) > 1:
+        parts = os.path.commonprefix(local_files)
+        filename = parts[:parts.rfind(".part_")] + ".manifest"
+        remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in local_files]
+        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+        if dry_run:
+            logger.info("Dry-run: Skipping writing new manifest file to '%s'", filename)
+        else:
+            logger.info("Writing new manifest file for %d file(s) to '%s'", len(local_files), filename)
+            with open(filename, 'wt') as o:
+                json.dump(manifest, o, indent="    ", sort_keys=True)
+                o.write('\n')
+            logger.debug("Done writing '%s'", filename)
+    else:
+        filename = None
+        logger.debug("Only one file ('%s'): skipping manifest file", local_files[0])
+    return filename

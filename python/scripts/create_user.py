@@ -57,14 +57,14 @@ def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "username", "password"], description=__doc__)
     parser.add_argument("-e", "--etl-user", help="Add user also to ETL group", action="store_true")
     parser.add_argument("-a", "--add-user-schema", help="Add new schema, writable for the user", action="store_true")
-    parser.add_argument("-s", "--skip-user-creation", help="Skip new user; only change search path of existing user",
+    parser.add_argument("-k", "--skip-user-creation", help="Skip new user; only change search path of existing user",
                         default=False, action="store_true")
     return parser
 
 
 if __name__ == "__main__":
     main_args = build_argument_parser().parse_args()
-    etl.config.configure_logging(main_args.verbose)
+    etl.config.configure_logging(main_args.log_level)
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None and not main_args.skip_user_creation:
         main_args.password = getpass.getpass("Password for %s: " % main_args.username)

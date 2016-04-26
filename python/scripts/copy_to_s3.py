@@ -31,9 +31,9 @@ def copy_to_s3(args, settings):
     tables_with_files = etl.s3.find_local_files(local_dirs, schemas, selection)
 
     if len(tables_with_files) == 0:
-        logging.error("No applicable files found %s", local_dirs)
+        logging.error("No applicable files found in %s", local_dirs)
     else:
-        logging.info("Found files for %d tables.", len(tables_with_files))
+        logging.info("Found files for %d table(s).", len(tables_with_files))
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             for table_name, files in tables_with_files:
                 for file_type in ("Design", "SQL"):
@@ -46,11 +46,14 @@ def copy_to_s3(args, settings):
                         remote_directory = os.path.basename(os.path.dirname(local_filename))
                         prefix = "{}/{}".format(args.prefix, remote_directory)
                         executor.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
-                if args.with_data:
+                if args.with_data and len(files["Data"]):
                     for local_filename in files["Data"]:
                         remote_directory = os.path.basename(os.path.dirname(local_filename))
                         prefix = "{}/{}".format(args.prefix, remote_directory)
                         executor.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
+                    if not files["Data"][0].endswith(".manifest"):
+                        manifest = etl.s3.write_manifest_file(files["Data"], bucket_name, prefix, dry_run=args.dry_run)
+                        executor.submit(etl.s3.upload_to_s3, manifest, bucket_name, prefix, dry_run=args.dry_run)
         if not args.dry_run:
             logging.info("Uploaded all files to 's3://%s/%s/'", bucket_name, args.prefix)
 
@@ -58,13 +61,13 @@ def copy_to_s3(args, settings):
 def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "prefix", "data-dir", "table-design-dir", "dry-run", "table"],
                                            description=__doc__)
-    parser.add_argument("-w", "--with-data", help="Copy data files", action="store_true")
+    parser.add_argument("-w", "--with-data", help="Copy data files (including manifest)", action="store_true")
     return parser
 
 
 if __name__ == "__main__":
     main_args = build_argument_parser().parse_args()
-    etl.config.configure_logging(main_args.verbose)
+    etl.config.configure_logging(main_args.log_level)
     main_settings = etl.config.load_settings(main_args.config)
     with etl.pg.measure_elapsed_time():
         copy_to_s3(main_args, main_settings)
