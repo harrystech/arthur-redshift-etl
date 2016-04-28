@@ -211,16 +211,16 @@ def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_vie
     of columns changes.
     """
     logger = logging.getLogger(__name__)
-    if drop_view:
-        logger.info("Dropping view '%s'", view_name.identifier)
-        etl.pg.execute(conn, "DROP VIEW IF EXISTS {} CASCADE".format(view_name))
-    # TODO Make sure ownership is ETL owner!
     s_columns = format_column_list(column["name"] for column in table_design["columns"])
     ddl_stmt = """CREATE OR REPLACE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, query_stmt)
     if dry_run:
         logger.info("Dry-run: Skipping creation of view '%s'", view_name.identifier)
         logger.debug("Skipped DDL:\n%s", ddl_stmt)
     else:
+        if drop_view:
+            logger.info("Dropping view '%s'", view_name.identifier)
+            etl.pg.execute(conn, "DROP VIEW IF EXISTS {} CASCADE".format(view_name))
+        # TODO Make sure ownership is ETL owner!
         logger.info("Creating view '%s'", view_name.identifier)
         etl.pg.execute(conn, ddl_stmt)
 
@@ -357,7 +357,8 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, ad
     table in order to have full flexibility how we define the destination table.
     """
     logger = logging.getLogger(__name__)
-    temp_name = '"{}${}"'.format("staging", table_name.table)
+    temp_identifier = "{}${}".format("staging", table_name.table)
+    temp_name = '"{}"'.format(temp_identifier)
     has_any_identity = any([column.get("identity", False) for column in table_design["columns"]])
 
     if has_any_identity:
@@ -376,17 +377,17 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, ad
         plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt, debug=False)
         logger.info("Explain plan for query:\n | %s", "\n | ".join(row[0] for row in plan))
     if dry_run:
-        logger.info("Dry-run: Skipping loading of table '%s' using '%s'", table_name.identifier, temp_name)
-        logger.debug("Skipped DDL for '%s': %s", temp_name, ddl_temp_stmt)
-        logger.debug("Skipped DML for '%s': %s", temp_name, dml_temp_stmt)
+        logger.info("Dry-run: Skipping loading of table '%s' using '%s'", table_name.identifier, temp_identifier)
+        logger.debug("Skipped DDL for '%s': %s", temp_identifier, ddl_temp_stmt)
+        logger.debug("Skipped DML for '%s': %s", temp_identifier, dml_temp_stmt)
         logger.debug("Skipped DML for '%s': %s", table_name.identifier, dml_stmt)
     else:
-        logger.info("Creating temp table '%s'", temp_name)
+        logger.info("Creating temp table '%s'", temp_identifier)
         etl.pg.execute(conn, ddl_temp_stmt)
         if dml_temp_stmt:
-            logger.info("Filling temp table '%s'", temp_name)
+            logger.info("Filling temp table '%s'", temp_identifier)
             etl.pg.execute(conn, dml_temp_stmt)
-        logger.info("Loading table '%s' from temp table '%s'", table_name.identifier, temp_name)
+        logger.info("Loading table '%s' from temp table '%s'", table_name.identifier, temp_identifier)
         etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
         etl.pg.execute(conn, dml_stmt)
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_name))

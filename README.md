@@ -215,8 +215,8 @@ load_to_redshift.py
 #### Upload ETL views to S3 (CTAS)
 
 For tables that are based on views, you need to update the definitions
-separately.  These tables are refered to as *CTAS* after the DDL statement
-that creates them (`CREATE TABLE ... AS SELECT ...`).
+separately.  These derived tables are referred to as *CTAS* after the DDL
+statement that creates them (`CREATE TABLE ... AS SELECT ...`).
 
 ```shell
 copy_to_s3.py -s ~/gits/analytics
@@ -224,8 +224,7 @@ copy_to_s3.py -s ~/gits/analytics
 
 Now you can add tables based on views and queries:
 ```shell
-update_views.py
-update_from_ctas.py
+update_in_redshift.py
 ```
 
 #### Hints
@@ -242,7 +241,7 @@ load_to_redshift.py www
   (also known as a shell pattern).  Examples:
 ```shell
 load_to_redshift.py hyppo.sent_emails
-update_from_ctas.py www.product*
+update_in_redshift.py www.product*
 ```
 
 * And don't forget that the prefix for S3 files is automatically picked on the
@@ -253,7 +252,7 @@ update_from_ctas.py www.product*
 ```shell
 cd ~/gits/analytics
 copy_to_s3.py -p wip analytics.dim_user &&
-update_from_ctas.py -p wip analytics.dim_user
+update_in_redshift.py -p wip analytics.dim_user
 ```
 
 ### Working on the table design

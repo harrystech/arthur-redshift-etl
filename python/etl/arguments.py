@@ -46,20 +46,20 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
         parser.add_argument("-t", "--table-design-dir",
                             help="path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
-    if "drop-table" in options:
+    if "drop" in options:
+        parser.add_argument("-d", "--drop",
+                            help="drop table or view to force update of definition", default=False, action="store_true")
+    elif "drop-table" in options:
         parser.add_argument("-d", "--drop-table",
                             help="drop table to force update of table definition", default=False, action="store_true")
-    if "drop-view" in options:
-        parser.add_argument("-d", "--drop-view",
-                            help="drop view to force update of view definition", default=False, action="store_true")
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not actually copy data", default=False, action="store_true")
     if "force" in options:
         parser.add_argument("-f", "--force", help="allow overwriting files", default=False, action="store_true")
     if "table" in options:
         parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='*')
-    if "view" in options:
-        parser.add_argument("view", help="glob pattern or identifier to select target view(s)", nargs='*')
+    elif "ctas_or_view" in options:
+        parser.add_argument("ctas_or_view", help="glob pattern or identifier to select target(s)", nargs='*')
     if "username" in options:
         parser.add_argument("username", help="name for new user")
     if "password" in options:
