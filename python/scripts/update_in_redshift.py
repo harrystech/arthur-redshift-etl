@@ -68,8 +68,8 @@ def update_ctas_or_views(args, settings):
 def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "prefix", "dry-run", "drop", "ctas_or_view"], description=__doc__)
     parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
-    parser.add_argument("-k", "--skip-views", help="Skip updating views, only reload CTAS", action="store_true")
-    parser.add_argument("-u", "--skip-ctas", help="Skip updating CTAS, only reload views", action="store_true")
+    parser.add_argument("-a", "--skip-views", help="Skip updating views, only reload CTAS", action="store_true")
+    parser.add_argument("-k", "--skip-ctas", help="Skip updating CTAS, only reload views", action="store_true")
     return parser
 
 
