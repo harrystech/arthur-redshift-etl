@@ -4,6 +4,7 @@ import logging
 import os
 import os.path
 import re
+import subprocess
 import threading
 
 import boto3
@@ -83,6 +84,28 @@ def find_local_files(directories, schemas, pattern):
                         yield os.path.join(root, filename)
 
     return find_files_from(list_files(), schemas, pattern)
+
+
+def find_modified_files(schemas, pattern):
+    """
+    Find files that have been modified in your work tree (as identified by git status).
+    For SQL files, the corresponding design file (YAML) is picked up even if the design
+    has not been modified.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Looking for modified files in work tree")
+    # The str() is needed to shut up PyCharm.
+    status = str(subprocess.check_output(['git', 'status', '--porcelain'], universal_newlines=True))
+    modified = {line[3:] for line in status.split('\n') if line.startswith(" M")}
+    design_files = set()
+    for name in modified:
+        path, extension = os.path.splitext(name)
+        if extension == ".sql":
+            if os.path.exists(path + ".yaml"):
+                design_files.add(path + ".yaml")
+    logger.debug("Modified files in work tree: %s", modified)
+    logger.debug("Adding design files as needed: %s", design_files.difference(modified))
+    return find_files_from(modified.union(design_files), schemas, pattern)
 
 
 def find_files_from(iterable, schemas, pattern):

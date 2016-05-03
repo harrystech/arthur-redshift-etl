@@ -97,10 +97,15 @@ def parse_args():
 
 def main(s_input, s_output, n_partitions, n_jobs):
     input_name = os.path.normpath(os.path.expanduser(s_input))
-    input_dir = input_name if os.path.isdir(input_name) else os.path.dirname(input_name)
-    output_dir = os.path.normpath(os.path.expanduser(s_output)) if s_output else input_dir
+    if os.path.isdir(input_name):
+        input_dir = input_name
+    elif os.path.isfile(input_name):
+        input_dir = os.path.dirname(input_name)
+    else:
+        raise RuntimeError("Neither directory nor file: '%s'" % input_name)
     if not os.path.exists(input_dir):
         raise OSError("Input directory not found")
+    output_dir = os.path.normpath(os.path.expanduser(s_output)) if s_output else input_dir
     logging.info("Splitting files from: '%s' to: '%s'", input_name, output_dir)
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=n_jobs) as executor:

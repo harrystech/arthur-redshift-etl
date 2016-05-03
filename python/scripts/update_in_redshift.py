@@ -58,7 +58,7 @@ def update_ctas_or_views(args, settings):
                         etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
                         etl.load.create_temp_table_as_and_copy(conn, table_name, table_design, query,
                                                                add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
-                        etl.load.analyze(conn, table_name, dry_run=args.dry_run)
+                        etl.load.vacuum_analyze(conn, table_name, dry_run=args.dry_run)
                     elif table_design["source_name"] == "VIEW" and not args.skip_views:
                         etl.load.create_view(conn, table_design, table_name, table_owner, query,
                                              drop_view=args.drop, dry_run=args.dry_run)

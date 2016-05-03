@@ -54,7 +54,7 @@ def load_to_redshift(args, settings):
                         csv_file = os.path.commonprefix(csv_files)
                     location = "s3://{}/{}".format(bucket_name, csv_file)
                     etl.load.copy_data(conn, credentials, table_name, location, dry_run=args.dry_run)
-                    etl.load.analyze(conn, table_name, dry_run=args.dry_run)
+                    etl.load.vacuum_analyze(conn, table_name, dry_run=args.dry_run)
 
 
 def build_argument_parser():

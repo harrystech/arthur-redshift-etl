@@ -28,7 +28,10 @@ def copy_to_s3(args, settings):
     local_dirs = [args.table_design_dir, args.data_dir]
     selection = etl.TableNamePatterns.from_list(args.table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    tables_with_files = etl.s3.find_local_files(local_dirs, schemas, selection)
+    if args.git_modified:
+        tables_with_files = etl.s3.find_modified_files(schemas, selection)
+    else:
+        tables_with_files = etl.s3.find_local_files(local_dirs, schemas, selection)
 
     if len(tables_with_files) == 0:
         logging.error("No applicable files found in %s", local_dirs)
@@ -61,7 +64,9 @@ def copy_to_s3(args, settings):
 def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "prefix", "data-dir", "table-design-dir", "dry-run", "table"],
                                            description=__doc__)
-    parser.add_argument("-w", "--with-data", help="Copy data files (including manifest)", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-w", "--with-data", help="Copy data files (including manifest)", action="store_true")
+    group.add_argument("-g", "--git-modified", help="Copy files modified in work tree", action="store_true")
     return parser
 
 

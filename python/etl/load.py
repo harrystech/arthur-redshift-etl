@@ -320,7 +320,7 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                 na_values_row.append(0)
             else:
                 if not column.get("not_null", False):
-                    na_values_row.append("NULL")
+                    na_values_row.append("NULL::{}".format(column["sql_type"]))
                 elif "string" in column["type"]:
                     na_values_row.append("'N/A'")
                 elif "boolean" in column["type"]:
@@ -406,12 +406,16 @@ def grant_access(conn, table_name, etl_group, user_group, dry_run=False):
         etl.pg.grant_select(conn, table_name.schema, table_name.table, user_group)
 
 
-def analyze(conn, table_name, dry_run=False):
+def vacuum_analyze(conn, table_name, skip_vacuum=False, dry_run=False):
     """
-    Final step ... tidy up the warehouse before guests come over
+    Final step ... tidy up the warehouse before guests come over.
+    Skip the vacuuming if you just built a new table.
     """
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping analyze '%s'", table_name.identifier)
+        logging.getLogger(__name__).info("Dry-run: Skipping vacuum-analyze of '%s'", table_name.identifier)
     else:
+        if not skip_vacuum:
+            logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
+            etl.pg.execute(conn, "VACUUM {}".format(table_name))
         logging.getLogger(__name__).info("Running analyze step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "ANALYZE {}".format(table_name))
