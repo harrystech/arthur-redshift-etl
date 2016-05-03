@@ -28,7 +28,6 @@ import etl.s3
 
 
 def update_ctas_or_views(args, settings):
-
     dw = etl.env_value(settings("data_warehouse", "etl_access"))
     table_owner = settings("data_warehouse", "owner")
     etl_group = settings("data_warehouse", "groups", "etl")
@@ -43,6 +42,7 @@ def update_ctas_or_views(args, settings):
     if len(tables_with_queries) == 0:
         logging.error("No applicable files found in 's3://%s/%s'", bucket_name, args.prefix)
     else:
+        vacuumable = []
         with closing(etl.pg.connection(dw)) as conn:
             for table_name, design_file, sql_file in tables_with_queries:
                 with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
@@ -58,11 +58,17 @@ def update_ctas_or_views(args, settings):
                         etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
                         etl.load.create_temp_table_as_and_copy(conn, table_name, table_design, query,
                                                                add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
-                        etl.load.vacuum_analyze(conn, table_name, dry_run=args.dry_run)
+                        etl.load.analyze(conn, table_name, dry_run=args.dry_run)
+                        vacuumable.append(table_name)
                     elif table_design["source_name"] == "VIEW" and not args.skip_views:
                         etl.load.create_view(conn, table_design, table_name, table_owner, query,
                                              drop_view=args.drop, dry_run=args.dry_run)
                         etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
+        # Reconnect to run vacuum outside transaction block
+        if not args.drop:
+            with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+                for table_name in vacuumable:
+                    etl.load.vacuum(conn, table_name, dry_run=args.dry_run)
 
 
 def build_argument_parser():

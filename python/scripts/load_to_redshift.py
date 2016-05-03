@@ -37,6 +37,7 @@ def load_to_redshift(args, settings):
         # Need to read user's credentials for the COPY command
         credentials = etl.load.read_aws_credentials()
 
+        vacuumable = []
         with closing(etl.pg.connection(dw)) as conn:
             for table_name, design_file, csv_files in tables_with_data:
                 with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
@@ -54,7 +55,14 @@ def load_to_redshift(args, settings):
                         csv_file = os.path.commonprefix(csv_files)
                     location = "s3://{}/{}".format(bucket_name, csv_file)
                     etl.load.copy_data(conn, credentials, table_name, location, dry_run=args.dry_run)
-                    etl.load.vacuum_analyze(conn, table_name, dry_run=args.dry_run)
+                    etl.load.analyze(conn, table_name, dry_run=args.dry_run)
+                    vacuumable.append(table_name)
+
+        # Reconnect to run vacuum outside transaction block
+        if not args.drop_table:
+            with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+                for table_name in vacuumable:
+                    etl.load.vacuum(conn, table_name, dry_run=args.dry_run)
 
 
 def build_argument_parser():

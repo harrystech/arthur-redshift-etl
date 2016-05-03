@@ -406,16 +406,23 @@ def grant_access(conn, table_name, etl_group, user_group, dry_run=False):
         etl.pg.grant_select(conn, table_name.schema, table_name.table, user_group)
 
 
-def vacuum_analyze(conn, table_name, skip_vacuum=False, dry_run=False):
+def analyze(conn, table_name, dry_run=False):
     """
-    Final step ... tidy up the warehouse before guests come over.
-    Skip the vacuuming if you just built a new table.
+    Update table statistics.
     """
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping vacuum-analyze of '%s'", table_name.identifier)
+        logging.getLogger(__name__).info("Dry-run: Skipping analysis of '%s'", table_name.identifier)
     else:
-        if not skip_vacuum:
-            logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
-            etl.pg.execute(conn, "VACUUM {}".format(table_name))
         logging.getLogger(__name__).info("Running analyze step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "ANALYZE {}".format(table_name))
+
+
+def vacuum(conn, table_name, dry_run=False):
+    """
+    Final step ... tidy up the warehouse before guests come over.
+    """
+    if dry_run:
+        logging.getLogger(__name__).info("Dry-run: Skipping vacuum of '%s'", table_name.identifier)
+    else:
+        logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
+        etl.pg.execute(conn, "VACUUM {}".format(table_name))
