@@ -36,13 +36,13 @@ def validate_table_design(table_design, table_name):
     logger = logging.getLogger(__name__)
     try:
         table_design_schema = etl.config.load_json("table_design.schema")
-    except (jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
+    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
         logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
         raise
     try:
         jsonschema.validate(table_design, table_design_schema)
-    except (jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logger.error("Failed to validate table design for '%s'", table_name.identifier)
+    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
+        logger.error("Failed to validate table design for '%s'!", table_name.identifier)
         raise
     # TODO Need more rules?
     if table_design["name"] != table_name.identifier:
