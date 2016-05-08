@@ -49,14 +49,14 @@ def copy_to_s3(args, settings):
                         remote_directory = os.path.basename(os.path.dirname(local_filename))
                         prefix = "{}/{}".format(args.prefix, remote_directory)
                         executor.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
-                if args.with_data and len(files["Data"]):
+                if args.with_data and len(files["Data"]) > 0:
                     for local_filename in files["Data"]:
                         remote_directory = os.path.basename(os.path.dirname(local_filename))
                         prefix = "{}/{}".format(args.prefix, remote_directory)
                         executor.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
-                    if not files["Data"][0].endswith(".manifest"):
-                        manifest = etl.s3.write_manifest_file(files["Data"], bucket_name, prefix, dry_run=args.dry_run)
-                        executor.submit(etl.s3.upload_to_s3, manifest, bucket_name, prefix, dry_run=args.dry_run)
+                    # Manifest needs to be rewritten to reflect the latest bucket and prefix
+                    manifest = etl.s3.write_manifest_file(files["Data"], bucket_name, prefix, dry_run=args.dry_run)
+                    executor.submit(etl.s3.upload_to_s3, manifest, bucket_name, prefix, dry_run=args.dry_run)
         if not args.dry_run:
             logging.info("Uploaded all files to 's3://%s/%s/'", bucket_name, args.prefix)
 

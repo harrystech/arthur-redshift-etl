@@ -68,7 +68,7 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not actually copy data", default=False, action="store_true")
     if "force" in options:
-        parser.add_argument("-f", "--force", help="allow overwriting files", default=False, action="store_true")
+        parser.add_argument("-f", "--force", help="allow overwriting data files", default=False, action="store_true")
     if "table" in options:
         parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='*')
     elif "ctas_or_view" in options:

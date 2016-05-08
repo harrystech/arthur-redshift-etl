@@ -186,20 +186,16 @@ def write_manifest_file(local_files, bucket_name, prefix, dry_run=False):
     file, then skip writing a manifest and return None.
     """
     logger = logging.getLogger(__name__)
-    if len(local_files) > 1:
-        parts = os.path.commonprefix(local_files)
-        filename = parts[:parts.rfind(".part_")] + ".manifest"
-        remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in local_files]
-        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
-        if dry_run:
-            logger.info("Dry-run: Skipping writing new manifest file to '%s'", filename)
-        else:
-            logger.info("Writing new manifest file for %d file(s) to '%s'", len(local_files), filename)
-            with open(filename, 'wt') as o:
-                json.dump(manifest, o, indent="    ", sort_keys=True)
-                o.write('\n')
-            logger.debug("Done writing '%s'", filename)
+    parts = os.path.commonprefix(local_files)
+    filename = parts[:parts.rfind(".part_")] + ".manifest"
+    remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in local_files]
+    manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+    if dry_run:
+        logger.info("Dry-run: Skipping writing new manifest file to '%s'", filename)
     else:
-        filename = None
-        logger.debug("Only one file ('%s'): skipping manifest file", local_files[0])
+        logger.info("Writing new manifest file for %d file(s) to '%s'", len(local_files), filename)
+        with open(filename, 'wt') as o:
+            json.dump(manifest, o, indent="    ", sort_keys=True)
+            o.write('\n')
+        logger.debug("Done writing '%s'", filename)
     return filename

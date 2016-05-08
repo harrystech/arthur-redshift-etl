@@ -147,7 +147,8 @@ def check_positive_int(s):
 def build_argument_parser():
     parser = etl.arguments.argument_parser(["config", "prefix", "prefix_env", "data-dir", "table-design-dir",
                                             "dry-run", "force", "table"], description=__doc__)
-    parser.add_argument("-k", "--skip-copy", help="bootstrap table design files and skip copy", action="store_true")
+    parser.add_argument("-k", "--skip-copy", help="only bootstrap table design files and skip copy to S3",
+                        action="store_true")
     parser.add_argument("-l", "--limit", help="limit number of rows copied (useful for testing)",
                         default=None, type=check_positive_int, action="store")
     parser.add_argument("-j", "--jobs", help="Number of parallel processes (default: %(default)s)", type=int, default=1)

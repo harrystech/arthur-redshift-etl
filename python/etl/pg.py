@@ -92,7 +92,10 @@ def _log_stmt(cursor, stmt, args, debug=False):
         else:
             printable_stmt = cursor.mogrify(stmt)
         logging.getLogger(__name__).debug("QUERY: %s;", remove_credentials(printable_stmt.decode()))
-    return stmt
+    if stmt.endswith('\n'):
+        return stmt
+    else:
+        return stmt + '\n'
 
 
 def _seconds_since(start_time):
