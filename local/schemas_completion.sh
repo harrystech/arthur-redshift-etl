@@ -1,3 +1,5 @@
+#! /bin/bash
+
 _schemas_completion()
 {
     local SCHEMA_START SCHEMAS

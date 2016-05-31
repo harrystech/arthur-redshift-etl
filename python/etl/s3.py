@@ -182,20 +182,30 @@ def get_file_content(bucket_name, object_key):
 def write_manifest_file(local_files, bucket_name, prefix, dry_run=False):
     """
     Create manifest file to load all the given files (after upload
-    to S3) and return name of new manifest file. If there's only one local
-    file, then skip writing a manifest and return None.
+    to S3) and return name of new manifest file.
     """
     logger = logging.getLogger(__name__)
-    parts = os.path.commonprefix(local_files)
-    filename = parts[:parts.rfind(".part_")] + ".manifest"
-    remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in local_files]
+    data_files = [filename for filename in local_files if not filename.endswith(".manifest")]
+    if len(data_files) == 0:
+        raise ValueError("List of files must include at least one CSV file")
+    elif len(data_files) > 1:
+        parts = os.path.commonprefix(data_files)
+        filename = parts[:parts.rfind(".part_")] + ".manifest"
+    else:
+        csv_file = data_files[0]
+        filename = csv_file[:csv_file.rfind(".csv")] + ".csv.manifest"
+    remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in data_files]
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
     if dry_run:
         logger.info("Dry-run: Skipping writing new manifest file to '%s'", filename)
     else:
-        logger.info("Writing new manifest file for %d file(s) to '%s'", len(local_files), filename)
+        logger.info("Writing new manifest file for %d file(s) to '%s'", len(data_files), filename)
         with open(filename, 'wt') as o:
             json.dump(manifest, o, indent="    ", sort_keys=True)
             o.write('\n')
         logger.debug("Done writing '%s'", filename)
     return filename
+
+
+def write_manifest_file_eventually(file_futures, bucket_name, prefix, dry_run=False):
+    return write_manifest_file([future.result() for future in file_futures], bucket_name, prefix, dry_run=dry_run)

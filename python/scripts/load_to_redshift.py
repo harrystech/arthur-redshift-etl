@@ -48,13 +48,12 @@ def load_to_redshift(args, settings):
                     etl.load.create_table(conn, table_design, table_name, table_owner,
                                           drop_table=args.drop_table, dry_run=args.dry_run)
                     etl.load.grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
-                    # If there's no manifest file, pick longest common prefix instead.
                     if csv_files[0].endswith(".manifest"):
-                        csv_file = csv_files[0]
+                        etl.load.copy_data(conn, credentials, table_name, bucket_name, manifest=csv_files[0],
+                                           dry_run=args.dry_run)
                     else:
-                        csv_file = os.path.commonprefix(csv_files)
-                    location = "s3://{}/{}".format(bucket_name, csv_file)
-                    etl.load.copy_data(conn, credentials, table_name, location, dry_run=args.dry_run)
+                        etl.load.copy_data(conn, credentials, table_name, bucket_name, csv_files=csv_files,
+                                           dry_run=args.dry_run)
                     etl.load.analyze(conn, table_name, dry_run=args.dry_run)
                     vacuumable.append(table_name)
 

@@ -245,22 +245,30 @@ def read_aws_credentials(from_file="~/.aws/credentials"):
     return {'access_key_id': access_key_id, 'secret_access_key': secret_access_key}
 
 
-def copy_data(conn, credentials, table_name, filename, dry_run=False):
+def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manifest=None, dry_run=False):
     """
-    Load data into table in the data warehouse using the COPY command.
-
-    If filename ends in ".manifest" then it is assumed to be a manifest.
+    Load data into table in the data warehouse using the COPY command.  Either
+    a list of CSV files or a manifest must be provided. Note that instead of
+    using the list of files directly, only their longest common prefix is
+    used.  (So using a manifest is safer!)
 
     Tables can only be truncated by their owners, so this will delete all rows
     instead of truncating the tables.
     """
     access = "aws_access_key_id={access_key_id};aws_secret_access_key={secret_access_key}".format(**credentials)
     logger = logging.getLogger(__name__)
-    with_manifest = " MANIFEST" if filename.endswith(".manifest") else ""
-    if dry_run:
-        logger.info("Dry-run: Skipping copy for '%s' from%s '%s'", table_name.identifier, with_manifest, filename)
+    if manifest is not None:
+        location = "s3://{}/{}".format(bucket_name, manifest)
+        with_manifest = " MANIFEST"
+    elif csv_files is not None:
+        location = "s3://{}/{}".format(bucket_name, os.path.commonprefix(csv_files))
+        with_manifest = ""
     else:
-        logger.info("Copying data into '%s' from%s '%s'", table_name.identifier, with_manifest, filename)
+        raise ValueError("Either csv_files or manifest must not be None")
+    if dry_run:
+        logger.info("Dry-run: Skipping copy for '%s' from%s '%s'", table_name.identifier, with_manifest, location)
+    else:
+        logger.info("Copying data into '%s' from%s '%s'", table_name.identifier, with_manifest, location)
         try:
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
@@ -271,7 +279,7 @@ def copy_data(conn, credentials, table_name, filename, dry_run=False):
                                     NULL AS '\\\\N'
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
-                                 """.format(table_name, with_manifest, etl.dump.N_HEADER_LINES), (filename, access))
+                                 """.format(table_name, with_manifest, etl.dump.N_HEADER_LINES), (location, access))
             conn.commit()
         except psycopg2.Error as exc:
             conn.rollback()

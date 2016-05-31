@@ -60,8 +60,8 @@ def dump_source_to_s3(source, table_design_files, type_maps, design_dir, data_di
         with closing(etl.pg.connection(etl.env_value(read_access), autocommit=True, readonly=True)) as conn:
             tables = etl.dump.fetch_tables(conn, source["include_tables"], source.get("exclude_tables", []), selection)
             columns_by_table = etl.dump.fetch_columns(conn, tables)
-            # There are four steps per table of which one is bounded by a semaphore so max_workers=4 seems best.
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # There are six steps per table of which one is bounded by a semaphore so max_workers=6 seems best.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                 for source_table_name in sorted(columns_by_table):
                     table_name = etl.TableName(source_name, source_table_name.table)
                     found.add(table_name)
@@ -84,7 +84,9 @@ def dump_source_to_s3(source, table_design_files, type_maps, design_dir, data_di
                         csv_file = executor.submit(etl.dump.download_table_data_bounded, single_copy_at_a_time, conn,
                                                    table_design, source_table_name, table_name, output_dir,
                                                    limit=limit, overwrite=overwrite, dry_run=dry_run)
-                        for file_future in (design_file, csv_file):
+                        manifest_file = executor.submit(etl.s3.write_manifest_file_eventually, [csv_file], bucket_name,
+                                                        source_prefix, dry_run=dry_run)
+                        for file_future in (design_file, csv_file, manifest_file):
                             executor.submit(etl.s3.upload_to_s3, file_future, bucket_name, source_prefix,
                                             dry_run=dry_run)
     except Exception:

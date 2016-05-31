@@ -75,6 +75,8 @@ def remove_credentials(s):
     >>> remove_credentials(s)
     "COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS '';"
     >>> s = '''CREATE USER dw_user IN GROUP etl PASSWORD 'horse_staple_battery';'''
+    >>> remove_credentials(s)
+    "CREATE USER dw_user IN GROUP etl PASSWORD '';"
     """
     match = re.search("(CREDENTIALS|PASSWORD)\s*'([^']*)'", s, re.IGNORECASE)
     if match:
