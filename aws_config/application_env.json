@@ -1,0 +1,42 @@
+[
+    {
+        "Classification": "hadoop-env",
+        "Configurations": [
+            {
+                "Classification": "export",
+                "Configurations": [],
+                "Properties": {
+                    "JAVA_HOME": "/usr/lib/jvm/java-1.8.0"
+                }
+            }
+        ],
+        "Properties": {}
+    },
+    {
+        "Classification": "spark-env",
+        "Configurations": [
+            {
+                "Classification": "export",
+                "Configurations": [],
+                "Properties": {
+                    "JAVA_HOME": "/usr/lib/jvm/java-1.8.0",
+                    "PYSPARK_PYTHON": "python34",
+                    "ETL_ENVIRONMENT": "#{etl_environment}"
+                }
+            }
+        ],
+        "Properties": {}
+    },
+    {
+      "Classification": "spark",
+      "Properties": {
+          "maximizeResourceAllocation": "true"
+      }
+    },
+    {
+      "Classification": "spark-defaults",
+      "Properties": {
+          "spark.executor.cores": "4"
+      }
+    }
+]

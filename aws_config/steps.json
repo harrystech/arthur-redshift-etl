@@ -1,0 +1,13 @@
+[
+  {
+    "Args": [
+      "spark-submit",
+      "/var/tmp/run_etl.py"
+    ],
+    "Type": "CUSTOM_JAR",
+    "ActionOnFailure": "CANCEL_AND_WAIT",
+    "Jar": "command-runner.jar",
+    "Properties": "",
+    "Name": "Redshift ETL"
+  }
+]

@@ -1,39 +1,38 @@
+""""
+Utilities and classes to support the ETL in general
+"""
+
+from contextlib import contextmanager
 from collections import namedtuple
+from datetime import datetime
 from fnmatch import fnmatch
+import logging
 import os
-
-
-def env_value(name: str) -> str:
-    """
-    Retrieve environment variable or error out if variable is not set.
-    This is mildly more readable than direct use of os.environ.
-
-    :param name: Name of environment variable
-    :return: Value of environment variable
-    """
-    if name not in os.environ:
-        raise KeyError("Environment variable not set for connection: %s" % name)
-    return os.environ[name]
 
 
 class TableName(namedtuple("_TableName", ["schema", "table"])):
     """
     Class to automatically create delimited identifiers for table.
 
-    Given a table s.t, then the cautious identifier for SQL code "s"."t".
-    But the more readable name is still s.t
+    Given a table s.t, then the cautious identifier for SQL code is: "s"."t"
+    But the more readable name is still: s.t
     """
+
     __slots__ = ()
 
     @property
     def identifier(self):
-        return "{0}.{1}".format(*self)
+        return "{0}.{1}".format(self.schema, self.table)
 
     def __str__(self):
-        return '"{0}"."{1}"'.format(*self)
+        return '"{0}"."{1}"'.format(self.schema, self.table)
 
 
 class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
+    """
+    Class to hold patterns to filter schemas and tables.
+    """
+
     __slots__ = ()
 
     @classmethod
@@ -180,6 +179,12 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         """
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
+    def match_names(self, sources: list) -> list:
+        """
+        Match names with this pattern while traversing sources where each element is a dictionary having a "name" key.
+        """
+        return list(d["name"] for d in sources if self.match_schema(d["name"]))
+
 
 class ColumnDefinition(namedtuple("_ColumnDefinition",
                                   ["name",  # always
@@ -187,6 +192,133 @@ class ColumnDefinition(namedtuple("_ColumnDefinition",
                                    "source_sql_type", "expression", "not_null", "references"  # optional
                                    ])):
     """
-    Wrapper for attributes ... describes columns by name, type (for Avro), sql_type.
+    Wrapper for column attributes ... describes columns by name, type (for Avro), sql_type.
     """
     __slots__ = ()
+
+
+class AssociatedTableFiles():
+    """
+    Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
+
+    Note that tables are addressed using their target name, where the schema is equal
+    to the source name.  To allow for sorting, the original schema name (in the source
+    database) is kept.  For views and CTAS, the sort order is used to create a predictable
+    instantiation order where one view or CTAS may depend on another being up-to-date already.
+    """
+
+    def __init__(self, source_table_name, target_table_name, design_file):
+        self._source_table_name = source_table_name
+        self._target_table_name = target_table_name
+        self._design_file = design_file
+        self._sql_file = None
+        self._manifest_file = None
+        self._data_files = []
+
+    def __str__(self):
+        return "{}({}:{},{},{}{})".format(self.__class__.__name__,
+                                          self.source_path_name,
+                                          self.design_file,
+                                          self._sql_file,
+                                          self._manifest_file,
+                                          self._data_files)
+
+    @property
+    def target_table_name(self):
+        return self._target_table_name
+
+    @property
+    def source_table_name(self):
+        return self._source_table_name
+
+    @property
+    def source_path_name(self):
+        return "{}/{}-{}".format(self._target_table_name.schema,
+                                 self._source_table_name.schema,
+                                 self._source_table_name.table)
+
+    @property
+    def design_file(self):
+        return self._design_file
+
+    @property
+    def sql_file(self):
+        return self._sql_file
+
+    @property
+    def manifest_file(self):
+        return self._manifest_file
+
+    @property
+    def data_files(self):
+        return self._data_files
+
+    def set_sql_file(self, filename):
+        self._sql_file = filename
+
+    def set_manifest_file(self, filename):
+        self._manifest_file = filename
+
+    def add_data_file(self, filename):
+        self._data_files.append(filename)
+
+    def create_manifest(self, bucket_name):
+        if len(self._data_files) == 0:
+            return None
+        else:
+            return {
+                "entries": [
+                    {
+                        "mandatory": True,
+                        "url": "s3://{}/{}".format(bucket_name, filename)
+                    } for filename in self._data_files
+                ]
+            }
+
+
+@contextmanager
+def measure_elapsed_time():
+    """
+    Measure time it takes to execute code and report on success.
+
+    Exceptions are being caught here, reported on but then swallowed.
+
+    Example:
+        >>> with measure_elapsed_time():
+        ...     pass
+    """
+    def elapsed_time(start_time=datetime.now()):
+        return (datetime.now() - start_time).total_seconds()
+
+    logger = logging.getLogger(__name__)
+    try:
+        yield
+        logger.info("Ran for %.2fs and finished successfully!", elapsed_time())
+        print("Ran for %.2fs and finished successfully!" % elapsed_time())
+    except Exception:
+        print("exception")
+        logger.exception("Something terrible happened")
+        logger.info("Ran for %.2fs before encountering disaster!", elapsed_time())
+    except BaseException:
+        logger.exception("Something really terrible happened")
+        logger.info("Ran for %.2fs before an exceptional termination!", elapsed_time())
+
+
+def env_value(name: str) -> str:
+    """
+    Retrieve environment variable or error out if variable is not set.
+    This is mildly more readable than direct use of os.environ.
+
+    :param name: Name of environment variable
+    :return: Value of environment variable
+    """
+    if name not in os.environ:
+        raise KeyError('Environment variable "%s" not set' % name)
+    return os.environ[name]
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    with measure_elapsed_time():
+        user_name = env_value("USERx")
+        print("Hello {}!".format(user_name))

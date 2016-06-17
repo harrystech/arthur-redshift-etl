@@ -25,19 +25,7 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
     By default, this turns on autocommit on the connection.
     """
     logger = logging.getLogger(__name__)
-    # Extract connection value from JDBC-style connection string. (Some people, when confronted with a problem,
-    # think "I know, I'll use regular expressions." Now they have two problems.)
-    dsn_re = re.compile(r"""(?:jdbc:)?(redshift|postgresql|postgres)://  # be nice and accept either connection type
-                            (?P<user>\w+)(?::(?P<password>[-\w]+))?@  # user information with optional password
-                            (?P<host>[-\w.]+)(:?:(?P<port>\d+))?/  # host and optional port information
-                            (?P<database>\w+)  # database (and not dbname)
-                            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option
-                        re.VERBOSE)
-
-    dsn_match = dsn_re.match(os.path.expandvars(dsn_string))
-    if dsn_match is None:
-        raise ValueError("Value of connection string does not conform to expected format.")
-    dsn_values = dsn_match.groupdict()
+    dsn_values = parse_connection_string(dsn_string)
     dsn_values["application_name"] = application_name
 
     logger.info("Connecting to: host={host} port={port} database={database} "
@@ -47,6 +35,28 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
     logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
                  cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
     return cx
+
+
+def parse_connection_string(dsn: str) -> dict:
+    """
+    Extract connection value from JDBC-style connection string.
+    """
+    # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
+    # Now they have two problems.
+    dsn_re = re.compile(r"""(?:jdbc:)?(redshift|postgresql|postgres)://  # be nice and accept either connection type
+                            (?P<user>\w+)(?::(?P<password>[-\w]+))?@  # user information with optional password
+                            (?P<host>[-\w.]+)(:?:(?P<port>\d+))?/  # host and optional port information
+                            (?P<database>\w+)  # database (and not dbname)
+                            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option
+                        re.VERBOSE)
+    match = dsn_re.match(os.path.expandvars(dsn))
+    if match is None:
+        raise ValueError("Value of connection string does not conform to expected format.")
+    values = match.groupdict()
+    # Remove optional key/value pairs
+    if values['sslmode'] is None:
+        del values['sslmode']
+    return values
 
 
 def dbname(cx):
@@ -93,10 +103,6 @@ def _log_stmt(cursor, stmt, args, debug=False):
         return stmt + '\n'
 
 
-def _seconds_since(start_time):
-    return (datetime.now() - start_time).total_seconds()
-
-
 def query(cx, stmt, args=(), debug=True):
     """
     Send query stmt to connection (with parameters) and return rows.
@@ -126,7 +132,8 @@ def execute(cx, stmt, args=(), debug=True, return_result=False):
             cursor.execute(stmt, args)
         else:
             cursor.execute(stmt)
-        logger.debug("QUERY STATUS: %s (%.1fs)", cursor.statusmessage, _seconds_since(start_time))
+        elapsed_time = (datetime.now() - start_time).total_seconds()
+        logger.debug("QUERY STATUS: %s (%.1fs)", cursor.statusmessage, elapsed_time)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
             for msg in cx.notices:
                 logger.debug("QUERY " + msg.rstrip('\n'))
@@ -215,34 +222,18 @@ def log_sql_error(exc, as_warning=False):
 
 
 @contextmanager
-def measure_elapsed_time():
-    """
-    Measure time it takes to execute code and report on success.
-
-    Exceptions are being caught here, reported on but then swallowed.
-
-    Example:
-        >>> with measure_elapsed_time():
-        ...     pass
-    """
-    logger = logging.getLogger(__name__)
-    start_time = datetime.now()
+def log_error():
+    """Log any psycopg2 errors using the pretty log_sql_error function before re-raising the exception"""
     try:
         yield
-        logger.info("Ran for %.2fs and finished successfully!", _seconds_since(start_time))
     except psycopg2.Error as exc:
         log_sql_error(exc)
-        logger.info("Ran for %.2fs before tripping over this error!", _seconds_since(start_time))
-    except Exception:
-        logger.exception("Something terrible happened")
-        logger.info("Ran for %.2fs before encountering disaster!", _seconds_since(start_time))
-    except BaseException:
-        logger.exception("Something really terrible happened")
-        logger.info("Ran for %.2fs before an exceptional termination!", _seconds_since(start_time))
+        raise
 
 
 if __name__ == "__main__":
     import sys
+    from etl import measure_elapsed_time
 
     if len(sys.argv) != 2:
         print("Usage: {} dsn_string".format(sys.argv[0]))
@@ -250,7 +241,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
-    with measure_elapsed_time():
+    with measure_elapsed_time(), log_error():
         with connection(sys.argv[1], readonly=True) as conn:
             for row in query(conn,
                              "SELECT now() AS local_server_time",
