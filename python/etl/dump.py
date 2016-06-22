@@ -44,14 +44,14 @@ def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
     second list allows to exclude lists from consideration and finally the
     table pattern allows to select specific tables (via command line args).
     """
-    # Look for 'r'elations and 'm'aterialized views in the catalog.
+    # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
     found = etl.pg.query(cx, """SELECT nsp.nspname AS "schema"
                                      , cls.relname AS "table"
                                      , nsp.nspname || '.' || cls.relname AS "table_name"
                                   FROM pg_catalog.pg_class cls
                                   JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
                                  WHERE cls.relname NOT LIKE 'tmp%%'
-                                   AND cls.relkind IN ('r', 'm')
+                                   AND cls.relkind IN ('r', 'm', 'v')
                                  ORDER BY nsp.nspname, cls.relname""")
     tables = []
     for row in found:
