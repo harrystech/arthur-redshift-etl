@@ -4,13 +4,6 @@
 Thin wrapper around PostgreSQL API, adding niceties like logging,
 transaction handling, simple DSN strings, as well as simple commands
 (for new users, schema creation, etc.)
-
-Example:
-    >>> from etl import pg
-    >>> cx = pg.connection("postgres://${USER}@localhost:5432/${USER}")
-    >>> rows = pg.query(cx, "select now()")
-    >>> len(rows)
-    1
 """
 
 from contextlib import contextmanager
@@ -71,7 +64,7 @@ def remove_credentials(s):
     >>> s = '''copy listing from 's3://mybucket/data/listing/' credentials 'aws_access_key_id=...';'''
     >>> remove_credentials(s)
     "copy listing from 's3://mybucket/data/listing/' credentials '';"
-    >>> s = '''COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS 'aws_access_key_id=...';'''
+    >>> s = '''COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS 'aws_iam_role=...';'''
     >>> remove_credentials(s)
     "COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS '';"
     >>> s = '''CREATE USER dw_user IN GROUP etl PASSWORD 'horse_staple_battery';'''
@@ -253,7 +246,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) != 2:
         print("Usage: {} dsn_string".format(sys.argv[0]))
-        print("Hint: Try postgres://${USER}@localhost:5432/${USER} as dsn_string")
+        print('Hint: Try "postgres://${USER}@localhost:5432/${USER}" as dsn_string')
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)

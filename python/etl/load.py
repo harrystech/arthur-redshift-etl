@@ -1,4 +1,3 @@
-import configparser
 from itertools import chain
 import logging
 import os.path
@@ -225,26 +224,6 @@ def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_vie
         etl.pg.execute(conn, ddl_stmt)
 
 
-def read_aws_credentials(from_file="~/.aws/credentials"):
-    """
-    Read access key and secret key from file (by default, ~/.aws/credentials)
-    or from environment variables, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
-    """
-    if "AWS_ACCESS_KEY_ID" in os.environ and "AWS_SECRET_ACCESS_KEY" in os.environ:
-        access_key_id = os.environ["AWS_ACCESS_KEY_ID"]
-        secret_access_key = os.environ["AWS_SECRET_ACCESS_KEY"]
-        logging.getLogger(__name__).info("Read credentials from environment")
-    else:
-        parser = configparser.ConfigParser()
-        found = parser.read(os.path.expanduser(from_file))
-        if len(found) != 1:
-            raise RuntimeError("Unable to read your '%s' file" % from_file)
-        access_key_id = parser.get('default', 'aws_access_key_id')
-        secret_access_key = parser.get('default', 'aws_secret_access_key')
-        logging.getLogger(__name__).info("Read credentials for COPY command from '%s'", found[0])
-    return {'access_key_id': access_key_id, 'secret_access_key': secret_access_key}
-
-
 def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manifest=None, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.  Either
@@ -255,7 +234,7 @@ def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manife
     Tables can only be truncated by their owners, so this will delete all rows
     instead of truncating the tables.
     """
-    access = "aws_access_key_id={access_key_id};aws_secret_access_key={secret_access_key}".format(**credentials)
+    access = "aws_iam_role={}".format(credentials)
     logger = logging.getLogger(__name__)
     if manifest is not None:
         location = "s3://{}/{}".format(bucket_name, manifest)

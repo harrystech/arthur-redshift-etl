@@ -20,9 +20,12 @@
                     "type": "object",
                     "additionalProperties": { "$ref": "#/definitions/identifier" },
                     "minProperties": 2
+                },
+                "iam_role": {
+                    "type": "string"
                 }
             },
-            "required": [ "admin_access", "etl_access", "owner", "groups" ],
+            "required": [ "admin_access", "etl_access", "owner", "groups", "iam_role" ],
             "additionalProperties": false
         },
         "s3": {
