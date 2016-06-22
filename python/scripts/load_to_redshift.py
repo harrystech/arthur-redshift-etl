@@ -9,7 +9,6 @@ The data needs to be in a single or in multiple CSV-formatted and compressed fil
 
 from contextlib import closing
 import logging
-import os.path
 
 import etl
 import etl.arguments
@@ -34,9 +33,7 @@ def load_to_redshift(args, settings):
     if len(tables_with_data) == 0:
         logging.error("No applicable files found in 's3://%s/%s'", bucket_name, args.prefix)
     else:
-        # Need to read user's credentials for the COPY command
-        credentials = etl.load.read_aws_credentials()
-
+        credentials = settings("data_warehouse", "iam_role")
         vacuumable = []
         with closing(etl.pg.connection(dw)) as conn:
             for table_name, design_file, csv_files in tables_with_data:

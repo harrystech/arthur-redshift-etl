@@ -162,14 +162,9 @@ create tables.  See the options of `create_user.py`.
 You need to set whatever environment variables you have configured for access to
 upstream databases. In the example above, that's `DATABASE_PRODUCTION`.
 
-You can also either set environment variables for access to S3 or let the scripts
-pick up information from `~/.aws/credentials` (which is where `aws configure`
-will store your credentials).
-```shell
-AWS_ACCESS_KEY_ID= ...
-AWS_SECRET_ACCESS_KEY= ...
-export AWS_ACCESS_KEY_ID  AWS_SECRET_ACCESS_KEY
-```
+Also, add the AWS IAM role that the database owner may assume within Redshift
+to your settings file so that Redshift has the needed permissions to access the
+folder in S3.
 
 By default, `dump_to_s3.py` will download table designs to your local
 `schemas` directory.  This may be a good place to start.
