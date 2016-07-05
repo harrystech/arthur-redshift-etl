@@ -9,6 +9,8 @@
 /schemas/
 /tmp/
 *.RData
+python/dist
+python/build
 
 # virtual environment and local install
 /venv/

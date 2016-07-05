@@ -83,5 +83,5 @@ if __name__ == "__main__":
     main_args = build_argument_parser().parse_args()
     etl.config.configure_logging(main_args.log_level)
     main_settings = etl.config.load_settings(main_args.config)
-    with etl.pg.measure_elapsed_time():
+    with etl.measure_elapsed_time(), etl.pg.log_error():
         update_ctas_or_views(main_args, main_settings)

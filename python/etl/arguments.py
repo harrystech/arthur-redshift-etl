@@ -9,8 +9,10 @@ import pkg_resources
 
 class AppendDateAction(argparse.Action):
 
+    """Callback for argument parser to append current date so that environment has one folder per day."""
+
     def __call__(self, parser, namespace, values, option_string=None):
-        today = datetime.now().strftime("_%Y%m%d_%H%M")
+        today = datetime.now().strftime("/%Y%m%d_%H%M")
         setattr(namespace, self.dest, values + today)
 
 
@@ -44,14 +46,14 @@ def argument_parser(options: list, **kwargs) -> argparse.ArgumentParser:
             parser.add_argument("-c", "--config",
                                 help="change path to configuration file (using DATA_WAREHOUSE_CONFIG=%(default)s)",
                                 default=default_config)
-    if "prefix" or "prefix_env" in options:
+    if "prefix" in options or "prefix_env" in options:
         prefix = parser.add_mutually_exclusive_group()
         if "prefix" in options:
             prefix.add_argument("-p", "--prefix", default=getpass.getuser(),
                                 help="select prefix in S3 bucket (default is user name: '%(default)s')")
         if "prefix_env" in options:
             prefix.add_argument("-e", "--prefix-env", dest="prefix", metavar="ENV", action=AppendDateAction,
-                                help="set prefix in S3 bucket to '<ENV>_<DATE>'")
+                                help="set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
     if "data-dir" in options:
         parser.add_argument("-o", "--data-dir", help="set path to data directory (default: '%(default)s')",
                             default="./data")

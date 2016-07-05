@@ -40,9 +40,12 @@ def initial_setup(args, settings):
             database_name = etl.pg.dbname(conn)
             logging.info("Changing database '%s' to belong to the ETL owner '%s'", database_name, etl_user)
             etl.pg.execute(conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, etl_user))
-            etl.pg.execute(conn, """REVOKE TEMP ON DATABASE "{}" FROM PUBLIC""".format(database_name))
-            etl.pg.execute(conn, """GRANT TEMP ON DATABASE "{}" TO GROUP "{}" """.format(database_name, etl_group))
+            logging.info("Dropping public schema in database '%s'", database_name)
             etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
+            etl.pg.execute(conn, """REVOKE TEMPORARY ON DATABASE "{}" FROM PUBLIC""".format(database_name))
+            # N.B. CTEs use temporary tables so to allow users WITH clause access, grant temp.
+            etl.pg.execute(conn, """GRANT TEMPORARY ON DATABASE "{}" TO GROUP "{}" """.format(database_name, etl_group))
+            etl.pg.execute(conn, """GRANT TEMPORARY ON DATABASE "{}" TO GROUP "{}" """.format(database_name, user_group))
             # Create one schema for every source database
             for schema in schemas:
                 logging.info("Creating schema '%s' with owner '%s' and usage grant for '%s'",
@@ -67,5 +70,5 @@ if __name__ == "__main__":
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None and not main_args.skip_user_creation:
         main_args.password = getpass.getpass("Password for %s: " % main_settings("data_warehouse", "owner"))
-    with etl.pg.measure_elapsed_time():
+    with etl.measure_elapsed_time(), etl.pg.log_error():
         initial_setup(main_args, main_settings)

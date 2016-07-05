@@ -1,0 +1,9 @@
+[
+  {
+    "Name": "Python Bootstrap",
+    "Path": "s3://#{bucket_name}/#{etl_environment}/bootstrap/bootstrap.sh",
+    "Args": [
+      "#{etl_environment}"
+    ]
+  }
+]

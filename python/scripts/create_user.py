@@ -1,17 +1,19 @@
 #! /usr/bin/env python3
 
 """
-Create new user in the "users group" and add a personal schema in the database.
+Create new user in the "users group".  Optionally add a personal schema in the database.
 
 The search path is set to the user's own schema (if created) and all the schemas
 from the configuration in the order they are defined.  (Note that the user's
 schema comes first.)
 
-Oddly enough, it is possible to skip the "create user" step which comes in
+Oddly enough, it is possible to skip the "create user" step but that comes in
 handy when you want to update the user's search path. (But you have to make
 sure to be consistent with the user schema option so that you don't lose
 the '$user' from the search path accidentally.)
 """
+
+# TODO Query the data base for the existence of a user's schema or the current search path instead of relying on args.
 
 from contextlib import closing
 import getpass
@@ -68,5 +70,5 @@ if __name__ == "__main__":
     main_settings = etl.config.load_settings(main_args.config)
     if main_args.password is None and not main_args.skip_user_creation:
         main_args.password = getpass.getpass("Password for %s: " % main_args.username)
-    with etl.pg.measure_elapsed_time():
+    with etl.measure_elapsed_time(), etl.pg.log_error():
         create_user(main_args, main_settings)

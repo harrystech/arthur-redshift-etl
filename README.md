@@ -1,263 +1,195 @@
-# harrys-redshift-etl
+**ETL Code for Loading Data Into a Redshift-based Data Warehouse**
 
-ETL Code for Loading Data Into a Redshift-based Data Warehouse
+```
+  _    _                       _       _____          _     _     _  __ _     ______ _______ _
+ | |  | |                     ( )     |  __ \        | |   | |   (_)/ _| |   |  ____|__   __| |
+ | |__| | __ _ _ __ _ __ _   _|/ ___  | |__) |___  __| |___| |__  _| |_| |_  | |__     | |  | |
+ |  __  |/ _` | '__| '__| | | | / __| |  _  // _ \/ _` / __| '_ \| |  _| __| |  __|    | |  | |
+ | |  | | (_| | |  | |  | |_| | \__ \ | | \ \  __/ (_| \__ \ | | | | | | |_  | |____   | |  | |____
+ |_|  |_|\__,_|_|  |_|   \__, | |___/ |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
+                          __/ |
+                         |___/
+```
 
-## Overview
+This README outlines how to get started.
+You are probably looking for the [Wiki](https://github.com/harrystech/harrys-redshift-etl/wiki) pages,
+which include a lot more information about the ETL and what it does (and why it does what it does).
+And if something appears amiss, check out the [issues page](https://github.com/harrystech/harrys-redshift-etl/issues).
 
-### Data Flow
+# Running the ETL
 
-See the flow diagram below for a basic overview.
-The idea is that there are upstream PostgreSQL databases, which should be collected
-into a single data warehouse, where their data is made available to BI users.
+## Pre-requisites
 
-![ETL Flow diagram](/doc/etl_flow.png)
+What else you need in order to use this ETL depends on where you'd like run it and whether you anticipate
+making changes to the ETL code.
 
-### Tools
+### Spark
 
-The tools in this repo fall into two categories:
+Install Spark if you'd like to be able to test jobs on your local machine.
+On a Mac, simply use `brew install apache-spark` for an easy [Homebrew](http://brew.sh/) installation.
 
-1. Bootstrapping code to bring up the warehouse and experiment with table designs, and
-2. Production code to bring over data (on, say, a daily basis)
+Our ETL code base includes everything to run the ETL in a Spark cluster on AWS
+using [Amazon EMR](https://aws.amazon.com/elasticmapreduce/) so that local testing may be less important to you.
+Running it locally offers shorter development cycles while running it in AWS means less network activity (going in
+and out of your VPC).
 
-Either tool set expects that
-* data sits in an S3 bucket between dump and load,
-* connection information is set using environment variables, and
-* a configuration file describes upstream data sources.
+### JAR files
 
-## Working with the Python ETL code to bring up a data warehouse
+Download the JAR files for the following software before deployment into an AWS Spark Cluster in order
+to be able to connect to PostgreSQL databases and write CSV files for a Dataframe:
+- [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver (9.4)
+- [Spark-CSV package](https://spark-packages.org/)
+- [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) (1.4)
 
-Step 1 is to bring up a data warehouse from scratch.
-This will setup the database, schemas, users, groups.
-Then we can start populating the data warehouse with data.
+Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to store files in S3:
+- [Hadoop AWS](https://hadoop.apache.org/docs/r2.7.1/api/org/apache/hadoop/fs/s3native/NativeS3FileSystem.html) (2.7.1)
+- [AWS Java SDK](https://aws.amazon.com/sdk-for-java/) (1.7.4)
+(Do not upload them into EMR which comes with all the correct versions out of the box.)
 
-### Creating the protozoic data warehouse
+The JAR files should be stored into the `jars` directory locally and in the `jars` folder of your selected
+environment (see below).  A bootstrap action will copy them from S3 to the EMR cluster.
 
-**Note** that you'll have to have your Python environment set up,
-see [Python README](python/README.md).
+_Hint_: There is a download script in `bin/download_jars.sh` to pull the versions with which the ETL was tested.
 
-Make sure the virtual environment is active:
+### Python virtual environment
+
+Our ETL code is using [Python3](https://docs.python.org/3/) so you may have to install that first.
+On a Mac, simply use `brew install python3` for an easy [Homebrew](http://brew.sh/) installation.
+
+In order to run the Python code locally, create a virtual environment and install additional packages:
+* [Psycopg2](http://initd.org/psycopg/docs/) to connect to PostgreSQL and Redshift easily
+* [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
+* [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
+* [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
+
+These are listed in the `python/requirements.txt` file that is used during a bootstrap action in the EMR cluster.
+
+**Note** this assumes you are in the *top-level* directrory of the Redshift ETL.
+
 ```shell
+mkdir venv
+virtualenv --python=python3 venv
 source venv/bin/activate
-```
-This will also pull in the scripts to your path.
-
-### Creating a configuration file for the data warehouse
-
-The configuration file describes
-* AWS information for S3,
-* Connection information to the data warehouse, and
-* Connection information for upstream data along with information
-  which tables to pull (or not to pull).
-
-There's a reasonable default so this might be as simple as this example:
-```
-{
-    "s3": {
-        "bucket_name": "<your bucket>"
-    },
-    "sources": [
-        {
-            "name": "dw"
-        },
-        {
-            "name": "www",
-            "read_access": "DATABASE_PRODUCTION",
-            "include_tables": ["public.*"]
-        }
-    ]
-}
+pip3 install --upgrade pip
+pip3 install -r python/requirements.txt
+(cd python && python3 setup.py develop)
 ```
 
-Instead of passing a configuration file to every command, set
-the configuration file once using an evironment variable:
+_Hint_: Don't worry if you get assertion violations while building a wheel for PyYAML.
+
+Consider installing [iPython](https://ipython.org/index.html).
 ```shell
-DATA_WAREHOUSE_CONFIG=<path to config file>
-export DATA_WAREHOUSE_CONFIG
+pip3 install ipython
 ```
 
-#### Source description
+The EMR releases 4.5 and later include python3 so there's no need to install Python 3 using a bootstrap action.
 
-The sources to load from must have a `name` field. This will be
-used as the schema name in the data warehouse.  There also must
-be a `read_access` field that names an environment variable
-without connection information.  This will look something like
-`postgres://<user>:<password>@<host>:<port>/<db_name>?ssl_mode=require`.
+TODO The above steps for a virtual environment should be merged with `bin/bootstrap.sh`.
 
-The list named `include_tables` must be present and include
-patterns that match tables that should be loaded into the data
-warehouse.  Another list, `exclude_tables` may be present in which
-case tables that match patterns from that list will be excluded.
-(Exclusion overrides inclusion.)
+### Adding PySpark to your IDE
 
-Note that any tables selected by ETL tools will only select
-a subset within the include list (which are not part of the exclude
-list if present). It's not possible to select tables on the command
-line not matching patterns from the configuration file.
-
-#### Create the database in Redshift
-
-Create the database either when starting the cluster in AWS console
-or afterwards using:
-```sql
-CREATE DATABASE <dbname>;
-```
-_Hint_: You can always connect to the `dev` database in your Redshift cluster.
-
-
-Set the environment variable that gives access as your cluster admin user:
+The easiest way to add PySpark so that code completion and type checking works might be to just
+add a pointer in the virtual environment. On a Mac with a Homebrew installation of Spark, try this:
 ```shell
-DATA_WAREHOUSE_ADMIN=redshift://<admin user>:<password>@<host>:5439/<dbname>?sslmode=require
-export DATA_WAREHOUSE_ADMIN
+cat > venv/lib/python3.5/site-packages/_spark_python.pth <<EOF
+/usr/local/Cellar/apache-spark/1.6.1/libexec/python
+/usr/local/Cellar/apache-spark/1.6.1/libexec/python/lib/py4j-0.9-src.zip
+EOF
 ```
 
-The environment variable `DATA_WAREHOUSE_ADMIN` is the default but can be
-overridden in the configuration file.
+## Configuring the ETL (and upstream sources)
 
-#### Create groups, users and adjust privileges
+The best approach is probably to have another repo that contains the configuration file
+and all the table design files and transformations.
 
-The tools are setup to assign schemas and tables to single owner.  This
-simplifies ETLs since only the owner of a schema or table my drop or truncate.
-For delta ETLs, user with "ETL privileges" may update tables without
-changing ownership.
+### Redshift cluster and users
 
-First though, pick a password for the owner of schemas and tables.
-Either add it on the command line or type it when prompted.
-a [random password](https://xkcd.com/936/).)
-```shell
-initial_setup.py "horse_battery_staple"
-```
-_Hint_: Running `initial_setup.py -h` will make a suggestion for a random password.
-
-This creates the new owner (ETL user), the ETL group and end-user group, as well as
-the schemas, one per source.
-
-_Hint_: If you instead get an error message about a missing module "etl", then you
-probably need to (re-)activate the virtual environment.
-
-Set the environment variable for DW access with the ETL user.
-```shell
-DATA_WAREHOUSE_ETL=redshift://<etl user>:<password>@<host>:5439/<dbname>?sslmode=require
-export DATA_WAREHOUSE_ETL
-```
-And maybe store the password in your `~/.pgpass` file for good measure.
-
-This is a good point to also create a user for yourself (or me) to test access:
-```shell
-create_user.py tom
-```
-Then type the password when prompted (or provide it on the command line if you
-feel like nobody could be possibly watching running processes on your machine).
-
-There are also options to add the user to the ETL group (which has r/w access) --
-this is useful for users of ETL tools, e.g. our Spark-based ETL described below.
-```shell
-create_user.py --etl-user spark_etl
-```
-
-Finally, some developers might benefit from having a schema where they can
-create tables.  See the options of `create_user.py`.
-
-#### Download data into S3
-
-You need to set whatever environment variables you have configured for access to
-upstream databases. In the example above, that's `DATABASE_PRODUCTION`.
+Although the Redshift cluster can be administered using the AWS console and `psql`, some
+helper scripts will make setting up the cluster consistently much easier.
+(See below for `initial_setup.py` and `create_user.py`.)
 
 Also, add the AWS IAM role that the database owner may assume within Redshift
 to your settings file so that Redshift has the needed permissions to access the
 folder in S3.
 
-By default, `dump_to_s3.py` will download table designs to your local
-`schemas` directory.  This may be a good place to start.
-```shell
-dump_to_s3.py
-```
+#### Initial setup
 
-Once you created some table designs and added them to a repo,
-adjust the path (here, my Git repositories are under `~/gits`):
-```shell
-dump_to_s3.py -s ~/gits/table-designs
-```
-
-If you have to interrupt the download, that's ok.  No files will be created twice.
-This means, however, that you must clean out the data directory to retrieve newer
-data or use the `-f` command line option.
-
-If you need data for just one or a few tables, pass in a glob pattern.
-```shell
-dump_to_s3.py www.orders*
-```
-This will connect to only the `www` source database and download all tables
-starting with `orders`.
-
-#### Splitting CSV files into partitions
-
-If you've CPU cycles to spare and want to improve the load speed in Redshift,
-split the CSV files into partitions so that loading can happen in parallel.
-```shell
-split_csv.py data
-```
-
-You can upload these files (along with a manifest) using the `copy_to_s3.py`
-command using the `--with-data` option.
-
-#### Create tables and copy data from S3 into them
-
-With the environment variables still set, run:
-```shell
-load_to_redshift.py
-```
-
-#### Upload ETL views to S3 (CTAS)
-
-For tables that are based on views, you need to update the definitions
-separately.  These derived tables are referred to as *CTAS* after the DDL
-statement that creates them (`CREATE TABLE ... AS SELECT ...`).
+After starting up the cluster, create groups, users and schemas (one per upstream source):
 
 ```shell
-copy_to_s3.py -s ~/gits/analytics
+./initial_setup.py
 ```
 
-Now you can add tables based on views and queries:
+#### Adding users
+
+Additional users may be added to the ETL or (analytics) user group:
+
 ```shell
-update_in_redshift.py
+./create_users.py
 ```
 
-#### Hints
+### Sources
 
-* Many scripts allow to preview steps using a `--dry-run` command line option.
+TODO
 
-* Also, you can specify a specific source (meaning target schema):
+### ETL Configuration
+
+TODO
+
+## Running the ETL
+
+### Setting up table designs
+
+Use `dump_schemas_to_s3.py` to bootstrap any table design files based on the
+tables found in your source schemas.
+
 ```shell
-load_to_redshift.py www
+./dump_schemas_to_s3.py
 ```
 
-* And you can specify specific tables.  The scripts accept
-  a ["glob" pattern](https://en.wikipedia.org/wiki/Glob_(programming))
-  (also known as a shell pattern).  Examples:
+### Copying data out of PostgreSQL and into S3
+
+Now download the data (leveraging a Spark cluster) using `dump_data_to_s3.py`:
+
 ```shell
-load_to_redshift.py hyppo.sent_emails
-update_in_redshift.py www.product*
+./dump_data_to_s3.py
 ```
 
-* And don't forget that the prefix for S3 files is automatically picked on the
-  user name, not based on your last data dump or upload. So you may have to
-  specify the `--prefix` option.
+## Copying data from S3 into Redshift
 
-* This allows to iterate quickly over changes before committing:
+Loading data includes crreating tables as needed along the way:
+
 ```shell
-cd ~/gits/analytics
-copy_to_s3.py -p wip analytics.dim_user &&
-update_in_redshift.py -p wip analytics.dim_user
+./load_to_redshift.py
 ```
 
-### Working on the table design
+## Update (or create) views and tables based on queries (CTAS)
 
-To optimize query performance, tables should be loaded with a defined
-distribution style and sort keys. The design files should **not** live
-within the data directory to make sure that the design files are not
-accidentally deleted when deleting the data dumps. The design files
-must be organized the same way that the data files are.
+Once (raw) data is available, create additional views and tables (based on queries):
 
-There are a number of useful queries in the
-[Amazon Redshift Utilities](https://github.com/awslabs/amazon-redshift-utils)
-to help with table designs.
+```shell
+./update_in_redshift.py
+```
+
+# Debugging and Contributing
+
+Pull requests are welcome!
+
+* Please run code through [pep8](https://www.python.org/dev/peps/pep-0008/) (see [local config](.pep8)):
+```shell
+pep8 python
+```
+
+# Tips & Tricks
+
+## EMR login
+
+You can use the `.ssh/config` file to pick the correct user (`hadoop`) for the cluster and to automatically
+pick up a key file.
+
+```
+Host ec2-*.amazonaws.com
+  ServerAliveInterval 60
+  User hadoop
+  IdentityFile ~/.ssh/emr-spark-cluster.pem
+```

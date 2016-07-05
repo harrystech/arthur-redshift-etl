@@ -80,15 +80,15 @@
                         "properties": {
                             "name": { "$ref": "#/definitions/identifier" },
                             "description": { "type": "string" },
+                            "sql_type": { "$ref": "#/definitions/identifier" },
+                            "source_sql_type": { "$ref": "#/definitions/identifier" },
+                            "expression": { "$ref": "#/definitions/expression" },
                             "type": {
                                 "oneOf": [
                                     { "$ref": "#/definitions/avro_type" },
                                     { "$ref": "#/definitions/avro_type_with_null" }
                                 ]
                             },
-                            "sql_type": { "$ref": "#/definitions/identifier" },
-                            "source_sql_type": { "$ref": "#/definitions/identifier" },
-                            "expression": { "$ref": "#/definitions/expression" },
                             "encoding": { "$ref": "#/definitions/compression_encoding" },
                             "references": {
                                 "type": "array",

@@ -44,6 +44,7 @@ def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
     second list allows to exclude lists from consideration and finally the
     table pattern allows to select specific tables (via command line args).
     """
+    logger = logging.getLogger(__name__)
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
     found = etl.pg.query(cx, """SELECT nsp.nspname AS "schema"
                                      , cls.relname AS "table"
@@ -57,13 +58,17 @@ def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
     for row in found:
         for reject_pattern in table_blacklist:
             if fnmatch(row['table_name'], reject_pattern):
+                logger.debug("Table '%s' matches blacklist", row['table_name'])
                 break
         else:
             for accept_pattern in table_whitelist:
                 if fnmatch(row['table_name'], accept_pattern):
                     if pattern.match_table(row['table']):
                         tables.append(etl.TableName(row['schema'], row['table']))
+                        logger.debug("Table '%s' is included in result set", row['table_name'])
                         break
+                    else:
+                        logger.debug("Table '%s' matches whitelist but is not selected", row['table_name'])
     logging.getLogger(__name__).info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
                                      len(tables), table_whitelist, table_blacklist, pattern)
     return tables
@@ -168,7 +173,7 @@ def create_table_design(source_name, source_table_name, table_name, columns):
 
 def save_table_design(table_design, source_table_name, output_dir, dry_run=False):
     """
-    Write new table design file to local disk.
+    Write new table design file to etc disk.
     """
     table = table_design["name"]
     filename = os.path.join(output_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
@@ -187,6 +192,21 @@ def save_table_design(table_design, source_table_name, output_dir, dry_run=False
     return filename
 
 
+def assemble_selected_columns(table_design):
+    """
+    Pick columns and decide how they are selected (as-is or with an expression).
+    """
+    selected_columns = []
+    for column in table_design["columns"]:
+        if column.get("skipped", False):
+            continue
+        elif column.get("expression"):
+            selected_columns.append(column["expression"] + ' AS "%s"' % column["name"])
+        else:
+            selected_columns.append('"%s"' % column["name"])
+    return selected_columns
+
+
 def create_copy_statement(table_design, source_table_name, row_limit=None):
     """
     Assemble COPY statement that will extract attributes with their new types.
@@ -195,19 +215,12 @@ def create_copy_statement(table_design, source_table_name, row_limit=None):
     type. Whether there's an expression or just a name the resulting column is always
     called out delimited.
     """
-    select_column = []
-    for column in table_design["columns"]:
-        if column.get("skipped", False):
-            continue
-        elif column.get("expression"):
-            select_column.append(column["expression"] + ' AS "%s"' % column["name"])
-        else:
-            select_column.append('"%s"' % column["name"])
+    selected_columns = assemble_selected_columns(table_design)
     if row_limit:
         limit = "LIMIT {:d}".format(row_limit)
     else:
         limit = ""
-    return "COPY (SELECT {}\n    FROM {}\n{}) TO STDOUT WITH ({})".format(",\n    ".join(select_column),
+    return "COPY (SELECT {}\n    FROM {}\n{}) TO STDOUT WITH ({})".format(",\n    ".join(selected_columns),
                                                                           source_table_name,
                                                                           limit,
                                                                           CSV_WRITE_FORMAT)
