@@ -56,7 +56,7 @@
     # Dataframe information for SparkSQL
     "dataframe": {
         "partition_sizes": {
-            # map of lower bound to number of partitions to use (when row count is at least euqal to that bound)
+            # map of lower bound to number of partitions to use (when row count is at least equal to that bound)
             1: 1,
             100: 2,
             10000: 4,

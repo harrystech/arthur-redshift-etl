@@ -41,10 +41,11 @@ to be able to connect to PostgreSQL databases and write CSV files for a Datafram
 - [Spark-CSV package](https://spark-packages.org/)
 - [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) (1.4)
 
-Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to store files in S3:
+Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to push files into S3:
 - [Hadoop AWS](https://hadoop.apache.org/docs/r2.7.1/api/org/apache/hadoop/fs/s3native/NativeS3FileSystem.html) (2.7.1)
 - [AWS Java SDK](https://aws.amazon.com/sdk-for-java/) (1.7.4)
-(Do not upload them into EMR which comes with all the correct versions out of the box.)
+
+(Do not upload these into EMR because EMR comes with all the correct versions out of the box.)
 
 The JAR files should be stored into the `jars` directory locally and in the `jars` folder of your selected
 environment (see below).  A bootstrap action will copy them from S3 to the EMR cluster.
@@ -56,7 +57,7 @@ _Hint_: There is a download script in `bin/download_jars.sh` to pull the version
 Our ETL code is using [Python3](https://docs.python.org/3/) so you may have to install that first.
 On a Mac, simply use `brew install python3` for an easy [Homebrew](http://brew.sh/) installation.
 
-In order to run the Python code locally, create a virtual environment and install additional packages:
+In order to run the Python code locally, you'll need to create a virtual environment with these additional packages:
 * [Psycopg2](http://initd.org/psycopg/docs/) to connect to PostgreSQL and Redshift easily
 * [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
 * [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
@@ -86,10 +87,11 @@ The EMR releases 4.5 and later include python3 so there's no need to install Pyt
 
 TODO The above steps for a virtual environment should be merged with `bin/bootstrap.sh`.
 
-### Adding PySpark to your IDE
+#### Adding PySpark to your IDE
 
-The easiest way to add PySpark so that code completion and type checking works might be to just
-add a pointer in the virtual environment. On a Mac with a Homebrew installation of Spark, try this:
+The easiest way to add PySpark so that code completion and type checking works while working on ETL code
+might be to just add a pointer in the virtual environment.
+On a Mac with a Homebrew installation of Spark, try this:
 ```shell
 cat > venv/lib/python3.5/site-packages/_spark_python.pth <<EOF
 /usr/local/Cellar/apache-spark/1.6.1/libexec/python
@@ -106,61 +108,97 @@ and all the table design files and transformations.
 
 Although the Redshift cluster can be administered using the AWS console and `psql`, some
 helper scripts will make setting up the cluster consistently much easier.
-(See below for `initial_setup.py` and `create_user.py`.)
+(See below for `initialize` and `create_user`.)
 
 Also, add the AWS IAM role that the database owner may assume within Redshift
 to your settings file so that Redshift has the needed permissions to access the
 folder in S3.
 
-#### Initial setup
-
-After starting up the cluster, create groups, users and schemas (one per upstream source):
-
-```shell
-./initial_setup.py
-```
-
-#### Adding users
-
-Additional users may be added to the ETL or (analytics) user group:
-
-```shell
-./create_users.py
-```
-
 ### Sources
 
 TODO
 
-### ETL Configuration
 
-TODO
+## Initializing the Redshift cluster
+
+| Sub-command   | options |
+| ------------- | ----------------------------------------------------- |
+| initialize  | config, dry-run, password, skip-user-creation |
+| add_user    | config, dry-run, etl-user, add-user-schema, skip-user-creation |
+
+### Initial setup
+
+After starting up the cluster, create groups, users and schemas (one per upstream source):
+
+```shell
+arthur initialize
+```
+
+### Adding users
+
+Additional users may be added to the ETL or (analytics) user group:
+
+```shell
+arthur create_users
+```
 
 ## Running the ETL
 
+### Overview
+
+Normally, the ETL will move data from upstream sources using the `dump` and `load` commands.
+
+While working on the table designs or SQL for views and CTASs expressions, the steps are:
+* `design_table`
+* `copy_to_s3`
+* `update`
+
+
+| Sub-command   | options |
+| ------------- | ----------------------------------------------------- |
+| design_table  | config, dry-run, prefix, env, table, table design dir |
+| copy_to_s3    | config, dry-run, prefix, env, table, table design dir, git-modified, (with data ?) |
+| dump_to_s3    | config, dry-run, prefix, env, table |
+| load          | config, dry-run, prefix, env, table, drop |
+| update        | config, dry-run, prefix, env, table (view or ctas), drop, add-explain-plan, skip-views, skip-ctas |
+| etl           | equivalent to dump_to_s3, load, and update |
+
+* Also `--verbose` or `--silent`
+* Still needed ? `--force`
+
+**Notes**
+
+* Commands expect a config file.
+* Commands accept `dry-run` command line flag.
+* Commands allow to specify a selector (specific source or table name(s)).
+* Commands allow either `prefix` or `env` to select a folder in the S3 bucket.
+* Log files are by default in `etl.log`.
+
+* To copy data, use `aws s3 --recursive`.
+
+
 ### Setting up table designs
 
-Use `dump_schemas_to_s3.py` to bootstrap any table design files based on the
-tables found in your source schemas.
+Use `design_table` to bootstrap any table design files based on the tables found in your source schemas.
 
 ```shell
-./dump_schemas_to_s3.py
+arthur design_table
 ```
 
 ### Copying data out of PostgreSQL and into S3
 
-Now download the data (leveraging a Spark cluster) using `dump_data_to_s3.py`:
+Now download the data (leveraging a Spark cluster) using:
 
 ```shell
-./dump_data_to_s3.py
+arthur dump
 ```
 
 ## Copying data from S3 into Redshift
 
-Loading data includes crreating tables as needed along the way:
+Loading data includes creating tables as needed along the way:
 
 ```shell
-./load_to_redshift.py
+arthur load
 ```
 
 ## Update (or create) views and tables based on queries (CTAS)
@@ -168,7 +206,7 @@ Loading data includes crreating tables as needed along the way:
 Once (raw) data is available, create additional views and tables (based on queries):
 
 ```shell
-./update_in_redshift.py
+arthur update
 ```
 
 # Debugging and Contributing

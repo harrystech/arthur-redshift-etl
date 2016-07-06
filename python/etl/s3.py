@@ -42,7 +42,7 @@ import threading
 import boto3
 import simplejson as json
 
-import etl.arguments
+import etl.commands
 import etl.config
 from etl import TableName, AssociatedTableFiles
 
@@ -90,9 +90,13 @@ def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
         if dry_run:
             logger.info("Dry-run: Skipping upload to 's3://%s/%s'", bucket_name, object_key)
         else:
-            logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
-            bucket = _get_bucket(bucket_name)
-            bucket.upload_file(filename, object_key)
+            try:
+                logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
+                bucket = _get_bucket(bucket_name)
+                bucket.upload_file(filename, object_key)
+            except Exception:
+                logger.exception("Something terrible happened with the upload")
+                raise
 
 
 def get_file_content(bucket_name, object_key):
@@ -274,12 +278,3 @@ def list_files(args, settings):
                     files.extend(info.data_files)
                 for filename in sorted(files):
                     print("            s3://{}/{}".format(bucket_name, filename))
-
-
-if __name__ == "__main__":
-    parser = etl.arguments.argument_parser(["config", "prefix", "table"])
-    main_args = parser.parse_args()
-    etl.config.configure_logging(main_args.log_level)
-    main_settings = etl.config.load_settings(main_args.config)
-    with etl.measure_elapsed_time():
-        list_files(main_args, main_settings)

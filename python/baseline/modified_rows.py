@@ -8,7 +8,7 @@ from contextlib import closing
 import logging
 
 import etl
-import etl.arguments
+import etl.commands
 import etl.config
 import etl.pg
 
@@ -53,7 +53,7 @@ def count_updated_rows(conn, tables, begin_time, end_time, check_modified=False)
 
 
 def modified_rows(args, settings):
-    dw = etl.env_value(settings("data_warehouse", "etl_access"))
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
     schemas = [source["name"] for source in settings("sources")]
     with closing(etl.pg.connection(dw, autocommit=True, readonly=True)) as cx:
         tables = find_tables(cx, schemas)
@@ -64,7 +64,7 @@ def modified_rows(args, settings):
 
 
 def build_parser():
-    parser = etl.arguments.argument_parser(["config"], description=__doc__)
+    parser = etl.commands.build_basic_parser(["config"], description=__doc__)
     parser.add_argument("begin_time", help="start of time window")
     parser.add_argument("end_time", help="start of time window")
     return parser

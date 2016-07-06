@@ -20,7 +20,7 @@ from contextlib import closing
 import logging
 
 import etl
-import etl.arguments
+import etl.commands
 import etl.config
 import etl.load
 import etl.pg
@@ -28,14 +28,14 @@ import etl.s3
 
 
 def update_ctas_or_views(args, settings):
-    dw = etl.env_value(settings("data_warehouse", "etl_access"))
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
     table_owner = settings("data_warehouse", "owner")
     etl_group = settings("data_warehouse", "groups", "etl")
     user_group = settings("data_warehouse", "groups", "users")
     bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(args.ctas_or_view)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    files_in_s3 = etl.s3.find_files(bucket_name, args.prefix, schemas, selection)
+    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, args.prefix, schemas, selection)
     tables_with_queries = [(table_name, table_files["Design"], table_files["SQL"])
                            for table_name, table_files in files_in_s3
                            if table_files["SQL"] is not None]
@@ -70,18 +70,3 @@ def update_ctas_or_views(args, settings):
                 for table_name in vacuumable:
                     etl.load.vacuum(conn, table_name, dry_run=args.dry_run)
 
-
-def build_argument_parser():
-    parser = etl.arguments.argument_parser(["config", "prefix", "dry-run", "drop", "ctas_or_view"], description=__doc__)
-    parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
-    parser.add_argument("-a", "--skip-views", help="Skip updating views, only reload CTAS", action="store_true")
-    parser.add_argument("-k", "--skip-ctas", help="Skip updating CTAS, only reload views", action="store_true")
-    return parser
-
-
-if __name__ == "__main__":
-    main_args = build_argument_parser().parse_args()
-    etl.config.configure_logging(main_args.log_level)
-    main_settings = etl.config.load_settings(main_args.config)
-    with etl.measure_elapsed_time(), etl.pg.log_error():
-        update_ctas_or_views(main_args, main_settings)

@@ -1,3 +1,4 @@
+from contextlib import closing
 from itertools import chain
 import logging
 import os.path
@@ -7,10 +8,13 @@ import jsonschema
 import psycopg2
 import yaml
 
+import etl
 from etl import TableName
+import etl.commands
 import etl.config
 import etl.dump
 import etl.pg
+import etl.s3
 
 
 def load_table_design(stream, table_name):
@@ -413,3 +417,46 @@ def vacuum(conn, table_name, dry_run=False):
     else:
         logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
+
+
+def load_to_redshift(args, settings):
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
+    table_owner = settings("data_warehouse", "owner")
+    etl_group = settings("data_warehouse", "groups", "etl")
+    user_group = settings("data_warehouse", "groups", "users")
+    bucket_name = settings("s3", "bucket_name")
+    selection = etl.TableNamePatterns.from_list(args.table)
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, args.prefix, schemas, selection)
+    tables_with_data = [(table_name, table_files["Design"], table_files["Data"])
+                        for table_name, table_files in files_in_s3
+                        if len(table_files["Data"])]
+    if len(tables_with_data) == 0:
+        logging.error("No applicable files found in 's3://%s/%s'", bucket_name, args.prefix)
+    else:
+        credentials = settings("data_warehouse", "iam_role")
+        vacuumable = []
+        with closing(etl.pg.connection(dw)) as conn:
+            for table_name, design_file, csv_files in tables_with_data:
+                with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
+                    table_design = load_table_design(content, table_name)
+                if table_design["source_name"] in ("CTAS", "VIEW"):
+                    continue
+                with conn:
+                    create_table(conn, table_design, table_name, table_owner,
+                                          drop_table=args.drop_table, dry_run=args.dry_run)
+                    grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
+                    if csv_files[0].endswith(".manifest"):
+                        copy_data(conn, credentials, table_name, bucket_name, manifest=csv_files[0],
+                                           dry_run=args.dry_run)
+                    else:
+                        copy_data(conn, credentials, table_name, bucket_name, csv_files=csv_files,
+                                           dry_run=args.dry_run)
+                    analyze(conn, table_name, dry_run=args.dry_run)
+                    vacuumable.append(table_name)
+
+        # Reconnect to run vacuum outside transaction block
+        if not args.drop_table:
+            with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+                for table_name in vacuumable:
+                    vacuum(conn, table_name, dry_run=args.dry_run)

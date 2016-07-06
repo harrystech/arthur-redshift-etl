@@ -13,7 +13,7 @@ import logging
 import os.path
 
 import etl
-import etl.arguments
+import etl.commands
 import etl.config
 import etl.load
 import etl.pg
@@ -78,20 +78,3 @@ def copy_to_s3(args, settings):
                     copy_source_to_s3(executor, source, tables, bucket_name, args.prefix, dry_run=args.dry_run)
         if not args.dry_run:
             logging.info("Uploaded all files to 's3://%s/%s/'", bucket_name, args.prefix)
-
-
-def build_argument_parser():
-    parser = etl.arguments.argument_parser(["config", "prefix", "data-dir", "table-design-dir", "dry-run", "table"],
-                                           description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-w", "--with-data", help="Copy data files (including manifest)", action="store_true")
-    group.add_argument("-g", "--git-modified", help="Copy files modified in work tree", action="store_true")
-    return parser
-
-
-if __name__ == "__main__":
-    main_args = build_argument_parser().parse_args()
-    etl.config.configure_logging(main_args.log_level)
-    main_settings = etl.config.load_settings(main_args.config)
-    with etl.measure_elapsed_time():
-        copy_to_s3(main_args, main_settings)

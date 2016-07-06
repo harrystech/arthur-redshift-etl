@@ -15,7 +15,7 @@ _schemas_completion()
     COMPREPLY=( $(compgen -W "$SCHEMAS" -- "$SCHEMA_START") )
 }
 
-for script in "copy_to_s3.py dump_schemas_to_s3.py load_to_redshift.py update_in_redshift.py"
+for script in "copy.py dump_schemas_to_s3.py load_to_redshift.py update.py"
 do
     complete -F _schemas_completion $script
 done
