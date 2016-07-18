@@ -17,3 +17,5 @@ Allow to specify which group has access to any source.
 Ask twice for password when password for create_user is entered on the commandline.
 
 Query the data base for the existence of a user's schema or the current search path instead of relying on args.
+
+Warn if distribution key is not also a sort key.

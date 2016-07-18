@@ -2,20 +2,29 @@
 
 _schemas_completion()
 {
-    local SCHEMA_START SCHEMAS
-    SCHEMA_START="${COMP_WORDS[COMP_CWORD]}"
-    case "$SCHEMA_START" in
-        *.*)
-            SCHEMAS=$(find schemas -type f -name '*.yaml' | sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1.\2:')
+
+    local cur prev opts
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # All sub-commands
+    opts="list dump validate copy load update etl"
+
+    if [ "$prev" = "arthur" ]; then
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    else
+        local SCHEMAS
+        case "$cur" in
+          *.*)
+            SCHEMAS=$(find -L schemas -type f -name '*.yaml' | sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1.\2:')
             ;;
-        *)
-            SCHEMAS=$(find schemas -type f -name '*.yaml' | sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1:' | uniq)
+          *)
+            SCHEMAS=$(find -L schemas -type f -name '*.yaml' | sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1:' | uniq)
             ;;
-    esac
-    COMPREPLY=( $(compgen -W "$SCHEMAS" -- "$SCHEMA_START") )
+        esac
+        COMPREPLY=( $(compgen -W "$SCHEMAS" -- "$cur") )
+    fi
+
 }
 
-for script in "copy.py dump_schemas_to_s3.py load_to_redshift.py update.py"
-do
-    complete -F _schemas_completion $script
-done
+complete -F _schemas_completion arthur

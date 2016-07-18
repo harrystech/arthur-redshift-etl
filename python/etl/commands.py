@@ -27,14 +27,15 @@ import etl.update
 
 def run_arg_as_command(my_name="arthur"):
     try:
-        args = build_full_parser(my_name).parse_args()
+        parser = build_full_parser(my_name)
+        args = parser.parse_args()
         etl.config.configure_logging(args.log_level)
         settings = etl.config.load_settings(args.config)
         if args.func:
             with etl.measure_elapsed_time():
                 args.func(args, settings)
-        #else:
-        # parser.print_usage()
+        else:
+            parser.print_usage()
     except:
         # Any log traces have already been printed by the context manager, so just bail out.
         sys.exit(1)
