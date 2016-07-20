@@ -6,7 +6,7 @@
 
 # temp data
 /data/
-/schemas/
+/schemas
 /tmp/
 *.RData
 python/dist

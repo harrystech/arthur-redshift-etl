@@ -26,6 +26,9 @@ class TableName(namedtuple("_TableName", ["schema", "table"])):
     def __str__(self):
         return '"{0}"."{1}"'.format(self.schema, self.table)
 
+    def match(self, glob):
+        return fnmatch(self.identifier, glob)
+
 
 class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
     """

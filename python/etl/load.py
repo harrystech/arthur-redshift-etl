@@ -4,9 +4,7 @@ import logging
 import os.path
 import simplejson as json
 
-import jsonschema
 import psycopg2
-import yaml
 
 import etl
 from etl import TableName
@@ -15,87 +13,6 @@ import etl.config
 import etl.dump
 import etl.pg
 import etl.s3
-
-
-def load_table_design(stream, table_name):
-    """
-    Load table design from stream (usually, an open file). The table design is
-    validated before being returned.
-    """
-    table_design = yaml.safe_load(stream)
-    logging.getLogger(__name__).debug("Trying to validate table design for '%s' from stream", table_name.identifier)
-    return validate_table_design(table_design, table_name)
-
-
-def validate_table_design(table_design, table_name):
-    """
-    Validate table design against schema.  Raise exception if anything is not
-    right.
-
-    Phase 1 of validation is based on a schema and json-schema validation.
-    Phase 2 is built on specific rules that I couldn't figure out how
-    to run inside json-schema.
-    """
-    logger = logging.getLogger(__name__)
-    try:
-        table_design_schema = etl.config.load_json("table_design.schema")
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
-        raise
-    try:
-        jsonschema.validate(table_design, table_design_schema)
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logger.error("Failed to validate table design for '%s'!", table_name.identifier)
-        raise
-    # TODO Need more rules?
-    if table_design["name"] != table_name.identifier:
-        raise ValueError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
-    if table_design["source_name"] == "VIEW":
-        for column in table_design["columns"]:
-            if column.get("skipped", False):
-                raise ValueError("columns may not be skipped in views")
-    else:
-        for column in table_design["columns"]:
-            if column.get("skipped", False):
-                continue
-            if column.get("not_null", False):
-                # NOT NULL columns -- may not have "null" as type
-                if isinstance(column["type"], list) or column["type"] == "null":
-                    raise ValueError('"not null" column may not have null type')
-            else:
-                # NULL columns -- must have "null" as type and may not be primary key (identity)
-                if not (isinstance(column["type"], list) and "null" in column["type"]):
-                    raise ValueError('"null" missing as type for null-able column')
-                if column.get("identity", False):
-                    raise ValueError("identity column must be set to not null")
-        identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
-        if len(identity_columns) > 1:
-            raise ValueError("only one column should have identity")
-        surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
-        if len(surrogate_keys) and not surrogate_keys == identity_columns:
-            raise ValueError("surrogate key must be identity")
-    return table_design
-
-
-def compare_columns(live_design, file_design):
-    logger = logging.getLogger(__name__)
-    live_columns = {column["name"] for column in live_design["columns"]}
-    file_columns = {column["name"] for column in file_design["columns"]}
-    # TODO define policy to declare columns "ETL-only"
-    etl_columns = {name for name in file_columns if name.startswith("etl__")}
-    logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
-                 file_design["name"], len(live_columns), len(file_columns), len(etl_columns))
-    not_accounted_for_on_file = live_columns.difference(file_columns)
-    described_but_not_live = file_columns.difference(live_columns).difference(etl_columns)
-    if not_accounted_for_on_file:
-        logger.warning("New columns in '%s' that are not in existing table design: %s",
-                       file_design["name"], sorted(not_accounted_for_on_file))
-        indices = dict((name, i) for i, name in enumerate(column["name"] for column in live_design["columns"]))
-        for name in not_accounted_for_on_file:
-            logger.debug("New column %s.%s: %s", live_design["name"], name,
-                         json.dumps(live_design["columns"][indices[name]], indent="    ", sort_keys=True))
-    if described_but_not_live:
-        logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
 
 
 def format_column_list(columns):
@@ -460,3 +377,27 @@ def load_to_redshift(args, settings):
             with closing(etl.pg.connection(dw, autocommit=True)) as conn:
                 for table_name in vacuumable:
                     vacuum(conn, table_name, dry_run=args.dry_run)
+
+
+def validate_designs(args, settings):
+    """
+    Make sure that all (local) table design files pass the validation checks.
+    """
+    bucket_name = settings("s3", "bucket_name")
+    selection = etl.TableNamePatterns.from_list(args.table)
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    if args.git_modified:
+        found = etl.s3.find_modified_files(schemas, selection)
+    else:
+        found = etl.s3.find_local_files(args.table_design_dir, schemas, selection)
+
+    if len(found) == 0:
+        logging.error("No applicable files found in %s", args.table_design_dir)
+    else:
+        logging.info("Found files for %d schemas(s).", len(found))
+        for source in found:
+            for info in found[source]:
+                logging.info("Checking: '%s'", info.design_file)
+                design_file = open(info.design_file, 'r')
+                table_design = load_table_design(design_file, info.target_table_name)
+                logging.debug("Validated table design for '%s'", table_design["name"])

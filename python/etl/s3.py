@@ -1,5 +1,5 @@
 """
-Utilities to interact with Amazon S3.
+Utilities to interact with Amazon S3 (and occasionally, the local file system).
 
 The layout of files is something like this for CSV files:
 
@@ -25,11 +25,9 @@ s3://{bucket_name}/{prefix}/schemas/{source_name}/{schema_name}-{table_name}.sql
 Note that for tables or views which are not from upstream sources but are instead
 built using SQL, there's a free choice of the schema_name. So this is best used
 to create a sequence, meaning evaluation order in the ETL.
-
-If called directly, will list the files found (as described above).
 """
 
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import concurrent.futures
 import logging
 from operator import attrgetter
@@ -117,7 +115,7 @@ def get_file_content(bucket_name, object_key):
 
 def find_files_in_bucket(bucket_name, prefix, schemas, pattern):
     """
-    Organize files in the given bucket and folder by schema,
+    Discover files in the given bucket and folder by schema,
     apply pattern-based selection along the way.
     """
     logging.getLogger(__name__).info("Looking for files in 's3://%s/%s'", bucket_name, prefix)
@@ -125,21 +123,20 @@ def find_files_in_bucket(bucket_name, prefix, schemas, pattern):
     return _find_files_from((obj.key for obj in bucket.objects.filter(Prefix=prefix)), schemas, pattern)
 
 
-def find_local_files(directories, schemas, pattern):
+def find_local_files(directory, schemas, pattern):
     """
-    Organize all local files from the given directories,
+    Discover all local files from the given directory,
     apply pattern-based selection along the way.
     """
-    logging.getLogger(__name__).info("Looking for files in %s", directories)
+    logging.getLogger(__name__).info("Looking for files in %s", directory)
 
-    def list_files():
-        for directory in directories:
-            for root, dirs, files in os.walk(os.path.normpath(directory)):
-                if len(dirs) == 0:  # bottom level
-                    for filename in sorted(files):
-                        yield os.path.join(root, filename)
+    def list_local_files():
+        for root, dirs, files in os.walk(os.path.normpath(directory)):
+            if len(dirs) == 0:  # bottom level
+                for filename in sorted(files):
+                    yield os.path.join(root, filename)
 
-    return _find_files_from(list_files(), schemas, pattern)
+    return _find_files_from(list_local_files(), schemas, pattern)
 
 
 def find_modified_files(schemas, pattern):
@@ -161,14 +158,14 @@ def find_modified_files(schemas, pattern):
             design_file = path + ".yaml"
             if os.path.exists(design_file):
                 combined_files.add(design_file)
-    logger.debug("Modified files in work tree: %s", sorted(modified_files))
-    logger.debug("Adding design files as needed: %s", sorted(combined_files.difference(modified_files)))
+    logger.debug("Found modified files in work tree: %s", sorted(modified_files))
+    logger.debug("Added design files although not new: %s", sorted(combined_files.difference(modified_files)))
     return _find_files_from(sorted(combined_files), schemas, pattern)
 
 
 def _find_files_from(iterable, schemas, pattern):
     """
-    Return dictionary that maps schemas to lists of table meta data ('associated table files').
+    Return (ordered) dictionary that maps schemas to lists of table meta data ('associated table files').
 
     Note that all tables must have a table design file. It's not ok to have a CSV or
     SQL file by itself.
@@ -217,64 +214,39 @@ def _find_files_from(iterable, schemas, pattern):
                 logger.warning("Found data file without table design: '%s'", filename)
     logger.debug("Found matching files for %d schema(s) with %d table(s) total",
                  len(found), sum(len(tables) for tables in found.values()))
-    return {
-        source_name: sorted(found[source_name].values(), key=attrgetter('source_table_name')) for source_name in found
-    }
-
-
-def write_manifest_file(local_files, bucket_name, prefix, dry_run=False):
-    """
-    Create manifest file to load all the given files (after upload
-    to S3) and return name of new manifest file.
-    """
-    logger = logging.getLogger(__name__)
-    data_files = [filename for filename in local_files if not filename.endswith(".manifest")]
-    if len(data_files) == 0:
-        raise ValueError("List of files must include at least one CSV file")
-    elif len(data_files) > 1:
-        parts = os.path.commonprefix(data_files)
-        filename = parts[:parts.rfind(".part_")] + ".manifest"
-    else:
-        csv_file = data_files[0]
-        filename = csv_file[:csv_file.rfind(".csv")] + ".csv.manifest"
-    remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in data_files]
-    manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
-    if dry_run:
-        logger.info("Dry-run: Skipping writing new manifest file to '%s'", filename)
-    else:
-        logger.info("Writing new manifest file for %d file(s) to '%s'", len(data_files), filename)
-        with open(filename, 'wt') as o:
-            json.dump(manifest, o, indent="    ", sort_keys=True)
-            o.write('\n')
-        logger.debug("Done writing '%s'", filename)
-    return filename
-
-
-def write_manifest_file_eventually(file_futures, bucket_name, prefix, dry_run=False):
-    return write_manifest_file([future.result() for future in file_futures], bucket_name, prefix, dry_run=dry_run)
+    # Always return files sorted by source table name (which includes the schema in the source).
+    ordered_found = OrderedDict()
+    for source_name in schemas:
+        if source_name in found:
+            ordered_found[source_name] = sorted(found[source_name].values(), key=attrgetter('source_table_name'))
+    return ordered_found
 
 
 def list_files(args, settings):
+    """
+    List files in the S3 bucket.
+
+    Useful to discover whether pattern matching works.
+    """
     etl.config.configure_logging(args.log_level)
     bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(args.table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
     found = find_files_in_bucket(bucket_name, args.prefix, schemas, selection)
-    for source in schemas:
-        if source in found:
-            print("Source: {}".format(source))
-            for info in found[source]:
-                if info.source_table_name.schema in ('CTAS', 'VIEW'):
-                    print("   Table: {} ({})".format(info.target_table_name.table, info.source_table_name.schema))
-                else:
-                    print("   Table: {} (from: {})".format(info.target_table_name.table,
-                                                           info.source_table_name.identifier))
-                files = [info.design_file]
-                if info.sql_file is not None:
-                    files.append(info.sql_file)
-                if info.manifest_file is not None:
-                    files.append(info.manifest_file)
-                if len(info.data_files) > 0:
-                    files.extend(info.data_files)
-                for filename in sorted(files):
-                    print("            s3://{}/{}".format(bucket_name, filename))
+    for source in found:
+        print("Source: {}".format(source))
+        for info in found[source]:
+            if info.source_table_name.schema in ('CTAS', 'VIEW'):
+                print("    Table: {} ({})".format(info.target_table_name.table, info.source_table_name.schema))
+            else:
+                print("    Table: {} (from: {})".format(info.target_table_name.table,
+                                                       info.source_table_name.identifier))
+            files = [("Design", info.design_file)]
+            if info.sql_file is not None:
+                files.append(("SQL", info.sql_file))
+            if info.manifest_file is not None:
+                files.append(("Manifest", info.manifest_file))
+            if len(info.data_files) > 0:
+                files.extend(("Data", filename) for filename in info.data_files)
+            for file_type, filename in files:
+                print("        {}: s3://{}/{}".format(file_type, bucket_name, filename))

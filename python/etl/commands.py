@@ -22,6 +22,7 @@ import etl.dw
 import etl.load
 import etl.pg
 import etl.s3
+import etl.schemas
 import etl.update
 
 
@@ -29,9 +30,9 @@ def run_arg_as_command(my_name="arthur"):
     try:
         parser = build_full_parser(my_name)
         args = parser.parse_args()
-        etl.config.configure_logging(args.log_level)
-        settings = etl.config.load_settings(args.config)
         if args.func:
+            etl.config.configure_logging(args.log_level)
+            settings = etl.config.load_settings(args.config)
             with etl.measure_elapsed_time():
                 args.func(args, settings)
         else:
@@ -45,7 +46,7 @@ def build_full_parser(prog_name):
     """
     Build a parser by adding sub-parsers for sub-commands.
     Other options, even if shared between sub-commands, are in the sub-parsers to avoid
-    having to awkwardly insert them betwween program name and sub-command name.
+    having to awkwardly insert them between program name and sub-command name.
 
     :param prog_name: Name that should show up as command name in help
     :return: instance of ArgumentParser that is ready to parse and run sub-commands
@@ -56,31 +57,15 @@ def build_full_parser(prog_name):
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
 
     # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.
-    subparsers = parser.add_subparsers(help="specify one of these sub-commands (which can all provide more help)",
-                                       title="available sub-commands (full names with aliases)")
-    list_files = ListFilesCommand()
-    list_files.add_to_parser(subparsers)
+    subparsers = parser.add_subparsers(help="Specify one of these sub-commands (which can all provide more help)",
+                                       title="available sub-commands")
 
-    initial_setup = InitialSetupCommand()
-    initial_setup.add_to_parser(subparsers)
-
-    create_user = CreateUserCommand()
-    create_user.add_to_parser(subparsers)
-
-    dump_schemas_to_s3 = DumpSchemasToS3Command()
-    dump_schemas_to_s3.add_to_parser(subparsers)
-
-    dump_to_s3 = DumpToS3Command()
-    dump_to_s3.add_to_parser(subparsers)
-
-    copy_to_s3 = CopyToS3Command()
-    copy_to_s3.add_to_parser(subparsers)
-
-    load_to_redshift = LoadToRedshiftCommand()
-    load_to_redshift.add_to_parser(subparsers)
-
-    update_in_redshift = UpdateInRedshiftCommand()
-    update_in_redshift.add_to_parser(subparsers)
+    for klass in [InitialSetupCommand, CreateUserCommand,
+                  DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
+                  LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
+                  ValidateDesignsCommand, ListFilesCommand]:
+        cmd = klass()
+        cmd.add_to_parser(subparsers)
 
     return parser
 
@@ -97,14 +82,14 @@ def build_basic_parser(prog_name, description):
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
     if default_config is None:
         parser.add_argument("-c", "--config",
-                            help="set path to configuration file (required if DATA_WAREHOUSE_CONFIG is not set)",
+                            help="Set path to configuration file (required if DATA_WAREHOUSE_CONFIG is not set)",
                             required=True)
     else:
         parser.add_argument("-c", "--config",
-                            help="change path to configuration file (using DATA_WAREHOUSE_CONFIG=%(default)s)",
+                            help="Change path to configuration file (using DATA_WAREHOUSE_CONFIG=%(default)s)",
                             default=default_config)
 
-    # Set defaults so that we can simplify tests.
+    # Set defaults so that we can avoid having to test the Namespace object.
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
 
@@ -123,48 +108,48 @@ def add_standard_arguments(parser, options):
 
     # Choice between verbose and silent simply affects the log level.
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-v", "--verbose", help="increase verbosity",
+    group.add_argument("-v", "--verbose", help="Increase verbosity",
                        action="store_const", const="DEBUG", dest="log_level")
-    group.add_argument("-s", "--silent", help="decrease verbosity",
+    group.add_argument("-s", "--silent", help="Decrease verbosity",
                        action="store_const", const="WARNING", dest="log_level")
-
-    parser.add_argument("-n", "--dry-run", help="do not actually copy data", default=False, action="store_true")
 
     example_password = uuid.uuid4().hex.title()
 
+    if "dry-run" in options:
+        parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
         prefix = parser.add_mutually_exclusive_group()
         prefix.add_argument("-p", "--prefix", default=getpass.getuser(),
-                            help="select prefix in S3 bucket (default is user name: '%(default)s')")
+                            help="Select prefix in S3 bucket (default is user name: '%(default)s')")
         prefix.add_argument("-e", "--prefix-env", dest="prefix", metavar="ENV", action=AppendDateAction,
-                            help="set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
+                            help="Set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
     if "table-design-dir" in options:
         parser.add_argument("-t", "--table-design-dir",
-                            help="set path to directory with table design files (default: '%(default)s')",
+                            help="Set path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
     if "drop" in options:
         parser.add_argument("-d", "--drop",
-                            help="DROP TABLE or VIEW TO FORCE UPDATE OF definition", default=False,
+                            help="First drop table or view to force update of definition", default=False,
                             action="store_true")
-    elif "drop-table" in options:
-        parser.add_argument("-d", "--drop-table",
-                            help="DROP TABLE to FORCE UPDATE OF TABLE definition", default=False,
-                            action="store_true")
-    # XXX Still needed?
     if "force" in options:
-        parser.add_argument("-f", "--force", help="allow overwriting data files", default=False,
-                            action="store_true")
-
-    if "table" in options:
-        parser.add_argument("table", help="glob pattern or identifier to select target table(s)", nargs='*')
-    elif "ctas_or_view" in options:
-        parser.add_argument("ctas_or_view", help="glob pattern or identifier to select target(s)", nargs='*')
+        parser.add_argument("-f", "--force", help="force updates", default=False, action="store_true")
+    if "target" in options:
+        parser.add_argument("table", help="glob pattern or identifier to select target(s)", nargs='*')
     if "username" in options:
         parser.add_argument("username", help="name for new user")
     if "password" in options:
         parser.add_argument("password", help="password for new user (example: '%s')" % example_password, nargs='?')
 
     return parser
+
+
+class AppendDateAction(argparse.Action):
+
+    """Callback for argument parser to append current date so that environment has one folder per day."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        today = datetime.now().strftime("/%Y%m%d_%H%M")
+        setattr(namespace, self.dest, values + today)
 
 
 def check_positive_int(s):
@@ -185,15 +170,13 @@ class SubCommand:
 
     """Instances (of child classes) will setup sub-parsers and have callbacks for those."""
 
-    def __init__(self, name, aliases, help, description):
+    def __init__(self, name, help, description):
         self.name = name
-        self.aliases = aliases
         self.help = help
         self.description = description
 
     def add_to_parser(self, parent_parser):
         parser = parent_parser.add_parser(self.name,
-                                          aliases=self.aliases,
                                           help=self.help,
                                           description=self.description)
         parser.set_defaults(func=self.callback)
@@ -205,33 +188,20 @@ class SubCommand:
         pass
 
     def callback(self, args, settings):
+        """Overwrite this method for sub-classes"""
         raise NotImplementedError("Instance of %s has no proper callback" % self.__class__.__name__)
-
-
-class ListFilesCommand(SubCommand):
-
-    def __init__(self):
-        super().__init__("list", ["ls"],
-                         "list files",
-                         "list files starting with prefix in the S3 bucket by source, table, type")
-
-    def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "prefix_env", "table"])
-
-    def callback(self, args, settings):
-        etl.s3.list_files(args, settings)
 
 
 class InitialSetupCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("initial_setup", ["init"],
-                         "create schemas, users, groups",
-                         "create schemas for each source, users, and user groups for etl and analytics")
+        super().__init__("initialize",
+                         "Create schemas, users, and groups",
+                         "Create schemas for each source, users, and user groups for etl and analytics")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["config", "password"])
-        parser.add_argument("-k", "--skip-user-creation", help="Skip user and groups, only create schemas",
+        add_standard_arguments(parser, ["password"])
+        parser.add_argument("-k", "--skip-user-creation", help="Skip user and groups; only create schemas",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
@@ -242,12 +212,12 @@ class InitialSetupCommand(SubCommand):
 class CreateUserCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("create_user", [],
-                         "add new user",
-                         "add new user and set group membership")
+        super().__init__("create_user",
+                         "Add new user",
+                         "Add new user and set group membership, optionally add a personal schema")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["config", "username", "password"])
+        add_standard_arguments(parser, ["username", "password"])
         parser.add_argument("-e", "--etl-user", help="Add user also to ETL group", action="store_true")
         parser.add_argument("-a", "--add-user-schema",
                             help="Add new schema, writable for the user",
@@ -261,79 +231,79 @@ class CreateUserCommand(SubCommand):
             etl.dw.create_user(args, settings)
 
 
-class DumpSchemasToS3Command(SubCommand):
+class DownloadSchemasCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("dump_schemas_to_s3", ["schemas"],
-                         "extract schema information from sources",
-                         "extract schema information from sources")
+        super().__init__("design",
+                         "Bootstrap schema information from sources",
+                         "Download schema information from sources (and compare against current table designs)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "prefix_env", "dry-run", "table-design-dir", "table"])
+        add_standard_arguments(parser, ["dry-run", "table-design-dir", "target"])
         parser.add_argument("-j", "--jobs", help="Number of parallel connections (default: %(default)s)",
                             type=check_positive_int, default=1)
 
     def callback(self, args, settings):
-        etl.dump.dump_schemas_to_s3(args, settings)
-
-
-class DumpToS3Command(SubCommand):
-
-    def __init__(self):
-        super().__init__("dump_data_to_s3", ["dump"],
-                         "dump table data from sources",
-                         "dump table contents to files in S3")
-
-    def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "prefix_env", "dry-run", "table"])
-
-    def callback(self, args, settings):
-        with etl.pg.log_error():
-            etl.dump.dump_to_s3(args, settings)
+        etl.schemas.download_schemas(args, settings)
 
 
 class CopyToS3Command(SubCommand):
 
     def __init__(self):
-        super().__init__("copy_data_to_s3", ["copy"],
-                         "copy table design files",
-                         "copy local table design files to S3")
+        super().__init__("sync",
+                         "Copy table design files to S3",
+                         "Copy table design files from local directory to S3")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "prefix_env", "dry-run", "table-design-dir", "data-dir", "table"])
+        add_standard_arguments(parser, ["dry-run", "prefix", "table-design-dir", "target"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-w", "--with-data", help="Copy data files (including manifest)", action="store_true")
         group.add_argument("-g", "--git-modified", help="Copy files modified in work tree", action="store_true")
 
     def callback(self, args, settings):
         etl.copy.copy_to_s3(args, settings)
 
 
-class LoadToRedshiftCommand(SubCommand):
+class DumpDataToS3Command(SubCommand):
 
     def __init__(self):
-        super().__init__("load_to_redshift", ["load"],
-                         "load data into Redshift from files in S3",
-                         "load data into Redshift from files in S3")
+        super().__init__("dump",
+                         "Dump table data from sources",
+                         "Dump table contents to files in S3 (needs Spark context)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "prefix_env", "dry-run", "drop-table", "table"])
+        add_standard_arguments(parser, ["dry-run", "prefix", "table-design-dir", "target"])
+
+    def callback(self, args, settings):
+        with etl.pg.log_error():
+            etl.dump.dump_to_s3(args, settings)
+
+
+class LoadRedshiftCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("load",
+                         "Load data into Redshift from files in S3",
+                         "Load data into Redshift from files in S3")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run", "prefix", "target"])
 
     def callback(self, args, settings):
         with etl.pg.log_error():
             etl.load.load_to_redshift(args, settings)
 
 
-class UpdateInRedshiftCommand(SubCommand):
+class UpdateRedshiftCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("update_in_redshift", ["update"],
-                         "update CTAS and views in Redshift",
-                         "update CTAS and views in Redshift from files in S3")
+        super().__init__("update",
+                         "Update data in Redshift",
+                         "Update data in Redshift from files in S3")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "prefix_env", "dry-run", "drop", "ctas_or_view"])
+        add_standard_arguments(parser, ["dry-run", "prefix", "target"])
         parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
+        # TODO Skip data?
         parser.add_argument("-a", "--skip-views", help="Skip updating views, only reload CTAS", action="store_true")
         parser.add_argument("-k", "--skip-ctas", help="Skip updating CTAS, only reload views", action="store_true")
 
@@ -342,13 +312,52 @@ class UpdateInRedshiftCommand(SubCommand):
             etl.update.update_ctas_or_views(args, settings)
 
 
-class AppendDateAction(argparse.Action):
+class ExtractLoadTransformCommand(SubCommand):
 
-    """Callback for argument parser to append current date so that environment has one folder per day."""
+    def __init__(self):
+        super().__init__("etl",
+                         "Run complete ETL (or ELT)",
+                         "Validate designs, extract data, and load data, possibly with transforms")
 
-    def __call__(self, parser, namespace, values, option_string=None):
-        today = datetime.now().strftime("/%Y%m%d_%H%M")
-        setattr(namespace, self.dest, values + today)
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run", "prefix", "force"])
+
+    def callback(self, args, settings):
+        # XXX Need to validate against upstream ... etl.dump.download_schemas(args, settings)
+        etl.dump.dump_to_s3(args, settings)
+        if args.force:
+            etl.load.load_to_redshift(args, settings)
+        else:
+            etl.update.update_ctas_or_views(args, settings)
+
+
+class ValidateDesignsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("validate",
+                         "Validate table design files",
+                         "Validate table design files")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix", "table-design-dir", "target"])
+        parser.add_argument("-g", "--git-modified", help="Check files modified in work tree", action="store_true")
+
+    def callback(self, args, settings):
+        etl.load.validate_designs(args, settings)
+
+
+class ListFilesCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("ls",
+                         "List files in S3",
+                         "List files in the S3 bucket and starting with prefix by source, table, and type")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix", "target"])
+
+    def callback(self, args, settings):
+        etl.s3.list_files(args, settings)
 
 
 if __name__ == "__main__":

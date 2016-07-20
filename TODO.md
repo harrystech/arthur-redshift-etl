@@ -19,3 +19,6 @@ Ask twice for password when password for create_user is entered on the commandli
 Query the data base for the existence of a user's schema or the current search path instead of relying on args.
 
 Warn if distribution key is not also a sort key.
+
+Test whether relation is table or view to inoke the correct drop command.  (When switching from VIEW to CTAS
+(or back) the --drop option breaks.)

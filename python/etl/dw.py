@@ -72,7 +72,7 @@ def initial_setup(args, settings):
                 etl.pg.create_schema(conn, schema, etl_user)
                 etl.pg.grant_all_on_schema(conn, schema, etl_group)
                 etl.pg.grant_usage(conn, schema, user_group)
-            logging.info("Setting search path to: %s", schemas)
+            logging.info("Setting search path for %s to: %s", etl_user, schemas)
             etl.pg.alter_search_path(conn, etl_user, schemas)
 
 
@@ -88,13 +88,16 @@ def create_user(args, settings):
     etl_group = settings("data_warehouse", "groups", "etl")
     search_path = [source["name"] for source in settings("sources")]
 
+    # XXX Check whether the user already exists and has a schema.
+    # (Then bail out here in case of dry-run.)
+
     if args.password is None and not args.skip_user_creation:
         args.password = getpass.getpass("Password for %s: " % args.username)
 
     with closing(etl.pg.connection(dsn_admin)) as conn:
-        logging.info("Creating user '%s' in user group '%s'", new_user, user_group)
         with conn:
             if not args.skip_user_creation:
+                logging.info("Creating user '%s' in user group '%s'", new_user, user_group)
                 etl.pg.create_user(conn, new_user, args.password, user_group)
             if args.etl_user:
                 logging.info("Adding user '%s' to ETL group '%s'", new_user, etl_group)
@@ -107,4 +110,3 @@ def create_user(args, settings):
                 search_path[:0] = ["'$user'"]
             logging.info("Setting search path to: %s", search_path)
             etl.pg.alter_search_path(conn, new_user, search_path)
-

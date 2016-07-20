@@ -8,7 +8,7 @@ _schemas_completion()
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # All sub-commands
-    opts="list dump validate copy load update etl"
+    opts="ls initialize create_user design sync dump load update etl validate"
 
     if [ "$prev" = "arthur" ]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )

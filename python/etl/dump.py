@@ -5,14 +5,11 @@ Table designs describe the columns, like their name and type, as well as how the
 should be organized once loaded into Redshift, like the distribution style or sort key.
 """
 
-import concurrent.futures
 from datetime import datetime
-from fnmatch import fnmatch
 import gzip
 import logging
 import os
 import os.path
-import re
 
 from pyspark import SparkConf, SparkContext, SQLContext
 
@@ -25,175 +22,6 @@ import etl.config
 import etl.load
 import etl.pg
 import etl.s3
-
-
-# List of options for COPY statement that dictates CSV format
-CSV_WRITE_FORMAT = "FORMAT CSV, HEADER true, NULL '\\N'"
-
-# Total number of header lines written
-N_HEADER_LINES = 3
-
-
-class MissingMappingError(ValueError):
-    """Exception when an attribute type's target type is unknown"""
-    pass
-
-
-def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
-    """
-    Retrieve all tables that match the given list of tables (which look like
-    schema.name or schema.*) and return them as a list of (schema, table) tuples.
-
-    The first list of patterns defines all tables ever accessible, the
-    second list allows to exclude lists from consideration and finally the
-    table pattern allows to select specific tables (via command line args).
-    """
-    logger = logging.getLogger(__name__)
-    # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
-    found = etl.pg.query(cx, """SELECT nsp.nspname AS "schema"
-                                     , cls.relname AS "table"
-                                     , nsp.nspname || '.' || cls.relname AS "table_name"
-                                  FROM pg_catalog.pg_class cls
-                                  JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
-                                 WHERE cls.relname NOT LIKE 'tmp%%'
-                                   AND cls.relkind IN ('r', 'm', 'v')
-                                 ORDER BY nsp.nspname, cls.relname""")
-    tables = []
-    for row in found:
-        for reject_pattern in table_blacklist:
-            if fnmatch(row['table_name'], reject_pattern):
-                logger.debug("Table '%s' matches blacklist", row['table_name'])
-                break
-        else:
-            for accept_pattern in table_whitelist:
-                if fnmatch(row['table_name'], accept_pattern):
-                    if pattern.match_table(row['table']):
-                        tables.append(etl.TableName(row['schema'], row['table']))
-                        logger.debug("Table '%s' is included in result set", row['table_name'])
-                        break
-                    else:
-                        logger.debug("Table '%s' matches whitelist but is not selected", row['table_name'])
-    logging.getLogger(__name__).info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
-                                     len(tables), table_whitelist, table_blacklist, pattern)
-    return tables
-
-
-def fetch_columns(cx, tables):
-    """
-    Retrieve table definitions (column names and types).
-    """
-    columns = {}
-    for table_name in tables:
-        ddl = etl.pg.query(cx, """SELECT ca.attname AS attribute,
-                                         pg_catalog.format_type(ct.oid, ca.atttypmod) AS attribute_type,
-                                         ct.typelem <> 0 AS is_array_type,
-                                         pg_catalog.format_type(ce.oid, ca.atttypmod) AS element_type,
-                                         ca.attnotnull AS not_null_constraint
-                                    FROM pg_catalog.pg_attribute AS ca
-                                    JOIN pg_catalog.pg_class AS cls ON ca.attrelid = cls.oid
-                                    JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
-                                    JOIN pg_catalog.pg_type AS ct ON ca.atttypid = ct.oid
-                                    LEFT JOIN pg_catalog.pg_type AS ce ON ct.typelem = ce.oid
-                                   WHERE ca.attnum > 0  -- skip system columns
-                                         AND NOT ca.attisdropped
-                                         AND ns.nspname = %s
-                                         AND cls.relname = %s
-                                   ORDER BY ca.attnum""",
-                           (table_name.schema, table_name.table))
-        columns[table_name] = ddl
-        logging.getLogger(__name__).info("Found %d column(s) in table '%s'", len(ddl), table_name.identifier)
-    return columns
-
-
-def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
-    """"
-    Replace unsupported column types by supported ones and determine casting
-    spell.
-
-    Result for every table is a list of tuples with name, old type, new type,
-    expression information (where the expression within a SELECT will return
-    the value of the attribute with the "new" type), serialization type, and
-    not null constraint (boolean).
-    """
-    new_columns = []
-    for column in columns:
-        attribute_name = column["attribute"]
-        attribute_type = column["attribute_type"]
-        for re_att_type, avro_type in as_is_att_type.items():
-            if re.match('^' + re_att_type + '$', attribute_type):
-                # Keep the type, use no expression, and pick Avro type from map.
-                mapping = (attribute_type, None, avro_type)
-                break
-        else:
-            for re_att_type, mapping in cast_needed_att_type.items():
-                if re.match(re_att_type, attribute_type):
-                    # Found tuple with new SQL type, expression and Avro type.  Rejoice.
-                    break
-            else:
-                raise MissingMappingError("Unknown type '{}' of {}.{}.{}".format(attribute_type,
-                                                                                 table_name.schema,
-                                                                                 table_name.table,
-                                                                                 attribute_name))
-        delimited_name = '"%s"' % attribute_name
-        new_columns.append(etl.ColumnDefinition(name=attribute_name,
-                                                source_sql_type=attribute_type,
-                                                sql_type=mapping[0],
-                                                # Replace %s in the column expression by the column name.
-                                                expression=(mapping[1] % delimited_name if mapping[1] else None),
-                                                # Add "null" to Avro type if column may have nulls.
-                                                type=(mapping[2] if column["not_null_constraint"]
-                                                      else ["null", mapping[2]]),
-                                                not_null=column["not_null_constraint"],
-                                                references=None))
-    return new_columns
-
-
-def create_table_design(source_name, source_table_name, table_name, columns):
-    """
-    Create (and return) new table design from column definitions.
-    """
-    table_design = {
-        "name": "%s" % table_name.identifier,
-        "source_name": "%s.%s" % (source_name, source_table_name.identifier),
-        "columns": [column._asdict() for column in columns]
-    }
-    # TODO Extract actual primary keys from pg_catalog
-    if any(column.name == "id" for column in columns):
-        table_design["constraints"] = {"primary_key": ["id"]}
-    # Remove empty expressions (since columns can be selected by name) and default settings
-    for column in table_design["columns"]:
-        if column["expression"] is None:
-            del column["expression"]
-        if column["source_sql_type"] == column["sql_type"]:
-            del column["source_sql_type"]
-        if not column["not_null"]:
-            del column["not_null"]
-        if not column["references"]:
-            del column["references"]
-    # Make sure schema and code to create table design files is in sync.
-    logging.getLogger(__name__).debug("Trying to validate new table design for '%s'", table_name.identifier)
-    return etl.load.validate_table_design(table_design, table_name)
-
-
-def save_table_design(table_design, source_table_name, output_dir, dry_run=False):
-    """
-    Write new table design file to etc disk.
-    """
-    table = table_design["name"]
-    filename = os.path.join(output_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
-    logger = logging.getLogger(__name__)
-    if dry_run:
-        logger.info("Dry-run: Skipping writing new table design file for '%s'", table)
-    elif os.path.exists(filename):
-        logger.warning("Skipping new table design for '%s' since '%s' already exists", table, filename)
-    else:
-        logger.info("Writing new table design file for '%s' to '%s'", table, filename)
-        with open(filename, 'w') as o:
-            # JSON pretty printing is prettier than YAML printing.
-            json.dump(table_design, o, indent="    ", sort_keys=True)
-            o.write('\n')
-        logger.info("Completed writing '%s'", filename)
-    return filename
 
 
 def assemble_selected_columns(table_design):
@@ -308,7 +136,7 @@ def dump_source_to_s3(sqlContext, source, tables_in_s3, size_map, bucket_name, p
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
         design_file = etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)
-        table_design = etl.load.load_table_design(design_file, target_table_name)
+        table_design = etl.schemas.load_table_design(design_file, target_table_name)
 
         num_partitions = 1
         selected_columns = assemble_selected_columns(table_design)
@@ -413,87 +241,36 @@ def dump_to_s3(args, settings):
                           bucket_name, args.prefix, dry_run=args.dry_run)
 
 
-def normalize_and_create(directory: str, dry_run=False) -> str:
+
+def write_manifest_file(local_files, bucket_name, prefix, dry_run=False):
     """
-    Make sure the directory exists and return normalized path to it.
-
-    This will create all intermediate directories as needed.
+    Create manifest file to load all the given files (after upload
+    to S3) and return name of new manifest file.
     """
-    name = os.path.normpath(directory)
-    if not os.path.exists(name):
-        if dry_run:
-            logging.debug("Skipping creation of directory '%s'", name)
-        else:
-            logging.debug("Creating directory '%s'", name)
-            os.makedirs(name)
-    return name
+    logger = logging.getLogger(__name__)
+    data_files = [filename for filename in local_files if not filename.endswith(".manifest")]
+    if len(data_files) == 0:
+        raise ValueError("List of files must include at least one CSV file")
+    elif len(data_files) > 1:
+        parts = os.path.commonprefix(data_files)
+        filename = parts[:parts.rfind(".part_")] + ".manifest"
+    else:
+        csv_file = data_files[0]
+        filename = csv_file[:csv_file.rfind(".csv")] + ".csv.manifest"
+    remote_files = ["s3://{}/{}/{}".format(bucket_name, prefix, os.path.basename(name)) for name in data_files]
+    manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+    if dry_run:
+        logger.info("Dry-run: Skipping writing new manifest file to '%s'", filename)
+    else:
+        logger.info("Writing new manifest file for %d file(s) to '%s'", len(data_files), filename)
+        with open(filename, 'wt') as o:
+            json.dump(manifest, o, indent="    ", sort_keys=True)
+            o.write('\n')
+        logger.debug("Done writing '%s'", filename)
+    return filename
 
 
-def dump_schema_to_s3(source, table_design_files, type_maps, design_dir, bucket_name, prefix, selection, dry_run=False):
-    source_name = source["name"]
-    read_access = source.get("read_access")
-    design_dir = normalize_and_create(os.path.join(design_dir, source_name), dry_run=dry_run)
-    source_prefix = "{}/schemas/{}".format(prefix, source_name)
-    found = set()
-    try:
-        logging.info("Connecting to source database '%s'", source_name)
-        with closing(etl.pg.connection(etl.config.env_value(read_access), autocommit=True, readonly=True)) as conn:
-            tables = fetch_tables(conn, source["include_tables"], source.get("exclude_tables", []), selection)
-            columns_by_table = fetch_columns(conn, tables)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                for source_table_name in sorted(columns_by_table):
-                    table_name = etl.TableName(source_name, source_table_name.table)
-                    found.add(source_table_name)
-                    columns = map_types_in_ddl(source_table_name,
-                                               columns_by_table[source_table_name],
-                                               type_maps["as_is_att_type"],
-                                               type_maps["cast_needed_att_type"])
-                    table_design = create_table_design(source_name, source_table_name, table_name, columns)
-                    if table_name in table_design_files:
-                        # Replace bootstrapped table design with one from file but check whether set of columns changed.
-                        design_file = table_design_files[table_name]
-                        with open(design_file) as f:
-                            existing_table_design = etl.load.load_table_design(f, table_name)
-                        etl.load.compare_columns(table_design, existing_table_design)
-                    else:
-                        design_file = executor.submit(save_table_design,
-                                                      table_design, source_table_name, design_dir, dry_run=dry_run)
-                    executor.submit(etl.s3.upload_to_s3, design_file, bucket_name, source_prefix, dry_run=dry_run)
-    except Exception:
-        logging.exception("Error while processing source '%s'", source_name)
-        raise
-    not_found = found.difference(set(table_design_files))
-    if len(not_found):
-        logging.warning("New tables which had no design: %s", sorted(table.identifier for table in not_found))
-    too_many = set(table_design_files).difference(found)
-    if len(too_many):
-        logging.warning("Table design files without tables: %s", sorted(table.identifier for table in too_many))
-    logging.info("Done with %d table(s) from source '%s'", len(found), source_name)
+def write_manifest_file_eventually(file_futures, bucket_name, prefix, dry_run=False):
+    return write_manifest_file([future.result() for future in file_futures], bucket_name, prefix, dry_run=dry_run)
 
 
-def dump_schemas_to_s3(args, settings):
-    bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePatterns.from_list(args.table)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    local_files = etl.s3.find_local_files([args.table_design_dir], schemas, selection)
-
-    # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
-    for source in settings("sources"):
-        if source["name"] in schemas and "read_access" in source:
-            if source["read_access"] not in os.environ:
-                raise KeyError("Environment variable not set: %s" % source["read_access"])
-
-    with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs) as pool:
-        for source in settings("sources"):
-            source_name = source["name"]
-            if source_name not in schemas:
-                continue
-            if "read_access" not in source:
-                logging.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
-                continue
-            table_design_files = {assoc_files.source_table_name: assoc_files.design_file
-                                  for assoc_files in local_files[source_name]}
-            logging.debug("Submitting job to download from '%s'", source_name)
-            pool.submit(dump_schema_to_s3, source, table_design_files, settings("type_maps"),
-                        args.table_design_dir, bucket_name, args.prefix, selection,
-                        dry_run=args.dry_run)
