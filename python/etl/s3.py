@@ -86,7 +86,7 @@ def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
     if filename is not None:
         object_key = "{}/{}".format(prefix, os.path.basename(filename))
         if dry_run:
-            logger.info("Dry-run: Skipping upload to 's3://%s/%s'", bucket_name, object_key)
+            logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
         else:
             try:
                 logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)

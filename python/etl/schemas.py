@@ -248,12 +248,13 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
 
     This will create all intermediate directories as needed.
     """
+    logger = logging.getLogger(__name__)
     name = os.path.normpath(directory)
     if not os.path.exists(name):
         if dry_run:
-            logging.debug("Skipping creation of directory '%s'", name)
+            logger.debug("Skipping creation of directory '%s'", name)
         else:
-            logging.info("Creating directory '%s'", name)
+            logger.info("Creating directory '%s'", name)
             os.makedirs(name)
     return name
 
@@ -347,3 +348,41 @@ def download_schemas(args, settings):
             logger.debug("Submitting job to download from '%s'", source_name)
             pool.submit(create_or_update_table_designs, source, table_design_files, settings("type_maps"),
                         args.table_design_dir, selection, dry_run=args.dry_run)
+
+
+def copy_to_s3(args, settings):
+    """
+    Copy table design and SQL files from local directory to S3 bucket.
+
+    Essentially "publishes" data-warehouse code.
+    """
+    logger = logging.getLogger(__name__)
+    bucket_name = settings("s3", "bucket_name")
+    selection = etl.TableNamePatterns.from_list(args.table)
+    sources = [source for source in settings("sources") if selection.match_schema(source["name"])]
+    schemas = [source["name"] for source in sources]
+
+    if args.git_modified:
+        local_files = etl.s3.find_modified_files(schemas, selection)
+    else:
+        local_files = etl.s3.find_local_files(args.table_design_dir, schemas, selection)
+
+    if len(local_files) == 0:
+        logger.error("No applicable files found in '%s'", args.table_design_dir)
+    else:
+        count = sum(len(tables) for tables in local_files.values())
+        logger.info("Found %d file(s) for %d schema(s).", count, len(local_files))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            for source_name in local_files:
+                for assoc_table_files in local_files[source_name]:
+                    target_table_name = assoc_table_files.target_table_name
+
+                    # XXX Always validate before upload
+                    design_file = open(assoc_table_files.design_file, 'r')
+                    table_design = load_table_design(design_file, target_table_name)
+
+                    for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
+                        prefix = "{}/schemas/{}".format(args.prefix, source_name)
+                        pool.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
+        if not args.dry_run:
+            logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, args.prefix)

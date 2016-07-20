@@ -16,7 +16,6 @@ import pkg_resources
 
 import etl
 import etl.config
-import etl.copy
 import etl.dump
 import etl.dw
 import etl.load
@@ -260,7 +259,7 @@ class CopyToS3Command(SubCommand):
         group.add_argument("-g", "--git-modified", help="Copy files modified in work tree", action="store_true")
 
     def callback(self, args, settings):
-        etl.copy.copy_to_s3(args, settings)
+        etl.schemas.copy_to_s3(args, settings)
 
 
 class DumpDataToS3Command(SubCommand):
