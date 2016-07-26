@@ -1,5 +1,8 @@
 """
 Deal with schemas, or more generally, table designs.
+
+Table designs describe the columns, like their name and type, as well as how the data
+should be organized once loaded into Redshift, like the distribution style or sort key.
 """
 
 import concurrent.futures
@@ -221,12 +224,12 @@ def load_table_design(stream, table_name):
     return validate_table_design(table_design, table_name)
 
 
-def save_table_design(table_design, source_table_name, output_dir, dry_run=False):
+def save_table_design(table_design, source_table_name, source_output_dir, dry_run=False):
     """
     Write new table design file to etc disk.
     """
     table = table_design["name"]
-    filename = os.path.join(output_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
+    filename = os.path.join(source_output_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
     logger = logging.getLogger(__name__)
     if dry_run:
         logger.info("Dry-run: Skipping writing new table design file for '%s'", table)
@@ -252,7 +255,7 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
     name = os.path.normpath(directory)
     if not os.path.exists(name):
         if dry_run:
-            logger.debug("Skipping creation of directory '%s'", name)
+            logger.debug("Dry-run: Skipping creation of directory '%s'", name)
         else:
             logger.info("Creating directory '%s'", name)
             os.makedirs(name)
@@ -325,12 +328,12 @@ def create_or_update_table_designs(source, table_design_files, type_maps, design
     logger.info("Done with %d table(s) from source '%s'", len(found), source_name)
 
 
-def download_schemas(args, settings):
+def download_schemas(settings, table, table_design_dir, jobs, dry_run):
     logger = logging.getLogger(__name__)
-    selection = etl.TableNamePatterns.from_list(args.table)
-    sources = [source for source in settings("sources") if selection.match_schema(source["name"])]
+    selection = etl.TableNamePatterns.from_list(table)
+    sources = [dict(source) for source in settings("sources") if selection.match_schema(source["name"])]
     schemas = [source["name"] for source in sources]
-    local_files = etl.s3.find_local_files(args.table_design_dir, schemas, selection)
+    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
     for source in sources:
@@ -338,7 +341,7 @@ def download_schemas(args, settings):
                 raise KeyError("Environment variable not set: %s" % source["read_access"])
 
     # Allow to download from multiple sources in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         for source, source_name in zip(sources, schemas):
             if "read_access" not in source:
                 logger.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
@@ -347,10 +350,10 @@ def download_schemas(args, settings):
                                   for assoc_files in local_files.get(source_name, {})}
             logger.debug("Submitting job to download from '%s'", source_name)
             pool.submit(create_or_update_table_designs, source, table_design_files, settings("type_maps"),
-                        args.table_design_dir, selection, dry_run=args.dry_run)
+                        table_design_dir, selection, dry_run=dry_run)
 
 
-def copy_to_s3(args, settings):
+def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run):
     """
     Copy table design and SQL files from local directory to S3 bucket.
 
@@ -358,31 +361,49 @@ def copy_to_s3(args, settings):
     """
     logger = logging.getLogger(__name__)
     bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePatterns.from_list(args.table)
-    sources = [source for source in settings("sources") if selection.match_schema(source["name"])]
-    schemas = [source["name"] for source in sources]
+    selection = etl.TableNamePatterns.from_list(table)
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
 
-    if args.git_modified:
+    if git_modified:
         local_files = etl.s3.find_modified_files(schemas, selection)
     else:
-        local_files = etl.s3.find_local_files(args.table_design_dir, schemas, selection)
+        local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
 
     if len(local_files) == 0:
-        logger.error("No applicable files found in '%s'", args.table_design_dir)
+        logger.error("No applicable files found in '%s'", table_design_dir)
     else:
-        count = sum(len(tables) for tables in local_files.values())
-        logger.info("Found %d file(s) for %d schema(s).", count, len(local_files))
+        # TODO Argue why 3 is a good choice here.
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
             for source_name in local_files:
                 for assoc_table_files in local_files[source_name]:
                     target_table_name = assoc_table_files.target_table_name
-
-                    # XXX Always validate before upload
-                    design_file = open(assoc_table_files.design_file, 'r')
-                    table_design = load_table_design(design_file, target_table_name)
-
+                    with open(assoc_table_files.design_file, 'r') as design_file:
+                        load_table_design(design_file, target_table_name)
                     for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
-                        prefix = "{}/schemas/{}".format(args.prefix, source_name)
-                        pool.submit(etl.s3.upload_to_s3, local_filename, bucket_name, prefix, dry_run=args.dry_run)
-        if not args.dry_run:
-            logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, args.prefix)
+                        source_prefix = "{}/schemas/{}".format(prefix, source_name)
+                        pool.submit(etl.s3.upload_to_s3, local_filename, bucket_name, source_prefix, dry_run=dry_run)
+        if not dry_run:
+            logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
+
+
+def validate_designs(settings, target, table_design_dir, git_modified):
+    """
+    Make sure that all (local) table design files pass the validation checks.
+    """
+    logger = logging.getLogger(__name__)
+    selection = etl.TableNamePatterns.from_list(target)
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    if git_modified:
+        found = etl.s3.find_modified_files(schemas, selection)
+    else:
+        found = etl.s3.find_local_files(table_design_dir, schemas, selection)
+
+    if len(found) == 0:
+        logger.error("No applicable files found in %s", table_design_dir)
+    else:
+        for source in found:
+            for info in found[source]:
+                logger.info("Checking: '%s'", info.design_file)
+                design_file = open(info.design_file, 'r')
+                table_design = load_table_design(design_file, info.target_table_name)
+                logger.debug("Validated table design for '%s'", table_design["name"])

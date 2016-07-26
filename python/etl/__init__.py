@@ -255,6 +255,9 @@ class AssociatedTableFiles():
     def data_files(self):
         return self._data_files
 
+    def __len__(self):
+        return 1 + (self._sql_file is not None) + (self._manifest_file is not None) + len(self._data_files)
+
     def set_sql_file(self, filename):
         self._sql_file = filename
 

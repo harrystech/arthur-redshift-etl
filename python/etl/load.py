@@ -2,7 +2,6 @@ from contextlib import closing
 from itertools import chain
 import logging
 import os.path
-import simplejson as json
 
 import psycopg2
 
@@ -227,8 +226,13 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
             elif column.get("identity", False):
                 na_values_row.append(0)
             else:
+                # Use NULL for all null-able columns:
                 if not column.get("not_null", False):
                     na_values_row.append("NULL::{}".format(column["sql_type"]))
+                # Else pick something appropriate based on the type information
+                elif "timestamp" in column["sql_type"]:
+                    # XXX Is this a good value or should timestamps be null?
+                    na_values_row.append("'0000-01-01 00:00:00'")
                 elif "string" in column["type"]:
                     na_values_row.append("'N/A'")
                 elif "boolean" in column["type"]:
@@ -378,26 +382,3 @@ def load_to_redshift(args, settings):
                 for table_name in vacuumable:
                     vacuum(conn, table_name, dry_run=args.dry_run)
 
-
-def validate_designs(args, settings):
-    """
-    Make sure that all (local) table design files pass the validation checks.
-    """
-    bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePatterns.from_list(args.table)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    if args.git_modified:
-        found = etl.s3.find_modified_files(schemas, selection)
-    else:
-        found = etl.s3.find_local_files(args.table_design_dir, schemas, selection)
-
-    if len(found) == 0:
-        logging.error("No applicable files found in %s", args.table_design_dir)
-    else:
-        logging.info("Found files for %d schemas(s).", len(found))
-        for source in found:
-            for info in found[source]:
-                logging.info("Checking: '%s'", info.design_file)
-                design_file = open(info.design_file, 'r')
-                table_design = load_table_design(design_file, info.target_table_name)
-                logging.debug("Validated table design for '%s'", table_design["name"])

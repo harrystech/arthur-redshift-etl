@@ -212,8 +212,11 @@ def _find_files_from(iterable, schemas, pattern):
                 assoc_table.add_data_file(filename)
             else:
                 logger.warning("Found data file without table design: '%s'", filename)
-    logger.debug("Found matching files for %d schema(s) with %d table(s) total",
-                 len(found), sum(len(tables) for tables in found.values()))
+    # XXX Refactor so that the len (over assoc table files) depends on what file types should actually be counted
+    logger.info("Found %d matching file(s) for %d schema(s) with %d table(s) total",
+                sum(len(table) for tables in found.values() for table in tables.values()),
+                len(found),
+                sum(len(tables) for tables in found.values()))
     # Always return files sorted by source table name (which includes the schema in the source).
     ordered_found = OrderedDict()
     for source_name in schemas:
@@ -222,17 +225,16 @@ def _find_files_from(iterable, schemas, pattern):
     return ordered_found
 
 
-def list_files(args, settings):
+def list_files(settings, prefix, table):
     """
     List files in the S3 bucket.
 
     Useful to discover whether pattern matching works.
     """
-    etl.config.configure_logging(args.log_level)
     bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePatterns.from_list(args.table)
+    selection = etl.TableNamePatterns.from_list(table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    found = find_files_in_bucket(bucket_name, args.prefix, schemas, selection)
+    found = find_files_in_bucket(bucket_name, prefix, schemas, selection)
     for source in found:
         print("Source: {}".format(source))
         for info in found[source]:

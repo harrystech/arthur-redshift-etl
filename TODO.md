@@ -10,9 +10,7 @@ Enable syncing local files with S3 (to remove files that no longer exist locally
 
 Allow for "description" string in the sources array of the settings file.
 
-Allow to specify which group has access to any source.
-
-(Goal: differentiate users of ETL, full read-only analytics groups)
+Allow to specify which group has access to any source.  (Goal: differentiate users of ETL, full read-only analytics groups)
 
 Ask twice for password when password for create_user is entered on the commandline.
 
@@ -22,3 +20,5 @@ Warn if distribution key is not also a sort key.
 
 Test whether relation is table or view to inoke the correct drop command.  (When switching from VIEW to CTAS
 (or back) the --drop option breaks.)
+
+When loading data from upstream, cut off at midnight NY?

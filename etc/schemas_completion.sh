@@ -10,7 +10,7 @@ _schemas_completion()
     # All sub-commands
     opts="ls initialize create_user design sync dump load update etl validate"
 
-    if [ "$prev" = "arthur" ]; then
+    if [ "$prev" = "arthur.py" ]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
     else
         local SCHEMAS
@@ -27,4 +27,4 @@ _schemas_completion()
 
 }
 
-complete -F _schemas_completion arthur
+complete -F _schemas_completion arthur.py

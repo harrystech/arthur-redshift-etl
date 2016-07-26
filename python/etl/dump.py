@@ -1,20 +1,12 @@
 """
-Functions to deal with dumping data from PostgreSQL databases to CSV along with "table designs".
-
-Table designs describe the columns, like their name and type, as well as how the data
-should be organized once loaded into Redshift, like the distribution style or sort key.
+Functions to deal with dumping data from PostgreSQL databases to CSV.
 """
 
-from datetime import datetime
-import gzip
 import logging
 import os
 import os.path
 
 from pyspark import SparkConf, SparkContext, SQLContext
-
-import psycopg2
-from psycopg2 import errorcodes
 import simplejson as json
 
 import etl
@@ -22,98 +14,26 @@ import etl.config
 import etl.load
 import etl.pg
 import etl.s3
+import etl.schemas
+
+APPLICATION_NAME = "DataWarehouseETL"
 
 
 def assemble_selected_columns(table_design):
     """
     Pick columns and decide how they are selected (as-is or with an expression).
+
+    Whether there's an expression or just a name the resulting column is always
+    called out delimited.
     """
     selected_columns = []
     for column in table_design["columns"]:
-        if column.get("skipped", False):
-            continue
-        elif column.get("expression"):
-            selected_columns.append(column["expression"] + ' AS "%s"' % column["name"])
-        else:
-            selected_columns.append('"%s"' % column["name"])
+        if not column.get("skipped", False):
+            if column.get("expression"):
+                selected_columns.append(column["expression"] + ' AS "%s"' % column["name"])
+            else:
+                selected_columns.append('"%s"' % column["name"])
     return selected_columns
-
-
-def create_copy_statement(table_design, source_table_name, row_limit=None):
-    """
-    Assemble COPY statement that will extract attributes with their new types.
-
-    If there's an expression, then it needs to cast it to the correct column
-    type. Whether there's an expression or just a name the resulting column is always
-    called out delimited.
-    """
-    selected_columns = assemble_selected_columns(table_design)
-    if row_limit:
-        limit = "LIMIT {:d}".format(row_limit)
-    else:
-        limit = ""
-    return "COPY (SELECT {}\n    FROM {}\n{}) TO STDOUT WITH ({})".format(",\n    ".join(selected_columns),
-                                                                          source_table_name,
-                                                                          limit,
-                                                                          CSV_WRITE_FORMAT)
-
-
-def download_table_data(cx, table_design, source_table_name, table_name, output_dir,
-                        limit=None, overwrite=False, dry_run=False):
-    """
-    Download data (with casts for columns as needed) and compress output files.
-    Return filename (if file was successfully created).
-
-    This will skip writing files if they already exist, allowing easy re-starts.
-
-    There are three header lines (timestamp, copy options, column names).  They
-    must be skipped when reading the CSV file into Redshift. See HEADER_LINES constant.
-    """
-    filename = os.path.join(output_dir, "{}-{}.csv.gz".format(source_table_name.schema, source_table_name.table))
-    logger = logging.getLogger(__name__)
-    if dry_run:
-        logger.info("Dry-run: Skipping writing CSV file for table '%s'", table_name.identifier)
-    elif not overwrite and os.path.exists(filename):
-        logger.warning("Skipping copy for table '%s' since '%s' already exists", table_name.identifier, filename)
-    else:
-        logger.info("Writing CSV data for table '%s' to '%s'", table_name.identifier, filename)
-        try:
-            with open(filename, 'wb') as f:
-                with gzip.open(f, 'wt') as o:
-                    o.write("# Timestamp: {:%Y-%m-%d %H:%M:%S}\n".format(datetime.now()))
-                    if limit:
-                        o.write("# Copy options with LIMIT {:d}: {}\n".format(limit, CSV_WRITE_FORMAT))
-                    else:
-                        o.write("# Copy options: {}\n".format(CSV_WRITE_FORMAT))
-                    sql = create_copy_statement(table_design, source_table_name, limit)
-                    logger.debug("Copy statement for '%s': %s", source_table_name.identifier, sql)
-                    with cx.cursor() as cursor:
-                        cursor.copy_expert(sql, o)
-                    o.flush()
-            logger.debug("Done writing CSV data to '%s'", filename)
-        except (Exception, KeyboardInterrupt) as exc:
-            logger.warning("Deleting '%s' because writing was interrupted", filename)
-            os.remove(filename)
-            if isinstance(exc, psycopg2.Error):
-                etl.pg.log_sql_error(exc)
-                if exc.pgcode == errorcodes.INSUFFICIENT_PRIVILEGE:
-                    logger.warning("Ignoring denied access for table '%s'", source_table_name.identifier)
-                    # Signal to S3 uploader that there isn't a file coming but that we handled the exception.
-                    return None
-            raise
-    return filename
-
-
-def download_table_data_bounded(semaphore, cx, table_design, source_table_name, table_name, output_dir,
-                                limit=None, overwrite=False, dry_run=False):
-    """
-    "Bounded" version of a table download -- psycopg2 cannot run more than one
-    copy operation at a time.  So we need a semaphore to switch between threads that
-    want to use copy.
-    """
-    with semaphore:
-        return download_table_data(cx, table_design, source_table_name, table_name, output_dir,
-                                   limit=limit, overwrite=overwrite, dry_run=dry_run)
 
 
 def dump_source_to_s3(sqlContext, source, tables_in_s3, size_map, bucket_name, prefix, dry_run=False):
@@ -124,12 +44,13 @@ def dump_source_to_s3(sqlContext, source, tables_in_s3, size_map, bucket_name, p
     read_access = etl.config.env_value(source["read_access"])
     dsn_properties = etl.pg.parse_connection_string(read_access)
     dsn_properties.update({
-        "ApplicationName": "DataWarehouseETL",
+        "ApplicationName": APPLICATION_NAME,
         "readOnly": "true",
+        "sslmode": "require",  # XXX make configurable?
         "driver": "org.postgresql.Driver"  # necessary, weirdly enough
     })
     jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
-    base_path = "s3n://{}/{}/{}".format(bucket_name, prefix, "data")
+    base_path = "s3a://{}/{}/{}".format(bucket_name, prefix, "data")
 
     copied = set()
     for assoc_table_files in tables_in_s3:
@@ -178,12 +99,12 @@ def dump_source_to_s3(sqlContext, source, tables_in_s3, size_map, bucket_name, p
                                       upperBound=upper_bound,
                                       numPartitions=num_partitions)
 
-        #                          predicates=[
-        #                              "id >= 7253011 AND id < 7683410",
-        #                              "id >= 8113722 AND id < 8544102",
-        #                              "id >= 8544133 AND id < 8974448",
-        #                              "id >= 8974444 AND id < 9404794",
-        #                          ]
+            #                          predicates=[
+            #                              "id >= 7253011 AND id < 7683410",
+            #                              "id >= 8113722 AND id < 8544102",
+            #                              "id >= 8544133 AND id < 8974448",
+            #                              "id >= 8974444 AND id < 9404794",
+            #                          ]
 
         else:
             df = sqlContext.read.jdbc(url=jdbc_url,
@@ -195,7 +116,6 @@ def dump_source_to_s3(sqlContext, source, tables_in_s3, size_map, bucket_name, p
             logging.info("Dry-run: Skipping upload to '%s'", path)
         else:
             logging.info("Writing table %s to '%s'", target_table_name.identifier, path)
-            # etl.?.write_dataframe
             df.write \
                 .format(source='com.databricks.spark.csv') \
                 .option("header", "true") \
@@ -209,37 +129,33 @@ def dump_source_to_s3(sqlContext, source, tables_in_s3, size_map, bucket_name, p
     return
 
 
-def dump_to_s3(args, settings):
+def dump_to_s3(settings, table, prefix, dry_run):
     bucket_name = settings("s3", "bucket_name")
-    selector = etl.TableNamePatterns.from_list(args.table)
-    schemas = selector.match_names(settings("sources"))
-    tables_in_s3 = etl.s3.find_files_in_bucket(bucket_name, args.prefix, schemas, selector)
+    selection = etl.TableNamePatterns.from_list(table)
+    sources = [dict(source) for source in settings("sources") if selection.match_schema(source["name"])]
+    schemas = [source["name"] for source in sources]
+    tables_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
-    for source in settings("sources"):
-        source_name = source["name"]
-        if source_name in schemas and "read_access" in source:
+    for source, source_name in zip(sources, schemas):
+        if "read_access" in source:
             if source["read_access"] not in os.environ:
                 raise KeyError("Environment variable to access '%s' not set: %s" % (source_name, source["read_access"]))
 
     conf = SparkConf()
-    conf.setAppName("DataWarehouseETL")
+    conf.setAppName(APPLICATION_NAME)
     sc = SparkContext(conf=conf)
     sqlContext = SQLContext(sc)
 
-    for source in settings("sources"):
-        source_name = source["name"]
-        if source_name not in schemas:
-            continue
+    for source, source_name in zip(sources, schemas):
         if "read_access" not in source:
             logging.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
-            continue
-        if not tables_in_s3.get(source_name):
-            logging.warning("No information found for source '%s' in s3://%s/%s", source_name, bucket_name, args.prefix)
-            continue
-        dump_source_to_s3(sqlContext, source, tables_in_s3[source_name], settings("dataframe", "partition_sizes"),
-                          bucket_name, args.prefix, dry_run=args.dry_run)
-
+        elif source_name not in tables_in_s3:
+            logging.warning("No information found for source '%s' in s3://%s/%s", source_name, bucket_name, prefix)
+        else:
+            # TODO Need to parallelize across sources
+            dump_source_to_s3(sqlContext, source, tables_in_s3[source_name], settings("dataframe", "partition_sizes"),
+                              bucket_name, prefix, dry_run=dry_run)
 
 
 def write_manifest_file(local_files, bucket_name, prefix, dry_run=False):
