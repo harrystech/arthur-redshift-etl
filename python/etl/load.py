@@ -308,10 +308,13 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
             else:
                 if not column.get("not_null", False):
                     na_values_row.append("NULL::{}".format(column["sql_type"]))
+                elif "timestamp" in column['sql_type']:
+                    na_values_row.append("'0000-01-01 00:00:00'")
                 elif "string" in column["type"]:
                     na_values_row.append("'N/A'")
                 elif "boolean" in column["type"]:
                     na_values_row.append("FALSE")
+
                 else:
                     na_values_row.append("0")
         s_values = ", ".join(str(value) for value in na_values_row)

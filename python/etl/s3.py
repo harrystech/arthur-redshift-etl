@@ -90,9 +90,12 @@ def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
         if dry_run:
             logger.info("Dry-run: Skipping upload to 's3://%s/%s'", bucket_name, object_key)
         else:
-            logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
-            bucket = _get_bucket(bucket_name)
-            bucket.upload_file(filename, object_key)
+            try:
+                logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
+                bucket = _get_bucket(bucket_name)
+                bucket.upload_file(filename, object_key)
+            except Exception as e:
+                logger.exception('Thread upload error:')
 
 
 def get_file_content(bucket_name, object_key):
