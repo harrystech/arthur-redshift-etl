@@ -95,7 +95,8 @@ def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
                 bucket = _get_bucket(bucket_name)
                 bucket.upload_file(filename, object_key)
             except Exception as e:
-                logger.exception('Thread upload error:')
+                logger.exception('S3 upload error:')
+                raise
 
 
 def get_file_content(bucket_name, object_key):
