@@ -214,6 +214,8 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
     Create an INSERT statement to copy data from temp table to new table.
 
     If there is an identity column involved, also add the n/a row with key=0.
+    Note that for timestamps, an arbitrary point in the past is used if the column
+    isn't nullable.
     """
     s_columns = format_column_list(column["name"]
                                    for column in table_design["columns"]
@@ -228,8 +230,8 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
             else:
                 # Use NULL for all null-able columns:
                 if not column.get("not_null", False):
+                    # Use NULL for any nullable column and use type cast (for UNION ALL to succeed)
                     na_values_row.append("NULL::{}".format(column["sql_type"]))
-                # Else pick something appropriate based on the type information
                 elif "timestamp" in column["sql_type"]:
                     # XXX Is this a good value or should timestamps be null?
                     na_values_row.append("'0000-01-01 00:00:00'")
