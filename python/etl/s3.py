@@ -113,6 +113,15 @@ def get_file_content(bucket_name, object_key):
     return response['Body']
 
 
+def find_files_in_folder(bucket_name, prefix):
+    """
+    List all the files in "s3://{bucket_name}/{folder_name}" (where folder is probably a path)
+    """
+    logging.getLogger(__name__).info("Looking for files matching 's3://%s/%s*'", bucket_name, prefix)
+    bucket = _get_bucket(bucket_name)
+    return list(obj.key for obj in bucket.objects.filter(Prefix=prefix))
+
+
 def find_files_in_bucket(bucket_name, prefix, schemas, pattern):
     """
     Discover files in the given bucket and folder by schema,
