@@ -292,6 +292,7 @@ def measure_elapsed_time():
         >>> with measure_elapsed_time():
         ...     pass
     """
+    # TODO use os.times() instead of now()?
     def elapsed_time(start_time=datetime.now()):
         return (datetime.now() - start_time).total_seconds()
 

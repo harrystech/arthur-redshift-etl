@@ -95,9 +95,10 @@ def suggest_best_partition_number(table_size):
     return num_partitions
 
 
-def determine_number_of_partitions(source_table_name, table_design, read_access):
+def determine_partitioning(source_table_name, table_design, read_access):
     """
-    Guesstimate number of partitions based on actual table size.
+    Guesstimate number of partitions based on actual table size and create list of predicates to split
+    up table into that number of partitions.
 
     This requires for one column to be marked as the primary key.  If there's no primary
     key in the table, the number of partitions is always one.
@@ -106,38 +107,47 @@ def determine_number_of_partitions(source_table_name, table_design, read_access)
     """
     logger = logging.getLogger(__name__)
 
-    primary_key = None
-    lower_bound, upper_bound = None, None
-    num_partitions = 1
+    if "primary_key" not in table_design.get("constraints", {}):
+        logger.info("No primary key defined for '%s', skipping partitioning", source_table_name.identifier)
+        return []
 
-    if "primary_key" in table_design.get("constraints", {}):
-        # Note that column constraints such as primary key are stored as one-element lists, hence:
-        primary_key = table_design["constraints"]["primary_key"][0]
-        logger.debug("Primary key for table '%s' = %s", source_table_name.identifier, primary_key)
+    # Note that column constraints such as primary key are stored as one-element lists, hence:
+    primary_key = table_design["constraints"]["primary_key"][0]
+    logger.debug("Primary key for table '%s' is %s", source_table_name.identifier, primary_key)
 
-        with closing(etl.pg.connection(read_access, readonly=True)) as conn:
-            span = etl.pg.query(conn, """SELECT min({}) AS lower_bound
-                                              , max({}) AS upper_bound
-                                           FROM {}
-                                      """.format(primary_key, primary_key, source_table_name))
-            if len(span) != 1:
-                raise RuntimeError("Failed to determine span of primary key values")
-            lower_bound, upper_bound = span[0]
-            size = etl.pg.query(conn, """SELECT pg_catalog.pg_table_size('{}') AS table_size
-                                      """.format(source_table_name))
-            if len(size) != 1:
-                raise RuntimeError("Failed to determine size of source table")
-            table_size = size[0][0]
-            num_partitions = suggest_best_partition_number(table_size)
+    predicates = []
+    with closing(etl.pg.connection(read_access, readonly=True)) as conn:
+        size = etl.pg.query(conn, """SELECT pg_catalog.pg_table_size('{}') AS table_size
+                                  """.format(source_table_name))
+        if len(size) != 1:
+            raise RuntimeError("Failed to determine size of source table")
+        table_size = size[0]["table_size"]
+        num_partitions = suggest_best_partition_number(table_size)
 
-            logger.info("Picked %d partition(s) for table '%s' (lower: %d, upper: %d, size: %d)",
-                        num_partitions,
-                        source_table_name.identifier,
-                        lower_bound,
-                        upper_bound,
-                        table_size)
+        if num_partitions > 1:
+            rows = etl.pg.query(conn, """
+                                      SELECT MIN(pkey) AS pkey_bound
+                                        FROM (
+                                            SELECT "{}" AS pkey
+                                                 , NTILE({}) OVER (ORDER BY "{}") AS part
+                                              FROM {}
+                                              ) t
+                                       GROUP BY part
+                                       ORDER BY part
+                                      """.format(primary_key, num_partitions, primary_key, source_table_name))
+            pkey_bounds = list(row["pkey_bound"] for row in rows)
+            for low, high in zip(pkey_bounds[:-1], pkey_bounds[1:]):
+                predicates.append('({} <= "{}" AND "{}" < {})'.format(low, primary_key, primary_key, high))
+            predicates.append('{} <= "{}"'.format(pkey_bounds[-1], primary_key))
+            logger.debug("Predicates to split %s:\n  %s", source_table_name.identifier,
+                         "\n  ".join("{:3d}: {}".format(i, p) for i, p in enumerate(predicates)))
 
-    return primary_key, lower_bound, upper_bound, num_partitions
+        logger.info("Picked %d partition(s) for table '%s' (primary key: %s, table size: %d)",
+                    num_partitions,
+                    source_table_name.identifier,
+                    primary_key,
+                    table_size)
+    return predicates
 
 
 def read_table_as_dataframe(sql_context, source, source_table_name, table_design):
@@ -148,30 +158,16 @@ def read_table_as_dataframe(sql_context, source, source_table_name, table_design
     read_access = etl.config.env_value(source["read_access"])
     jdbc_url, dsn_properties = extract_dsn(read_access)
 
-    primary_key, lower_bound, upper_bound, num_partitions = determine_number_of_partitions(source_table_name,
-                                                                                           table_design,
-                                                                                           read_access)
-
     selected_columns = assemble_selected_columns(table_design)
     select_statement = """(SELECT {} FROM {}) AS t""".format(", ".join(selected_columns), source_table_name)
     logger.debug("Table query: SELECT * FROM %s", select_statement)
 
-    if primary_key is not None:
+    predicates = determine_partitioning(source_table_name, table_design, read_access)
+    if predicates:
         df = sql_context.read.jdbc(url=jdbc_url,
                                    properties=dsn_properties,
                                    table=select_statement,
-                                   column=primary_key,
-                                   lowerBound=lower_bound,
-                                   upperBound=upper_bound,
-                                   numPartitions=num_partitions)
-
-        # Instead of lower and upper bounds, we could more cleverly create partitions and use the predicates list:
-        #                          predicates=[
-        #                              "id >= 7253011 AND id < 7683410",
-        #                              "id >= 8113722 AND id < 8544102",
-        #                              "id >= 8544133 AND id < 8974448",
-        #                              "id >= 8974444 AND id < 9404794",
-        #                          ]
+                                   predicates=predicates)
     else:
         df = sql_context.read.jdbc(url=jdbc_url,
                                    properties=dsn_properties,

@@ -46,6 +46,7 @@ from etl import TableName, AssociatedTableFiles
 
 
 # Split file names into new schema, old schema, table name, and file type
+# XXX Must anchor RE in front against prefix otherwise might pick up wrong files
 TABLE_RE = re.compile(r"""(?:^schemas|/schemas|^data|/data)
                           /(?P<source_name>\w+)
                           /(?P<schema_name>\w+)-(?P<table_name>\w+)

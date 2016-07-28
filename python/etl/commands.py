@@ -271,12 +271,13 @@ class DumpDataToS3Command(SubCommand):
     def __init__(self):
         super().__init__("dump",
                          "Dump table data from sources",
-                         "Dump table contents to files in S3 (needs Spark context)")
+                         "Dump table contents to files in S3 (uses submit_local.sh to launch Spark context)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "prefix", "dry-run"])
 
     def callback(self, args, settings):
+        # TODO test for SPARK_HOME, if not present, restart using submit local
         with etl.pg.log_error():
             etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
 

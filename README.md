@@ -218,6 +218,9 @@ Pull requests are welcome!
 pep8 python
 ```
 
+* Please have meaningful comments and git commit messages
+(See [Chris's blog](http://chris.beams.io/posts/git-commit/)!)
+
 # Tips & Tricks
 
 ## EMR login
