@@ -2,6 +2,7 @@
 Functions to deal with dumping data from PostgreSQL databases to CSV.
 """
 
+from contextlib import closing
 import logging
 import os
 import os.path
@@ -53,47 +54,109 @@ def extract_dsn(dsn_string):
     return jdbc_url, dsn_properties
 
 
-def read_table_as_dataframe(sql_context, source, source_table_name, table_design, size_map):
+def suggest_best_partition_number(table_size):
     """
-    Read (partitioned) dataframe by contacting upstream JDBC-reachable source.
+    Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
+    a factor of 2.
+
+    The number of partitions is based on:
+      Small tables (<= 10M): Use partitions around 1MB.
+      Medium tables (<= 1G): Use partitions around 10MB.
+      Huge tables (> 1G): Use partitions around 100MB.
+
+    >>> suggest_best_partition_number(100)
+    1
+    >>> suggest_best_partition_number(1048576)
+    1
+    >>> suggest_best_partition_number(3 * 1048576)
+    2
+    >>> suggest_best_partition_number(10 * 1048576)
+    8
+    >>> suggest_best_partition_number(100 * 1048576)
+    8
+    >>> suggest_best_partition_number(2000 * 1048576)
+    16
+    """
+    meg = 1024 * 1024
+    if table_size <= 10 * meg:
+        target = 1 * meg
+    elif table_size <= 1024 * meg:
+        target = 10 * meg
+    else:
+        target = 100 * meg
+
+    num_partitions = 1
+    partition_size = table_size
+    # Keep the partition sizes above the target value:
+    while partition_size >= target * 2:
+        num_partitions *= 2
+        partition_size //= 2
+
+    return num_partitions
+
+
+def determine_number_of_partitions(source_table_name, table_design, read_access):
+    """
+    Guesstimate number of partitions based on actual table size.
+
+    This requires for one column to be marked as the primary key.  If there's no primary
+    key in the table, the number of partitions is always one.
+    (This requirement doesn't come from the table size but the need to split the table
+    when reading it in.)
+    """
+    logger = logging.getLogger(__name__)
+
+    primary_key = None
+    lower_bound, upper_bound = None, None
+    num_partitions = 1
+
+    if "primary_key" in table_design.get("constraints", {}):
+        # Note that column constraints such as primary key are stored as one-element lists, hence:
+        primary_key = table_design["constraints"]["primary_key"][0]
+        logger.debug("Primary key for table '%s' = %s", source_table_name.identifier, primary_key)
+
+        with closing(etl.pg.connection(read_access, readonly=True)) as conn:
+            span = etl.pg.query(conn, """SELECT min({}) AS lower_bound
+                                              , max({}) AS upper_bound
+                                           FROM {}
+                                      """.format(primary_key, primary_key, source_table_name))
+            if len(span) != 1:
+                raise RuntimeError("Failed to determine span of primary key values")
+            lower_bound, upper_bound = span[0]
+            size = etl.pg.query(conn, """SELECT pg_catalog.pg_table_size('{}') AS table_size
+                                      """.format(source_table_name))
+            if len(size) != 1:
+                raise RuntimeError("Failed to determine size of source table")
+            table_size = size[0][0]
+            num_partitions = suggest_best_partition_number(table_size)
+
+            logger.info("Picked %d partition(s) for table '%s' (lower: %d, upper: %d, size: %d)",
+                        num_partitions,
+                        source_table_name.identifier,
+                        lower_bound,
+                        upper_bound,
+                        table_size)
+
+    return primary_key, lower_bound, upper_bound, num_partitions
+
+
+def read_table_as_dataframe(sql_context, source, source_table_name, table_design):
+    """
+    Read dataframe (with partitions) by contacting upstream JDBC-reachable source.
     """
     logger = logging.getLogger(__name__)
     read_access = etl.config.env_value(source["read_access"])
     jdbc_url, dsn_properties = extract_dsn(read_access)
 
+    primary_key, lower_bound, upper_bound, num_partitions = determine_number_of_partitions(source_table_name,
+                                                                                           table_design,
+                                                                                           read_access)
+
     selected_columns = assemble_selected_columns(table_design)
     select_statement = """(SELECT {} FROM {}) AS t""".format(", ".join(selected_columns), source_table_name)
     logger.debug("Table query: SELECT * FROM %s", select_statement)
 
-    # Search the primary key (look also for distribution by key!)
-    if "primary_key" in table_design.get("constraints", {}):
-        # Note that column constraints such as primary key are stored as one-element lists, hence:
-        primary_key = table_design["constraints"]["primary_key"][0]
-        logger.debug("Primary key for table '%s' = %s", source_table_name.identifier, primary_key)
-        partition_df = sql_context.read.jdbc(url=jdbc_url,
-                                             properties=dsn_properties,
-                                             table="""(SELECT min({}) AS lower_bound
-                                                           , max({}) AS upper_bound
-                                                           , count(*) AS row_count
-                                                        FROM {}) AS t""".format(primary_key,
-                                                                                primary_key,
-                                                                                source_table_name))
-        rows = partition_df.collect()
-        assert len(rows) == 1
-        lower_bound, upper_bound, row_count = rows[0]
-
-        num_partitions = 1
-        for low in sorted(size_map):
-            if row_count >= low:
-                num_partitions = size_map[low]
-
-        logger.info("Picked %d partitions for table '%s' (lower: %d, upper: %d, count: %d)",
-                    num_partitions,
-                    source_table_name.identifier,
-                    lower_bound,
-                    upper_bound,
-                    row_count)
-
+    if primary_key is not None:
         df = sql_context.read.jdbc(url=jdbc_url,
                                    properties=dsn_properties,
                                    table=select_statement,
@@ -109,7 +172,6 @@ def read_table_as_dataframe(sql_context, source, source_table_name, table_design
         #                              "id >= 8544133 AND id < 8974448",
         #                              "id >= 8974444 AND id < 9404794",
         #                          ]
-
     else:
         df = sql_context.read.jdbc(url=jdbc_url,
                                    properties=dsn_properties,
@@ -128,34 +190,35 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
         logger.info("Dry-run: Skipping upload to '%s'", full_s3_path)
     else:
         logger.info("Writing table from '%s' to '%s'", source_path_name, full_s3_path)
+        # TODO Share this with load to construct the correct COPY command?
+        write_options = {
+            "header": "true",
+            "nullValue": r"\N",
+            "codec": "gzip",
+        }
         df.write \
             .format(source='com.databricks.spark.csv') \
-            .option("header", "true") \
-            .option("nullValue", r"\N") \
-            .option("codec", "gzip") \
+            .options(**write_options) \
             .mode('overwrite') \
             .save(full_s3_path)
     write_manifest_file(bucket_name, csv_path, dry_run)
 
 
-def dump_source_to_s3(sql_context, source, tables_in_s3, size_map, bucket_name, prefix, dry_run=False):
+def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dry_run=False):
     """
     Dump all the tables from one source into CSV files in S3.  The selector may be used to pick a subset of tables.
     """
     logger = logging.getLogger(__name__)
     source_name = source["name"]
-
     copied = set()
     for assoc_table_files in tables_in_s3:
-
-        # XXX Split into _read_data and _write_data
-
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
         design_file = etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)
         table_design = etl.schemas.load_table_design(design_file, target_table_name)
 
-        df = read_table_as_dataframe(sql_context, source, source_table_name, table_design, size_map)
+        logger.debug("Starting work on %s", source_table_name.identifier)
+        df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
         write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
 
         copied.add(target_table_name)
@@ -204,10 +267,11 @@ def dump_to_s3(settings, table, prefix, dry_run):
             if source["read_access"] not in os.environ:
                 raise KeyError("Environment variable to access '%s' not set: %s" % (source_name, source["read_access"]))
 
+    logger.info("Starting SparkSQL context for %s", APPLICATION_NAME)
     conf = SparkConf()
     conf.setAppName(APPLICATION_NAME)
     sc = SparkContext(conf=conf)
-    sqlContext = SQLContext(sc)
+    sql_context = SQLContext(sc)
 
     for source, source_name in zip(sources, schemas):
         if "read_access" not in source:
@@ -216,5 +280,4 @@ def dump_to_s3(settings, table, prefix, dry_run):
             logger.warning("No information found for source '%s' in s3://%s/%s", source_name, bucket_name, prefix)
         else:
             # TODO Need to parallelize across sources
-            dump_source_to_s3(sqlContext, source, tables_in_s3[source_name], settings("dataframe", "partition_sizes"),
-                              bucket_name, prefix, dry_run=dry_run)
+            dump_source_to_s3(sql_context, source, tables_in_s3[source_name], bucket_name, prefix, dry_run=dry_run)

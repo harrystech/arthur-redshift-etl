@@ -22,7 +22,6 @@ import etl.load
 import etl.pg
 import etl.s3
 import etl.schemas
-import etl.update
 
 
 def run_arg_as_command(my_name="arthur"):

@@ -52,16 +52,5 @@
             # The numeric datatype without precision and scale should not be used upstream!
             "numeric": ["decimal(12,4)", "%s::decimal(12,4)", "string"]
         }
-    },
-    # Dataframe information for SparkSQL
-    "dataframe": {
-        "partition_sizes": {
-            # map of lower bound to number of partitions to use (when row count is at least equal to that bound)
-            1: 1,
-            100: 2,
-            10000: 4,
-            100000: 16,
-            1000000: 512,
-        }
     }
 }

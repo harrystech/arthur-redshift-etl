@@ -41,8 +41,12 @@ def load_settings(config_file: str, default_file: str="defaults.yaml"):
                 else:
                     settings[key] = new_settings[key]
 
-    schema = load_json("settings.schema")
-    jsonschema.validate(settings, schema)
+    try:
+        schema = load_json("settings.schema")
+        jsonschema.validate(settings, schema)
+    except Exception:
+        logger.exception("Failed to validate settings:")
+        raise
 
     class Accessor:
         def __init__(self, data):

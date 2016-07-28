@@ -44,4 +44,7 @@ export PYSPARK_PYTHON PYSPARK_DRIVER_PYTHON
 PYSPARK_PYTHON="$PYTHON3"
 PYSPARK_DRIVER_PYTHON="$PYTHON3"
 
-exec spark-submit --jars "$JARS_ARG" "$COMMAND" "$@"
+exec spark-submit --jars "$JARS_ARG" \
+    -Xms512m -Xmx512m \
+    -Dspark.executor.memory=3g -Dspark.driver.memory=3g -Dspark.executor.cores=2 \
+    "$COMMAND" "$@"

@@ -1,11 +1,22 @@
 """
-Load data from upstream or execute CTAS or add views to Redshift.
+Load (or update) data from upstream or execute CTAS or add views to Redshift.
+
+A "load" refers to the wholesale replacement of any schema or table involved.
+
+An "update" refers to the gentle replacement of tables.
 
 
-Create (or replace) CTASs and views in the data warehouse.
+There are three possibilities:
 
-Expects for every view a SQL file in the S3 bucket with a valid expression to
-create the view. The "source_name" in the table design must be set to "VIEW".
+(1) "Tables" that have upstream sources must have CSV files and a manifest file.
+
+(2) "CTAS" tables are derived from queries so must have a SQL file.  (Think of them
+as materialized views.)
+
+(3) "VIEWS" are views and so must have a SQL file.
+
+
+Details for (2):
 
 Expects for every derived table (CTAS) a SQL file in the S3 bucket with a valid
 expression to create the content of the table (meaning: just the select without
