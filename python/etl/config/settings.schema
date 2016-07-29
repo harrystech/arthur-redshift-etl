@@ -83,18 +83,8 @@
             },
             "required": [ "as_is_att_type", "cast_needed_att_type" ],
             "additionalProperties": false
-        },
-        "dataframe": {
-            "type": "object",
-            "properties": {
-                "partition_sizes": {
-                    "type": "object"
-                }
-            },
-            "required": [ "partition_sizes" ],
-            "additionalProperties": false
         }
     },
-    "required": [ "data_warehouse", "s3", "sources", "type_maps", "dataframe" ],
+    "required": [ "data_warehouse", "s3", "sources", "type_maps" ],
     "additionalProperties": false
 }

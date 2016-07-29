@@ -1,10 +1,9 @@
-import os
 from setuptools import setup, find_packages
 
 
 setup(
     name="redshift-etl",
-    version="0.5.0",
+    version="0.6.0",
     author="Harry's Data Engineering and Contributors",
     description="ETL code to ferry data from PostgreSQL databases to Redshift cluster",
     license="MIT",
@@ -13,13 +12,10 @@ setup(
     packages=find_packages(),
     package_data={'etl': ["config/*"]},
     scripts=[
-        "scripts/initial_setup.py",
-        "scripts/create_user.py",
-        "scripts/dump_schemas_to_s3.py",
-        "scripts/dump_data_to_s3.py",
-        "scripts/load_to_redshift.py",
-        "scripts/copy_to_s3.py",
-        "scripts/update_in_redshift.py",
-        "scripts/submit_local.sh"
-    ]
+        "scripts/submit_arthur.sh"
+    ],
+    entry_points={
+        # NB The script must end in ".py" so that spark submit accepts it as a Python script.
+        'console_scripts': ['arthur.py=etl.commands:run_arg_as_command']
+    }
 )

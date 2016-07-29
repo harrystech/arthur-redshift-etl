@@ -2,6 +2,7 @@ from collections import defaultdict
 from functools import lru_cache
 import logging
 import logging.config
+import os
 import sys
 
 import pkg_resources
@@ -40,8 +41,12 @@ def load_settings(config_file: str, default_file: str="defaults.yaml"):
                 else:
                     settings[key] = new_settings[key]
 
-    schema = load_json("settings.schema")
-    jsonschema.validate(settings, schema)
+    try:
+        schema = load_json("settings.schema")
+        jsonschema.validate(settings, schema)
+    except Exception:
+        logger.exception("Failed to validate settings:")
+        raise
 
     class Accessor:
         def __init__(self, data):
@@ -57,6 +62,25 @@ def load_settings(config_file: str, default_file: str="defaults.yaml"):
     return Accessor(settings)
 
 
+def env_value(name: str) -> str:
+    """
+    Retrieve environment variable or error out if variable is not set.
+    This is mildly more readable than direct use of os.environ.
+
+    :param name: Name of environment variable
+    :return: Value of environment variable
+    """
+    if name not in os.environ:
+        raise KeyError('Environment variable "%s" not set' % name)
+    return os.environ[name]
+
+
 @lru_cache()
 def load_json(filename):
     return json.loads(pkg_resources.resource_string(__name__, filename))
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    user_name = env_value("USER")
+    print("Hello {}!".format(user_name))

@@ -7,7 +7,6 @@ from collections import namedtuple
 from datetime import datetime
 from fnmatch import fnmatch
 import logging
-import os
 
 
 class TableName(namedtuple("_TableName", ["schema", "table"])):
@@ -26,6 +25,9 @@ class TableName(namedtuple("_TableName", ["schema", "table"])):
 
     def __str__(self):
         return '"{0}"."{1}"'.format(self.schema, self.table)
+
+    def match(self, glob):
+        return fnmatch(self.identifier, glob)
 
 
 class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
@@ -197,7 +199,7 @@ class ColumnDefinition(namedtuple("_ColumnDefinition",
     __slots__ = ()
 
 
-class AssociatedTableFiles():
+class AssociatedTableFiles:
     """
     Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
 
@@ -253,6 +255,9 @@ class AssociatedTableFiles():
     def data_files(self):
         return self._data_files
 
+    def __len__(self):
+        return 1 + (self._sql_file is not None) + (self._manifest_file is not None) + len(self._data_files)
+
     def set_sql_file(self, filename):
         self._sql_file = filename
 
@@ -281,44 +286,26 @@ def measure_elapsed_time():
     """
     Measure time it takes to execute code and report on success.
 
-    Exceptions are being caught here, reported on but then swallowed.
+    Exceptions are being caught here and reported.
 
     Example:
         >>> with measure_elapsed_time():
         ...     pass
     """
+    # TODO use os.times() instead of now()?
     def elapsed_time(start_time=datetime.now()):
         return (datetime.now() - start_time).total_seconds()
 
-    logger = logging.getLogger(__name__)
+    # For some weird reason, this does NOT work: logger = logging.getLogger(__name__)
     try:
         yield
-        logger.info("Ran for %.2fs and finished successfully!", elapsed_time())
-        print("Ran for %.2fs and finished successfully!" % elapsed_time())
     except Exception:
-        print("exception")
-        logger.exception("Something terrible happened")
-        logger.info("Ran for %.2fs before encountering disaster!", elapsed_time())
+        logging.getLogger(__name__).exception("Something terrible happened")
+        logging.getLogger(__name__).info("Ran for %.2fs before encountering disaster!", elapsed_time())
+        raise
     except BaseException:
-        logger.exception("Something really terrible happened")
-        logger.info("Ran for %.2fs before an exceptional termination!", elapsed_time())
-
-
-def env_value(name: str) -> str:
-    """
-    Retrieve environment variable or error out if variable is not set.
-    This is mildly more readable than direct use of os.environ.
-
-    :param name: Name of environment variable
-    :return: Value of environment variable
-    """
-    if name not in os.environ:
-        raise KeyError('Environment variable "%s" not set' % name)
-    return os.environ[name]
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    with measure_elapsed_time():
-        user_name = env_value("USERx")
-        print("Hello {}!".format(user_name))
+        logging.getLogger(__name__).exception("Something really terrible happened")
+        logging.getLogger(__name__).info("Ran for %.2fs before an exceptional termination!", elapsed_time())
+        raise
+    else:
+        logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", elapsed_time())

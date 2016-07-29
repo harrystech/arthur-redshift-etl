@@ -5,6 +5,9 @@ set -e
 # Submit to a local Spark cluster.  (Submitting to an EMR cluster is done using steps.)
 # This will grab all the JAR files in the .jars directory.
 
+# CAVEAT If you make changes here, be sure to re-install the package to make sure changes
+# propagate to the copy of this script in your path.
+
 # XXX This assumes that the script in venv/bin is called
 BIN_DIR=`dirname $0`
 TOP_DIR=`\cd $BIN_DIR/../.. && \pwd`
@@ -44,4 +47,7 @@ export PYSPARK_PYTHON PYSPARK_DRIVER_PYTHON
 PYSPARK_PYTHON="$PYTHON3"
 PYSPARK_DRIVER_PYTHON="$PYTHON3"
 
-exec spark-submit --jars "$JARS_ARG" "$COMMAND" "$@"
+exec spark-submit --jars "$JARS_ARG" \
+    --executor-memory 4G --driver-memory 4G --executor-cores 2 \
+    --conf spark.driver.maxResultSize=4G \
+    "$COMMAND" "$@"

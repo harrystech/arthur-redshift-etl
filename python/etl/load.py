@@ -1,97 +1,48 @@
+"""
+Load (or update) data from upstream or execute CTAS or add views to Redshift.
+
+A "load" refers to the wholesale replacement of any schema or table involved.
+
+An "update" refers to the gentle replacement of tables.
+
+
+There are three possibilities:
+
+(1) "Tables" that have upstream sources must have CSV files and a manifest file.
+
+(2) "CTAS" tables are derived from queries so must have a SQL file.  (Think of them
+as materialized views.)
+
+(3) "VIEWS" are views and so must have a SQL file.
+
+
+Details for (2):
+
+Expects for every derived table (CTAS) a SQL file in the S3 bucket with a valid
+expression to create the content of the table (meaning: just the select without
+closing ';'). The actual DDL statement (CREATE TABLE AS ...) and the table
+attributes / constraints are added from the matching table design file.
+
+Note that the table is actually created empty, then CTAS is used for a temporary
+table which is then inserted into the table.  This is needed to attach
+constraints, attributes, and encodings.
+"""
+
+from contextlib import closing
 from itertools import chain
 import logging
 import os.path
-import simplejson as json
 
-import jsonschema
 import psycopg2
-import yaml
 
+import etl
 from etl import TableName
+import etl.commands
 import etl.config
 import etl.dump
 import etl.pg
-
-
-def load_table_design(stream, table_name):
-    """
-    Load table design from stream (usually, an open file). The table design is
-    validated before being returned.
-    """
-    table_design = yaml.safe_load(stream)
-    logging.getLogger(__name__).debug("Trying to validate table design for '%s' from stream", table_name.identifier)
-    return validate_table_design(table_design, table_name)
-
-
-def validate_table_design(table_design, table_name):
-    """
-    Validate table design against schema.  Raise exception if anything is not
-    right.
-
-    Phase 1 of validation is based on a schema and json-schema validation.
-    Phase 2 is built on specific rules that I couldn't figure out how
-    to run inside json-schema.
-    """
-    logger = logging.getLogger(__name__)
-    try:
-        table_design_schema = etl.config.load_json("table_design.schema")
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
-        raise
-    try:
-        jsonschema.validate(table_design, table_design_schema)
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
-        logger.error("Failed to validate table design for '%s'!", table_name.identifier)
-        raise
-    # TODO Need more rules?
-    if table_design["name"] != table_name.identifier:
-        raise ValueError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
-    if table_design["source_name"] == "VIEW":
-        for column in table_design["columns"]:
-            if column.get("skipped", False):
-                raise ValueError("columns may not be skipped in views")
-    else:
-        for column in table_design["columns"]:
-            if column.get("skipped", False):
-                continue
-            if column.get("not_null", False):
-                # NOT NULL columns -- may not have "null" as type
-                if isinstance(column["type"], list) or column["type"] == "null":
-                    raise ValueError('"not null" column may not have null type')
-            else:
-                # NULL columns -- must have "null" as type and may not be primary key (identity)
-                if not (isinstance(column["type"], list) and "null" in column["type"]):
-                    raise ValueError('"null" missing as type for null-able column')
-                if column.get("identity", False):
-                    raise ValueError("identity column must be set to not null")
-        identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
-        if len(identity_columns) > 1:
-            raise ValueError("only one column should have identity")
-        surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
-        if len(surrogate_keys) and not surrogate_keys == identity_columns:
-            raise ValueError("surrogate key must be identity")
-    return table_design
-
-
-def compare_columns(live_design, file_design):
-    logger = logging.getLogger(__name__)
-    live_columns = {column["name"] for column in live_design["columns"]}
-    file_columns = {column["name"] for column in file_design["columns"]}
-    # TODO define policy to declare columns "ETL-only"
-    etl_columns = {name for name in file_columns if name.startswith("etl__")}
-    logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
-                 file_design["name"], len(live_columns), len(file_columns), len(etl_columns))
-    not_accounted_for_on_file = live_columns.difference(file_columns)
-    described_but_not_live = file_columns.difference(live_columns).difference(etl_columns)
-    if not_accounted_for_on_file:
-        logger.warning("New columns in '%s' that are not in existing table design: %s",
-                       file_design["name"], sorted(not_accounted_for_on_file))
-        indices = dict((name, i) for i, name in enumerate(column["name"] for column in live_design["columns"]))
-        for name in not_accounted_for_on_file:
-            logger.debug("New column %s.%s: %s", live_design["name"], name,
-                         json.dumps(live_design["columns"][indices[name]], indent="    ", sort_keys=True))
-    if described_but_not_live:
-        logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
+import etl.s3
+import etl.schemas
 
 
 def format_column_list(columns):
@@ -236,6 +187,7 @@ def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manife
     """
     access = "aws_iam_role={}".format(credentials)
     logger = logging.getLogger(__name__)
+    # TODO Only allow uploads with manifest, remove option to load CSV files
     if manifest is not None:
         location = "s3://{}/{}".format(bucket_name, manifest)
         with_manifest = " MANIFEST"
@@ -254,11 +206,11 @@ def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manife
             etl.pg.execute(conn, """COPY {}
                                     FROM %s
                                     CREDENTIALS %s{}
-                                    FORMAT AS CSV GZIP IGNOREHEADER {:d}
+                                    FORMAT AS CSV GZIP IGNOREHEADER 1
                                     NULL AS '\\\\N'
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
-                                 """.format(table_name, with_manifest, etl.dump.N_HEADER_LINES), (location, access))
+                                 """.format(table_name, with_manifest), (location, access))
             conn.commit()
         except psycopg2.Error as exc:
             conn.rollback()
@@ -308,10 +260,12 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
             elif column.get("identity", False):
                 na_values_row.append(0)
             else:
+                # Use NULL for all null-able columns:
                 if not column.get("not_null", False):
                     # Use NULL for any nullable column and use type cast (for UNION ALL to succeed)
                     na_values_row.append("NULL::{}".format(column["sql_type"]))
-                elif "timestamp" in column['sql_type']:
+                elif "timestamp" in column["sql_type"]:
+                    # XXX Is this a good value or should timestamps be null?
                     na_values_row.append("'0000-01-01 00:00:00'")
                 elif "string" in column["type"]:
                     na_values_row.append("'N/A'")
@@ -418,3 +372,66 @@ def vacuum(conn, table_name, dry_run=False):
     else:
         logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
+
+
+def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=True):
+    """
+    Load table from CSV file or based on SQL query or install new view.
+
+    This is forceful if drop is True ... and replaces anything that might already exist.
+    """
+    logger = logging.getLogger(__name__)
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
+    credentials = settings("data_warehouse", "iam_role")
+
+    table_owner = settings("data_warehouse", "owner")
+    etl_group = settings("data_warehouse", "groups", "etl")
+    user_group = settings("data_warehouse", "groups", "users")
+
+    selection = etl.TableNamePatterns.from_list(target)
+    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+
+    bucket_name = settings("s3", "bucket_name")
+    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
+
+    if len(files_in_s3) == 0:
+        logger.error("No applicable files found in 's3://%s/%s'", bucket_name, prefix)
+        return
+
+    vacuumable = []
+    with closing(etl.pg.connection(dw)) as conn:
+        for source_name in files_in_s3:
+            for assoc_table_files in files_in_s3[source_name]:
+                table_name = assoc_table_files.target_table_name
+                design_file = assoc_table_files.design_file
+
+                with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
+                    table_design = etl.schemas.load_table_design(content, table_name)
+
+                creates = table_design["source_name"] if table_design["source_name"] in ("CTAS", "VIEW") else None
+                if creates is not None:
+                    with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
+                        query = content.read().decode()
+
+                with conn:
+                    if creates == "VIEW":
+                        create_view(conn, table_design, table_name, table_owner, query,
+                                    drop_view=drop, dry_run=dry_run)
+                    elif creates == "CTAS":
+                        create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                        create_temp_table_as_and_copy(conn, table_name, table_design, query,
+                                                      add_explain_plan=add_explain_plan, dry_run=dry_run)
+                        analyze(conn, table_name, dry_run=dry_run)
+                        vacuumable.append(table_name)
+                    else:
+                        create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                        copy_data(conn, credentials, table_name, bucket_name, manifest=assoc_table_files.manifest_file,
+                                  dry_run=dry_run)
+                        analyze(conn, table_name, dry_run=dry_run)
+                        vacuumable.append(table_name)
+                    grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
+    # Reconnect to run vacuum outside transaction block
+    if not drop:
+        with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+            for table_name in vacuumable:
+                vacuum(conn, table_name, dry_run=dry_run)
