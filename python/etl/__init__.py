@@ -7,6 +7,7 @@ from collections import namedtuple
 from datetime import datetime
 from fnmatch import fnmatch
 import logging
+from typing import Iterable
 
 
 class TableName(namedtuple("_TableName", ["schema", "table"])):
@@ -181,11 +182,18 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         """
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
-    def match_names(self, sources: list) -> list:
+    def match_field(self, lod: Iterable(dict), field: str) -> list:
         """
-        Match names with this pattern while traversing sources where each element is a dictionary having a "name" key.
+        Match fields with this pattern while traversing list of dictionaries
+        (and picking up the field from those dictionaries).
+
+        Note that it is an error if there's no match.  (So the returned list
+        will always have at least one element.
         """
-        return list(d["name"] for d in sources if self.match_schema(d["name"]))
+        matches = [d for d in lod if self.match_schema(d[field])]
+        if len(matches) < 1:
+            raise ValueError("Cannot find match on %s for %s" % (field, ", ".join(self.schemas)))
+        return matches
 
 
 class ColumnDefinition(namedtuple("_ColumnDefinition",
