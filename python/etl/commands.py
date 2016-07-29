@@ -192,6 +192,23 @@ class SubCommand:
         raise NotImplementedError("Instance of %s has no proper callback" % self.__class__.__name__)
 
 
+class SparkSubCommand(SubCommand):
+
+    """Sub command that requires Spark context ... relaunches arthur using submit as needed"""
+
+    def callback(self, args, settings):
+        # Proceed with callback IF Spark environment has been loaded.  Otherwise, re-launch with spark-submit
+        if "SPARK_ENV_LOADED" in os.environ:
+            self.callback_within_spark(args, settings)
+        else:
+            print("+ exec submit_arthur.sh " + " ".join(sys.argv), file=sys.stderr)
+            os.execvp("submit_arthur.sh", ("submit_arthur.sh",) + tuple(sys.argv))
+            sys.exit(1)
+
+    def callback_within_spark(self, args, settings):
+        raise NotImplementedError("Instance of %s has no proper callback for Spark context" % self.__class__.__name__)
+
+
 class InitialSetupCommand(SubCommand):
 
     def __init__(self):
@@ -266,7 +283,7 @@ class CopyToS3Command(SubCommand):
                                args.git_modified, args.dry_run)
 
 
-class DumpDataToS3Command(SubCommand):
+class DumpDataToS3Command(SparkSubCommand):
 
     def __init__(self):
         super().__init__("dump",
@@ -276,8 +293,7 @@ class DumpDataToS3Command(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "prefix", "dry-run"])
 
-    def callback(self, args, settings):
-        # TODO test for SPARK_HOME, if not present, restart using submit local
+    def callback_within_spark(self, args, settings):
         with etl.pg.log_error():
             etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
 
@@ -290,7 +306,7 @@ class LoadRedshiftCommand(SubCommand):
                          "Load data into Redshift from files in S3 (as a forced reload)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["dry-run", "prefix", "target", "explain"])
+        add_standard_arguments(parser, ["target", "prefix", "explain", "dry-run"])
 
     def callback(self, args, settings):
         with etl.pg.log_error():
@@ -306,7 +322,7 @@ class UpdateRedshiftCommand(SubCommand):
                          "Update data in Redshift from files in S3 (without schema modifications)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["dry-run", "prefix", "target", "explain"])
+        add_standard_arguments(parser, ["target", "prefix", "explain", "dry-run"])
 
     def callback(self, args, settings):
         with etl.pg.log_error():
@@ -314,7 +330,9 @@ class UpdateRedshiftCommand(SubCommand):
                                              add_explain_plan=args.add_explain_plan, drop=False, dry_run=args.dry_run)
 
 
-class ExtractLoadTransformCommand(SubCommand):
+class ExtractLoadTransformCommand(SparkSubCommand):
+
+    # Careful here ... this derives from dump so that the command gets relaunched into Spark as needed.
 
     def __init__(self):
         super().__init__("etl",
@@ -322,10 +340,9 @@ class ExtractLoadTransformCommand(SubCommand):
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["dry-run", "prefix", "target", "force"])
+        add_standard_arguments(parser, ["target", "prefix", "force", "dry-run"])
 
-    def callback(self, args, settings):
-        # XXX Need to validate against upstream ... etl.dump.download_schemas(args, settings)
+    def callback_within_spark(self, args, settings):
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
         etl.load.load_or_update_redshift(settings, args.target, args.prefix,
                                          add_explain_plan=False, drop=args.force, dry_run=args.dry_run)

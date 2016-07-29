@@ -12,7 +12,7 @@ setup(
     packages=find_packages(),
     package_data={'etl': ["config/*"]},
     scripts=[
-        "scripts/submit_local.sh"
+        "scripts/submit_arthur.sh"
     ],
     entry_points={
         # NB The script must end in ".py" so that spark submit accepts it as a Python script.

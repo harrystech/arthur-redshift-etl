@@ -37,15 +37,22 @@ and out of your VPC).
 
 Download the JAR files for the following software before deployment into an AWS Spark Cluster in order
 to be able to connect to PostgreSQL databases and write CSV files for a Dataframe:
-- [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver (9.4)
-- [Spark-CSV package](https://spark-packages.org/)
-- [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) (1.4)
+
+| Software | Version | JAR file  |
+|---|---|---|
+| [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver | 9.4 | [postgresql-9.4.1208.jar](https://jdbc.postgresql.org/download/postgresql-9.4.1208.jar) |
+| [Spark-CSV package](https://spark-packages.org/) | 1.4 | [spark-csv_2.10-1.4.0.jar](http://repo1.maven.org/maven2/com/databricks/spark-csv_2.10/1.4.0/spark-csv_2.10-1.4.0.jar) |
+| [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) | 1.4 | [commons-csv-1.4.jar](http://central.maven.org/maven2/org/apache/commons/commons-csv/1.4/commons-csv-1.4.jar) |
+[ [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.1.10 | [RedshiftJDBC41-1.1.10.1010.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.1.10.1010.jar) |
 
 Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to push files into S3:
-- [Hadoop AWS](https://hadoop.apache.org/docs/r2.7.1/api/org/apache/hadoop/fs/s3native/NativeS3FileSystem.html) (2.7.1)
-- [AWS Java SDK](https://aws.amazon.com/sdk-for-java/) (1.7.4)
 
-(Do not upload these into EMR because EMR comes with all the correct versions out of the box.)
+| Software | Version | JAR file  |
+|---|---|---|
+| [Hadoop AWS](https://hadoop.apache.org/docs/r2.7.1/api/org/apache/hadoop/fs/s3native/NativeS3FileSystem.html) | 2.7.1 | [hadoop-aws-2.7.1.jar](http://central.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.7.1/hadoop-aws-2.7.1.jar) |
+| [AWS Java SDK](https://aws.amazon.com/sdk-for-java/) | 1.7.4 | [aws-java-sdk-1.7.4.2.jar](http://central.maven.org/maven2/com/amazonaws/aws-java-sdk/1.7.4.2/aws-java-sdk-1.7.4.2.jar) |
+
+Do not upload these last two into EMR because EMR comes with all the correct versions out of the box.
 
 The JAR files should be stored into the `jars` directory locally and in the `jars` folder of your selected
 environment (see below).  A bootstrap action will copy them from S3 to the EMR cluster.
@@ -62,6 +69,7 @@ In order to run the Python code locally, you'll need to create a virtual environ
 * [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
 * [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
 * [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
+* [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
 
 These are listed in the `python/requirements.txt` file that is used during a bootstrap action in the EMR cluster.
 
@@ -85,7 +93,7 @@ pip3 install ipython
 
 The EMR releases 4.5 and later include python3 so there's no need to install Python 3 using a bootstrap action.
 
-TODO The above steps for a virtual environment should be merged with `bin/bootstrap.sh`.
+**TODO** The above steps for a virtual environment should be merged with `bin/bootstrap.sh`.
 
 #### Adding PySpark to your IDE
 
@@ -116,22 +124,23 @@ folder in S3.
 
 ### Sources
 
-TODO
+See the [Wiki](https://github.com/harrystech/harrys-redshift-etl/wiki) pages about
+a description of configurations.
 
 
 ## Initializing the Redshift cluster
 
 | Sub-command   | options |
 | ------------- | ----------------------------------------------------- |
-| initialize  | config, dry-run, password, skip-user-creation |
-| add_user    | config, dry-run, etl-user, add-user-schema, skip-user-creation |
+| initialize  | config, password, skip-user-creation |
+| add_user    | config, etl-user, add-user-schema, skip-user-creation |
 
 ### Initial setup
 
 After starting up the cluster, create groups, users and schemas (one per upstream source):
 
 ```shell
-arthur initialize
+arthur.py initialize
 ```
 
 ### Adding users
@@ -139,7 +148,7 @@ arthur initialize
 Additional users may be added to the ETL or (analytics) user group:
 
 ```shell
-arthur create_users
+arthur.py create_users
 ```
 
 ## Running the ETL
@@ -149,19 +158,19 @@ arthur create_users
 Normally, the ETL will move data from upstream sources using the `dump` and `load` commands.
 
 While working on the table designs or SQL for views and CTASs expressions, the steps are:
-* `design_table`
-* `copy_to_s3`
+* `design`
+* `sync`
+* `load` *or*
 * `update`
 
 
 | Sub-command   | options |
 | ------------- | ----------------------------------------------------- |
-| design_table  | config, dry-run, prefix, env, table, table design dir |
-| copy_to_s3    | config, dry-run, prefix, env, table, table design dir, git-modified, (with data ?) |
-| dump_to_s3    | config, dry-run, prefix, env, table |
-| load          | config, dry-run, prefix, env, table, drop |
-| update        | config, dry-run, prefix, env, table (view or ctas), drop, add-explain-plan, skip-views, skip-ctas |
-| etl           | equivalent to dump_to_s3, load, and update |
+| design  | config, dry-run, target, table design dir |
+| sync    | config, dry-run, prefix or env, target, table design dir, git-modified |
+| dump    | config, dry-run, prefix or env, target |
+| load, update | config, dry-run, prefix or env, target, explain-plan |
+| etl | config, dry-run, prefix or env, target, force |
 
 * Also `--verbose` or `--silent`
 * Still needed ? `--force`
@@ -169,20 +178,19 @@ While working on the table designs or SQL for views and CTASs expressions, the s
 **Notes**
 
 * Commands expect a config file.
-* Commands accept `dry-run` command line flag.
+* Commands accept `--dry-run` command line flag.
 * Commands allow to specify a selector (specific source or table name(s)).
-* Commands allow either `prefix` or `env` to select a folder in the S3 bucket.
+* Commands allow either `--prefix` or `--env` to select a folder in the S3 bucket.
 * Log files are by default in `etl.log`.
-
 * To copy data, use `aws s3 --recursive`.
 
 
 ### Setting up table designs
 
-Use `design_table` to bootstrap any table design files based on the tables found in your source schemas.
+Use `design` to bootstrap any table design files based on the tables found in your source schemas.
 
 ```shell
-arthur design_table
+arthur.py design
 ```
 
 ### Copying data out of PostgreSQL and into S3
@@ -190,23 +198,23 @@ arthur design_table
 Now download the data (leveraging a Spark cluster) using:
 
 ```shell
-arthur dump
+arthur.py dump
 ```
 
 ## Copying data from S3 into Redshift
 
-Loading data includes creating tables as needed along the way:
+Loading data includes creating or replacing tables and views as needed along the way:
 
 ```shell
-arthur load
+arthur.py load
 ```
 
 ## Update (or create) views and tables based on queries (CTAS)
 
-Once (raw) data is available, create additional views and tables (based on queries):
+Update in place table or rewrite views:
 
 ```shell
-arthur update
+arthur.py update
 ```
 
 # Debugging and Contributing

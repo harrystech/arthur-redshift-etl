@@ -18,7 +18,13 @@ Query the data base for the existence of a user's schema or the current search p
 
 Warn if distribution key is not also a sort key.
 
-Test whether relation is table or view to inoke the correct drop command.  (When switching from VIEW to CTAS
+Test whether relation is table or view to invoke the correct drop command.  (When switching from VIEW to CTAS
 (or back) the --drop option breaks.)
 
 When loading data from upstream, cut off at midnight NY?
+
+Check whether schema exists and give appropriate feedback (instead of "0 files found")
+
+Add checks for partitions to have correct size after download (count rows while partitioning?)
+
+For common failure patterns in table designs, provide hints beyond error messages.
