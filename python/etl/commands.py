@@ -290,11 +290,12 @@ class LoadRedshiftCommand(SubCommand):
                          "Load data into Redshift from files in S3 (as a forced reload)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["dry-run", "prefix", "target"])
+        add_standard_arguments(parser, ["dry-run", "prefix", "target", "explain"])
 
     def callback(self, args, settings):
         with etl.pg.log_error():
-            etl.load.load_to_redshift(settings, args.target, args.prefix, args.dry_run)
+            etl.load.load_or_update_redshift(settings, args.target, args.prefix,
+                                             add_explain_plan=args.add_explain_plan, drop=True, dry_run=args.dry_run)
 
 
 class UpdateRedshiftCommand(SubCommand):
@@ -305,11 +306,12 @@ class UpdateRedshiftCommand(SubCommand):
                          "Update data in Redshift from files in S3 (without schema modifications)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["dry-run", "prefix", "target"])
+        add_standard_arguments(parser, ["dry-run", "prefix", "target", "explain"])
 
     def callback(self, args, settings):
         with etl.pg.log_error():
-            etl.load.update_in_redshift(settings, args.target, args.prefix, args.dry_run)
+            etl.load.load_or_update_redshift(settings, args.target, args.prefix,
+                                             add_explain_plan=args.add_explain_plan, drop=False, dry_run=args.dry_run)
 
 
 class ExtractLoadTransformCommand(SubCommand):
@@ -320,15 +322,13 @@ class ExtractLoadTransformCommand(SubCommand):
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["dry-run", "prefix", "force"])
+        add_standard_arguments(parser, ["dry-run", "prefix", "target", "force"])
 
     def callback(self, args, settings):
         # XXX Need to validate against upstream ... etl.dump.download_schemas(args, settings)
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
-        if args.force:
-            etl.load.load_to_redshift(settings, [], args.prefix, args.dry_run)
-        else:
-            etl.load.update_in_redshift(settings, [], args.prefix, args.dry_run)
+        etl.load.load_or_update_redshift(settings, args.target, args.prefix,
+                                         add_explain_plan=False, drop=args.force, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):

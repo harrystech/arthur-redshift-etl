@@ -245,9 +245,9 @@ def list_files(settings, prefix, table):
     selection = etl.TableNamePatterns.from_list(table)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
     found = find_files_in_bucket(bucket_name, prefix, schemas, selection)
-    for source in found:
-        print("Source: {}".format(source))
-        for info in found[source]:
+    for source_name in found:
+        print("Source: {}".format(source_name))
+        for info in found[source_name]:
             if info.source_table_name.schema in ('CTAS', 'VIEW'):
                 print("    Table: {} ({})".format(info.target_table_name.table, info.source_table_name.schema))
             else:

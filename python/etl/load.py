@@ -187,6 +187,7 @@ def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manife
     """
     access = "aws_iam_role={}".format(credentials)
     logger = logging.getLogger(__name__)
+    # TODO Only allow uploads with manifest, remove option to load CSV files
     if manifest is not None:
         location = "s3://{}/{}".format(bucket_name, manifest)
         with_manifest = " MANIFEST"
@@ -373,95 +374,64 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def update_in_redshift(settings, target, prefix, dry_run):
-    pass
+def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=True):
+    """
+    Load table from CSV file or based on SQL query or install new view.
 
-
-def load_to_redshift(settings, target, prefix, dry_run):
-
-    drop_table = True
-
+    This is forceful if drop is True ... and replaces anything that might already exist.
+    """
+    logger = logging.getLogger(__name__)
     dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
+    credentials = settings("data_warehouse", "iam_role")
+
     table_owner = settings("data_warehouse", "owner")
     etl_group = settings("data_warehouse", "groups", "etl")
     user_group = settings("data_warehouse", "groups", "users")
-    bucket_name = settings("s3", "bucket_name")
+
     selection = etl.TableNamePatterns.from_list(target)
     schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
-    tables_with_data = [(table_name, table_files["Design"], table_files["Data"])
-                        for table_name, table_files in files_in_s3
-                        if len(table_files["Data"])]
-    if len(tables_with_data) == 0:
-        logging.error("No applicable files found in 's3://%s/%s'", bucket_name, prefix)
-    else:
-        credentials = settings("data_warehouse", "iam_role")
-        vacuumable = []
-        with closing(etl.pg.connection(dw)) as conn:
-            for table_name, design_file, csv_files in tables_with_data:
-                with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
-                    table_design = etl.schemas.load_table_design(content, table_name)
-                if table_design["source_name"] in ("CTAS", "VIEW"):
-                    continue
-                with conn:
-                    create_table(conn, table_design, table_name, table_owner,
-                                          drop_table=drop_table, dry_run=dry_run)
-                    grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
-                    if csv_files[0].endswith(".manifest"):
-                        copy_data(conn, credentials, table_name, bucket_name, manifest=csv_files[0],
-                                           dry_run=dry_run)
-                    else:
-                        copy_data(conn, credentials, table_name, bucket_name, csv_files=csv_files,
-                                           dry_run=dry_run)
-                    analyze(conn, table_name, dry_run=dry_run)
-                    vacuumable.append(table_name)
 
-        # Reconnect to run vacuum outside transaction block
-        if not drop_table:
-            with closing(etl.pg.connection(dw, autocommit=True)) as conn:
-                for table_name in vacuumable:
-                    vacuum(conn, table_name, dry_run=dry_run)
-
-
-def update_ctas_or_views(args, settings):
-    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
-    table_owner = settings("data_warehouse", "owner")
-    etl_group = settings("data_warehouse", "groups", "etl")
-    user_group = settings("data_warehouse", "groups", "users")
     bucket_name = settings("s3", "bucket_name")
-    selection = etl.TableNamePatterns.from_list(args.ctas_or_view)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
-    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, args.prefix, schemas, selection)
-    tables_with_queries = [(table_name, table_files["Design"], table_files["SQL"])
-                           for table_name, table_files in files_in_s3
-                           if table_files["SQL"] is not None]
-    if len(tables_with_queries) == 0:
-        logging.error("No applicable files found in 's3://%s/%s'", bucket_name, args.prefix)
-    else:
-        vacuumable = []
-        with closing(etl.pg.connection(dw)) as conn:
-            for table_name, design_file, sql_file in tables_with_queries:
+    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
+
+    if len(files_in_s3) == 0:
+        logger.error("No applicable files found in 's3://%s/%s'", bucket_name, prefix)
+        return
+
+    vacuumable = []
+    with closing(etl.pg.connection(dw)) as conn:
+        for source_name in files_in_s3:
+            for assoc_table_files in files_in_s3[source_name]:
+                table_name = assoc_table_files.target_table_name
+                design_file = assoc_table_files.design_file
+
                 with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
                     table_design = etl.schemas.load_table_design(content, table_name)
-                if table_design["source_name"] not in ("CTAS", "VIEW"):
-                    continue
-                with closing(etl.s3.get_file_content(bucket_name, sql_file)) as content:
-                    query = content.read().decode()
+
+                creates = table_design["source_name"] if table_design["source_name"] in ("CTAS", "VIEW") else None
+                if creates is not None:
+                    with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
+                        query = content.read().decode()
+
                 with conn:
-                    if table_design["source_name"] == "CTAS" and not args.skip_ctas:
-                        create_table(conn, table_design, table_name, table_owner,
-                                              drop_table=args.drop, dry_run=args.dry_run)
-                        grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
-                        create_temp_table_as_and_copy(conn, table_name, table_design, query,
-                                                               add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
-                        analyze(conn, table_name, dry_run=args.dry_run)
-                        vacuumable.append(table_name)
-                    elif table_design["source_name"] == "VIEW" and not args.skip_views:
+                    if creates == "VIEW":
                         create_view(conn, table_design, table_name, table_owner, query,
-                                             drop_view=args.drop, dry_run=args.dry_run)
-                        grant_access(conn, table_name, etl_group, user_group, dry_run=args.dry_run)
-        # Reconnect to run vacuum outside transaction block
-        if not args.drop:
-            with closing(etl.pg.connection(dw, autocommit=True)) as conn:
-                for table_name in vacuumable:
-                    vacuum(conn, table_name, dry_run=args.dry_run)
+                                    drop_view=drop, dry_run=dry_run)
+                    elif creates == "CTAS":
+                        create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                        create_temp_table_as_and_copy(conn, table_name, table_design, query,
+                                                      add_explain_plan=add_explain_plan, dry_run=dry_run)
+                        analyze(conn, table_name, dry_run=dry_run)
+                        vacuumable.append(table_name)
+                    else:
+                        create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                        copy_data(conn, credentials, table_name, bucket_name, manifest=assoc_table_files.manifest_file,
+                                  dry_run=dry_run)
+                        analyze(conn, table_name, dry_run=dry_run)
+                        vacuumable.append(table_name)
+                    grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
+    # Reconnect to run vacuum outside transaction block
+    if not drop:
+        with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+            for table_name in vacuumable:
+                vacuum(conn, table_name, dry_run=dry_run)

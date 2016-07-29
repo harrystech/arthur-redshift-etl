@@ -199,7 +199,7 @@ class ColumnDefinition(namedtuple("_ColumnDefinition",
     __slots__ = ()
 
 
-class AssociatedTableFiles():
+class AssociatedTableFiles:
     """
     Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
 
