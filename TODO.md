@@ -2,8 +2,6 @@
 
 ## Features, bug fixes, nitpicks etc.
 
-Change validation to go all in for views vs. tables instead of for each attribute.
-
 Find duplicate table names in S3 bucket and warn.
 
 Enable syncing local files with S3 (to remove files that no longer exist locally).
@@ -25,6 +23,6 @@ When loading data from upstream, cut off at midnight NY?
 
 Check whether schema exists and give appropriate feedback (instead of "0 files found")
 
-Add checks for partitions to have correct size after download (count rows while partitioning?)
-
 For common failure patterns in table designs, provide hints beyond error messages.
+
+Add checks for partitions to have correct size after download (count rows while partitioning?)

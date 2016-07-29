@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "Table Design",
-    "description": "Description of a table design",
+    "description": "Description of a table design as a JSON schema",
     "definitions": {
         "identifier": {
             "type": "string",
@@ -23,21 +23,26 @@
             "minItems": 1,
             "maxItems": 1
         },
-        "avro_type": {
+        "generic_type": {
+            "description": "Generic type modeled loosely after Avro and Hive with easy mapping to those",
             "enum": [
                 "boolean",
                 "int",
                 "long",
                 "float",
                 "double",
-                "string"
+                "decimal",
+                "string",
+                "timestamp",
+                "date"
             ]
         },
-        "avro_type_with_null": {
+        "generic_type_with_null": {
+            "description": "Deprecated, don't write a union of null and underlying type any more!",
             "type": "array",
             "items": [
                 { "enum": [ "null" ] },
-                { "$ref": "#/definitions/avro_type" }
+                { "$ref": "#/definitions/generic_type" }
             ],
             "additionalItems": false
         },
@@ -64,18 +69,21 @@
             "type" : "string",
             "pattern": "^\\w[^.]*[.]\\w[^.]*$"
         },
-        "description": { "type": "string" },
+        "description": {
+            "type": "string",
+            "description": "Description of the table (may start with qualifier such as 'DEPRECATED')"
+        },
         "source_name" : {
             "description": "Either <source name>.<schema name>.<table name>, \"CTAS\", or \"VIEW\"",
             "type" : "string",
             "pattern": "^(CTAS|VIEW|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },
         "columns": {
-            "description": "List of the columns of this table with their types or of this view with just their names",
-            "type": "array",
-            "items": {
-                "oneOf": [
-                    {
+            "oneOf": [
+                {
+                    "description": "List of all columns of a table with their type information",
+                    "type": "array",
+                    "items": {
                         "type": "object",
                         "properties": {
                             "name": { "$ref": "#/definitions/identifier" },
@@ -85,8 +93,8 @@
                             "expression": { "$ref": "#/definitions/expression" },
                             "type": {
                                 "oneOf": [
-                                    { "$ref": "#/definitions/avro_type" },
-                                    { "$ref": "#/definitions/avro_type_with_null" }
+                                    { "$ref": "#/definitions/generic_type" },
+                                    { "$ref": "#/definitions/generic_type_with_null" }
                                 ]
                             },
                             "encoding": { "$ref": "#/definitions/compression_encoding" },
@@ -98,24 +106,33 @@
                                 ]
                             },
                             "not_null": { "type": "boolean" },
-                            "identity": { "type": "boolean" }
+                            "identity": { "type": "boolean" },
+                            "skipped": { "enum": [ true ] }
                         },
-                        "required": [ "name", "type", "sql_type" ],
+                        "oneOf": [
+                            { "required": [ "name", "type", "sql_type" ] },
+                            { "required": [ "name", "skipped" ] }
+                        ],
                         "additionalProperties": false
                     },
-                    {
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                {
+                    "description": "List of all column names of a view",
+                    "type": "array",
+                    "items": {
                         "type": "object",
                         "properties": {
-                            "name": { "$ref": "#/definitions/identifier" },
-                            "skipped": { "type": "boolean" }
+                            "name": { "$ref": "#/definitions/identifier" }
                         },
                         "required": [ "name" ],
                         "additionalProperties": false
-                    }
-                ]
-            },
-            "minItems": 1,
-            "uniqueItems": true
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            ]
         },
         "constraints": {
             "type": "object",
