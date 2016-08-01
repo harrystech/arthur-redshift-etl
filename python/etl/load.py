@@ -320,7 +320,7 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, ad
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name)
 
     if add_explain_plan:
-        plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt, debug=False)
+        plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt)
         logger.info("Explain plan for query:\n | %s", "\n | ".join(row[0] for row in plan))
     if dry_run:
         logger.info("Dry-run: Skipping loading of table '%s' using '%s'", table_name.identifier, temp_identifier)

@@ -62,7 +62,7 @@ def suggest_best_partition_number(table_size):
     The number of partitions is based on:
       Small tables (<= 10M): Use partitions around 1MB.
       Medium tables (<= 1G): Use partitions around 10MB.
-      Huge tables (> 1G): Use partitions around 100MB.
+      Huge tables (> 1G): Use partitions around 40MB.
 
     >>> suggest_best_partition_number(100)
     1
@@ -83,7 +83,8 @@ def suggest_best_partition_number(table_size):
     elif table_size <= 1024 * meg:
         target = 10 * meg
     else:
-        target = 100 * meg
+        # TODO Should be closer to 100 meg?
+        target = 40 * meg
 
     num_partitions = 1
     partition_size = table_size

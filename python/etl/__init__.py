@@ -2,11 +2,8 @@
 Utilities and classes to support the ETL in general
 """
 
-from contextlib import contextmanager
 from collections import namedtuple
-from datetime import datetime
 from fnmatch import fnmatch
-import logging
 from typing import Iterable
 
 
@@ -287,33 +284,3 @@ class AssociatedTableFiles:
                     } for filename in self._data_files
                 ]
             }
-
-
-@contextmanager
-def measure_elapsed_time():
-    """
-    Measure time it takes to execute code and report on success.
-
-    Exceptions are being caught here and reported.
-
-    Example:
-        >>> with measure_elapsed_time():
-        ...     pass
-    """
-    # TODO use os.times() instead of now()?
-    def elapsed_time(start_time=datetime.now()):
-        return (datetime.now() - start_time).total_seconds()
-
-    # For some weird reason, this does NOT work: logger = logging.getLogger(__name__)
-    try:
-        yield
-    except Exception:
-        logging.getLogger(__name__).exception("Something terrible happened")
-        logging.getLogger(__name__).info("Ran for %.2fs before encountering disaster!", elapsed_time())
-        raise
-    except BaseException:
-        logging.getLogger(__name__).exception("Something really terrible happened")
-        logging.getLogger(__name__).info("Ran for %.2fs before an exceptional termination!", elapsed_time())
-        raise
-    else:
-        logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", elapsed_time())

@@ -38,7 +38,6 @@ import subprocess
 import threading
 
 import boto3
-import simplejson as json
 
 import etl.commands
 import etl.config
@@ -254,7 +253,7 @@ def list_files(settings, prefix, table):
                 print("    Table: {} ({})".format(info.target_table_name.table, info.source_table_name.schema))
             else:
                 print("    Table: {} (from: {})".format(info.target_table_name.table,
-                                                       info.source_table_name.identifier))
+                                                        info.source_table_name.identifier))
             files = [("Design", info.design_file)]
             if info.sql_file is not None:
                 files.append(("SQL", info.sql_file))

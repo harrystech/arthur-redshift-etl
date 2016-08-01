@@ -8,6 +8,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 import argparse
 from datetime import datetime
 import getpass
+import logging
 import os
 import uuid
 import sys
@@ -22,22 +23,30 @@ import etl.load
 import etl.pg
 import etl.s3
 import etl.schemas
+import etl.timer
 
 
 def run_arg_as_command(my_name="arthur"):
-    try:
-        parser = build_full_parser(my_name)
-        args = parser.parse_args()
-        if args.func:
-            etl.config.configure_logging(args.log_level)
-            settings = etl.config.load_settings(args.config)
-            with etl.measure_elapsed_time():
+    parser = build_full_parser(my_name)
+    args = parser.parse_args()
+    if not args.func:
+        parser.print_usage()
+    else:
+        etl.config.configure_logging(args.log_level)
+        with etl.timer.Timer() as timer:
+            try:
+                settings = etl.config.load_settings(args.config)
                 args.func(args, settings)
-        else:
-            parser.print_usage()
-    except:
-        # Any execution tracebacks have already been printed by the context manager, so just bail out.
-        sys.exit(1)
+            except Exception:
+                logging.getLogger(__name__).exception("Something terrible happened")
+                logging.getLogger(__name__).info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+                sys.exit(1)
+            except BaseException:
+                logging.getLogger(__name__).exception("Something really terrible happened")
+                logging.getLogger(__name__).info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+                sys.exit(2)
+            else:
+                logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
 def build_full_parser(prog_name):
@@ -61,7 +70,8 @@ def build_full_parser(prog_name):
     for klass in [InitialSetupCommand, CreateUserCommand,
                   DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
                   LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
-                  ValidateDesignsCommand, ListFilesCommand]:
+                  ValidateDesignsCommand, ListFilesCommand,
+                  PingCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -207,6 +217,18 @@ class SparkSubCommand(SubCommand):
 
     def callback_within_spark(self, args, settings):
         raise NotImplementedError("Instance of %s has no proper callback for Spark context" % self.__class__.__name__)
+
+
+class PingCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("ping",
+                         "Ping data warehouse",
+                         "Try to connect to the data warehouse to test connection settings")
+
+    def callback(self, args, settings):
+        with etl.pg.log_error():
+            etl.dw.ping(settings)
 
 
 class InitialSetupCommand(SubCommand):

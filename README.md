@@ -242,3 +242,7 @@ Host ec2-*.amazonaws.com
   User hadoop
   IdentityFile ~/.ssh/emr-spark-cluster.pem
 ```
+
+## Development
+
+Re-install the ETL code after pulling a new version. (Especially changes in scripts may not get picked up until you do.)

@@ -7,7 +7,6 @@ transaction handling, simple DSN strings, as well as simple commands
 """
 
 from contextlib import contextmanager
-from datetime import datetime
 import logging
 import os
 import re
@@ -15,6 +14,8 @@ import textwrap
 
 import psycopg2
 import psycopg2.extras
+
+from etl.timer import Timer
 
 
 def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False, readonly=False):
@@ -89,30 +90,14 @@ def remove_credentials(s):
     return s
 
 
-def _log_stmt(cursor, stmt, args, debug=False):
-    stmt = textwrap.dedent(stmt)  # clean-up whitespace from queries embedded in code
-    if debug:
-        if len(args):
-            printable_stmt = cursor.mogrify(stmt, args)
-        else:
-            printable_stmt = cursor.mogrify(stmt)
-        logging.getLogger(__name__).debug("QUERY: %s;", remove_credentials(printable_stmt.decode()))
-    if stmt.endswith('\n'):
-        return stmt
-    else:
-        return stmt + '\n'
-
-
-def query(cx, stmt, args=(), debug=True):
+def query(cx, stmt, args=()):
     """
     Send query stmt to connection (with parameters) and return rows.
-
-    If debug is True, then the statement is sent to the log as well.
     """
-    return execute(cx, stmt, args, debug=debug, return_result=True)
+    return execute(cx, stmt, args, return_result=True)
 
 
-def execute(cx, stmt, args=(), debug=True, return_result=False):
+def execute(cx, stmt, args=(), return_result=False):
     """
     Execute query in 'stmt' over connection 'cx' (with parameters in 'args').
 
@@ -121,25 +106,44 @@ def execute(cx, stmt, args=(), debug=True, return_result=False):
 
     Printing the query will not print AWS credentials IF the string used matches "CREDENTIALS '[^']*'"
     So be careful or you'll end up sending your credentials to the logfile.
-
-    If debug is True, then the statement is sent to the log as well.
     """
     logger = logging.getLogger(__name__)
     with cx.cursor() as cursor:
-        stmt = _log_stmt(cursor, stmt, args, debug)
-        start_time = datetime.now()
+        stmt = textwrap.dedent(stmt).strip('\n')  # clean-up whitespace from queries embedded in code
         if len(args):
-            cursor.execute(stmt, args)
+            printable_stmt = cursor.mogrify(stmt, args)
         else:
-            cursor.execute(stmt)
-        elapsed_time = (datetime.now() - start_time).total_seconds()
-        logger.debug("QUERY STATUS: %s (%.1fs)", cursor.statusmessage, elapsed_time)
+            printable_stmt = cursor.mogrify(stmt)
+        logger.debug("QUERY: %s\n;", remove_credentials(printable_stmt.decode()))
+        # stmt += '\n'
+        with Timer() as timer:
+            if len(args):
+                cursor.execute(stmt, args)
+            else:
+                cursor.execute(stmt)
+        logger.debug("QUERY STATUS: %s (%.1fs)", cursor.statusmessage, timer.elapsed)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
             for msg in cx.notices:
                 logger.debug("QUERY " + msg.rstrip('\n'))
             del cx.notices[:]
         if return_result:
             return cursor.fetchall()
+
+
+def ping(cx):
+    """
+    Give me a ping to the database, Vasili. One ping only, please.
+    Return true if connection appears to be alive.
+    """
+    is_alive = False
+    try:
+        result = query(cx, "SELECT 1 AS connection_test")
+        if len(result) == 1 and "connection_test" in result[0]:
+            is_alive = cx.closed == 0
+    except psycopg2.OperationalError:
+        return False
+    else:
+        return is_alive
 
 
 def create_group(cx, group):
@@ -186,7 +190,7 @@ def set_search_path(cx, schemas):
     execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
 
 
-def log_sql_error(exc, as_warning=False):
+def log_sql_error(exc):
     """
     Send information from psycopg2.Error instance to logfile.
 
@@ -194,10 +198,8 @@ def log_sql_error(exc, as_warning=False):
     and psycopg2 documentation at http://initd.org/psycopg/docs/extensions.html
     """
     logger = logging.getLogger(__name__)
-    if as_warning:
-        logger.warning('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
-    else:
-        logger.exception('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
+    if exc.pgcode is not None:
+        logger.error('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
     for name in ('severity',
                  'sqlstate',
                  'message_primary',
@@ -233,7 +235,6 @@ def log_error():
 
 if __name__ == "__main__":
     import sys
-    from etl import measure_elapsed_time
 
     if len(sys.argv) != 2:
         print("Usage: {} dsn_string".format(sys.argv[0]))
@@ -241,10 +242,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
-    with measure_elapsed_time(), log_error():
+    with log_error():
         with connection(sys.argv[1], readonly=True) as conn:
-            for row in query(conn,
-                             "SELECT now() AS local_server_time",
-                             debug=True):
+            if ping(conn):
+                print("Connection is valid")
+            for row in query(conn, "SELECT now() AS local_server_time"):
                 for k, v in row.items():
-                    print("*** {} = {} ***".format(k, v))
+                    print("{} = {}".format(k, v))
