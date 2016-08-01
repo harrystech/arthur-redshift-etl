@@ -12,6 +12,8 @@ _schemas_completion()
 
     if [ "$prev" = "arthur.py" ]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    elif [ ! -d schemas ]; then
+        COMPREPLY=( )
     else
         local SCHEMAS
         case "$cur" in
