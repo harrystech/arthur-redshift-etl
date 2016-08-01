@@ -42,15 +42,18 @@
                 "type": "object",
                 "properties": {
                     "name": { "$ref": "#/definitions/identifier" },
+                    "description": { "type": "string" },
                     "read_access": { "$ref": "#/definitions/identifier" },
                     "include_tables": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "minItems": 1
+                        "minItems": 1,
+                        "uniqueItems": true
                     },
                     "exclude_tables": {
                         "type": "array",
-                        "items": { "type": "string" }
+                        "items": { "type": "string" },
+                        "uniqueItems": true
                     }
                 },
                 "required": [ "name" ],

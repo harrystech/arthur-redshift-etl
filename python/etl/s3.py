@@ -243,7 +243,9 @@ def list_files(settings, prefix, table):
     """
     bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(table)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    sources = selection.match_field(settings("sources"), "name")
+    schemas = [source["name"] for source in sources]
+
     found = find_files_in_bucket(bucket_name, prefix, schemas, selection)
     for source_name in found:
         print("Source: {}".format(source_name))

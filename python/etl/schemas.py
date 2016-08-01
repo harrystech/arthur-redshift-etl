@@ -362,7 +362,8 @@ def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run)
     logger = logging.getLogger(__name__)
     bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(table)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    sources = selection.match_field(settings("sources"), "name")
+    schemas = [source["name"] for source in sources]
 
     if git_modified:
         local_files = etl.s3.find_modified_files(schemas, selection)
@@ -392,7 +393,9 @@ def validate_designs(settings, target, table_design_dir, git_modified):
     """
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(target)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    sources = selection.match_field(settings("sources"), "name")
+    schemas = [source["name"] for source in sources]
+
     if git_modified:
         found = etl.s3.find_modified_files(schemas, selection)
     else:
@@ -403,7 +406,7 @@ def validate_designs(settings, target, table_design_dir, git_modified):
     else:
         for source in found:
             for info in found[source]:
-                logger.info("Checking: '%s'", info.design_file)
+                logger.info("Checking file '%s'", info.design_file)
                 design_file = open(info.design_file, 'r')
                 table_design = load_table_design(design_file, info.target_table_name)
                 logger.debug("Validated table design for '%s'", table_design["name"])

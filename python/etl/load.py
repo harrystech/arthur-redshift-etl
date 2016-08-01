@@ -389,7 +389,8 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     user_group = settings("data_warehouse", "groups", "users")
 
     selection = etl.TableNamePatterns.from_list(target)
-    schemas = [source["name"] for source in settings("sources") if selection.match_schema(source["name"])]
+    sources = selection.match_field(settings("sources"), "name")
+    schemas = [source["name"] for source in sources]
 
     bucket_name = settings("s3", "bucket_name")
     files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)

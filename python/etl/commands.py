@@ -36,7 +36,7 @@ def run_arg_as_command(my_name="arthur"):
         else:
             parser.print_usage()
     except:
-        # Any log traces have already been printed by the context manager, so just bail out.
+        # Any execution tracebacks have already been printed by the context manager, so just bail out.
         sys.exit(1)
 
 
