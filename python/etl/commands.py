@@ -71,7 +71,7 @@ def build_full_parser(prog_name):
                   DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
                   LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
                   ValidateDesignsCommand, ListFilesCommand,
-                  PingCommand]:
+                  PingCommand, ExplainQueryCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -139,6 +139,9 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-d", "--drop",
                             help="First drop table or view to force update of definition", default=False,
                             action="store_true")
+    if "git-modified" in options:
+        # TODO Should be mutually exclusive with the table design dir
+        parser.add_argument("-g", "--git-modified", help="Use only files modified in work tree", action="store_true")
     if "explain" in options:
         parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
     if "force" in options:
@@ -297,8 +300,7 @@ class CopyToS3Command(SubCommand):
 
     def add_arguments(self, parser):
         # XXX Add option to "force" sync (delete out-of-date files)
-        add_standard_arguments(parser, ["target", "table-design-dir", "prefix", "dry-run"])
-        parser.add_argument("-g", "--git-modified", help="Copy files modified in work tree", action="store_true")
+        add_standard_arguments(parser, ["target", "table-design-dir", "prefix", "git-modified", "dry-run"])
 
     def callback(self, args, settings):
         etl.schemas.copy_to_s3(settings, args.target, args.table_design_dir, args.prefix,
@@ -378,11 +380,24 @@ class ValidateDesignsCommand(SubCommand):
                          "Validate table design files")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "table-design-dir", "target"])
-        parser.add_argument("-g", "--git-modified", help="Check files modified in work tree", action="store_true")
+        add_standard_arguments(parser, ["prefix", "table-design-dir", "target", "git-modified"])
 
     def callback(self, args, settings):
         etl.schemas.validate_designs(settings, args.target, args.table_design_dir, args.git_modified)
+
+
+class ExplainQueryCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("explain",
+                         "Collect explain plans",
+                         "Run EXPLAIN on queries (for CTAS or VIEW) for LOCAL files")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["table-design-dir", "target", "git-modified"])
+
+    def callback(self, args, settings):
+        etl.load.test_queries(settings, args.target, args.table_design_dir, args.git_modified)
 
 
 class ListFilesCommand(SubCommand):

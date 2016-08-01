@@ -36,7 +36,6 @@ if [[ "$COMMAND" = "" ]]; then
 fi
 shift
 
-
 # XXX Switch to "local:" files
 JAR_FILES=`ls -1 "$JARS_DIR" | grep 'jar$' | sed -e "s:^:$JARS_DIR/:"`
 JARS_ARG=`echo $JAR_FILES | sed 's: :,:g'`

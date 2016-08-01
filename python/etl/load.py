@@ -436,3 +436,49 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
         with closing(etl.pg.connection(dw, autocommit=True)) as conn:
             for table_name in vacuumable:
                 vacuum(conn, table_name, dry_run=dry_run)
+
+
+def test_queries(settings, target, table_design_dir, git_modified):
+    """
+    Test queries by running EXPLAIN with the query.
+    """
+    logger = logging.getLogger(__name__)
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
+
+    selection = etl.TableNamePatterns.from_list(target)
+    sources = selection.match_field(settings("sources"), "name")
+    schemas = [source["name"] for source in sources]
+
+    bucket_name = settings("s3", "bucket_name")
+    if git_modified:
+        local_files = etl.s3.find_modified_files(schemas, selection)
+    else:
+        local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+
+    if len(local_files) == 0:
+        logger.error("No applicable files found in '%s'", table_design_dir)
+        return
+
+    with closing(etl.pg.connection(dw, readonly=True, autocommit=True)) as conn:
+        for source_name in local_files:
+            for assoc_table_files in local_files[source_name]:
+                table_name = assoc_table_files.target_table_name
+                design_file = assoc_table_files.design_file
+                sql_file = assoc_table_files.sql_file
+
+                with open(design_file) as f:
+                    table_design = etl.schemas.load_table_design(f, table_name)
+                if table_design["source_name"] not in ("CTAS", "VIEW"):
+                    continue
+
+                if sql_file is None:
+                    raise ValueError("Missing SQL file for %s" % table_name.identifier)
+                logger.info("Reading query from local file '%s'", sql_file)
+                with open(sql_file) as f:
+                    query = f.read()
+
+                logger.debug("Trying query for %s", table_name.identifier)
+                plan = etl.pg.query(conn, "EXPLAIN\n" + query)
+                logger.info("Explain plan for %s query:\n | %s",
+                            table_name.identifier,
+                            "\n | ".join(row[0] for row in plan))

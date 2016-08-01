@@ -8,7 +8,7 @@ _schemas_completion()
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # All sub-commands
-    opts="ls initialize create_user design sync dump load update etl validate"
+    opts="ls initialize create_user design sync dump load update etl validate explain ping"
 
     if [ "$prev" = "arthur.py" ]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
