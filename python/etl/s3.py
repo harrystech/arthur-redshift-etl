@@ -52,6 +52,9 @@ TABLE_RE = re.compile(r"""(?:^schemas|/schemas|^data|/data)
                           [\./](?P<file_type>yaml|sql|manifest|csv/part-\d+(:?\.gz)?)$
                       """, re.VERBOSE)
 
+# Ignore some files that the S3 client adds
+IGNORE_RE = re.compile(r"""(?:^schemas|/schemas|^data|/data).*(?:_SUCCESS|[$]folder[$])$""")
+
 _resources_for_thread = threading.local()
 
 
@@ -148,30 +151,6 @@ def find_local_files(directory, schemas, pattern):
     return _find_files_from(list_local_files(), schemas, pattern)
 
 
-def find_modified_files(schemas, pattern):
-    """
-    Find files that have been modified in your work tree (as identified by git status).
-
-    For SQL files, the corresponding design file (.yaml) is picked up even if the design
-    itself has not been modified.
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Looking for modified files in work tree")
-    # The str() is needed to shut up PyCharm.
-    status = str(subprocess.check_output(['git', 'status', '--porcelain'], universal_newlines=True))
-    modified_files = frozenset(line[3:] for line in status.split('\n') if line.startswith(" M"))
-    combined_files = set(modified_files)
-    for name in modified_files:
-        path, extension = os.path.splitext(name)
-        if extension == ".sql":
-            design_file = path + ".yaml"
-            if os.path.exists(design_file):
-                combined_files.add(design_file)
-    logger.debug("Found modified files in work tree: %s", sorted(modified_files))
-    logger.debug("Added design files although not new: %s", sorted(combined_files.difference(modified_files)))
-    return _find_files_from(sorted(combined_files), schemas, pattern)
-
-
 def _find_files_from(iterable, schemas, pattern):
     """
     Return (ordered) dictionary that maps schemas to lists of table meta data ('associated table files').
@@ -202,6 +181,10 @@ def _find_files_from(iterable, schemas, pattern):
                                                                                  filename)
                 else:
                     maybe.append((filename, source_name, target_table_name, values['file_type']))
+        elif not IGNORE_RE.search(filename):
+            # XXX Fix this along with anchoring patterns to prefix or local dir!
+            if 'data/' in filename or 'schemas/' in filename:
+                logger.warning("Found file not matching expected patterns: '%s'", filename)
     # Second pass -- only store SQL and data files for tables that have design files from first pass
     for filename, source_name, target_table_name, file_type in maybe:
         assoc_table = found[source_name].get(target_table_name)

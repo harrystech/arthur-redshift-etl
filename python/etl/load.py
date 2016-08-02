@@ -438,7 +438,7 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
                 vacuum(conn, table_name, dry_run=dry_run)
 
 
-def test_queries(settings, target, table_design_dir, git_modified):
+def test_queries(settings, target, table_design_dir):
     """
     Test queries by running EXPLAIN with the query.
     """
@@ -449,12 +449,7 @@ def test_queries(settings, target, table_design_dir, git_modified):
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
-    bucket_name = settings("s3", "bucket_name")
-    if git_modified:
-        local_files = etl.s3.find_modified_files(schemas, selection)
-    else:
-        local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
-
+    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
     if len(local_files) == 0:
         logger.error("No applicable files found in '%s'", table_design_dir)
         return

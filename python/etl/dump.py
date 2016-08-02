@@ -62,7 +62,7 @@ def suggest_best_partition_number(table_size):
     The number of partitions is based on:
       Small tables (<= 10M): Use partitions around 1MB.
       Medium tables (<= 1G): Use partitions around 10MB.
-      Huge tables (> 1G): Use partitions around 40MB.
+      Huge tables (> 1G): Use partitions around 20MB.
 
     >>> suggest_best_partition_number(100)
     1
@@ -84,7 +84,7 @@ def suggest_best_partition_number(table_size):
         target = 10 * meg
     else:
         # TODO Should be closer to 100 meg?
-        target = 40 * meg
+        target = 20 * meg
 
     num_partitions = 1
     partition_size = table_size
@@ -211,8 +211,8 @@ def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dr
     for assoc_table_files in tables_in_s3:
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
-        design_file = etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)
-        table_design = etl.schemas.load_table_design(design_file, target_table_name)
+        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)) as content:
+            table_design = etl.schemas.load_table_design(content, target_table_name)
 
         logger.debug("Starting work on %s", source_table_name.identifier)
         df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)

@@ -353,7 +353,7 @@ def download_schemas(settings, table, table_design_dir, jobs, dry_run):
                         table_design_dir, selection, dry_run=dry_run)
 
 
-def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run):
+def copy_to_s3(settings, table, table_design_dir, prefix, force, dry_run):
     """
     Copy table design and SQL files from local directory to S3 bucket.
 
@@ -365,11 +365,7 @@ def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run)
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
-    if git_modified:
-        local_files = etl.s3.find_modified_files(schemas, selection)
-    else:
-        local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
-
+    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
     if len(local_files) == 0:
         logger.error("No applicable files found in '%s'", table_design_dir)
     else:
@@ -379,6 +375,7 @@ def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run)
                 for assoc_table_files in local_files[source_name]:
                     target_table_name = assoc_table_files.target_table_name
                     with open(assoc_table_files.design_file, 'r') as design_file:
+                        # Always validate before uploading table design
                         load_table_design(design_file, target_table_name)
                     for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
                         source_prefix = "{}/schemas/{}".format(prefix, source_name)
@@ -387,7 +384,7 @@ def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run)
             logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
 
 
-def validate_designs(settings, target, table_design_dir, git_modified):
+def validate_designs(settings, target, table_design_dir):
     """
     Make sure that all (local) table design files pass the validation checks.
     """
@@ -396,11 +393,7 @@ def validate_designs(settings, target, table_design_dir, git_modified):
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
-    if git_modified:
-        found = etl.s3.find_modified_files(schemas, selection)
-    else:
-        found = etl.s3.find_local_files(table_design_dir, schemas, selection)
-
+    found = etl.s3.find_local_files(table_design_dir, schemas, selection)
     if len(found) == 0:
         logger.error("No applicable files found in %s", table_design_dir)
     else:
