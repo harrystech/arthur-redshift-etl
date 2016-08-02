@@ -374,7 +374,7 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=True):
+def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -394,9 +394,8 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
 
     bucket_name = settings("s3", "bucket_name")
     files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
-
     if len(files_in_s3) == 0:
-        logger.error("No applicable files found in 's3://%s/%s'", bucket_name, prefix)
+        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
 
     vacuumable = []
@@ -451,7 +450,7 @@ def test_queries(settings, target, table_design_dir):
 
     local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
     if len(local_files) == 0:
-        logger.error("No applicable files found in '%s'", table_design_dir)
+        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return
 
     with closing(etl.pg.connection(dw, readonly=True, autocommit=True)) as conn:

@@ -250,13 +250,20 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
         etl.s3.upload_to_s3(local_filename, bucket_name, os.path.dirname(manifest_filename))
 
 
-def dump_to_s3(settings, table, prefix, dry_run):
+def dump_to_s3(settings, table, prefix, dry_run=False):
+    """
+    Dump data from multiple upstream sources to S3
+    """
     logger = logging.getLogger(__name__)
-    bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
+
+    bucket_name = settings("s3", "bucket_name")
     tables_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
+    if not tables_in_s3:
+        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
+        return
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
     for source, source_name in zip(sources, schemas):

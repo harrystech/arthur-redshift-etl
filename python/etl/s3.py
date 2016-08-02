@@ -34,8 +34,8 @@ from operator import attrgetter
 import os
 import os.path
 import re
-import subprocess
 import threading
+from typing import Iterable
 
 import boto3
 
@@ -98,6 +98,25 @@ def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
             except Exception:
                 logger.exception('S3 upload error:')
                 raise
+
+
+def delete_in_s3(bucket_name: str, object_keys: Iterable(str), dry_run: bool=False):
+    """
+    Delete objects from bucket.
+    """
+    logger = logging.getLogger(__name__)
+    if dry_run:
+        for key in object_keys:
+            logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
+    elif len(object_keys) > 0:
+        # XXX Need to make sure we don't exceed the 1000 keys limit
+        bucket = _get_bucket(bucket_name)
+        result = bucket.delete_objects(Delete={'Objects': [{'Key': key for key in object_keys}]})
+        for deleted in result.get('Deleted', {}):
+            logger.info("Deleted 's3://%s/%s'", bucket_name, deleted['Key'])
+        for error in result.get('Errors', {}):
+            logger.warning("Failed to delete 's3://%s/%s': %s %s", bucket_name, error['Key'],
+                           error['Code'], error['Message'])
 
 
 def get_file_content(bucket_name, object_key):
@@ -223,12 +242,17 @@ def list_files(settings, prefix, table):
 
     Useful to discover whether pattern matching works.
     """
-    bucket_name = settings("s3", "bucket_name")
+    logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
+    bucket_name = settings("s3", "bucket_name")
     found = find_files_in_bucket(bucket_name, prefix, schemas, selection)
+    if not found:
+        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
+        return
+
     for source_name in found:
         print("Source: {}".format(source_name))
         for info in found[source_name]:

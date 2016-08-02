@@ -258,7 +258,18 @@ class AssociatedTableFiles:
 
     @property
     def data_files(self):
-        return self._data_files
+        return tuple(self._data_files)
+
+    @property
+    def all_files(self):
+        files = [self._design_file]
+        if self._sql_file:
+            files.append(self._sql_file)
+        if self._manifest_file:
+            files.append(self._manifest_file)
+        if self._data_files:
+            files.extend(self._data_files)
+        return tuple(files)
 
     def __len__(self):
         return 1 + (self._sql_file is not None) + (self._manifest_file is not None) + len(self._data_files)

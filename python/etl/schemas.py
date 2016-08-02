@@ -353,35 +353,44 @@ def download_schemas(settings, table, table_design_dir, jobs, dry_run):
                         table_design_dir, selection, dry_run=dry_run)
 
 
-def copy_to_s3(settings, table, table_design_dir, prefix, force, dry_run):
+def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=True):
     """
     Copy table design and SQL files from local directory to S3 bucket.
 
     Essentially "publishes" data-warehouse code.
     """
     logger = logging.getLogger(__name__)
-    bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
     local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
     if len(local_files) == 0:
-        logger.error("No applicable files found in '%s'", table_design_dir)
-    else:
-        # TODO Argue why 3 is a good choice here.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            for source_name in local_files:
-                for assoc_table_files in local_files[source_name]:
-                    target_table_name = assoc_table_files.target_table_name
-                    with open(assoc_table_files.design_file, 'r') as design_file:
-                        # Always validate before uploading table design
-                        load_table_design(design_file, target_table_name)
-                    for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
-                        source_prefix = "{}/schemas/{}".format(prefix, source_name)
-                        pool.submit(etl.s3.upload_to_s3, local_filename, bucket_name, source_prefix, dry_run=dry_run)
-        if not dry_run:
-            logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
+        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
+        return
+
+    bucket_name = settings("s3", "bucket_name")
+    if force:
+        tables_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
+        deletable = [key
+                     for tables_in_schema in tables_in_s3.values()
+                     for table in tables_in_schema
+                     for key in table.all_files]
+        etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+
+    # TODO Argue why 3 is a good choice here.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        for source_name in local_files:
+            for assoc_table_files in local_files[source_name]:
+                target_table_name = assoc_table_files.target_table_name
+                with open(assoc_table_files.design_file, 'r') as design_file:
+                    # Always validate before uploading table design
+                    load_table_design(design_file, target_table_name)
+                for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
+                    source_prefix = "{}/schemas/{}".format(prefix, source_name)
+                    pool.submit(etl.s3.upload_to_s3, local_filename, bucket_name, source_prefix, dry_run=dry_run)
+    if not dry_run:
+        logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
 
 
 def validate_designs(settings, target, table_design_dir):
@@ -395,11 +404,12 @@ def validate_designs(settings, target, table_design_dir):
 
     found = etl.s3.find_local_files(table_design_dir, schemas, selection)
     if len(found) == 0:
-        logger.error("No applicable files found in %s", table_design_dir)
-    else:
-        for source in found:
-            for info in found[source]:
-                logger.info("Checking file '%s'", info.design_file)
-                design_file = open(info.design_file, 'r')
-                table_design = load_table_design(design_file, info.target_table_name)
-                logger.debug("Validated table design for '%s'", table_design["name"])
+        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
+        return
+
+    for source in found:
+        for info in found[source]:
+            logger.info("Checking file '%s'", info.design_file)
+            design_file = open(info.design_file, 'r')
+            table_design = load_table_design(design_file, info.target_table_name)
+            logger.debug("Validated table design for '%s'", table_design["name"])
