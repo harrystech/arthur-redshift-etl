@@ -5,7 +5,6 @@ Table designs describe the columns, like their name and type, as well as how the
 should be organized once loaded into Redshift, like the distribution style or sort key.
 """
 
-import concurrent.futures
 from contextlib import closing
 import logging
 import os.path
@@ -25,6 +24,11 @@ import etl.s3
 
 class MissingMappingError(ValueError):
     """Exception when an attribute type's target type is unknown"""
+    pass
+
+
+class TableDesignError(ValueError):
+    """Exception when a table design file is incorrect"""
     pass
 
 
@@ -187,11 +191,11 @@ def validate_table_design(table_design, table_name):
         raise
     # TODO Need more rules?
     if table_design["name"] != table_name.identifier:
-        raise ValueError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
+        raise TableDesignError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
     if table_design["source_name"] == "VIEW":
         for column in table_design["columns"]:
             if column.get("skipped", False):
-                raise ValueError("columns may not be skipped in views")
+                raise TableDesignError("columns may not be skipped in views")
     else:
         for column in table_design["columns"]:
             if column.get("skipped", False):
@@ -199,19 +203,19 @@ def validate_table_design(table_design, table_name):
             if column.get("not_null", False):
                 # NOT NULL columns -- may not have "null" as type
                 if isinstance(column["type"], list) or column["type"] == "null":
-                    raise ValueError('"not null" column may not have null type')
+                    raise TableDesignError('"not null" column may not have null type')
             else:
                 # NULL columns -- must have "null" as type and may not be primary key (identity)
                 if not (isinstance(column["type"], list) and "null" in column["type"]):
-                    raise ValueError('"null" missing as type for null-able column')
+                    raise TableDesignError('"null" missing as type for null-able column')
                 if column.get("identity", False):
-                    raise ValueError("identity column must be set to not null")
+                    raise TableDesignError("identity column must be set to not null")
         identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
         if len(identity_columns) > 1:
-            raise ValueError("only one column should have identity")
+            raise TableDesignError("only one column should have identity")
         surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
         if len(surrogate_keys) and not surrogate_keys == identity_columns:
-            raise ValueError("surrogate key must be identity")
+            raise TableDesignError("surrogate key must be identity")
     return table_design
 
 
@@ -316,7 +320,7 @@ def create_or_update_table_designs(source, table_design_files, type_maps, design
                 else:
                     save_table_design(table_design, source_table_name, design_dir, dry_run=dry_run)
     except Exception:
-        logger.exception("Error while processing source '%s'", source_name)
+        logger.exception("Error while processing source '%s':", source_name)
         raise
     not_found = found.difference(set(table_design_files))
     if len(not_found):
@@ -328,7 +332,7 @@ def create_or_update_table_designs(source, table_design_files, type_maps, design
     logger.info("Done with %d table(s) from source '%s'", len(found), source_name)
 
 
-def download_schemas(settings, table, table_design_dir, jobs, dry_run):
+def download_schemas(settings, table, table_design_dir, dry_run):
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
     sources = [dict(source) for source in settings("sources") if selection.match_schema(source["name"])]
@@ -340,54 +344,51 @@ def download_schemas(settings, table, table_design_dir, jobs, dry_run):
         if "read_access" in source and source["read_access"] not in os.environ:
                 raise KeyError("Environment variable not set: %s" % source["read_access"])
 
-    # Allow to download from multiple sources in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-        for source, source_name in zip(sources, schemas):
-            if "read_access" not in source:
-                logger.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
-                continue
-            table_design_files = {assoc_files.source_table_name: assoc_files.design_file
-                                  for assoc_files in local_files.get(source_name, {})}
-            logger.debug("Submitting job to download from '%s'", source_name)
-            pool.submit(create_or_update_table_designs, source, table_design_files, settings("type_maps"),
-                        table_design_dir, selection, dry_run=dry_run)
+    for source, source_name in zip(sources, schemas):
+        if "read_access" not in source:
+            logger.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
+            continue
+        table_design_files = {assoc_files.source_table_name: assoc_files.design_file
+                              for assoc_files in local_files.get(source_name, {})}
+        create_or_update_table_designs(source, table_design_files, settings("type_maps"),
+                                       table_design_dir, selection, dry_run=dry_run)
 
 
-def copy_to_s3(settings, table, table_design_dir, prefix, git_modified, dry_run):
+def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=True):
     """
     Copy table design and SQL files from local directory to S3 bucket.
 
     Essentially "publishes" data-warehouse code.
     """
     logger = logging.getLogger(__name__)
-    bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
-    if git_modified:
-        local_files = etl.s3.find_modified_files(schemas, selection)
-    else:
-        local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    if not local_files:
+        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
+        return
 
-    if len(local_files) == 0:
-        logger.error("No applicable files found in '%s'", table_design_dir)
-    else:
-        # TODO Argue why 3 is a good choice here.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            for source_name in local_files:
-                for assoc_table_files in local_files[source_name]:
-                    target_table_name = assoc_table_files.target_table_name
-                    with open(assoc_table_files.design_file, 'r') as design_file:
-                        load_table_design(design_file, target_table_name)
-                    for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
-                        source_prefix = "{}/schemas/{}".format(prefix, source_name)
-                        pool.submit(etl.s3.upload_to_s3, local_filename, bucket_name, source_prefix, dry_run=dry_run)
-        if not dry_run:
-            logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
+    bucket_name = settings("s3", "bucket_name")
+    if force:
+        etl.s3.delete_files_in_bucket(bucket_name, prefix, schemas, selection, dry_run=dry_run)
+
+    for source_name in local_files:
+        for assoc_table_files in local_files[source_name]:
+            target_table_name = assoc_table_files.target_table_name
+            with open(assoc_table_files.design_file, 'r') as design_file:
+                # Always validate before uploading table design
+                load_table_design(design_file, target_table_name)
+            for local_filename in (assoc_table_files.design_file, assoc_table_files.sql_file):
+                if local_filename is not None:
+                    source_prefix = "{}/schemas/{}".format(prefix, source_name)
+                    etl.s3.upload_to_s3(local_filename, bucket_name, source_prefix, dry_run=dry_run)
+    if not dry_run:
+        logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
 
 
-def validate_designs(settings, target, table_design_dir, git_modified):
+def validate_designs(settings, target, table_design_dir):
     """
     Make sure that all (local) table design files pass the validation checks.
     """
@@ -396,17 +397,14 @@ def validate_designs(settings, target, table_design_dir, git_modified):
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
 
-    if git_modified:
-        found = etl.s3.find_modified_files(schemas, selection)
-    else:
-        found = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    found = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    if not found:
+        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
+        return
 
-    if len(found) == 0:
-        logger.error("No applicable files found in %s", table_design_dir)
-    else:
-        for source in found:
-            for info in found[source]:
-                logger.info("Checking file '%s'", info.design_file)
-                design_file = open(info.design_file, 'r')
+    for source in found:
+        for info in found[source]:
+            logger.info("Checking file '%s'", info.design_file)
+            with open(info.design_file, 'r') as design_file:
                 table_design = load_table_design(design_file, info.target_table_name)
                 logger.debug("Validated table design for '%s'", table_design["name"])

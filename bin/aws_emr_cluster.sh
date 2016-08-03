@@ -70,7 +70,7 @@ else
     mkdir "$CLUSTER_CONFIG_DIR"
 fi
 
-# XXX Find a better way to parameterize cluster, check out cloud formation?
+# TODO Find a better way to parameterize cluster, check out cloud formation?
 
 for JSON_FILE in application_env.json bootstrap_actions.json; do
     sed -e "s,#{bucket_name},$CLUSTER_BUCKET,g" -e "s,#{etl_environment},$CLUSTER_ENVIRONMENT,g" "$JSON_FILE" > "$CLUSTER_CONFIG_DIR/$JSON_FILE"

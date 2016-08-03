@@ -8,6 +8,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 import argparse
 from datetime import datetime
 import getpass
+import logging
 import os
 import uuid
 import sys
@@ -22,22 +23,35 @@ import etl.load
 import etl.pg
 import etl.s3
 import etl.schemas
+import etl.timer
 
 
 def run_arg_as_command(my_name="arthur"):
-    try:
-        parser = build_full_parser(my_name)
-        args = parser.parse_args()
-        if args.func:
-            etl.config.configure_logging(args.log_level)
-            settings = etl.config.load_settings(args.config)
-            with etl.measure_elapsed_time():
+    parser = build_full_parser(my_name)
+    args = parser.parse_args()
+    if not args.func:
+        parser.print_usage()
+    else:
+        etl.config.configure_logging(args.log_level)
+        logger = logging.getLogger(__name__)
+        with etl.timer.Timer() as timer:
+            try:
+                settings = etl.config.load_settings(args.config)
                 args.func(args, settings)
-        else:
-            parser.print_usage()
-    except:
-        # Any execution tracebacks have already been printed by the context manager, so just bail out.
-        sys.exit(1)
+            except etl.ETLException:
+                logger.exception("Something bad happened in the ETL:")
+                logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
+                sys.exit(1)
+            except Exception:
+                logger.exception("Something terrible happened:")
+                logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+                sys.exit(2)
+            except BaseException:
+                logger.exception("Something really terrible happened:")
+                logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+                sys.exit(3)
+            else:
+                logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
 def build_full_parser(prog_name):
@@ -61,7 +75,8 @@ def build_full_parser(prog_name):
     for klass in [InitialSetupCommand, CreateUserCommand,
                   DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
                   LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
-                  ValidateDesignsCommand, ListFilesCommand]:
+                  ValidateDesignsCommand, ListFilesCommand,
+                  PingCommand, ExplainQueryCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -131,8 +146,6 @@ def add_standard_arguments(parser, options):
                             action="store_true")
     if "explain" in options:
         parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
-    if "force" in options:
-        parser.add_argument("-f", "--force", help="force updates", default=False, action="store_true")
     if "target" in options:
         parser.add_argument("target", help="glob pattern or identifier to select target(s)", nargs='*')
     if "username" in options:
@@ -149,21 +162,8 @@ class AppendDateAction(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         today = datetime.now().strftime("/%Y%m%d_%H%M")
-        setattr(namespace, self.dest, values + today)
-
-
-def check_positive_int(s):
-    """
-    Helper method for argument parser to make sure optional arg with value 's'
-    is a positive integer (meaning, s > 0)
-    """
-    try:
-        i = int(s)
-        if i <= 0:
-            raise ValueError
-    except ValueError:
-        raise argparse.ArgumentTypeError("%s is not a positive int" % s)
-    return i
+        prefix = values.rstrip('/') + today
+        setattr(namespace, self.dest, prefix)
 
 
 class SubCommand:
@@ -209,6 +209,18 @@ class SparkSubCommand(SubCommand):
         raise NotImplementedError("Instance of %s has no proper callback for Spark context" % self.__class__.__name__)
 
 
+class PingCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("ping",
+                         "Ping data warehouse",
+                         "Try to connect to the data warehouse to test connection settings")
+
+    def callback(self, args, settings):
+        with etl.pg.log_error():
+            etl.dw.ping(settings)
+
+
 class InitialSetupCommand(SubCommand):
 
     def __init__(self):
@@ -246,8 +258,8 @@ class CreateUserCommand(SubCommand):
 
     def callback(self, args, settings):
         with etl.pg.log_error():
-            etl.dw.create_user(settings, args.user_name, args.password,
-                               args.etl_user, args.add_user_schema, args.skip_user_creation)
+            etl.dw.create_user(settings, args.user_name, args.password, args.etl_user,
+                               args.add_user_schema, args.skip_user_creation)
 
 
 class DownloadSchemasCommand(SubCommand):
@@ -259,11 +271,9 @@ class DownloadSchemasCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "table-design-dir", "dry-run"])
-        parser.add_argument("-j", "--jobs", help="Number of parallel connections (default: %(default)s)",
-                            type=check_positive_int, default=1)
 
     def callback(self, args, settings):
-        etl.schemas.download_schemas(settings, args.target, args.table_design_dir, args.jobs, args.dry_run)
+        etl.schemas.download_schemas(settings, args.target, args.table_design_dir, args.dry_run)
 
 
 class CopyToS3Command(SubCommand):
@@ -271,16 +281,16 @@ class CopyToS3Command(SubCommand):
     def __init__(self):
         super().__init__("sync",
                          "Copy table design files to S3",
-                         "Copy table design files from local directory to S3")
+                         "Copy table design files from local directory to S3."
+                         " If using the '--force' option, this will delete schema and *data* files.")
 
     def add_arguments(self, parser):
-        # XXX Add option to "force" sync (delete out-of-date files)
         add_standard_arguments(parser, ["target", "table-design-dir", "prefix", "dry-run"])
-        parser.add_argument("-g", "--git-modified", help="Copy files modified in work tree", action="store_true")
+        parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
+                            default=False, action="store_true")
 
     def callback(self, args, settings):
-        etl.schemas.copy_to_s3(settings, args.target, args.table_design_dir, args.prefix,
-                               args.git_modified, args.dry_run)
+        etl.schemas.copy_to_s3(settings, args.target, args.table_design_dir, args.prefix, args.force, args.dry_run)
 
 
 class DumpDataToS3Command(SparkSubCommand):
@@ -340,7 +350,10 @@ class ExtractLoadTransformCommand(SparkSubCommand):
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "prefix", "force", "dry-run"])
+        add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        parser.add_argument("-f", "--force",
+                            help="force loading, run 'dump' then 'load' (instead of 'dump' then 'update')",
+                            default=False, action="store_true")
 
     def callback_within_spark(self, args, settings):
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
@@ -357,10 +370,23 @@ class ValidateDesignsCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix", "table-design-dir", "target"])
-        parser.add_argument("-g", "--git-modified", help="Check files modified in work tree", action="store_true")
 
     def callback(self, args, settings):
-        etl.schemas.validate_designs(settings, args.target, args.table_design_dir, args.git_modified)
+        etl.schemas.validate_designs(settings, args.target, args.table_design_dir)
+
+
+class ExplainQueryCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("explain",
+                         "Collect explain plans",
+                         "Run EXPLAIN on queries (for CTAS or VIEW) for LOCAL files")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["table-design-dir", "target"])
+
+    def callback(self, args, settings):
+        etl.load.test_queries(settings, args.target, args.table_design_dir)
 
 
 class ListFilesCommand(SubCommand):

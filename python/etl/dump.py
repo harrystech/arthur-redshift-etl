@@ -6,6 +6,7 @@ from contextlib import closing
 import logging
 import os
 import os.path
+from tempfile import NamedTemporaryFile
 
 from pyspark import SparkConf, SparkContext, SQLContext
 import simplejson as json
@@ -17,6 +18,14 @@ import etl.s3
 import etl.schemas
 
 APPLICATION_NAME = "DataWarehouseETL"
+
+
+class UnknownTableSizeException(etl.ETLException):
+    pass
+
+
+class MissingCsvFilesException(etl.ETLException):
+    pass
 
 
 def assemble_selected_columns(table_design):
@@ -62,7 +71,7 @@ def suggest_best_partition_number(table_size):
     The number of partitions is based on:
       Small tables (<= 10M): Use partitions around 1MB.
       Medium tables (<= 1G): Use partitions around 10MB.
-      Huge tables (> 1G): Use partitions around 100MB.
+      Huge tables (> 1G): Use partitions around 20MB.
 
     >>> suggest_best_partition_number(100)
     1
@@ -83,7 +92,8 @@ def suggest_best_partition_number(table_size):
     elif table_size <= 1024 * meg:
         target = 10 * meg
     else:
-        target = 100 * meg
+        # TODO Should be closer to 100 meg?
+        target = 20 * meg
 
     num_partitions = 1
     partition_size = table_size
@@ -120,7 +130,7 @@ def determine_partitioning(source_table_name, table_design, read_access):
         size = etl.pg.query(conn, """SELECT pg_catalog.pg_table_size('{}') AS table_size
                                   """.format(source_table_name))
         if len(size) != 1:
-            raise RuntimeError("Failed to determine size of source table")
+            raise UnknownTableSizeException("Failed to determine size of source table")
         table_size = size[0]["table_size"]
         num_partitions = suggest_best_partition_number(table_size)
 
@@ -210,8 +220,8 @@ def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dr
     for assoc_table_files in tables_in_s3:
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
-        design_file = etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)
-        table_design = etl.schemas.load_table_design(design_file, target_table_name)
+        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)) as content:
+            table_design = etl.schemas.load_table_design(content, target_table_name)
 
         logger.debug("Starting work on %s", source_table_name.identifier)
         df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
@@ -227,35 +237,40 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
     The manifest file will be created in the folder ABOVE the CSV files.
     """
     logger = logging.getLogger(__name__)
-    csv_files = etl.s3.find_files_in_folder(bucket_name, csv_path + "/part-")
+    csv_files = etl.s3.list_files_in_folder(bucket_name, csv_path + "/part-")
     if len(csv_files) == 0:
-        raise ValueError("Found no CSV files")
+        raise MissingCsvFilesException("Found no CSV files")
     remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
 
     manifest_filename = os.path.dirname(csv_path) + ".manifest"
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
-    # XXX Move file to dedicated temp directory
-    local_filename = os.path.join("/tmp", os.path.basename(manifest_filename))
-
     if dry_run:
         logger.info("Dry-run: Skipping writing manifest file '%s'", manifest_filename)
     else:
-        logger.debug("Writing manifest file locally to '%s'", local_filename)
-        with open(local_filename, 'wt') as o:
-            json.dump(manifest, o, indent="    ", sort_keys=True)
-            o.write('\n')
-        logger.debug("Done writing '%s'", local_filename)
-        etl.s3.upload_to_s3(local_filename, bucket_name, os.path.dirname(manifest_filename))
+        with NamedTemporaryFile(mode="w+") as local_file:
+            logger.debug("Writing manifest file locally to '%s'", local_file.name)
+            json.dump(manifest, local_file, indent="    ", sort_keys=True)
+            local_file.write('\n')
+            local_file.flush()
+            logger.debug("Done writing '%s'", local_file.name)
+            etl.s3.upload_to_s3(local_file.name, bucket_name, object_key=manifest_filename)
 
 
-def dump_to_s3(settings, table, prefix, dry_run):
+def dump_to_s3(settings, table, prefix, dry_run=False):
+    """
+    Dump data from multiple upstream sources to S3
+    """
     logger = logging.getLogger(__name__)
-    bucket_name = settings("s3", "bucket_name")
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schemas = [source["name"] for source in sources]
-    tables_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
+
+    bucket_name = settings("s3", "bucket_name")
+    tables_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schemas, selection)
+    if not tables_in_s3:
+        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
+        return
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
     for source, source_name in zip(sources, schemas):

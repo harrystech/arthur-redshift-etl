@@ -42,7 +42,7 @@ def count_updated_rows(conn, tables, begin_time, end_time, check_modified=False)
                   WHERE updated_at BETWEEN %s AND %s""".format(table_name)
         if check_modified:
             stmt += """AND updated_at - created_at > INTERVAL '1s'"""
-        rows = etl.pg.query(conn, stmt, (begin_time, end_time), debug=True)
+        rows = etl.pg.query(conn, stmt, (begin_time, end_time))
         count = int(rows[0]['count'])
         if check_modified:
             logging.info("Table '%s' has %d modified row(s)", table_name.identifier, count)
@@ -52,7 +52,7 @@ def count_updated_rows(conn, tables, begin_time, end_time, check_modified=False)
     return total
 
 
-def modified_rows(args, settings):
+def find_modified_rows(args, settings):
     dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
     schemas = [source["name"] for source in settings("sources")]
     with closing(etl.pg.connection(dw, autocommit=True, readonly=True)) as cx:
@@ -74,5 +74,4 @@ if __name__ == "__main__":
     main_args = build_parser().parse_args()
     etl.config.configure_logging()
     main_settings = etl.config.load_settings(main_args.config)
-    with etl.pg.measure_elapsed_time():
-        modified_rows(main_args, main_settings)
+    find_modified_rows(main_args, main_settings)

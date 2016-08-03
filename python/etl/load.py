@@ -45,6 +45,10 @@ import etl.s3
 import etl.schemas
 
 
+class MissingQueryException(etl.ETLException):
+    pass
+
+
 def format_column_list(columns):
     """
     Return string with comma-separated, delimited column names
@@ -175,42 +179,32 @@ def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_vie
         etl.pg.execute(conn, ddl_stmt)
 
 
-def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manifest=None, dry_run=False):
+def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=False):
     """
-    Load data into table in the data warehouse using the COPY command.  Either
-    a list of CSV files or a manifest must be provided. Note that instead of
-    using the list of files directly, only their longest common prefix is
-    used.  (So using a manifest is safer!)
+    Load data into table in the data warehouse using the COPY command.
+    A manifest for the CSV files must be provided.
 
     Tables can only be truncated by their owners, so this will delete all rows
     instead of truncating the tables.
     """
-    access = "aws_iam_role={}".format(credentials)
     logger = logging.getLogger(__name__)
-    # TODO Only allow uploads with manifest, remove option to load CSV files
-    if manifest is not None:
-        location = "s3://{}/{}".format(bucket_name, manifest)
-        with_manifest = " MANIFEST"
-    elif csv_files is not None:
-        location = "s3://{}/{}".format(bucket_name, os.path.commonprefix(csv_files))
-        with_manifest = ""
-    else:
-        raise ValueError("Either csv_files or manifest must not be None")
+    credentials = "aws_iam_role={}".format(aws_iam_role)
+    s3_path = "s3://{}/{}".format(bucket_name, manifest)
     if dry_run:
-        logger.info("Dry-run: Skipping copy for '%s' from%s '%s'", table_name.identifier, with_manifest, location)
+        logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     else:
-        logger.info("Copying data into '%s' from%s '%s'", table_name.identifier, with_manifest, location)
+        logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             etl.pg.execute(conn, """COPY {}
                                     FROM %s
-                                    CREDENTIALS %s{}
+                                    CREDENTIALS %s MANIFEST
                                     FORMAT AS CSV GZIP IGNOREHEADER 1
                                     NULL AS '\\\\N'
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
-                                 """.format(table_name, with_manifest), (location, access))
+                                 """.format(table_name), (s3_path, credentials))
             conn.commit()
         except psycopg2.Error as exc:
             conn.rollback()
@@ -265,7 +259,7 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                     # Use NULL for any nullable column and use type cast (for UNION ALL to succeed)
                     na_values_row.append("NULL::{}".format(column["sql_type"]))
                 elif "timestamp" in column["sql_type"]:
-                    # XXX Is this a good value or should timestamps be null?
+                    # TODO Is this a good value or should timestamps be null?
                     na_values_row.append("'0000-01-01 00:00:00'")
                 elif "string" in column["type"]:
                     na_values_row.append("'N/A'")
@@ -320,7 +314,7 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, ad
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name)
 
     if add_explain_plan:
-        plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt, debug=False)
+        plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt)
         logger.info("Explain plan for query:\n | %s", "\n | ".join(row[0] for row in plan))
     if dry_run:
         logger.info("Dry-run: Skipping loading of table '%s' using '%s'", table_name.identifier, temp_identifier)
@@ -374,7 +368,7 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=True):
+def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -393,10 +387,9 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     schemas = [source["name"] for source in sources]
 
     bucket_name = settings("s3", "bucket_name")
-    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
-
-    if len(files_in_s3) == 0:
-        logger.error("No applicable files found in 's3://%s/%s'", bucket_name, prefix)
+    files_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schemas, selection)
+    if not files_in_s3:
+        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
 
     vacuumable = []
@@ -426,7 +419,7 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
                         vacuumable.append(table_name)
                     else:
                         create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                        copy_data(conn, credentials, table_name, bucket_name, manifest=assoc_table_files.manifest_file,
+                        copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
                                   dry_run=dry_run)
                         analyze(conn, table_name, dry_run=dry_run)
                         vacuumable.append(table_name)
@@ -436,3 +429,47 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
         with closing(etl.pg.connection(dw, autocommit=True)) as conn:
             for table_name in vacuumable:
                 vacuum(conn, table_name, dry_run=dry_run)
+
+
+def test_queries(settings, target, table_design_dir):
+    """
+    Test queries by running EXPLAIN with the query.
+    """
+    logger = logging.getLogger(__name__)
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
+
+    selection = etl.TableNamePatterns.from_list(target)
+    sources = selection.match_field(settings("sources"), "name")
+    schemas = [source["name"] for source in sources]
+
+    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    if not local_files:
+        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
+        return
+
+    # We can't use a read-only connection here because Redshift needs to (or wants to) create
+    # temporary tables when building the query plan if temporary tables (probably from CTEs)
+    # will be needed during query execution.  (Look for scans on volt_tt_* tables.)
+    with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+        for source_name in local_files:
+            for assoc_table_files in local_files[source_name]:
+                table_name = assoc_table_files.target_table_name
+                design_file = assoc_table_files.design_file
+                sql_file = assoc_table_files.sql_file
+
+                with open(design_file) as f:
+                    table_design = etl.schemas.load_table_design(f, table_name)
+                if table_design["source_name"] not in ("CTAS", "VIEW"):
+                    continue
+
+                if sql_file is None:
+                    raise MissingQueryException("Missing SQL file for %s" % table_name.identifier)
+                logger.info("Reading query from local file '%s'", sql_file)
+                with open(sql_file) as f:
+                    query = f.read()
+
+                logger.debug("Trying query for %s", table_name.identifier)
+                plan = etl.pg.query(conn, "EXPLAIN\n" + query)
+                logger.info("Explain plan for %s query:\n | %s",
+                            table_name.identifier,
+                            "\n | ".join(row[0] for row in plan))

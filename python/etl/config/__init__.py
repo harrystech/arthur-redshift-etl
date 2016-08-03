@@ -45,7 +45,7 @@ def load_settings(config_file: str, default_file: str="defaults.yaml"):
         schema = load_json("settings.schema")
         jsonschema.validate(settings, schema)
     except Exception:
-        logger.exception("Failed to validate settings:")
+        logger.error("Failed to validate settings")
         raise
 
     class Accessor:

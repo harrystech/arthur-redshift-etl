@@ -2,16 +2,13 @@
 
 ## Features, bug fixes, nitpicks etc.
 
-Find duplicate table names in S3 bucket and warn.
+Warn on validate when a description field is missing.
 
-Ask twice for password when password for create_user is entered on the commandline.
-
-Enable syncing local files with S3 (to remove files that no longer exist locally).
-
+Ask twice for password when password for `create_user` is entered on the commandline.
 
 Allow to specify which group has access to any source.  (Goal: differentiate users of ETL, full read-only analytics groups)
 
-Query the data base for the existence of a user's schema or the current search path instead of relying on args.
+Query the database for the existence of a user's schema or the current search path instead of relying on args.
 
 Warn if distribution key is not also a sort key.
 
