@@ -179,42 +179,32 @@ def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_vie
         etl.pg.execute(conn, ddl_stmt)
 
 
-def copy_data(conn, credentials, table_name, bucket_name, csv_files=None, manifest=None, dry_run=False):
+def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=False):
     """
-    Load data into table in the data warehouse using the COPY command.  Either
-    a list of CSV files or a manifest must be provided. Note that instead of
-    using the list of files directly, only their longest common prefix is
-    used.  (So using a manifest is safer!)
+    Load data into table in the data warehouse using the COPY command.
+    A manifest for the CSV files must be provided.
 
     Tables can only be truncated by their owners, so this will delete all rows
     instead of truncating the tables.
     """
-    access = "aws_iam_role={}".format(credentials)
     logger = logging.getLogger(__name__)
-    # TODO Only allow uploads with manifest, remove option to load CSV files
-    if manifest is not None:
-        location = "s3://{}/{}".format(bucket_name, manifest)
-        with_manifest = " MANIFEST"
-    elif csv_files is not None:
-        location = "s3://{}/{}".format(bucket_name, os.path.commonprefix(csv_files))
-        with_manifest = ""
-    else:
-        raise ValueError("Either csv_files or manifest must not be None")
+    credentials = "aws_iam_role={}".format(aws_iam_role)
+    s3_path = "s3://{}/{}".format(bucket_name, manifest)
     if dry_run:
-        logger.info("Dry-run: Skipping copy for '%s' from%s '%s'", table_name.identifier, with_manifest, location)
+        logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     else:
-        logger.info("Copying data into '%s' from%s '%s'", table_name.identifier, with_manifest, location)
+        logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             etl.pg.execute(conn, """COPY {}
                                     FROM %s
-                                    CREDENTIALS %s{}
+                                    CREDENTIALS %s MANIFEST
                                     FORMAT AS CSV GZIP IGNOREHEADER 1
                                     NULL AS '\\\\N'
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
-                                 """.format(table_name, with_manifest), (location, access))
+                                 """.format(table_name), (s3_path, credentials))
             conn.commit()
         except psycopg2.Error as exc:
             conn.rollback()
@@ -429,7 +419,7 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
                         vacuumable.append(table_name)
                     else:
                         create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                        copy_data(conn, credentials, table_name, bucket_name, manifest=assoc_table_files.manifest_file,
+                        copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
                                   dry_run=dry_run)
                         analyze(conn, table_name, dry_run=dry_run)
                         vacuumable.append(table_name)

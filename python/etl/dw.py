@@ -87,8 +87,7 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     etl_group = settings("data_warehouse", "groups", "etl")
     search_path = [source["name"] for source in settings("sources")]
 
-    # TODO Check whether the user already exists and has a schema.
-    # (Then bail out here in case of dry-run.)
+    # TODO Check whether the user already exists and has a schema. (Then bail out here in case of dry-run.)
 
     if password is None and not skip_user_creation:
         password = getpass.getpass("Password for %s: " % new_user)

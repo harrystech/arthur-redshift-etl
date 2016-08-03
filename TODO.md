@@ -2,17 +2,9 @@
 
 ## Features, bug fixes, nitpicks etc.
 
-Enable syncing local files with S3 (to remove files that no longer exist locally).
-
-Run through select statements of CTAS and show explain plan (BIDW-??)
-
-Do full schema sync in *load* command.
-
 Warn on validate when a description field is missing.
 
-Find duplicate table names in S3 bucket and warn.
-
-Ask twice for password when password for create_user is entered on the commandline.
+Ask twice for password when password for `create_user` is entered on the commandline.
 
 Allow to specify which group has access to any source.  (Goal: differentiate users of ETL, full read-only analytics groups)
 

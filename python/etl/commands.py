@@ -283,7 +283,8 @@ class CopyToS3Command(SubCommand):
     def __init__(self):
         super().__init__("sync",
                          "Copy table design files to S3",
-                         "Copy table design files from local directory to S3")
+                         "Copy table design files from local directory to S3."
+                         " If using the '--force' option, this will delete schema and *data* files.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "table-design-dir", "prefix", "force", "dry-run"])

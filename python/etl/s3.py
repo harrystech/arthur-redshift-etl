@@ -46,6 +46,9 @@ from etl import TableName, AssociatedTableFiles
 _resources_for_thread = threading.local()
 
 
+class BadSourceDefinition(etl.ETLException):
+    pass
+
 def _get_bucket(name):
     """
     Return new Bucket object for a bucket that does exist (waits until it does)
@@ -163,7 +166,7 @@ def find_local_files(directory, schemas, pattern):
     return _find_files_from(list_local_files(), schemas, pattern)
 
 
-def _find_matching_files_from(iterable, schemas, pattern):
+def _find_matching_files_from(iterable, schemas, pattern, return_extra_files=False):
     """
     Match file names against schemas list, the target pattern and expected path format,
     return file information based on source name, source schema, table name and file type.
@@ -177,7 +180,8 @@ def _find_matching_files_from(iterable, schemas, pattern):
     file_names_re = re.compile(r"""(?:^schemas|/schemas|^data|/data)
                                    /(?P<source_name>\w+)
                                    /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?P<file_ext>.yaml|.sql|.manifest|/csv/part-\d+(:?\.gz)?)$
+                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/part-\d+(:?\.gz)?)
+                                      |.*(?P<suffix>_SUCCESS|_\$folder\$))$
                                """, re.VERBOSE)
 
     for filename in iterable:
@@ -188,12 +192,15 @@ def _find_matching_files_from(iterable, schemas, pattern):
             if source_name in schemas:
                 target_table_name = TableName(source_name, values['table_name'])
                 if pattern.match(target_table_name):
-                    if values["file_ext"].startswith("/csv"):
+                    if values['suffix']:
+                        if not return_extra_files:
+                            continue
+                    elif values["file_ext"].startswith("/csv"):
                         values["file_type"] = "data"
                     else:
                         values["file_type"] = values["file_ext"][1:]
                     yield (filename, values)
-        elif not filename.endswith(('_SUCCESS', '_$folder$')):
+        elif not filename.endswith("_$folder$"):
             logging.getLogger(__name__).warning("Found file not matching expected format: '%s'", filename)
 
 
@@ -202,8 +209,8 @@ def delete_files_in_bucket(bucket_name, prefix, schemas, selection, dry_run=Fals
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """
     iterable = list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas'))
-    # TODO This will keep $folder$ and _SUCCESS files around!
-    deletable = _find_matching_files_from(iterable, schemas, selection)
+    deletable = [filename for filename, values in _find_matching_files_from(iterable, schemas, selection,
+                                                                            return_extra_files=True)]
     delete_in_s3(bucket_name, deletable, dry_run=dry_run)
 
 
@@ -245,17 +252,26 @@ def _find_files_from(iterable, schemas, pattern):
     tables_by_source = defaultdict(dict)
     additional_files = defaultdict(list)
     # First pass -- pick up all the design files, keep matches around for second pass
+    errors = 0
     for filename, values in _find_matching_files_from(iterable, schemas, pattern):
         source_name = values['source_name']
         source_table_name = TableName(values['schema_name'], values['table_name'])
         target_table_name = TableName(source_name, values['table_name'])
         if values['file_type'] == 'yaml':
-            # XXX check whether target_table_name is already in  use!
-            tables_by_source[source_name][target_table_name] = AssociatedTableFiles(source_table_name,
-                                                                                    target_table_name,
-                                                                                    filename)
+            if target_table_name in tables_by_source[source_name]:
+                logger.error("Target table '%s' has more than one upstream source: %s",
+                             target_table_name.identifier,
+                             [os.path.basename(filename)
+                              for filename in [tables_by_source[source_name][target_table_name].design_file, filename]])
+                errors += 1
+            else:
+                tables_by_source[source_name][target_table_name] = AssociatedTableFiles(source_table_name,
+                                                                                        target_table_name,
+                                                                                        filename)
         else:
             additional_files[(source_name, target_table_name)].append((filename, values["file_type"]))
+    if errors:
+        raise BadSourceDefinition("Target table has multiple source tables")
     # Second pass -- only store SQL and data files for tables that have design files from first pass
     for source_name, target_table_name in additional_files:
         assoc_table = tables_by_source[source_name].get(target_table_name)
