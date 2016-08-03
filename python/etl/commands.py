@@ -33,18 +33,23 @@ def run_arg_as_command(my_name="arthur"):
         parser.print_usage()
     else:
         etl.config.configure_logging(args.log_level)
+        logger = logging.getLogger(__name__)
         with etl.timer.Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
                 args.func(args, settings)
-            except Exception:
-                logging.getLogger(__name__).exception("Something terrible happened")
-                logging.getLogger(__name__).info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+            except etl.ETLException:
+                logger.exception("Something bad happened in the ETL:")
+                logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
                 sys.exit(1)
-            except BaseException:
-                logging.getLogger(__name__).exception("Something really terrible happened")
-                logging.getLogger(__name__).info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+            except Exception:
+                logger.exception("Something terrible happened:")
+                logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
                 sys.exit(2)
+            except BaseException:
+                logger.exception("Something really terrible happened:")
+                logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+                sys.exit(3)
             else:
                 logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
@@ -159,21 +164,8 @@ class AppendDateAction(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         today = datetime.now().strftime("/%Y%m%d_%H%M")
-        setattr(namespace, self.dest, values + today)
-
-
-def check_positive_int(s):
-    """
-    Helper method for argument parser to make sure optional arg with value 's'
-    is a positive integer (meaning, s > 0)
-    """
-    try:
-        i = int(s)
-        if i <= 0:
-            raise ValueError
-    except ValueError:
-        raise argparse.ArgumentTypeError("%s is not a positive int" % s)
-    return i
+        prefix = values.rstrip('/') + today
+        setattr(namespace, self.dest, prefix)
 
 
 class SubCommand:
@@ -281,11 +273,9 @@ class DownloadSchemasCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "table-design-dir", "dry-run"])
-        parser.add_argument("-j", "--jobs", help="Number of parallel connections (default: %(default)s)",
-                            type=check_positive_int, default=1)
 
     def callback(self, args, settings):
-        etl.schemas.download_schemas(settings, args.target, args.table_design_dir, args.jobs, args.dry_run)
+        etl.schemas.download_schemas(settings, args.target, args.table_design_dir, args.dry_run)
 
 
 class CopyToS3Command(SubCommand):

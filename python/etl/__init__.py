@@ -7,6 +7,11 @@ from fnmatch import fnmatch
 from typing import Iterable
 
 
+class ETLException(Exception):
+    """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
+    pass
+
+
 class TableName(namedtuple("_TableName", ["schema", "table"])):
     """
     Class to automatically create delimited identifiers for table.

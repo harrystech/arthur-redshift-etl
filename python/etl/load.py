@@ -45,6 +45,10 @@ import etl.s3
 import etl.schemas
 
 
+class MissingQueryException(etl.ETLException):
+    pass
+
+
 def format_column_list(columns):
     """
     Return string with comma-separated, delimited column names
@@ -265,7 +269,7 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                     # Use NULL for any nullable column and use type cast (for UNION ALL to succeed)
                     na_values_row.append("NULL::{}".format(column["sql_type"]))
                 elif "timestamp" in column["sql_type"]:
-                    # XXX Is this a good value or should timestamps be null?
+                    # TODO Is this a good value or should timestamps be null?
                     na_values_row.append("'0000-01-01 00:00:00'")
                 elif "string" in column["type"]:
                     na_values_row.append("'N/A'")
@@ -393,8 +397,8 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     schemas = [source["name"] for source in sources]
 
     bucket_name = settings("s3", "bucket_name")
-    files_in_s3 = etl.s3.find_files_in_bucket(bucket_name, prefix, schemas, selection)
-    if len(files_in_s3) == 0:
+    files_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schemas, selection)
+    if not files_in_s3:
         logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
 
@@ -449,7 +453,7 @@ def test_queries(settings, target, table_design_dir):
     schemas = [source["name"] for source in sources]
 
     local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
-    if len(local_files) == 0:
+    if not local_files:
         logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return
 
@@ -466,7 +470,7 @@ def test_queries(settings, target, table_design_dir):
                     continue
 
                 if sql_file is None:
-                    raise ValueError("Missing SQL file for %s" % table_name.identifier)
+                    raise MissingQueryException("Missing SQL file for %s" % table_name.identifier)
                 logger.info("Reading query from local file '%s'", sql_file)
                 with open(sql_file) as f:
                     query = f.read()

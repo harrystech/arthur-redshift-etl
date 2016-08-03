@@ -28,7 +28,6 @@ to create a sequence, meaning evaluation order in the ETL.
 """
 
 from collections import defaultdict, OrderedDict
-import concurrent.futures
 import logging
 from operator import attrgetter
 import os
@@ -43,17 +42,6 @@ import etl.commands
 import etl.config
 from etl import TableName, AssociatedTableFiles
 
-
-# Split file names into new schema, old schema, table name, and file type
-# XXX Must anchor RE in front against prefix otherwise might pick up wrong files
-TABLE_RE = re.compile(r"""(?:^schemas|/schemas|^data|/data)
-                          /(?P<source_name>\w+)
-                          /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                          [\./](?P<file_type>yaml|sql|manifest|csv/part-\d+(:?\.gz)?)$
-                      """, re.VERBOSE)
-
-# Ignore some files that the S3 client adds
-IGNORE_RE = re.compile(r"""(?:^schemas|/schemas|^data|/data).*(?:_SUCCESS|[$]folder[$])$""")
 
 _resources_for_thread = threading.local()
 
@@ -71,33 +59,24 @@ def _get_bucket(name):
     return s3.Bucket(name)
 
 
-def upload_to_s3(filename, bucket_name, prefix, dry_run=False):
+def upload_to_s3(filename, bucket_name, prefix=None, object_key=None, dry_run=False):
     """
-    Upload file to S3 bucket.
-
-    Filename must be either name of file or a future that will return the name
-    of a file. Exceptions from futures are propagated. If filename is None,
-    then no upload will be attempted.
+    Upload a file to S3 bucket.  If the object key is provided, then the
+    file's content are uploaded for that object.  If a prefix is provided
+    instead, then the object key is the prefix plus the basename of the
+    local filename.
     """
+    if object_key is None and prefix is None:
+        raise ValueError("One of object_key or prefix must be specified")
     logger = logging.getLogger(__name__)
-    if isinstance(filename, concurrent.futures.Future):
-        try:
-            filename = filename.result()
-        except Exception:
-            logger.exception("Something terrible happened in the future's past")
-            raise
-    if filename is not None:
+    if object_key is None:
         object_key = "{}/{}".format(prefix, os.path.basename(filename))
-        if dry_run:
-            logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
-        else:
-            try:
-                logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
-                bucket = _get_bucket(bucket_name)
-                bucket.upload_file(filename, object_key)
-            except Exception:
-                logger.exception('S3 upload error:')
-                raise
+    if dry_run:
+        logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
+    else:
+        logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
+        bucket = _get_bucket(bucket_name)
+        bucket.upload_file(filename, object_key)
 
 
 def delete_in_s3(bucket_name: str, object_keys: Iterable(str), dry_run: bool=False):
@@ -108,15 +87,18 @@ def delete_in_s3(bucket_name: str, object_keys: Iterable(str), dry_run: bool=Fal
     if dry_run:
         for key in object_keys:
             logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
-    elif len(object_keys) > 0:
-        # XXX Need to make sure we don't exceed the 1000 keys limit
+    else:
         bucket = _get_bucket(bucket_name)
-        result = bucket.delete_objects(Delete={'Objects': [{'Key': key for key in object_keys}]})
-        for deleted in result.get('Deleted', {}):
-            logger.info("Deleted 's3://%s/%s'", bucket_name, deleted['Key'])
-        for error in result.get('Errors', {}):
-            logger.warning("Failed to delete 's3://%s/%s': %s %s", bucket_name, error['Key'],
-                           error['Code'], error['Message'])
+        keys = [{'Key': key} for key in object_keys]
+        chunk_size = 1000
+        while len(keys) > 0:
+            result = bucket.delete_objects(Delete={'Objects': keys[:chunk_size]})
+            del keys[:chunk_size]
+            for deleted in result.get('Deleted', {}):
+                logger.info("Deleted 's3://%s/%s'", bucket_name, deleted['Key'])
+            for error in result.get('Errors', {}):
+                logger.warning("Failed to delete 's3://%s/%s': %s %s", bucket_name, error['Key'],
+                               error['Code'], error['Message'])
 
 
 def get_file_content(bucket_name, object_key):
@@ -135,31 +117,42 @@ def get_file_content(bucket_name, object_key):
     return response['Body']
 
 
-def find_files_in_folder(bucket_name, prefix):
+def list_files_in_folder(bucket_name, prefix):
     """
-    List all the files in "s3://{bucket_name}/{folder_name}" (where folder is probably a path)
+    List all the files in "s3://{bucket_name}/{prefix}" (where prefix is probably a path and not an object)
+    or if prefix is a tuple, then list files in "s3://{bucket_name}/{common path} which start with one of
+    the elements in the prefix tuple.
     """
-    logging.getLogger(__name__).info("Looking for files matching 's3://%s/%s*'", bucket_name, prefix)
+    logging.getLogger(__name__).info("Looking for files at 's3://%s/%s'", bucket_name, prefix)
     bucket = _get_bucket(bucket_name)
-    return list(obj.key for obj in bucket.objects.filter(Prefix=prefix))
+    if isinstance(prefix, tuple):
+        return [obj.key for obj in bucket.objects.filter(Prefix=os.path.commonprefix(prefix))
+                if obj.key.startswith(prefix)]
+    elif isinstance(prefix, str):
+        return [obj.key for obj in bucket.objects.filter(Prefix=prefix)]
+    else:
+        raise ValueError("prefix must be string or tuple (of strings)")
 
 
-def find_files_in_bucket(bucket_name, prefix, schemas, pattern):
+def find_files_for_schemas(bucket_name, prefix, schemas, pattern):
     """
-    Discover files in the given bucket and folder by schema,
-    apply pattern-based selection along the way.
+    Discover design and data files in the given bucket and folder, organize by schema,
+    and apply pattern-based selection along the way.
+
+    Only files in 'data' or 'schemas' sub-folders are examined (so that ignores 'config' or 'jars').
     """
-    logging.getLogger(__name__).info("Looking for files in 's3://%s/%s'", bucket_name, prefix)
-    bucket = _get_bucket(bucket_name)
-    return _find_files_from((obj.key for obj in bucket.objects.filter(Prefix=prefix)), schemas, pattern)
+    return _find_files_from(list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas')),
+                            schemas, pattern)
 
 
 def find_local_files(directory, schemas, pattern):
     """
-    Discover all local files from the given directory,
-    apply pattern-based selection along the way.
+    Discover local design and data files starting from the given directory, organize by schema,
+    and apply pattern-based selection along the way.
+
+    The directory should be the 'schemas' directory, probably.
     """
-    logging.getLogger(__name__).info("Looking for files in %s", directory)
+    logging.getLogger(__name__).info("Looking for files in '%s'", directory)
 
     def list_local_files():
         for root, dirs, files in os.walk(os.path.normpath(directory)):
@@ -170,6 +163,74 @@ def find_local_files(directory, schemas, pattern):
     return _find_files_from(list_local_files(), schemas, pattern)
 
 
+def _find_matching_files_from(iterable, schemas, pattern):
+    """
+    Match file names against schemas list, the target pattern and expected path format,
+    return file information based on source name, source schema, table name and file type.
+
+    This generator provides all files that are possibly relevant and it
+    is up to the consumer to ensure consistency (e.g. that a design
+    file exists or that a SQL file is not present along with a manifest).
+
+    Files ending in '_SUCCESS' or '_$folder$' are ignored (which are created by some Spark jobs).
+    """
+    file_names_re = re.compile(r"""(?:^schemas|/schemas|^data|/data)
+                                   /(?P<source_name>\w+)
+                                   /(?P<schema_name>\w+)-(?P<table_name>\w+)
+                                   (?P<file_ext>.yaml|.sql|.manifest|/csv/part-\d+(:?\.gz)?)$
+                               """, re.VERBOSE)
+
+    for filename in iterable:
+        match = file_names_re.search(filename)
+        if match:
+            values = match.groupdict()
+            source_name = values['source_name']
+            if source_name in schemas:
+                target_table_name = TableName(source_name, values['table_name'])
+                if pattern.match(target_table_name):
+                    if values["file_ext"].startswith("/csv"):
+                        values["file_type"] = "data"
+                    else:
+                        values["file_type"] = values["file_ext"][1:]
+                    yield (filename, values)
+        elif not filename.endswith(('_SUCCESS', '_$folder$')):
+            logging.getLogger(__name__).warning("Found file not matching expected format: '%s'", filename)
+
+
+def delete_files_in_bucket(bucket_name, prefix, schemas, selection, dry_run=False):
+    """
+    Delete all files that might be relevant given the choice of schemas and the target selection.
+    """
+    iterable = list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas'))
+    # TODO This will keep $folder$ and _SUCCESS files around!
+    deletable = _find_matching_files_from(iterable, schemas, selection)
+    delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+
+
+def _attach_table_files(known_files: AssociatedTableFiles, extra_files):
+    """
+    Helper function to safely (and verbosely) attach SQL and data files to design files.
+    It is ok for `known_files` to be None.
+    """
+    logger = logging.getLogger(__name__)
+    for filename, file_type in extra_files:
+        if file_type == 'sql':
+            if known_files:
+                known_files.set_sql_file(filename)
+            else:
+                logger.warning("Found SQL file without table design: '%s'", filename)
+        elif file_type == 'manifest':
+            if known_files:
+                known_files.set_manifest_file(filename)
+            else:
+                logger.warning("Found manifest file without table design: '%s'", filename)
+        elif file_type == 'data':
+            if known_files:
+                known_files.add_data_file(filename)
+            else:
+                logger.warning("Found data file without table design: '%s'", filename)
+
+
 def _find_files_from(iterable, schemas, pattern):
     """
     Return (ordered) dictionary that maps schemas to lists of table meta data ('associated table files').
@@ -177,62 +238,37 @@ def _find_files_from(iterable, schemas, pattern):
     Note that all tables must have a table design file. It's not ok to have a CSV or
     SQL file by itself.
 
-    The associate file information is sorted by source schema and table.
+    The associated file information is sorted by source schema (same order as in config file)
+    and table (alphabetically based on fully qualified name in the source, meaning "{schema}.{table}").
     """
     logger = logging.getLogger(__name__)
-    found = defaultdict(dict)
-    maybe = []
+    tables_by_source = defaultdict(dict)
+    additional_files = defaultdict(list)
     # First pass -- pick up all the design files, keep matches around for second pass
-    for filename in iterable:
-        match = TABLE_RE.search(filename)
-        if match:
-            values = match.groupdict()
-            source_name = values['source_name']
-            if source_name in schemas:
-                source_table_name = TableName(values['schema_name'], values['table_name'])
-                target_table_name = TableName(source_name, values['table_name'])
-                # Select based on table name from commandline args
-                if not pattern.match(target_table_name):
-                    continue
-                if values['file_type'] == 'yaml':
-                    found[source_name][target_table_name] = AssociatedTableFiles(source_table_name,
-                                                                                 target_table_name,
-                                                                                 filename)
-                else:
-                    maybe.append((filename, source_name, target_table_name, values['file_type']))
-        elif not IGNORE_RE.search(filename):
-            # XXX Fix this along with anchoring patterns to prefix or local dir!
-            if 'data/' in filename or 'schemas/' in filename:
-                logger.warning("Found file not matching expected patterns: '%s'", filename)
+    for filename, values in _find_matching_files_from(iterable, schemas, pattern):
+        source_name = values['source_name']
+        source_table_name = TableName(values['schema_name'], values['table_name'])
+        target_table_name = TableName(source_name, values['table_name'])
+        if values['file_type'] == 'yaml':
+            # XXX check whether target_table_name is already in  use!
+            tables_by_source[source_name][target_table_name] = AssociatedTableFiles(source_table_name,
+                                                                                    target_table_name,
+                                                                                    filename)
+        else:
+            additional_files[(source_name, target_table_name)].append((filename, values["file_type"]))
     # Second pass -- only store SQL and data files for tables that have design files from first pass
-    for filename, source_name, target_table_name, file_type in maybe:
-        assoc_table = found[source_name].get(target_table_name)
-        if file_type == 'sql':
-            if assoc_table:
-                assoc_table.set_sql_file(filename)
-            else:
-                logger.warning("Found SQL file without table design: '%s'", filename)
-        elif file_type == 'manifest':
-            if assoc_table:
-                # Record the manifest here but note that we always create a new manifest anyways.
-                assoc_table.set_manifest_file(filename)
-            else:
-                logger.warning("Found manifest file without table design: '%s'", filename)
-        elif file_type.startswith('csv'):
-            if assoc_table:
-                assoc_table.add_data_file(filename)
-            else:
-                logger.warning("Found data file without table design: '%s'", filename)
-    # XXX Refactor so that the len (over assoc table files) depends on what file types should actually be counted
-    logger.info("Found %d matching file(s) for %d schema(s) with %d table(s) total",
-                sum(len(table) for tables in found.values() for table in tables.values()),
-                len(found),
-                sum(len(tables) for tables in found.values()))
+    for source_name, target_table_name in additional_files:
+        assoc_table = tables_by_source[source_name].get(target_table_name)
+        _attach_table_files(assoc_table, additional_files[(source_name, target_table_name)])
     # Always return files sorted by source table name (which includes the schema in the source).
     ordered_found = OrderedDict()
     for source_name in schemas:
-        if source_name in found:
-            ordered_found[source_name] = sorted(found[source_name].values(), key=attrgetter('source_table_name'))
+        if source_name in tables_by_source:
+            ordered_found[source_name] = sorted(tables_by_source[source_name].values(),
+                                                key=attrgetter('source_table_name'))
+    logger.info("Found %d matching file(s) for %d schema(s) with %d table(s) total",
+                sum(len(table) for tables in ordered_found.values() for table in tables), len(ordered_found),
+                sum(len(tables) for tables in ordered_found.values()))
     return ordered_found
 
 
@@ -248,7 +284,7 @@ def list_files(settings, prefix, table):
     schemas = [source["name"] for source in sources]
 
     bucket_name = settings("s3", "bucket_name")
-    found = find_files_in_bucket(bucket_name, prefix, schemas, selection)
+    found = find_files_for_schemas(bucket_name, prefix, schemas, selection)
     if not found:
         logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
