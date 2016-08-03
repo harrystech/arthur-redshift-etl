@@ -12,6 +12,7 @@ import logging
 import os
 import uuid
 import sys
+import traceback
 
 import pkg_resources
 
@@ -26,7 +27,20 @@ import etl.schemas
 import etl.monitor
 
 
-def run_arg_as_command(my_name="arthur"):
+def croak(error, exit_code):
+    """
+    Print first line of exception and then bail out with the exit code.
+
+    When you have a large stack trace, it's easy to miss the trigger and
+    so we call it out here again, on stderr.
+    """
+    tb_all = "\n".join(traceback.format_exception_only(type(error), error))
+    tb_first = tb_all.split('\n')[0]
+    print("Bailing out: {}".format(tb_first), file=sys.stderr)
+    sys.exit(exit_code)
+
+
+def run_arg_as_command(my_name="arthur.py"):
     parser = build_full_parser(my_name)
     args = parser.parse_args()
     if not args.func:
@@ -37,19 +51,21 @@ def run_arg_as_command(my_name="arthur"):
         with etl.monitor.Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
+                # XXX Add to command line args!
+                etl.config.load_env()
                 args.func(args, settings)
-            except etl.ETLException:
+            except etl.ETLException as exc:
                 logger.exception("Something bad happened in the ETL:")
                 logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
-                sys.exit(1)
-            except Exception:
+                croak(exc, 1)
+            except Exception as exc:
                 logger.exception("Something terrible happened:")
                 logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
-                sys.exit(2)
-            except BaseException:
+                croak(exc, 2)
+            except BaseException as exc:
                 logger.exception("Something really terrible happened:")
                 logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
-                sys.exit(3)
+                croak(exc, 3)
             else:
                 logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
@@ -134,7 +150,7 @@ def add_standard_arguments(parser, options):
         prefix = parser.add_mutually_exclusive_group()
         prefix.add_argument("-p", "--prefix", default=getpass.getuser(),
                             help="Select prefix in S3 bucket (default is user name: '%(default)s')")
-        prefix.add_argument("-e", "--prefix-env", dest="prefix", metavar="ENV", action=AppendDateAction,
+        prefix.add_argument("-e", "--prefix-with-date", dest="prefix", metavar="ENV", action=AppendDateAction,
                             help="Set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
     if "table-design-dir" in options:
         parser.add_argument("-t", "--table-design-dir",

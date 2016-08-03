@@ -8,7 +8,7 @@ import os
 import os.path
 from tempfile import NamedTemporaryFile
 
-from pyspark import SparkConf, SparkContext, SQLContext
+# Note that we'll import pyspark modules when starting a SQL context.
 import simplejson as json
 
 import etl
@@ -17,6 +17,8 @@ import etl.monitor
 import etl.pg
 import etl.s3
 import etl.schemas
+from etl.monitor import Timer
+
 
 APPLICATION_NAME = "DataWarehouseETL"
 
@@ -106,6 +108,48 @@ def suggest_best_partition_number(table_size):
     return num_partitions
 
 
+def fetch_table_size(conn, table_name):
+    """
+    Fetch table size in bytes.
+    """
+    logger = logging.getLogger(__name__)
+    with Timer() as timer:
+        rows = etl.pg.query(conn,
+                            """SELECT pg_catalog.pg_table_size('{}') AS table_size
+                                    , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
+                            """.format(table_name, table_name))
+    if len(rows) != 1:
+        raise UnknownTableSizeException("Failed to determine size of table")
+    table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
+    logger.info("Size of table '%s': %s (%d bytes) (%s)", table_name.identifier, pretty_table_size, table_size, timer)
+    return table_size
+
+
+def fetch_partition_boundaries(conn, table_name, primary_key, num_partitions):
+    """
+    Fetch ranges for the primary key that partitions the table nicely.
+    """
+    logger = logging.getLogger(__name__)
+    with Timer() as timer:
+        rows = etl.pg.query(conn, """SELECT MIN(pkey) AS lower_bound
+                                          , MAX(pkey) AS upper_bound
+                                          , COUNT(pkey) AS count
+                                       FROM (
+                                           SELECT "{}" AS pkey
+                                                , NTILE({}) OVER (ORDER BY "{}") AS part
+                                             FROM {}
+                                             ) t
+                                      GROUP BY part
+                                      ORDER BY part
+                                  """.format(primary_key, num_partitions, primary_key, table_name))
+    row_count = sum(row["count"] for row in rows)
+    logger.info("Calculated %d partition boundaries for '%s' (%d rows) with primary key '%s' (%s)",
+                num_partitions, table_name.identifier, row_count, primary_key, timer)
+    lower_bounds = (row["lower_bound"] for row in rows)
+    upper_bounds = (row["upper_bound"] for row in rows)
+    return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
+
+
 def determine_partitioning(source_table_name, table_design, read_access):
     """
     Guesstimate number of partitions based on actual table size and create list of predicates to split
@@ -124,40 +168,24 @@ def determine_partitioning(source_table_name, table_design, read_access):
 
     # Note that column constraints such as primary key are stored as one-element lists, hence:
     primary_key = table_design["constraints"]["primary_key"][0]
-    logger.debug("Primary key for table '%s' is %s", source_table_name.identifier, primary_key)
+    logger.debug("Primary key for table '%s' is '%s'", source_table_name.identifier, primary_key)
 
     predicates = []
     with closing(etl.pg.connection(read_access, readonly=True)) as conn:
-        size = etl.pg.query(conn, """SELECT pg_catalog.pg_table_size('{}') AS table_size
-                                  """.format(source_table_name))
-        if len(size) != 1:
-            raise UnknownTableSizeException("Failed to determine size of source table")
-        table_size = size[0]["table_size"]
+        logger.debug("Determining predicates for table '%s'", source_table_name.identifier)
+
+        table_size = fetch_table_size(conn, source_table_name)
         num_partitions = suggest_best_partition_number(table_size)
+        logger.info("Picked %d partition(s) for table '%s' (primary key: '%s')",
+                    num_partitions, source_table_name.identifier, primary_key)
 
         if num_partitions > 1:
-            rows = etl.pg.query(conn, """
-                                      SELECT MIN(pkey) AS pkey_bound
-                                        FROM (
-                                            SELECT "{}" AS pkey
-                                                 , NTILE({}) OVER (ORDER BY "{}") AS part
-                                              FROM {}
-                                              ) t
-                                       GROUP BY part
-                                       ORDER BY part
-                                      """.format(primary_key, num_partitions, primary_key, source_table_name))
-            pkey_bounds = list(row["pkey_bound"] for row in rows)
-            for low, high in zip(pkey_bounds[:-1], pkey_bounds[1:]):
+            boundaries = fetch_partition_boundaries(conn, source_table_name, primary_key, num_partitions)
+            for low, high in boundaries:
                 predicates.append('({} <= "{}" AND "{}" < {})'.format(low, primary_key, primary_key, high))
-            predicates.append('{} <= "{}"'.format(pkey_bounds[-1], primary_key))
-            logger.debug("Predicates to split %s:\n  %s", source_table_name.identifier,
-                         "\n  ".join("{:3d}: {}".format(i, p) for i, p in enumerate(predicates)))
+            logger.debug("Predicates to split '%s':\n    %s", source_table_name.identifier,
+                         "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)))
 
-        logger.info("Picked %d partition(s) for table '%s' (primary key: %s, table size: %d)",
-                    num_partitions,
-                    source_table_name.identifier,
-                    primary_key,
-                    table_size)
     return predicates
 
 
@@ -196,7 +224,7 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
     if dry_run:
         logger.info("Dry-run: Skipping upload to '%s'", full_s3_path)
     else:
-        logger.info("Writing table from '%s' to '%s'", source_path_name, full_s3_path)
+        logger.info("Writing data from '%s' to '%s'", source_path_name, full_s3_path)
         # TODO Share this with load to construct the correct COPY command?
         write_options = {
             "header": "true",
@@ -256,6 +284,32 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
             etl.s3.upload_to_s3(local_file.name, bucket_name, object_key=manifest_filename)
 
 
+def create_sql_context():
+    """
+    Create a new SQL context within a new Spark context.
+
+    This method will import from pyspark -- this is delayed so
+    that we can `import etl.dump` without havig a spark context running.
+    (E.g. it's silly to have to spark-submit the command to figure out the version.)
+
+    Side-effect: Logging is configured by the time that pyspark is loaded
+    so we have some better control over filters and formatting.
+    """
+    logger = logging.getLogger(__name__)
+    if "SPARK_ENV_LOADED" not in os.environ:
+        logger.warning("SPARK_ENV_LOADED is not set")
+
+    from pyspark import SparkConf, SparkContext, SQLContext
+
+    logger.info("Starting SparkSQL context for %s", APPLICATION_NAME)
+    conf = SparkConf()
+    conf.setAppName(APPLICATION_NAME)
+    conf.set("spark.logConf", "true")
+    # TODO Add spark.jars here? spark.submit.pyFiles?
+    sc = SparkContext(conf=conf)
+    return SQLContext(sc)
+
+
 def dump_to_s3(settings, table, prefix, dry_run=False):
     """
     Dump data from multiple upstream sources to S3
@@ -277,12 +331,7 @@ def dump_to_s3(settings, table, prefix, dry_run=False):
             if source["read_access"] not in os.environ:
                 raise KeyError("Environment variable to access '%s' not set: %s" % (source_name, source["read_access"]))
 
-    logger.info("Starting SparkSQL context for %s", APPLICATION_NAME)
-    conf = SparkConf()
-    conf.setAppName(APPLICATION_NAME)
-    sc = SparkContext(conf=conf)
-    sql_context = SQLContext(sc)
-
+    sql_context = create_sql_context()
     for source, source_name in zip(sources, schemas):
         if "read_access" not in source:
             logger.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)

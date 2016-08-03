@@ -23,6 +23,23 @@ def configure_logging(log_level: str=None) -> None:
     logging.getLogger(__name__).info("Starting log for '%s'", sys.argv[0])
 
 
+def load_env():
+    """
+    Load additional environment variables from file.
+
+    Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
+    other lines are silently dropped.
+    """
+    if os.path.exists("/var/tmp/config/credentials.sh"):
+        with open("/var/tmp/config/credentials.sh") as f:
+            for line in f:
+                tokens = [token.strip() for token in line.split('=', 1)]
+                if len(tokens) == 2 and not tokens[0].startswith('#'):
+                    name = tokens[0].replace("export", "").strip()
+                    value = tokens[1]
+                    os.environ[name] = value
+
+
 def load_settings(config_file: str, default_file: str="defaults.yaml"):
     """
     Load settings from defaults and config file.

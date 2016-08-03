@@ -1,26 +1,12 @@
 [
     {
-        "Classification": "hadoop-env",
-        "Configurations": [
-            {
-                "Classification": "export",
-                "Configurations": [],
-                "Properties": {
-                    "JAVA_HOME": "/usr/lib/jvm/java-1.8.0"
-                }
-            }
-        ],
-        "Properties": {}
-    },
-    {
         "Classification": "spark-env",
         "Configurations": [
             {
                 "Classification": "export",
                 "Configurations": [],
                 "Properties": {
-                    "JAVA_HOME": "/usr/lib/jvm/java-1.8.0",
-                    "PYSPARK_PYTHON": "python34",
+                    "PYSPARK_PYTHON": "/var/tmp/venv/bin/python3",
                     "ETL_ENVIRONMENT": "#{etl_environment}"
                 }
             }

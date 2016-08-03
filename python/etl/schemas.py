@@ -320,7 +320,7 @@ def create_or_update_table_designs(source, table_design_files, type_maps, design
                 else:
                     save_table_design(table_design, source_table_name, design_dir, dry_run=dry_run)
     except Exception:
-        logger.exception("Error while processing source '%s':", source_name)
+        logger.error("Error while processing source '%s':", source_name)
         raise
     not_found = found.difference(set(table_design_files))
     if len(not_found):
