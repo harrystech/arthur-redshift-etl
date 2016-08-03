@@ -146,8 +146,6 @@ def add_standard_arguments(parser, options):
                             action="store_true")
     if "explain" in options:
         parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
-    if "force" in options:
-        parser.add_argument("-f", "--force", help="force updates", default=False, action="store_true")
     if "target" in options:
         parser.add_argument("target", help="glob pattern or identifier to select target(s)", nargs='*')
     if "username" in options:
@@ -287,7 +285,9 @@ class CopyToS3Command(SubCommand):
                          " If using the '--force' option, this will delete schema and *data* files.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "table-design-dir", "prefix", "force", "dry-run"])
+        add_standard_arguments(parser, ["target", "table-design-dir", "prefix", "dry-run"])
+        parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
+                            default=False, action="store_true")
 
     def callback(self, args, settings):
         etl.schemas.copy_to_s3(settings, args.target, args.table_design_dir, args.prefix, args.force, args.dry_run)
@@ -350,7 +350,10 @@ class ExtractLoadTransformCommand(SparkSubCommand):
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "prefix", "force", "dry-run"])
+        add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        parser.add_argument("-f", "--force",
+                            help="force loading, run 'dump' then 'load' (instead of 'dump' then 'update')",
+                            default=False, action="store_true")
 
     def callback_within_spark(self, args, settings):
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)

@@ -447,7 +447,10 @@ def test_queries(settings, target, table_design_dir):
         logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return
 
-    with closing(etl.pg.connection(dw, readonly=True, autocommit=True)) as conn:
+    # We can't use a read-only connection here because Redshift needs to (or wants to) create
+    # temporary tables when building the query plan if temporary tables (probably from CTEs)
+    # will be needed during query execution.  (Look for scans on volt_tt_* tables.)
+    with closing(etl.pg.connection(dw, autocommit=True)) as conn:
         for source_name in local_files:
             for assoc_table_files in local_files[source_name]:
                 table_name = assoc_table_files.target_table_name
