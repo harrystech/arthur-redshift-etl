@@ -23,7 +23,7 @@ import etl.load
 import etl.pg
 import etl.s3
 import etl.schemas
-import etl.timer
+import etl.monitor
 
 
 def run_arg_as_command(my_name="arthur"):
@@ -34,7 +34,7 @@ def run_arg_as_command(my_name="arthur"):
     else:
         etl.config.configure_logging(args.log_level)
         logger = logging.getLogger(__name__)
-        with etl.timer.Timer() as timer:
+        with etl.monitor.Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
                 args.func(args, settings)
