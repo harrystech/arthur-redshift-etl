@@ -37,6 +37,16 @@ import etl.config
 import etl.pg
 
 
+def get_password(username):
+    password = getpass.getpass("Password for %s: " % username)
+    if len(password) < 1:
+        raise RuntimeError("Empty password")
+    check = getpass.getpass("Re-enter password: ")
+    if password != check:
+        raise RuntimeError("Passwords do not match")
+    return password
+
+
 def initial_setup(settings, password, skip_user_creation):
 
     dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
@@ -46,7 +56,7 @@ def initial_setup(settings, password, skip_user_creation):
     schemas = [source["name"] for source in settings("sources")]
 
     if password is None and not skip_user_creation:
-        password = getpass.getpass("Password for %s: " % settings("data_warehouse", "owner"))
+        password = get_password(settings("data_warehouse", "owner"))
 
     with closing(etl.pg.connection(dsn_admin)) as conn:
         if not skip_user_creation:
@@ -89,7 +99,7 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     search_path = [source["name"] for source in settings("sources")]
 
     if password is None and not skip_user_creation:
-        password = getpass.getpass("Password for %s: " % new_user)
+        password = get_password(new_user)
 
     with closing(etl.pg.connection(dsn_admin)) as conn:
         with conn:
