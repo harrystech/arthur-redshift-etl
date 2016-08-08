@@ -72,8 +72,9 @@ def initial_setup(settings, password, skip_user_creation):
                 etl.pg.create_schema(conn, schema, etl_user)
                 etl.pg.grant_all_on_schema(conn, schema, etl_group)
                 etl.pg.grant_usage(conn, schema, user_group)
-            logging.info("Setting search path for %s to: %s", etl_user, schemas)
-            etl.pg.alter_search_path(conn, etl_user, schemas)
+            logging.info("Clearing search path for user '%s'", etl_user)
+            # Note that 'public' in the search path is ignored when 'public' does not exist.
+            etl.pg.alter_search_path(conn, etl_user, ['public'])
 
 
 def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip_user_creation):
@@ -86,8 +87,6 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     user_group = settings("data_warehouse", "groups", "users")
     etl_group = settings("data_warehouse", "groups", "etl")
     search_path = [source["name"] for source in settings("sources")]
-
-    # TODO Check whether the user already exists and has a schema. (Then bail out here in case of dry-run.)
 
     if password is None and not skip_user_creation:
         password = getpass.getpass("Password for %s: " % new_user)
@@ -105,7 +104,8 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
                 etl.pg.create_schema(conn, new_user, new_user)
                 etl.pg.grant_usage(conn, new_user, user_group)
                 etl.pg.grant_usage(conn, new_user, etl_group)
-                search_path[:0] = ["'$user'"]
+            # Always lead with the user's schema (even if it doesn't exist) to deal with schema updates gracefully.
+            search_path[:0] = ["'$user'"]
             logging.info("Setting search path to: %s", search_path)
             etl.pg.alter_search_path(conn, new_user, search_path)
 

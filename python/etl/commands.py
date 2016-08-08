@@ -258,7 +258,7 @@ class CreateUserCommand(SubCommand):
 
     def callback(self, args, settings):
         with etl.pg.log_error():
-            etl.dw.create_user(settings, args.user_name, args.password, args.etl_user,
+            etl.dw.create_user(settings, args.username, args.password, args.etl_user,
                                args.add_user_schema, args.skip_user_creation)
 
 

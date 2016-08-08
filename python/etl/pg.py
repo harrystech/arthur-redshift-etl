@@ -183,7 +183,7 @@ def alter_table_owner(cx, schema, table, owner):
 
 
 def alter_search_path(cx, user, schemas):
-    execute(cx, """ALTER USER {} SET SEARCH_PATH = {}""".format(user, ', '.join(schemas)))
+    execute(cx, """ALTER USER {} SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
 
 
 def set_search_path(cx, schemas):
