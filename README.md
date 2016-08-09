@@ -107,6 +107,16 @@ cat > venv/lib/python3.5/site-packages/_spark_python.pth <<EOF
 EOF
 ```
 
+You may need to change that command based on PySpark or Py4J versions, or if you use virtualenvwrapper.
+
+For example, with a virtualenv named `redshift_etl`:
+```shell
+cat > ~/.virtualenvs/redshift_etl/lib/python3.5/site-packages/_spark_python.pth <<EOF
+/usr/local/Cellar/apache-spark/2.0.0/libexec/python
+/usr/local/Cellar/apache-spark/2.0.0/libexec/python/lib/py4j-0.10.1-src.zip
+EOF
+```
+
 ## Configuring the ETL (and upstream sources)
 
 The best approach is probably to have another repo that contains the configuration file
