@@ -12,6 +12,7 @@ need the delta in seconds.
 
 import datetime
 import logging
+import os
 import uuid
 
 import etl
@@ -45,17 +46,14 @@ class Monitor:
     shared_trace_key = None
 
     def __init__(self: "Monitor", step: str, target: etl.TableName, **kwargs):
-
-        # XXX Think about race conditions?
-        if Monitor.shared_trace_key is None:
-            Monitor.shared_trace_key = uuid.uuid4().hex.upper()
-
         self._logger = logging.getLogger(__name__)
         self._step = step
         self._target = target
         self._payload = dict(**kwargs)
         self._payload['etl_id'] = Monitor.shared_trace_key
         self._payload['target'] = target.identifier
+        if 'ETL_ENVIRONMENT' in os.environ:
+            self._payload['environment'] = os.environ['ETL_ENVIRONMENT']
 
     def __enter__(self):
         self._logger.info("Starting %s step for '%s'", self._step, self._target.identifier)
@@ -74,15 +72,20 @@ class Monitor:
 
         if exc_type is None:
             self._logger.info("Finished %s step for '%s' (after %0.fs)", self._step, self._target.identifier, seconds)
-            # XXX Emit event here instead of logging it!
             self._payload['event'] = 'finish'
+            # XXX Emit event here instead of logging it!
             self._logger.debug("Monitor payload: %s", self._payload)
         else:
             self._logger.warning("Failed %s step for '%s' (after %0.fs)", self._step, self._target.identifier, seconds)
-            # XXX Emit event here instead of logging it!
             self._payload['event'] = 'fail'
             self._payload['errors'] = [{'code': str(type(exc_type)), 'message': "%s: %s" % (exc_type, exc_value)}]
+            # XXX Emit event here instead of logging it!
             self._logger.debug("Monitor payload: %s", self._payload)
+
+
+# Setup shared ETL id for all monitor events:
+if Monitor.shared_trace_key is None:
+    Monitor.shared_trace_key = uuid.uuid4().hex.upper()
 
 
 class Timer:
