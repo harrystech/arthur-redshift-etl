@@ -31,7 +31,6 @@ constraints, attributes, and encodings.
 from contextlib import closing
 from itertools import chain
 import logging
-import os.path
 
 import psycopg2
 
@@ -40,6 +39,7 @@ from etl import TableName
 import etl.commands
 import etl.config
 import etl.dump
+import etl.monitor
 import etl.pg
 import etl.s3
 import etl.schemas
@@ -397,33 +397,34 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
         for source_name in files_in_s3:
             for assoc_table_files in files_in_s3[source_name]:
                 table_name = assoc_table_files.target_table_name
-                design_file = assoc_table_files.design_file
+                with etl.monitor.Monitor('load', table_name):
+                    design_file = assoc_table_files.design_file
 
-                with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
-                    table_design = etl.schemas.load_table_design(content, table_name)
+                    with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
+                        table_design = etl.schemas.load_table_design(content, table_name)
 
-                creates = table_design["source_name"] if table_design["source_name"] in ("CTAS", "VIEW") else None
-                if creates is not None:
-                    with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
-                        query = content.read().decode()
+                    creates = table_design["source_name"] if table_design["source_name"] in ("CTAS", "VIEW") else None
+                    if creates is not None:
+                        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
+                            query = content.read().decode()
 
-                with conn:
-                    if creates == "VIEW":
-                        create_view(conn, table_design, table_name, table_owner, query,
-                                    drop_view=drop, dry_run=dry_run)
-                    elif creates == "CTAS":
-                        create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                        create_temp_table_as_and_copy(conn, table_name, table_design, query,
-                                                      add_explain_plan=add_explain_plan, dry_run=dry_run)
-                        analyze(conn, table_name, dry_run=dry_run)
-                        vacuumable.append(table_name)
-                    else:
-                        create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                        copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
-                                  dry_run=dry_run)
-                        analyze(conn, table_name, dry_run=dry_run)
-                        vacuumable.append(table_name)
-                    grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
+                    with conn:
+                        if creates == "VIEW":
+                            create_view(conn, table_design, table_name, table_owner, query,
+                                        drop_view=drop, dry_run=dry_run)
+                        elif creates == "CTAS":
+                            create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                            create_temp_table_as_and_copy(conn, table_name, table_design, query,
+                                                          add_explain_plan=add_explain_plan, dry_run=dry_run)
+                            analyze(conn, table_name, dry_run=dry_run)
+                            vacuumable.append(table_name)
+                        else:
+                            create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                            copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
+                                      dry_run=dry_run)
+                            analyze(conn, table_name, dry_run=dry_run)
+                            vacuumable.append(table_name)
+                        grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
     # Reconnect to run vacuum outside transaction block
     if not drop:
         with closing(etl.pg.connection(dw, autocommit=True)) as conn:

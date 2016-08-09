@@ -13,6 +13,7 @@ import simplejson as json
 
 import etl
 import etl.config
+import etl.monitor
 import etl.pg
 import etl.s3
 import etl.schemas
@@ -220,13 +221,11 @@ def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dr
     for assoc_table_files in tables_in_s3:
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
-        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)) as content:
-            table_design = etl.schemas.load_table_design(content, target_table_name)
-
-        logger.debug("Starting work on %s", source_table_name.identifier)
-        df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
-        write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
-
+        with etl.monitor.Monitor('dump', target_table_name):
+            with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)) as content:
+                table_design = etl.schemas.load_table_design(content, target_table_name)
+            df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
+            write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
         copied.add(target_table_name)
     logger.info("Done with %d table(s) from source '%s'", len(copied), source_name)
 
