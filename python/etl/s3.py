@@ -49,6 +49,7 @@ _resources_for_thread = threading.local()
 class BadSourceDefinition(etl.ETLException):
     pass
 
+
 def _get_bucket(name):
     """
     Return new Bucket object for a bucket that does exist (waits until it does)
@@ -161,7 +162,8 @@ def find_local_files(directory, schemas, pattern):
         for root, dirs, files in os.walk(os.path.normpath(directory)):
             if len(dirs) == 0:  # bottom level
                 for filename in sorted(files):
-                    yield os.path.join(root, filename)
+                    if not filename.endswith(('.swp', '~')):
+                        yield os.path.join(root, filename)
 
     return _find_files_from(list_local_files(), schemas, pattern)
 
