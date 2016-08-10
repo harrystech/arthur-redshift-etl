@@ -34,9 +34,13 @@ def croak(error, exit_code):
     When you have a large stack trace, it's easy to miss the trigger and
     so we call it out here again, on stderr.
     """
-    tb_all = "\n".join(traceback.format_exception_only(type(error), error))
-    tb_first = tb_all.split('\n')[0]
-    print("Bailing out: {}".format(tb_first), file=sys.stderr)
+    full_tb = "\n".join(traceback.format_exception_only(type(error), error))
+    header = full_tb.split('\n')[0]
+    if sys.stderr.isatty():
+        message = "Bailing out: \033[01;31m{}\033[0m".format(header)
+    else:
+        message = "Bailing out: {}".format(header)
+    print(message, file=sys.stderr)
     sys.exit(exit_code)
 
 
