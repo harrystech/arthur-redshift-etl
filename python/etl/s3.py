@@ -185,7 +185,7 @@ def _find_matching_files_from(iterable, schemas, pattern, return_extra_files=Fal
     file_names_re = re.compile(r"""(?:^schemas|/schemas|^data|/data)
                                    /(?P<source_name>\w+)
                                    /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/part-\d+(:?\.gz)?)
+                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/part-.*(:?\.gz)?)
                                       |.*(?P<suffix>_SUCCESS|_\$folder\$))$
                                """, re.VERBOSE)
 
