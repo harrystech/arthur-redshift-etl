@@ -10,6 +10,8 @@ import jsonschema
 import simplejson as json
 import yaml
 
+import etl.s3
+
 
 def configure_logging(log_level: str=None) -> None:
     """
@@ -23,46 +25,60 @@ def configure_logging(log_level: str=None) -> None:
     logging.getLogger(__name__).info("Starting log for '%s'", sys.argv[0])
 
 
-def load_env():
+def load_environ_file(filename: str) -> None:
     """
     Load additional environment variables from file.
 
     Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
     other lines are silently dropped.
     """
-    if os.path.exists("/var/tmp/config/credentials.sh"):
-        with open("/var/tmp/config/credentials.sh") as f:
-            for line in f:
-                tokens = [token.strip() for token in line.split('=', 1)]
-                if len(tokens) == 2 and not tokens[0].startswith('#'):
-                    name = tokens[0].replace("export", "").strip()
-                    value = tokens[1]
-                    os.environ[name] = value
+    logging.getLogger(__name__).info("Loading environment variables from '%s'", filename)
+    with open(filename) as f:
+        for line in f:
+            tokens = [token.strip() for token in line.split('=', 1)]
+            if len(tokens) == 2 and not tokens[0].startswith('#'):
+                name = tokens[0].replace("export", "").strip()
+                value = tokens[1]
+                os.environ[name] = value
 
 
-def load_settings(config_file: str, default_file: str="defaults.yaml"):
+def load_settings_file(filename: str, settings: dict) -> None:
     """
-    Load settings from defaults and config file.
+    Load new settings from config file or a directory of config files
+    and UPDATE settings (old settings merged with new).
+    """
+    logging.getLogger(__name__).info("Loading settings from '%s'", filename)
+    with open(filename) as f:
+        new_settings = yaml.safe_load(f)
+        for key in new_settings:
+            # Try to update only update-able settings
+            if key in settings and isinstance(settings[key], dict):
+                settings[key].update(new_settings[key])
+            else:
+                settings[key] = new_settings[key]
+
+
+def load_settings(config_files: list, default_file: str="defaults.yaml"):
+    """
+    Load settings (and environment) from defaults and config files.
     """
     settings = defaultdict(dict)
-    logger = logging.getLogger(__name__)
     default_file = pkg_resources.resource_filename(__name__, default_file)
-    for filename in (default_file, config_file):
-        with open(filename) as f:
-            logger.info("Loading configuration file '%s'", filename)
-            new_settings = yaml.safe_load(f)
-            for key in new_settings:
-                # Try to update only update-able settings
-                if key in settings and isinstance(settings[key], dict):
-                    settings[key].update(new_settings[key])
-                else:
-                    settings[key] = new_settings[key]
 
+    for name in [default_file] + config_files:
+        if os.path.isdir(name):
+            files = etl.s3.list_local_files(name)
+        else:
+            files = [name]
+        for filename in files:
+            if filename.endswith(".sh"):
+                load_environ_file(filename)
+            else:
+                load_settings_file(filename, settings)
     try:
         schema = load_json("settings.schema")
         jsonschema.validate(settings, schema)
     except Exception:
-        logger.error("Failed to validate settings")
         raise
 
     class Accessor:
