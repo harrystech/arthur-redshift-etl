@@ -3,21 +3,21 @@
 *.log.[0-9]
 *.out
 *.pyc
+*.RData
 
 # temp data
 /data/
 /schemas
 /tmp/
-*.RData
-python/dist
-python/build
 
 # virtual environment and local install
 /venv/
+/dist/
+/build/
 *.egg-info
 
 # In case you accidentally download your credentials here
-credentials.csv
+credentials.*
 
 # Mac stuff
 .DS_Store
