@@ -18,3 +18,5 @@ When loading data from upstream, cut off at midnight NY?
 For common failure patterns in table designs, provide hints beyond error messages.
 
 Add checks for partitions to have correct size after download (count rows while partitioning?)
+
+Use a local python nest to avoid pip having to download eggs.

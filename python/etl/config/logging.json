@@ -41,6 +41,12 @@
             "handlers": [ "console", "file" ],
             "level": "INFO",
             "propagate": 0
+        },
+        "py4j.java_gateway": {
+            "qualname": "py4j.java_gateway",
+            "handlers": [ "console", "file" ],
+            "level": "INFO",
+            "propagate": 0
         }
     }
 }

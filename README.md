@@ -100,7 +100,7 @@ The EMR releases 4.5 and later include python3 so there's no need to install Pyt
 The easiest way to add PySpark so that code completion and type checking works while working on ETL code
 might be to just add a pointer in the virtual environment. 
 
-On a Mac with a Homebrew installation of Spark, try this. Then:
+On a Mac with a Homebrew installation of Spark, try this:
 ```shell
 cat > venv/lib/python3.5/site-packages/_spark_python.pth <<EOF
 /usr/local/Cellar/apache-spark/1.6.1/libexec/python

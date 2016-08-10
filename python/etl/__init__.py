@@ -4,7 +4,6 @@ Utilities and classes to support the ETL in general
 
 from collections import namedtuple
 from fnmatch import fnmatch
-from typing import Iterable
 
 
 class ETLException(Exception):
@@ -184,7 +183,7 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         """
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
-    def match_field(self, lod: Iterable(dict), field: str) -> list:
+    def match_field(self, lod, field: str) -> list:
         """
         Match fields with this pattern while traversing list of dictionaries
         (and picking up the field from those dictionaries).

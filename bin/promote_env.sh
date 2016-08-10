@@ -2,7 +2,8 @@
 
 # Copy staging setup to production env
 
-CLUSTER_BUCKET="s3://${1?'Missing bucket name'}"
+CLUSTER_BUCKET="${1?'Missing bucket name'}"
+CLUSTER_ENVIRONMENT=staging
 
 ask_to_confirm () {
     while true; do

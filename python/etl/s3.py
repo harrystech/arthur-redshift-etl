@@ -34,7 +34,6 @@ import os
 import os.path
 import re
 import threading
-from typing import Iterable
 
 import boto3
 
@@ -83,7 +82,7 @@ def upload_to_s3(filename, bucket_name, prefix=None, object_key=None, dry_run=Fa
         bucket.upload_file(filename, object_key)
 
 
-def delete_in_s3(bucket_name: str, object_keys: Iterable(str), dry_run: bool=False):
+def delete_in_s3(bucket_name: str, object_keys, dry_run: bool=False):
     """
     Delete objects from bucket.
     """
@@ -149,6 +148,19 @@ def find_files_for_schemas(bucket_name, prefix, schemas, pattern):
                             schemas, pattern)
 
 
+def list_local_files(directory):
+    """
+    List all files in and anywhere below this directory.
+
+    Ignore swap files along the way.
+    """
+    logging.getLogger(__name__).info("Looking for files in '%s'", directory)
+    for root, dirs, files in os.walk(os.path.normpath(directory)):
+        for filename in sorted(files):
+            if not filename.endswith(('.swp', '~')):
+                yield os.path.join(root, filename)
+
+
 def find_local_files(directory, schemas, pattern):
     """
     Discover local design and data files starting from the given directory, organize by schema,
@@ -156,16 +168,7 @@ def find_local_files(directory, schemas, pattern):
 
     The directory should be the 'schemas' directory, probably.
     """
-    logging.getLogger(__name__).info("Looking for files in '%s'", directory)
-
-    def list_local_files():
-        for root, dirs, files in os.walk(os.path.normpath(directory)):
-            if len(dirs) == 0:  # bottom level
-                for filename in sorted(files):
-                    if not filename.endswith(('.swp', '~')):
-                        yield os.path.join(root, filename)
-
-    return _find_files_from(list_local_files(), schemas, pattern)
+    return _find_files_from(list_local_files(directory), schemas, pattern)
 
 
 def _find_matching_files_from(iterable, schemas, pattern, return_extra_files=False):
@@ -182,7 +185,7 @@ def _find_matching_files_from(iterable, schemas, pattern, return_extra_files=Fal
     file_names_re = re.compile(r"""(?:^schemas|/schemas|^data|/data)
                                    /(?P<source_name>\w+)
                                    /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/part-\d+(:?\.gz)?)
+                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/part-.*(:?\.gz)?)
                                       |.*(?P<suffix>_SUCCESS|_\$folder\$))$
                                """, re.VERBOSE)
 
