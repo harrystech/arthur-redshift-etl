@@ -41,8 +41,8 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     for FILE in config/*; do
         aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/config/"
     done
-    for FILE in python/requirements.txt \
-                python/dist/redshift-etl-0.6.5.tar.gz \
+    for FILE in requirements.txt \
+                dist/redshift-etl-0.6.5.tar.gz \
                 jars/commons-csv-1.4.jar \
                 jars/postgresql-9.4.1208.jar \
                 jars/RedshiftJDBC41-1.1.10.1010.jar \
