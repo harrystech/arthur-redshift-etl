@@ -47,6 +47,7 @@
             "additionalItems": false
         },
         "compression_encoding": {
+            "description": "Encoding types for columns in Redshift tables",
             "enum": [
                 "raw",
                 "bytedict",

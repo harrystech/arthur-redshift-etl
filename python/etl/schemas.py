@@ -333,23 +333,23 @@ def create_or_update_table_designs(source, table_design_files, type_maps, design
 
 
 def download_schemas(settings, table, table_design_dir, dry_run):
-    logger = logging.getLogger(__name__)
+    """
+    Download schemas from upstream source tables and compare against local design
+    files.
+    """
     selection = etl.TableNamePatterns.from_list(table)
-    sources = [dict(source) for source in settings("sources") if selection.match_schema(source["name"])]
-    schemas = [source["name"] for source in sources]
-    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    sources = selection.match_field(settings("sources"), "name")
+    schema_names = [source["name"] for source in sources]
+    local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
     for source in sources:
-        if "read_access" in source and source["read_access"] not in os.environ:
+        if source["read_access"] not in os.environ:
                 raise KeyError("Environment variable not set: %s" % source["read_access"])
 
-    for source, source_name in zip(sources, schemas):
-        if "read_access" not in source:
-            logger.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
-            continue
+    for source, schema_name in zip(sources, schema_names):
         table_design_files = {assoc_files.source_table_name: assoc_files.design_file
-                              for assoc_files in local_files.get(source_name, {})}
+                              for assoc_files in local_files.get(schema_name, {})}
         create_or_update_table_designs(source, table_design_files, settings("type_maps"),
                                        table_design_dir, selection, dry_run=dry_run)
 
@@ -362,17 +362,18 @@ def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=T
     """
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
-    sources = selection.match_field(settings("sources"), "name")
-    schemas = [source["name"] for source in sources]
+    combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
+    schemas = selection.match_field(combined_schemas, "name")
+    schema_names = [s["name"] for s in schemas]
 
-    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
     if not local_files:
         logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return
 
     bucket_name = settings("s3", "bucket_name")
     if force:
-        etl.s3.delete_files_in_bucket(bucket_name, prefix, schemas, selection, dry_run=dry_run)
+        etl.s3.delete_files_in_bucket(bucket_name, prefix, schema_names, selection, dry_run=dry_run)
 
     for source_name in local_files:
         for assoc_table_files in local_files[source_name]:
@@ -394,10 +395,11 @@ def validate_designs(settings, target, table_design_dir):
     """
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(target)
-    sources = selection.match_field(settings("sources"), "name")
-    schemas = [source["name"] for source in sources]
+    combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
+    schemas = selection.match_field(combined_schemas, "name")
+    schema_names = [source["name"] for source in schemas]
 
-    found = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    found = etl.s3.find_local_files(table_design_dir, schema_names, selection)
     if not found:
         logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return

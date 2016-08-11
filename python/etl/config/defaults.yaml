@@ -12,7 +12,9 @@
         "groups": {
             "etl": "etl_rw",
             "users": "analyst_ro"
-        }
+        },
+        # Schemas that are filled out based on CTAS or views and have no direct upstream source
+        "schemas": []
     },
     # Type information from source (PostgreSQL) to target (Redshift)
     "type_maps": {

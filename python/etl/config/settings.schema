@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "Settings",
-    "description": "Validation of ETL settings",
+    "description": "Validation of Data Warehouse and ETL settings",
     "definitions": {
         "identifier": {
             "type": "string",
@@ -23,9 +23,22 @@
                 },
                 "iam_role": {
                     "type": "string"
+                },
+                "schemas": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "$ref": "#/definitions/identifier" },
+                            "description": { "type": "string" }
+                        },
+                        "required": [ "name" ],
+                        "additionalProperties": false
+                    },
+                    "uniqueItems": true
                 }
             },
-            "required": [ "admin_access", "etl_access", "owner", "groups", "iam_role" ],
+            "required": [ "admin_access", "etl_access", "owner", "groups", "iam_role", "schemas" ],
             "additionalProperties": false
         },
         "s3": {
@@ -56,13 +69,8 @@
                         "uniqueItems": true
                     }
                 },
-                "required": [ "name" ],
-                "additionalProperties": false,
-                "dependencies": {
-                    "read_access": [ "include_tables" ],
-                    "include_tables": [ "read_access" ],
-                    "exclude_tables": [ "include_tables" ]
-                }
+                "required": [ "name", "include_tables", "read_access" ],
+                "additionalProperties": false
             },
             "minItems": 1,
             "uniqueItems": true

@@ -36,6 +36,7 @@ import re
 import threading
 
 import boto3
+import botocore.exceptions
 
 import etl.commands
 import etl.config
@@ -102,6 +103,26 @@ def delete_in_s3(bucket_name: str, object_keys, dry_run: bool=False):
             for error in result.get('Errors', {}):
                 logger.warning("Failed to delete 's3://%s/%s': %s %s", bucket_name, error['Key'],
                                error['Code'], error['Message'])
+
+
+def get_last_modified(bucket_name, object_key):
+    """
+    Return last_modified timestamp from the object.  Returns None if object does not exist.
+    """
+    logger = logging.getLogger(__name__)
+    bucket = _get_bucket(bucket_name)
+    try:
+        s3_object = bucket.Object(object_key)
+        timestamp = s3_object.last_modified
+        logger.debug("Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp)
+    except botocore.exceptions.ClientError as e:
+        error_code = int(e.response['Error']['Code'])
+        if error_code == 404:
+            logger.debug("Object 's3://%s/%s' does not exist", bucket_name, object_key)
+            timestamp = None
+        else:
+            raise
+    return timestamp
 
 
 def get_file_content(bucket_name, object_key):
@@ -301,11 +322,12 @@ def list_files(settings, prefix, table):
     """
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
-    sources = selection.match_field(settings("sources"), "name")
-    schemas = [source["name"] for source in sources]
+    combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
+    schemas = selection.match_field(combined_schemas, "name")
+    schema_names = [s["name"] for s in schemas]
 
     bucket_name = settings("s3", "bucket_name")
-    found = find_files_for_schemas(bucket_name, prefix, schemas, selection)
+    found = find_files_for_schemas(bucket_name, prefix, schema_names, selection)
     if not found:
         logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
@@ -313,11 +335,11 @@ def list_files(settings, prefix, table):
     for source_name in found:
         print("Source: {}".format(source_name))
         for info in found[source_name]:
-            if info.source_table_name.schema in ('CTAS', 'VIEW'):
-                print("    Table: {} ({})".format(info.target_table_name.table, info.source_table_name.schema))
+            if info.manifest_file is not None:
+                print("    Table: {} (with data: {})".format(info.target_table_name.table,
+                                                             info.source_table_name.identifier))
             else:
-                print("    Table: {} (from: {})".format(info.target_table_name.table,
-                                                        info.source_table_name.identifier))
+                print("    Table: {} (with query)".format(info.target_table_name.table))
             files = [("Design", info.design_file)]
             if info.sql_file is not None:
                 files.append(("SQL", info.sql_file))
