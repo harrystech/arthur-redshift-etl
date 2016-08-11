@@ -37,4 +37,4 @@ mkdir venv
 virtualenv --python=python3 venv
 source venv/bin/activate
 pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
-pip3 install --upgrade ./jars/redshift-etl-0.6.4.tar.gz --disable-pip-version-check
+pip3 install --upgrade ./jars/redshift-etl-0.6.5.tar.gz --disable-pip-version-check
