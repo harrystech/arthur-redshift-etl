@@ -64,6 +64,8 @@ _Hint_: There is a download script in `bin/download_jars.sh` to pull the version
 Our ETL code is using [Python3](https://docs.python.org/3/) so you may have to install that first.
 On a Mac, simply use `brew install python3` for an easy [Homebrew](http://brew.sh/) installation.
 
+We strongly suggest that you work within a virtual environment, so do `brew install virtualenv` or `pip install virtualenv`.
+
 In order to run the Python code locally, you'll need to create a virtual environment with these additional packages:
 * [Psycopg2](http://initd.org/psycopg/docs/) to connect to PostgreSQL and Redshift easily
 * [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
@@ -71,7 +73,8 @@ In order to run the Python code locally, you'll need to create a virtual environ
 * [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
 * [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
 
-These are listed in the `python/requirements.txt` file that is used during a bootstrap action in the EMR cluster.
+These are listed in the `requirements.txt` file that is used when building out the virtual
+environment (e\.g\. during a bootstrap action in the EMR cluster).
 
 **Note** this assumes you are in the *top-level* directrory of the Redshift ETL.
 
@@ -80,8 +83,8 @@ mkdir venv
 virtualenv --python=python3 venv
 source venv/bin/activate
 pip3 install --upgrade pip
-pip3 install -r python/requirements.txt
-(cd python && python3 setup.py develop)
+pip3 install -r requirements.txt
+python3 setup.py develop
 ```
 
 _Hint_: Don't worry if you get assertion violations while building a wheel for PyYAML.
@@ -98,19 +101,11 @@ The EMR releases 4.5 and later include python3 so there's no need to install Pyt
 #### Adding PySpark to your IDE
 
 The easiest way to add PySpark so that code completion and type checking works while working on ETL code
-might be to just add a pointer in the virtual environment. 
+might be to just add a pointer in the virtual environment.
 
-On a Mac with a Homebrew installation of Spark, try this:
-```shell
-cat > venv/lib/python3.5/site-packages/_spark_python.pth <<EOF
-/usr/local/Cellar/apache-spark/1.6.1/libexec/python
-/usr/local/Cellar/apache-spark/1.6.1/libexec/python/lib/py4j-0.9-src.zip
-EOF
-```
+First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set. 
 
-You may need to change that command based on PySpark or Py4J versions, or if you use virtualenvwrapper. First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set. 
-
-Then, with Spark 2.0.0 for example:
+Then, with Spark 2.0.0, try this for example:
 ```shell
 cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
 /usr/local/Cellar/apache-spark/2.0.0/libexec/python
