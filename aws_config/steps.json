@@ -1,5 +1,6 @@
 [
     {
+        "Name": "Redshift ETL",
         "Args": [
             "spark-submit",
             "--jars",
@@ -7,12 +8,13 @@
             "/var/tmp/venv/bin/arthur.py",
             "--config",
             "/var/tmp/config/",
-            "etl"
+            "etl",
+            "--prefix",
+            "#{etl_environment}"
         ],
+        "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",
         "ActionOnFailure": "CANCEL_AND_WAIT",
-        "Jar": "command-runner.jar",
-        "Properties": "",
-        "Name": "Redshift ETL"
+        "Properties": ""
     }
 ]

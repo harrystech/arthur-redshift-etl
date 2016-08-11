@@ -58,7 +58,7 @@ SSH_KEY_PAIR_FILE="$HOME/.ssh/emr-spark-cluster.pem"
 CLUSTER_LOGS="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($CLUSTER_ENVIRONMENT) `date +'%Y-%m-%d %H:%M'`"
 CLUSTER_RELEASE_LABEL="emr-5.0.0"
-CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"}]'
+CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
 CLUSTER_REGION="us-east-1"
 
 if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
@@ -91,7 +91,7 @@ fi
 
 # TODO Find a better way to parameterize cluster, check out cloud formation?
 
-for JSON_FILE in application_env.json bootstrap_actions.json; do
+for JSON_FILE in application_env.json bootstrap_actions.json steps.json; do
     sed -e "s,#{bucket_name},$CLUSTER_BUCKET,g" \
         -e "s,#{etl_environment},$CLUSTER_ENVIRONMENT,g" \
         "$CLUSTER_CONFIG_SOURCE/$JSON_FILE" > "$CLUSTER_CONFIG_DIR/$JSON_FILE"
@@ -118,12 +118,17 @@ aws emr create-cluster \
         | tee "$CLUSTER_ID_FILE"
 CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
 
+# Wait for cluster to initialize
+sleep 10
+
 if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
-    sleep 10
     aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
     say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
     aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
 else
+    aws emr add-steps \
+        --cluster-id "$CLUSTER_ID" \
+        --steps "file://$CLUSTER_CONFIG_DIR/steps.json"
     echo "If you need to proxy into the cluster, use:"
     echo aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
 fi
