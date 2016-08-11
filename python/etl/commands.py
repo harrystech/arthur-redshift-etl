@@ -55,8 +55,6 @@ def run_arg_as_command(my_name="arthur.py"):
         with etl.monitor.Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
-                # XXX Add to command line args!
-                etl.config.load_env()
                 args.func(args, settings)
             except etl.ETLException as exc:
                 logger.exception("Something bad happened in the ETL:")
@@ -89,7 +87,7 @@ def build_full_parser(prog_name):
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
 
     # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.
-    subparsers = parser.add_subparsers(help="Specify one of these sub-commands (which can all provide more help)",
+    subparsers = parser.add_subparsers(help="specify one of these sub-commands (which can all provide more help)",
                                        title="available sub-commands")
 
     for klass in [InitialSetupCommand, CreateUserCommand,
@@ -107,7 +105,8 @@ def build_basic_parser(prog_name, description):
     """
     Build basic parser that knows about the configuration setting.
 
-    The `--config` option is central and can be easily avoided using the env. var. so is always here.
+    The `--config` option is central and can be easily avoided using the environment
+    variable so is always here (meaning between 'arthur.py' and the sub-command).
     """
     parser = argparse.ArgumentParser(prog=prog_name, description=description)
 
@@ -115,12 +114,12 @@ def build_basic_parser(prog_name, description):
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
     if default_config is None:
         parser.add_argument("-c", "--config",
-                            help="Set path to configuration file (required if DATA_WAREHOUSE_CONFIG is not set)",
-                            required=True)
+                            help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
+                            action="append", required=True)
     else:
         parser.add_argument("-c", "--config",
-                            help="Change path to configuration file (using DATA_WAREHOUSE_CONFIG=%(default)s)",
-                            default=default_config)
+                            help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
+                            action="append", default=[default_config])
 
     # Set defaults so that we can avoid having to test the Namespace object.
     parser.set_defaults(log_level=None)
@@ -141,9 +140,9 @@ def add_standard_arguments(parser, options):
 
     # Choice between verbose and silent simply affects the log level.
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-v", "--verbose", help="Increase verbosity",
+    group.add_argument("-v", "--verbose", help="increase verbosity",
                        action="store_const", const="DEBUG", dest="log_level")
-    group.add_argument("-s", "--silent", help="Decrease verbosity",
+    group.add_argument("-s", "--silent", help="decrease verbosity",
                        action="store_const", const="WARNING", dest="log_level")
 
     example_password = uuid.uuid4().hex.title()
@@ -153,19 +152,19 @@ def add_standard_arguments(parser, options):
     if "prefix" in options:
         prefix = parser.add_mutually_exclusive_group()
         prefix.add_argument("-p", "--prefix", default=getpass.getuser(),
-                            help="Select prefix in S3 bucket (default is user name: '%(default)s')")
+                            help="select prefix in S3 bucket (default is user name: '%(default)s')")
         prefix.add_argument("-e", "--prefix-with-date", dest="prefix", metavar="ENV", action=AppendDateAction,
-                            help="Set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
+                            help="set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
     if "table-design-dir" in options:
         parser.add_argument("-t", "--table-design-dir",
-                            help="Set path to directory with table design files (default: '%(default)s')",
+                            help="set path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
     if "drop" in options:
         parser.add_argument("-d", "--drop",
-                            help="First drop table or view to force update of definition", default=False,
+                            help="first drop table or view to force update of definition", default=False,
                             action="store_true")
     if "explain" in options:
-        parser.add_argument("-x", "--add-explain-plan", help="Add explain plan to log", action="store_true")
+        parser.add_argument("-x", "--add-explain-plan", help="add explain plan to log", action="store_true")
     if "target" in options:
         parser.add_argument("target", help="glob pattern or identifier to select target(s)", nargs='*')
     if "username" in options:
@@ -250,7 +249,7 @@ class InitialSetupCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["password"])
-        parser.add_argument("-k", "--skip-user-creation", help="Skip user and groups; only create schemas",
+        parser.add_argument("-k", "--skip-user-creation", help="skip user and groups; only create schemas",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
@@ -268,12 +267,12 @@ class CreateUserCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["username", "password"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-e", "--etl-user", help="Add user also to ETL group", action="store_true")
+        group.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
         group.add_argument("-a", "--add-user-schema",
-                           help="Add new schema, writable for the user",
+                           help="add new schema, writable for the user",
                            action="store_true")
         group.add_argument("-k", "--skip-user-creation",
-                           help="Skip new user; only change search path of existing user",
+                           help="skip new user; only change search path of existing user",
                            default=False, action="store_true")
 
     def callback(self, args, settings):
