@@ -376,6 +376,7 @@ class ExtractLoadTransformCommand(SparkSubCommand):
 
     def callback_within_spark(self, args, settings):
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
+        # XXX Check whether dump had found any tables
         etl.load.load_or_update_redshift(settings, args.target, args.prefix,
                                          add_explain_plan=False, drop=args.force, dry_run=args.dry_run)
 

@@ -58,7 +58,7 @@ SSH_KEY_PAIR_FILE="$HOME/.ssh/emr-spark-cluster.pem"
 CLUSTER_LOGS="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($CLUSTER_ENVIRONMENT) `date +'%Y-%m-%d %H:%M'`"
 CLUSTER_RELEASE_LABEL="emr-5.0.0"
-CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"}]'
+CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
 CLUSTER_REGION="us-east-1"
 
 if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
@@ -91,7 +91,7 @@ fi
 
 # TODO Find a better way to parameterize cluster, check out cloud formation?
 
-for JSON_FILE in application_env.json bootstrap_actions.json; do
+for JSON_FILE in application_env.json bootstrap_actions.json steps.json; do
     sed -e "s,#{bucket_name},$CLUSTER_BUCKET,g" \
         -e "s,#{etl_environment},$CLUSTER_ENVIRONMENT,g" \
         "$CLUSTER_CONFIG_SOURCE/$JSON_FILE" > "$CLUSTER_CONFIG_DIR/$JSON_FILE"
@@ -113,6 +113,7 @@ aws emr create-cluster \
         --configurations "file://$CLUSTER_CONFIG_DIR/application_env.json" \
         --ec2-attributes "file://$CLUSTER_CONFIG_SOURCE/ec2_attributes.json" \
         --bootstrap-actions "file://$CLUSTER_CONFIG_DIR/bootstrap_actions.json" \
+        --steps "file://$CLUSTER_CONFIG_DIR/steps.json" \
         $CLUSTER_TERMINATE \
         $CLUSTER_TERMINATION_PROTECTION \
         | tee "$CLUSTER_ID_FILE"

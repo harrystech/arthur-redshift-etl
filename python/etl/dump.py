@@ -264,6 +264,7 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
     The manifest file will be created in the folder ABOVE the CSV files.
     """
     logger = logging.getLogger(__name__)
+    # XXX Check for _SUCCESS file?
     csv_files = etl.s3.list_files_in_folder(bucket_name, csv_path + "/part-")
     if len(csv_files) == 0:
         raise MissingCsvFilesException("Found no CSV files")
