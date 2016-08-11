@@ -113,18 +113,22 @@ aws emr create-cluster \
         --configurations "file://$CLUSTER_CONFIG_DIR/application_env.json" \
         --ec2-attributes "file://$CLUSTER_CONFIG_SOURCE/ec2_attributes.json" \
         --bootstrap-actions "file://$CLUSTER_CONFIG_DIR/bootstrap_actions.json" \
-        --steps "file://$CLUSTER_CONFIG_DIR/steps.json" \
         $CLUSTER_TERMINATE \
         $CLUSTER_TERMINATION_PROTECTION \
         | tee "$CLUSTER_ID_FILE"
 CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
 
+# Wait for cluster to initialize
+sleep 10
+
 if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
-    sleep 10
     aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
     say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
     aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
 else
+    aws emr add-steps \
+        --cluster-id "$CLUSTER_ID" \
+        --steps "file://$CLUSTER_CONFIG_DIR/steps.json"
     echo "If you need to proxy into the cluster, use:"
     echo aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
 fi
