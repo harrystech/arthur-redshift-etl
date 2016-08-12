@@ -49,6 +49,10 @@ class MissingQueryException(etl.ETLException):
     pass
 
 
+class MissingManifestException(etl.ETLException):
+    pass
+
+
 def format_column_list(columns):
     """
     Return string with comma-separated, delimited column names
@@ -404,7 +408,10 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
                         table_design = etl.schemas.load_table_design(content, table_name)
 
                     creates = table_design["source_name"] if table_design["source_name"] in ("CTAS", "VIEW") else None
-                    if creates is not None:
+                    if not creates:
+                        if assoc_table_files.manifest_file is None:
+                            raise MissingManifestException("Missing manifest file")
+                    else:
                         with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
                             query = content.read().decode()
 
