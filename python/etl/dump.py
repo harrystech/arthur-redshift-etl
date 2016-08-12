@@ -264,7 +264,11 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
     The manifest file will be created in the folder ABOVE the CSV files.
     """
     logger = logging.getLogger(__name__)
-    # XXX Check for _SUCCESS file?
+
+    last_success = etl.s3.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
+    if last_success is None:
+        raise MissingCsvFilesException("No valid CSV files (_SUCCESS is missing)")
+
     csv_files = etl.s3.list_files_in_folder(bucket_name, csv_path + "/part-")
     if len(csv_files) == 0:
         raise MissingCsvFilesException("Found no CSV files")
@@ -318,26 +322,21 @@ def dump_to_s3(settings, table, prefix, dry_run=False):
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
-    schemas = [source["name"] for source in sources]
+    schema_names = [source["name"] for source in sources]
 
     bucket_name = settings("s3", "bucket_name")
-    tables_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schemas, selection)
-    if not tables_in_s3:
-        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
-        return
+    tables_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)
+    for schema_name in schema_names:
+        if schema_name not in tables_in_s3:
+            logger.warning("No information found for source '%s' in s3://%s/%s", schema_name, bucket_name, prefix)
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
-    for source, source_name in zip(sources, schemas):
-        if "read_access" in source:
-            if source["read_access"] not in os.environ:
-                raise KeyError("Environment variable to access '%s' not set: %s" % (source_name, source["read_access"]))
+    for source, schema_name in zip(sources, schema_names):
+        if source["read_access"] not in os.environ:
+            raise KeyError("Environment variable to access '%s' not set: %s" % (schema_name, source["read_access"]))
 
     sql_context = create_sql_context()
-    for source, source_name in zip(sources, schemas):
-        if "read_access" not in source:
-            logger.info("Skipping empty source '%s' (no environment variable to use for connection)", source_name)
-        elif source_name not in tables_in_s3:
-            logger.warning("No information found for source '%s' in s3://%s/%s", source_name, bucket_name, prefix)
-        else:
+    for source, schema_name in zip(sources, schema_names):
+        if schema_name in tables_in_s3:
             # TODO Need to parallelize across sources
-            dump_source_to_s3(sql_context, source, tables_in_s3[source_name], bucket_name, prefix, dry_run=dry_run)
+            dump_source_to_s3(sql_context, source, tables_in_s3[schema_name], bucket_name, prefix, dry_run=dry_run)

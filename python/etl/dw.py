@@ -53,7 +53,7 @@ def initial_setup(settings, password, skip_user_creation):
     etl_user = settings("data_warehouse", "owner")
     etl_group = settings("data_warehouse", "groups", "etl")
     user_group = settings("data_warehouse", "groups", "users")
-    schemas = [source["name"] for source in settings("sources")]
+    schemas = [source["name"] for source in settings("sources") + settings("data_warehouse", "schemas")]
 
     if password is None and not skip_user_creation:
         password = get_password(settings("data_warehouse", "owner"))
@@ -96,7 +96,7 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
     user_group = settings("data_warehouse", "groups", "users")
     etl_group = settings("data_warehouse", "groups", "etl")
-    search_path = [source["name"] for source in settings("sources")]
+    schemas = [source["name"] for source in settings("sources") + settings("data_warehouse", "schemas")]
 
     if password is None and not skip_user_creation:
         password = get_password(new_user)
@@ -115,7 +115,7 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
                 etl.pg.grant_usage(conn, new_user, user_group)
                 etl.pg.grant_usage(conn, new_user, etl_group)
             # Always lead with the user's schema (even if it doesn't exist) to deal with schema updates gracefully.
-            search_path[:0] = ["'$user'"]
+            search_path = ["'$user'"] + list(reversed(schemas))
             logging.info("Setting search path to: %s", search_path)
             etl.pg.alter_search_path(conn, new_user, search_path)
 

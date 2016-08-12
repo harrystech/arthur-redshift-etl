@@ -387,11 +387,12 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     user_group = settings("data_warehouse", "groups", "users")
 
     selection = etl.TableNamePatterns.from_list(target)
-    sources = selection.match_field(settings("sources"), "name")
-    schemas = [source["name"] for source in sources]
+    combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
+    schemas = selection.match_field(combined_schemas, "name")
+    schema_names = [source["name"] for source in schemas]
 
     bucket_name = settings("s3", "bucket_name")
-    files_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schemas, selection)
+    files_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)
     if not files_in_s3:
         logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
@@ -442,15 +443,18 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
 def test_queries(settings, target, table_design_dir):
     """
     Test queries by running EXPLAIN with the query.
+
+    This will only test queries for schemas defined for the warehouse and
+    not for any sources (which should be loaded using CSV files).
     """
     logger = logging.getLogger(__name__)
     dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
 
     selection = etl.TableNamePatterns.from_list(target)
-    sources = selection.match_field(settings("sources"), "name")
-    schemas = [source["name"] for source in sources]
+    schemas = selection.match_field(settings("data_warehouse", "schemas"), "name")
+    schema_names = [s["name"] for s in schemas]
 
-    local_files = etl.s3.find_local_files(table_design_dir, schemas, selection)
+    local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
     if not local_files:
         logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return

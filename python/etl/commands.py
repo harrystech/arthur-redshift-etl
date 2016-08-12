@@ -15,6 +15,7 @@ import sys
 import traceback
 
 import pkg_resources
+import simplejson as json
 
 import etl
 import etl.config
@@ -94,7 +95,7 @@ def build_full_parser(prog_name):
                   DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
                   LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
                   ValidateDesignsCommand, ListFilesCommand,
-                  PingCommand, ExplainQueryCommand]:
+                  PingCommand, ExplainQueryCommand, ShowSettingsCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -226,6 +227,17 @@ class SparkSubCommand(SubCommand):
 
     def callback_within_spark(self, args, settings):
         raise NotImplementedError("Instance of %s has no proper callback for Spark context" % self.__class__.__name__)
+
+
+class ShowSettingsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("show",
+                         "Show settings",
+                         "Show data warehouse and ETL settings after loading all config files")
+
+    def callback(self, args, settings):
+        print(json.dumps(settings(), indent="    ", sort_keys=True))
 
 
 class PingCommand(SubCommand):
@@ -376,7 +388,7 @@ class ExtractLoadTransformCommand(SparkSubCommand):
 
     def callback_within_spark(self, args, settings):
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
-        # XXX Check whether dump had found any tables
+        # TODO Check whether dump had found any tables (because then load is a no-op)
         etl.load.load_or_update_redshift(settings, args.target, args.prefix,
                                          add_explain_plan=False, drop=args.force, dry_run=args.dry_run)
 

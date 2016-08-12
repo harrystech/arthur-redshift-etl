@@ -43,7 +43,7 @@ to be able to connect to PostgreSQL databases and write CSV files for a Datafram
 | [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver | 9.4 | [postgresql-9.4.1208.jar](https://jdbc.postgresql.org/download/postgresql-9.4.1208.jar) |
 | [Spark-CSV package](https://spark-packages.org/) | 1.4 | [spark-csv_2.10-1.4.0.jar](http://repo1.maven.org/maven2/com/databricks/spark-csv_2.10/1.4.0/spark-csv_2.10-1.4.0.jar) |
 | [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) | 1.4 | [commons-csv-1.4.jar](http://central.maven.org/maven2/org/apache/commons/commons-csv/1.4/commons-csv-1.4.jar) |
-[ [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.1.10 | [RedshiftJDBC41-1.1.10.1010.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.1.10.1010.jar) |
+| [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.1.10 | [RedshiftJDBC41-1.1.10.1010.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.1.10.1010.jar) |
 
 Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to push files into S3:
 
