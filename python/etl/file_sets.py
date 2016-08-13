@@ -122,6 +122,24 @@ class TableFileSet:
         self._data_files.append(filename)
 
 
+def find_files(scheme, netloc, path, schemas, selector, empty_is_ok=False, orphans=False):
+    if scheme == "s3":
+        file_sets = find_files_for_schemas(netloc, path, schemas, selector)
+        if not file_sets:
+            raise FileNotFoundError(
+                "Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector))
+    else:
+        if os.path.exists(path):
+            file_sets = find_local_files_for_schemas(path, schemas, selector, orphans=orphans)
+            if not file_sets and not empty_is_ok:
+                raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
+        elif empty_is_ok:
+            file_sets = []
+        else:
+            raise FileNotFoundError("Failed to find directory: '%s'" % path)
+    return file_sets
+
+
 def _get_bucket(name):
     """
     Return new Bucket object for a bucket that does exist (waits until it does)
@@ -282,7 +300,7 @@ def find_files_for_schemas(bucket_name, prefix, schemas, pattern):
 
     Only files in 'data' or 'schemas' sub-folders are examined (so this ignores 'config' or 'jars').
     """
-    schema_names = [schema["name"] for schema in schemas]
+    schema_names = [schema.name for schema in schemas]
     files = list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas'))
     return _find_files_from(files, schema_names, pattern)
 
@@ -294,7 +312,7 @@ def find_local_files_for_schemas(directory, schemas, pattern, orphans=False):
 
     The directory should be the './schemas' directory, probably.
     """
-    schema_names = [schema["name"] for schema in schemas]
+    schema_names = [schema.name for schema in schemas]
     files = list_local_files(directory)
     return _find_files_from(files, schema_names, pattern, orphans=orphans)
 
@@ -382,7 +400,8 @@ def _find_files_from(iterable, schema_names, pattern, orphans=False):
                 targets[target_table_name] = orphan_fileset
             else:
                 logger.warning("Found files without corresponding table design: %s",
-                               ", ".join("'{}'".format(filename) for filename, values in additional_files[target_table_name]))
+                               ", ".join("'{}'".format(filename)
+                                         for filename, values in additional_files[target_table_name]))
     # Always return files sorted by sources (in original order) and target name
     schemas_order = {name: order for order, name in enumerate(schema_names)}
     file_sets = sorted(targets.values(), key=lambda fs: (schemas_order[fs.source_name], fs.source_path_name))
@@ -439,18 +458,18 @@ def approx_pretty_size(total_bytes):
     return "{:d}{}".format(div, unit)
 
 
-def list_files(file_sets, bucket_name=None, long_format=False):
+def list_files(file_sets, bucket_name, long_format=False):
     """
     List files in the given S3 bucket (or from current directory).
 
     With the long format, shows content length and tallies up the total size in bytes.
     """
-    if bucket_name:
-        scheme_netloc = "s3://{}/".format(bucket_name)
-        stat_func = partial(object_stat, bucket_name)
-    else:
+    if bucket_name == "localhost":
         scheme_netloc = ""  # meaning we ignore the beauty of file://localhost/...
         stat_func = partial(local_file_stat)
+    else:
+        scheme_netloc = "s3://{}/".format(bucket_name)
+        stat_func = partial(object_stat, bucket_name)
     total_length = 0
     for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
         print("Schema: '{}'".format(schema_name))

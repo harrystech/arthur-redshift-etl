@@ -3,11 +3,11 @@ from setuptools import setup
 
 setup(
     name="redshift-etl",
-    version="0.9.0",
+    version="0.10.0",
     author="Harry's Data Engineering and Contributors",
     description="ETL code to ferry data from PostgreSQL databases to Redshift cluster",
     license="MIT",
-    keywords="redshift etl",
+    keywords="redshift postgresql etl extract transform load",
     url="https://github.com/harrystech/harrys-redshift-etl",
     package_dir={"": "python"},
     packages=["etl", "etl.config"],

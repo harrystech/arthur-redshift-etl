@@ -13,6 +13,74 @@ import yaml
 from etl import package_version
 
 
+class DataWarehouseUser:
+    def __init__(self, user_info):
+        self.name = user_info["name"]
+        self.group = user_info["group"]
+        self.schema = user_info.get("schema")
+
+
+class DataWarehouseSchema:
+    # Although there is a (logical) distinction between "sources" and "schemas" in the settings file
+    # those are really all the same ...
+    def __init__(self, schema_info, etl_group, etl_access):
+        self.name = schema_info["name"]
+        self.description = schema_info.get("description")
+        self.groups = [etl_group] + schema_info.get("groups", [])
+        self.is_source_schema = "read_access" in schema_info
+        self._dsn_env_var = schema_info.get("read_access", etl_access)
+        self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
+        self.exclude_tables = schema_info.get("exclude_tables", [])
+
+    @property
+    def dsn(self):
+        return env_value(self._dsn_env_var)
+
+    def validate_access(self):
+        # FIXME need to start checking env vars before running anything heavy
+        if self._dsn_env_var is not None and self._dsn_env_var not in os.environ:
+            raise KeyError("Environment variable to access '{0.name}' not set: {0._read_access}".format(self))
+
+
+class DataWarehouseConfig:
+    """
+    Pretty face to the object from the settings files.
+    """
+    def __init__(self, settings):
+        dw_settings = settings["data_warehouse"]
+        sources_settings = settings["sources"]
+        # Environment variables with DSN
+        self._admin_access = dw_settings["admin_access"]
+        self._etl_access = dw_settings["etl_access"]
+        # Schemas (either with sources or transformations)
+        root = DataWarehouseUser(dw_settings["owner"])
+        self.schemas = [DataWarehouseSchema(info, root.group, self._etl_access)
+                        for info in dw_settings["schemas"] + sources_settings]
+        # Users and groups
+        other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
+        other_groups = {user.group for user in other_users} | {group for schema in self.schemas for group in schema.groups}
+        self.users = [root] + other_users
+        self.groups = [root.group] + sorted(other_groups)
+        self.default_group = [info["group"] for info in dw_settings["users"] if info["name"] == "default"]
+        # Data lake backing up our data warehouse and access from COPY command
+        self.bucket_name = settings["s3"]["bucket_name"]
+        self.iam_role = dw_settings["iam_role"]
+        # For creating table design files automatically
+        self.type_maps = settings["type_maps"]
+
+    @property
+    def owner(self):
+        return self.users[0].name
+
+    @property
+    def dsn_admin(self):
+        return env_value(self._admin_access)
+
+    @property
+    def dsn_etl(self):
+        return env_value(self._etl_access)
+
+
 def configure_logging(full_format: bool=False, log_level: str=None,) -> None:
     """
     Setup logging to go to console and application log file
@@ -77,7 +145,7 @@ def read_release_file(filename: str) -> None:
     logger.info("Release information: %s", ', '.join(lines))
 
 
-def load_settings(config_files: list, default_file: str="defaults.yaml"):
+def load_settings(config_files: list, default_file: str="default_settings.yaml"):
     """
     Load settings (and environment) from defaults and config files.
 
@@ -111,18 +179,7 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
 
     schema = load_json("settings.schema")
     jsonschema.validate(settings, schema)
-
-    class Accessor:
-        def __init__(self, data):
-            self._data = data
-
-        def __call__(self, *argv):
-            value = self._data
-            for arg in argv:
-                value = value[arg]
-            return value
-
-    return Accessor(settings)
+    return settings
 
 
 def env_value(name: str) -> str:

@@ -82,7 +82,7 @@ def find_files_for_sources(bucket_name, prefix, sources, selector):
     """
     logger = logging.getLogger(__name__)
 
-    schema_names = [source["name"] for source in sources]
+    schema_names = [source.name for source in sources]
     tables_in_s3 = etl.file_sets.find_files_for_schemas(bucket_name, prefix, schema_names, selector)
 
     useful_sources = OrderedDict()
@@ -92,18 +92,6 @@ def find_files_for_sources(bucket_name, prefix, sources, selector):
         else:
             logger.warning("No matches found in 's3://%s/%s/schemas/%s/'", bucket_name, prefix, schema_name)
     return useful_sources, tables_in_s3
-
-
-def validate_access(sources):
-    """
-    Check that all env vars are set to access (selected) upstream data-bases.
-    Raises exception if something is missing.
-
-    It's annoying to have this fail for the last source without upfront warning.
-    """
-    for source in sources:
-        if source["read_access"] not in os.environ:
-            raise KeyError("Environment variable to access '{name}' not set: {read_access}".format(**source))
 
 
 def suggest_best_partition_number(table_size):
@@ -259,13 +247,13 @@ def read_table_as_dataframe(sql_context, source, source_table_name, table_design
     Read dataframe (with partitions) by contacting upstream JDBC-reachable source.
     """
     logger = logging.getLogger(__name__)
-    jdbc_url, dsn_properties = etl.pg.extract_dsn(source["dsn"])
+    jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
 
     selected_columns = assemble_selected_columns(table_design)
     select_statement = """(SELECT {} FROM {}) AS t""".format(", ".join(selected_columns), source_table_name)
     logger.debug("Table query: SELECT * FROM %s", select_statement)
 
-    predicates = determine_partitioning(source_table_name, table_design, source["dsn"])
+    predicates = determine_partitioning(source_table_name, table_design, source.dsn)
     if predicates:
         df = sql_context.read.jdbc(url=jdbc_url,
                                    properties=dsn_properties,
@@ -376,7 +364,7 @@ def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_
                 write_manifest_file(bucket_name, prefix, file_set.source_path_name, manifest_filename,
                                     dry_run=dry_run)
             copied.add(target_table_name)
-    logger.info("Finished with %d table(s) from source '%s' (%s)", len(copied), source["name"], timer)
+    logger.info("Finished with %d table(s) from source '%s' (%s)", len(copied), source.name, timer)
 
 
 def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False):
@@ -384,7 +372,8 @@ def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False
     Dump data from multiple upstream sources to S3 with Spark Dataframes
     """
     logger = logging.getLogger(__name__)
-    source_lookup = {source["name"]: source for source in sources if "dsn" in source}
+    # FIXME this is shared between spark and sqoop ... move to callback of dump command
+    source_lookup = {source.name: source for source in sources if source.is_source_schema}
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
@@ -536,8 +525,7 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
     Dump all (selected) tables from a single upstream source.  Return list of tables for which dump failed.
     """
     logger = logging.getLogger(__name__)
-    source_name = source["name"]
-    jdbc_url, dsn_properties = etl.pg.extract_dsn(source["dsn"])
+    jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
 
     dumped = 0
     failed = []
@@ -552,12 +540,12 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
                 # FIXME The monitor should contain the number of rows that were dumped.
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
                                          options=["with-sqoop"],
-                                         source={'name': source_name,
+                                         source={'name': source.name,
                                                  'schema': source_table_name.schema,
                                                  'table': source_table_name.table},
                                          destination={'bucket_name': bucket_name,
                                                       'object_key': manifest_filename}):
-                    dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, file_set,
+                    dump_table_with_sqoop(jdbc_url, dsn_properties, source.name, file_set,
                                           bucket_name, prefix, max_partitions, dry_run=dry_run)
             except DataDumpError:
                 if keep_going:
@@ -569,9 +557,9 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
                 dumped += 1
     if failed:
         logger.warning("Finished with %d table(s) from source '%s', %d failed (%s)",
-                       dumped, source_name, len(failed), timer)
+                       dumped, source.name, len(failed), timer)
     else:
-        logger.info("Finished with %d table(s) from source '%s' (%s)", dumped, source_name, timer)
+        logger.info("Finished with %d table(s) from source '%s' (%s)", dumped, source.name, timer)
     return failed
 
 
@@ -583,7 +571,7 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
     those will be ignored.
     """
     logger = logging.getLogger(__name__)
-    source_lookup = {source["name"]: source for source in sources if "dsn" in source}
+    source_lookup = {source.name: source for source in sources if source.is_source_schema}
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return

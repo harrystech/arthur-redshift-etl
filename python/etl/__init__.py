@@ -13,6 +13,14 @@ def package_version(package_name="redshift-etl"):
     return "{} v{}".format(package_name, pkg_resources.get_distribution(package_name).version)
 
 
+def join_with_quotes(names):
+    """
+    >>> join_with_quotes(["foo", "bar"])
+    "'foo', 'bar'"
+    """
+    return ', '.join("'{}'".format(name) for name in names)
+
+
 class ETLException(Exception):
     """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
     pass
@@ -40,7 +48,7 @@ class TableName(namedtuple("_TableName", ["schema", "table"])):
 
     @staticmethod
     def join_with_quotes(table_names):
-        return ', '.join(sorted("'{}'".format(table.identifier) for table in table_names))
+        return join_with_quotes(sorted(table.identifier for table in table_names))
 
 
 class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
@@ -202,9 +210,8 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         """
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
-    def match_field(self, lod, field: str):
+    def match_name(self, los):
         """
-        Match fields with this pattern while traversing list of dictionaries
-        (and picking up the field from those dictionaries).
+        Match in the list of objects those that have a matching "name" attribute value.
         """
-        return [d for d in lod if self.match_schema(d[field])]
+        return [s for s in los if self.match_schema(s.name)]

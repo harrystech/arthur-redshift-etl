@@ -6,12 +6,10 @@
         # The environment variable must contain a full connection string for an ETL user.
         "etl_access": "DATA_WAREHOUSE_ETL",
         # All schemas, tables, etc. will be assigned to this user.  The owner's group will be the ETL group.
-        "owner": "dw",
-        # Groups should end in `_rw` for read/write-access or `_ro` for read-only access, although
-        # this is not enforced.
-        "groups": {
-            "etl": "etl_rw",
-            "users": "analyst_ro"
+        "owner": {
+            "name": "dw",
+            "group": "etl_rw"
+
         },
         # Schemas that are filled out based on CTAS or views and have no direct upstream source
         "schemas": []
@@ -58,7 +56,7 @@
             "character varying": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "text": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
-            # TODO Make the time zone configurable (stringifying is correct for UTC sources to UTC storage)
+            # CAVEAT EMPTOR This only works if your database is running in UTC.
             "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
             # N.B. Newer versions of PostgreSQL have a more useful hstore_to_json function but this works for 9.2

@@ -50,8 +50,8 @@ class RelationDescription:
         self.design_file_name = discovered_files.design_file
         self.sql_file_name = discovered_files.sql_file
         self.manifest_file_name = discovered_files.manifest_file
-        # Remove or not? If bucket_name is specified, assume S3 otherwise go with local files
-        self.bucket_name = bucket_name
+        # FIXME Move to file sets
+        self.bucket_name = bucket_name if bucket_name != "localhost" else None
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
         self._query_stmt = None
@@ -311,7 +311,7 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_designs(dsn, file_sets, bucket_name=None, keep_going=False, skip_deps=False):
+def validate_designs(dsn, file_sets, netloc, keep_going=False, skip_deps=False):
     """
     Make sure that all table design files pass the validation checks.
 
@@ -319,7 +319,7 @@ def validate_designs(dsn, file_sets, bucket_name=None, keep_going=False, skip_de
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_set, bucket_name) for file_set in file_sets]
+    descriptions = [RelationDescription(file_set, netloc) for file_set in file_sets]
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
     validate_dependency_ordering(valid_descriptions)
 
