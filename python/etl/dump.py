@@ -214,7 +214,7 @@ def read_table_as_dataframe(sql_context, source, source_table_name, table_design
     return df
 
 
-def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=False):
+def write_dataframe_as_csv(df, bucket_name, prefix, source_path_name, dry_run=False):
     """
     Write (partitioned) dataframe to CSV file(s)
     """
@@ -236,7 +236,6 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
             .options(**write_options) \
             .mode('overwrite') \
             .save(full_s3_path)
-    write_manifest_file(bucket_name, csv_path, dry_run)
 
 
 def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dry_run=False):
@@ -249,21 +248,27 @@ def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dr
     for assoc_table_files in tables_in_s3:
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
-        with etl.monitor.Monitor('dump', target_table_name):
+        manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
+        with etl.monitor.Monitor('dump', target_table_name,
+                                 source={'name': source_name,
+                                         'schema': source_table_name.schema, 'table': source_table_name.table},
+                                 destination={'bucket_name': bucket_name, 'object_key': manifest_filename}):
             with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.design_file)) as content:
                 table_design = etl.schemas.load_table_design(content, target_table_name)
             df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
-            write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
+            write_dataframe_as_csv(df, bucket_name, prefix, assoc_table_files.source_path_name, dry_run)
+            write_manifest_file(bucket_name, prefix, assoc_table_files.source_path_name, manifest_filename, dry_run)
         copied.add(target_table_name)
     logger.info("Done with %d table(s) from source '%s'", len(copied), source_name)
 
 
-def write_manifest_file(bucket_name, csv_path, dry_run=False):
+def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, dry_run=False):
     """
     Create manifest file to load all the CSV files from the given folder.
     The manifest file will be created in the folder ABOVE the CSV files.
     """
     logger = logging.getLogger(__name__)
+    csv_path = os.path.join(prefix, "data", source_path_name, "csv")
 
     last_success = etl.s3.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
     if last_success is None:
@@ -274,7 +279,6 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
         raise MissingCsvFilesException("Found no CSV files")
     remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
 
-    manifest_filename = os.path.dirname(csv_path) + ".manifest"
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
     if dry_run:
