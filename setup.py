@@ -9,9 +9,9 @@ setup(
     license="MIT",
     keywords="redshift etl",
     url="https://github.com/harrystech/harrys-redshift-etl",
-    packages=["etl"],
     package_dir={"": "python"},
-    package_data={"python": ["etl/config/*"]},
+    packages=["etl", "etl.config"],
+    package_data={"etl": ["config/*"]},
     scripts=["python/scripts/submit_arthur.sh"],
     entry_points={
         # NB The script must end in ".py" so that spark submit accepts it as a Python script.
