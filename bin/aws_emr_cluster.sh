@@ -71,6 +71,8 @@ fi
 
 if [ "$CLUSTER_ENVIRONMENT" = "production" ]; then
     CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=production"
+elif [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
+    CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=interactive"
 else
     CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=development"
 fi
