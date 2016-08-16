@@ -390,6 +390,9 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
     schemas = selection.match_field(combined_schemas, "name")
     schema_names = [source["name"] for source in schemas]
+    if not schema_names:
+        logger.warning("Found no matching source or target schema, looking for '%s'", selection.str_schemas())
+        return
 
     bucket_name = settings("s3", "bucket_name")
     files_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)
@@ -453,6 +456,9 @@ def test_queries(settings, target, table_design_dir):
     selection = etl.TableNamePatterns.from_list(target)
     schemas = selection.match_field(settings("data_warehouse", "schemas"), "name")
     schema_names = [s["name"] for s in schemas]
+    if not schema_names:
+        logger.warning("Found no matching target schema, looking for '%s'", selection.str_schemas())
+        return
 
     local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
     if not local_files:

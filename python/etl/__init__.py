@@ -141,6 +141,14 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         else:
             return "{}.[{}]".format(self.schemas[0], ','.join(self.table_patterns))
 
+    def str_schemas(self):
+        if len(self.schemas) == 0:
+            return '*'
+        elif len(self.schemas) == 1:
+            return str(self.schemas[0])
+        else:
+            return str(self.schemas)
+
     def match_schema(self, schema):
         """
         Match against schema.
@@ -191,10 +199,7 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         Note that it is an error if there's no match.  (So the returned list
         will always have at least one element.
         """
-        matches = [d for d in lod if self.match_schema(d[field])]
-        if len(matches) < 1:
-            raise ValueError("Cannot find match on %s for %s" % (field, ", ".join(self.schemas)))
-        return matches
+        return [d for d in lod if self.match_schema(d[field])]
 
 
 class ColumnDefinition(namedtuple("_ColumnDefinition",
