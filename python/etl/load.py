@@ -372,47 +372,6 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_table(conn, bucket_name, assoc_table_files, table_owner,
-                         credentials,  etl_group, user_group,
-                         add_explain_plan=False, drop=False, dry_run=False):
-    table_name = assoc_table_files.target_table_name
-    design_file = assoc_table_files.design_file
-    with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
-        table_design = etl.schemas.load_table_design(content, table_name)
-
-    if table_design["source_name"] in ("CTAS", "VIEW"):
-        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
-            query = content.read().decode()
-        object_key = assoc_table_files.sql_file
-    else:
-        if assoc_table_files.manifest_file is None:
-            raise MissingManifestException("Missing manifest file")
-        object_key = assoc_table_files.manifest_file
-
-    vacuumable = []
-    with etl.monitor.Monitor('load', table_name, dry_run=dry_run,
-                             source={'bucket_name': bucket_name, 'object_key': object_key},
-                             destination={'schema': table_name.schema, 'table': table_name.table}):
-        with conn:
-            if table_design["source_name"] == "VIEW":
-                create_view(conn, table_design, table_name, table_owner, query,
-                            drop_view=drop, dry_run=dry_run)
-            elif table_design["source_name"] == "CTAS":
-                create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                create_temp_table_as_and_copy(conn, table_name, table_design, query,
-                                              add_explain_plan=add_explain_plan, dry_run=dry_run)
-                analyze(conn, table_name, dry_run=dry_run)
-                vacuumable.append(table_name)
-            else:
-                create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
-                          dry_run=dry_run)
-                analyze(conn, table_name, dry_run=dry_run)
-                vacuumable.append(table_name)
-            grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
-    return vacuumable
-
-
 def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
@@ -445,10 +404,35 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     with closing(etl.pg.connection(dw)) as conn:
         for source_name in files_in_s3:
             for assoc_table_files in files_in_s3[source_name]:
-                vacuumable.extend(load_or_update_table(conn, bucket_name, assoc_table_files, table_owner,
-                                                       credentials,  etl_group, user_group,
-                                                       add_explain_plan=False, drop=False, dry_run=False))
+                table_name = assoc_table_files.target_table_name
+                with etl.monitor.Monitor('load', table_name):
+                    design_file = assoc_table_files.design_file
+                    table_design = etl.schemas.download_table_design(bucket_name, design_file, table_name)
+                    creates = table_design["source_name"] if table_design["source_name"] in ("CTAS", "VIEW") else None
+                    if not creates:
+                        if assoc_table_files.manifest_file is None:
+                            raise MissingManifestException("Missing manifest file")
+                    else:
+                        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
+                            query = content.read().decode()
 
+                    with conn:
+                        if creates == "VIEW":
+                            create_view(conn, table_design, table_name, table_owner, query,
+                                        drop_view=drop, dry_run=dry_run)
+                        elif creates == "CTAS":
+                            create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                            create_temp_table_as_and_copy(conn, table_name, table_design, query,
+                                                          add_explain_plan=add_explain_plan, dry_run=dry_run)
+                            analyze(conn, table_name, dry_run=dry_run)
+                            vacuumable.append(table_name)
+                        else:
+                            create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
+                            copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
+                                      dry_run=dry_run)
+                            analyze(conn, table_name, dry_run=dry_run)
+                            vacuumable.append(table_name)
+                        grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
     # Reconnect to run vacuum outside transaction block
     if not drop:
         with closing(etl.pg.connection(dw, autocommit=True)) as conn:

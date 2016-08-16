@@ -28,11 +28,21 @@ sudo yum install -y postgresql94-devel
 # Send all files to temp directory
 cd /var/tmp/
 
+# Temp directory for password files
+test -d passwords || mkdir passwords
+chmod go= passwords
+
 # Download code to all nodes, this includes Python code and requirements.txt
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
 
 # Download configuration and credentials
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
+
+# Write file for Sqoop to be able to connect using SSL to upstream sources
+cat > ./config/ssl.props <<EOF
+ssl=true
+sslfactory=org.postgresql.ssl.NonValidatingFactory
+EOF
 
 # Create virtual env for ETL
 test -d venv || mkdir venv

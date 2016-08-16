@@ -249,6 +249,15 @@ def load_table_design(stream, table_name):
     return validate_table_design(table_design, table_name)
 
 
+def download_table_design(bucket_name, design_file, table_name):
+    """
+    Download table design from file in S3.
+    """
+    with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
+        table_design = load_table_design(content, table_name)
+    return table_design
+
+
 def save_table_design(table_design, source_table_name, source_output_dir, dry_run=False):
     """
     Write new table design file to etc disk.

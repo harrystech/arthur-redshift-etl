@@ -212,23 +212,6 @@ class SubCommand:
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
 
-class SparkSubCommand(SubCommand):
-
-    """Sub command that requires Spark context ... relaunches arthur using submit as needed"""
-
-    def callback(self, args, settings):
-        # Proceed with callback IF Spark environment has been loaded.  Otherwise, re-launch with spark-submit
-        if "SPARK_ENV_LOADED" in os.environ:
-            self.callback_within_spark(args, settings)
-        else:
-            print("+ exec submit_arthur.sh " + " ".join(sys.argv), file=sys.stderr)
-            os.execvp("submit_arthur.sh", ("submit_arthur.sh",) + tuple(sys.argv))
-            sys.exit(1)
-
-    def callback_within_spark(self, args, settings):
-        raise NotImplementedError("Instance of %s has no proper callback for Spark context" % self.__class__.__name__)
-
-
 class ShowSettingsCommand(SubCommand):
 
     def __init__(self):
@@ -324,19 +307,35 @@ class CopyToS3Command(SubCommand):
         etl.schemas.copy_to_s3(settings, args.target, args.table_design_dir, args.prefix, args.force, args.dry_run)
 
 
-class DumpDataToS3Command(SparkSubCommand):
+class DumpDataToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("dump",
                          "Dump table data from sources",
-                         "Dump table contents to files in S3 (uses submit_local.sh to launch Spark context)")
+                         "Dump table contents to files in S3 along with a manifest file")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        parser.add_argument("--spark",
+                            help="dump data using Spark Dataframe (using submit_arthur.sh)",
+                            default=False, action="store_true")
+        parser.add_argument("-k", "--keep-going",
+                            help="dump as much data as possible, ignoring errors along the way",
+                            default=False, action="store_true")
 
-    def callback_within_spark(self, args, settings):
-        with etl.pg.log_error():
-            etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
+    def callback(self, args, settings):
+        if args.spark:
+            # Make sure that there is a Spark environment.  If not, re-launch with spark-submit.
+            if "SPARK_ENV_LOADED" in os.environ:
+                with etl.pg.log_error():
+                    etl.dump.dump_to_s3_with_spark(settings, args.target, args.prefix, args.keep_going, args.dry_run)
+            else:
+                print("+ exec submit_arthur.sh " + " ".join(sys.argv), file=sys.stderr)
+                os.execvp("submit_arthur.sh", ("submit_arthur.sh",) + tuple(sys.argv))
+                sys.exit(1)
+        else:
+            with etl.pg.log_error():
+                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, args.keep_going, args.dry_run)
 
 
 class LoadRedshiftCommand(SubCommand):
@@ -371,9 +370,7 @@ class UpdateRedshiftCommand(SubCommand):
                                              add_explain_plan=args.add_explain_plan, drop=False, dry_run=args.dry_run)
 
 
-class ExtractLoadTransformCommand(SparkSubCommand):
-
-    # Careful here ... this derives from dump so that the command gets relaunched into Spark as needed.
+class ExtractLoadTransformCommand(SubCommand):
 
     def __init__(self):
         super().__init__("etl",
@@ -386,7 +383,7 @@ class ExtractLoadTransformCommand(SparkSubCommand):
                             help="force loading, run 'dump' then 'load' (instead of 'dump' then 'update')",
                             default=False, action="store_true")
 
-    def callback_within_spark(self, args, settings):
+    def callback(self, args, settings):
         etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
         # TODO Check whether dump had found any tables (because then load is a no-op)
         etl.load.load_or_update_redshift(settings, args.target, args.prefix,
