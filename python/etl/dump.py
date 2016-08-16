@@ -323,6 +323,9 @@ def dump_to_s3(settings, table, prefix, dry_run=False):
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schema_names = [source["name"] for source in sources]
+    if not schema_names:
+        logger.warning("Found no matching source, looking for '%s'", selection.str_schemas())
+        return
 
     bucket_name = settings("s3", "bucket_name")
     tables_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)

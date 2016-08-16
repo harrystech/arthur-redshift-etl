@@ -337,16 +337,20 @@ def download_schemas(settings, table, table_design_dir, dry_run):
     Download schemas from upstream source tables and compare against local design
     files.
     """
+    logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
     sources = selection.match_field(settings("sources"), "name")
     schema_names = [source["name"] for source in sources]
-    local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
+    if not schema_names:
+        logger.warning("Found no matching source, looking for '%s'", selection.str_schemas())
+        return
 
     # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
     for source in sources:
         if source["read_access"] not in os.environ:
                 raise KeyError("Environment variable not set: %s" % source["read_access"])
 
+    local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
     for source, schema_name in zip(sources, schema_names):
         table_design_files = {assoc_files.source_table_name: assoc_files.design_file
                               for assoc_files in local_files.get(schema_name, {})}
@@ -365,6 +369,9 @@ def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=T
     combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
     schemas = selection.match_field(combined_schemas, "name")
     schema_names = [s["name"] for s in schemas]
+    if not schema_names:
+        logger.warning("Found no matching source or target schema, looking for '%s'", selection.str_schemas())
+        return
 
     local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
     if not local_files:
