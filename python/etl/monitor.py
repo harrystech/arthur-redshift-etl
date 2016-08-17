@@ -15,6 +15,8 @@ import logging
 import os
 import uuid
 
+import simplejson as json
+
 import etl
 
 
@@ -44,24 +46,28 @@ class Monitor:
     """
 
     shared_trace_key = None
+    aws_info = None
 
     def __init__(self: "Monitor", step: str, target: etl.TableName, **kwargs):
         self._logger = logging.getLogger(__name__)
         self._step = step
         self._target = target
         self._payload = dict(**kwargs)
+        self._payload['step'] = step
         self._payload['etl_id'] = Monitor.shared_trace_key
         self._payload['target'] = target.identifier
         if 'ETL_ENVIRONMENT' in os.environ:
             self._payload['environment'] = os.environ['ETL_ENVIRONMENT']
+        if Monitor.aws_info:
+            self._payload['aws'] = Monitor.aws_info
 
     def __enter__(self):
         self._logger.info("Starting %s step for '%s'", self._step, self._target.identifier)
 
-        # XXX Emit event here instead of logging it!
         self._payload['timestamp'] = utc_now().timestamp()
         self._payload['event'] = 'start'
-        self._logger.debug("Monitor payload: %s", self._payload)
+        self._logger.debug("Monitor payload = %s", json.dumps(self._payload, sort_keys=True))
+        # XXX Emit event here.
 
         self._start_time = utc_now()
         return self
@@ -73,19 +79,36 @@ class Monitor:
         if exc_type is None:
             self._logger.info("Finished %s step for '%s' (after %0.fs)", self._step, self._target.identifier, seconds)
             self._payload['event'] = 'finish'
-            # XXX Emit event here instead of logging it!
-            self._logger.debug("Monitor payload: %s", self._payload)
+            self._logger.debug("Monitor payload = %s", json.dumps(self._payload, sort_keys=True))
+            # XXX Emit event here.
         else:
             self._logger.warning("Failed %s step for '%s' (after %0.fs)", self._step, self._target.identifier, seconds)
             self._payload['event'] = 'fail'
             self._payload['errors'] = [{'code': str(type(exc_type)), 'message': "%s: %s" % (exc_type, exc_value)}]
-            # XXX Emit event here instead of logging it!
-            self._logger.debug("Monitor payload: %s", self._payload)
+            self._logger.debug("Monitor payload = %s", json.dumps(self._payload, sort_keys=True))
+            # XXX Emit event here.
+
+    @staticmethod
+    def load_aws_info(filename):
+        """
+        Load instance ID and EMR ID from the local instance info and set the data for the Monitor class
+
+        On EMR instances, the JSON-formatted file is in /mnt/var/lib/info/job-flow.json
+        """
+        if os.path.exists(filename):
+            with open(filename) as f:
+                data = json.load(f)
+                Monitor.aws_info = {
+                    'emr_id': data['jobFlowId'],
+                    'instance_id': data['masterInstanceId']
+                }
 
 
 # Setup shared ETL id for all monitor events:
-if Monitor.shared_trace_key is None:
-    Monitor.shared_trace_key = uuid.uuid4().hex.upper()
+Monitor.shared_trace_key = uuid.uuid4().hex.upper()
+
+# Add EMR and instance info
+Monitor.load_aws_info('/mnt/var/lib/info/job-flow.json')
 
 
 class Timer:
