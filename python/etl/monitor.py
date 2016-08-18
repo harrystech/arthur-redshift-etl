@@ -14,6 +14,7 @@ import uuid
 import simplejson as json
 
 import etl
+import etl.json_logger
 from etl.timer import utc_now, elapsed_seconds
 
 
@@ -67,7 +68,7 @@ class Monitor:
             self._logger.debug("Dry-run: payload = %s", json.dumps(self._payload, sort_keys=True))
         else:
             self._logger.debug("Monitor payload = %s", json.dumps(self._payload, sort_keys=True))
-            # XXX Emit event here.
+            etl.json_logger.JsonLogger.emit(self._payload)
 
     @staticmethod
     def load_aws_info(filename):

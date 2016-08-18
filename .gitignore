@@ -20,5 +20,9 @@
 # In case you accidentally download your credentials here
 credentials.*
 
+# ignore jars
+jars/*
+
 # Mac stuff
 .DS_Store
+.idea/

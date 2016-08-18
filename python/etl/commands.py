@@ -21,6 +21,7 @@ import etl
 import etl.config
 import etl.dump
 import etl.dw
+import etl.json_logger
 import etl.load
 import etl.pg
 import etl.s3
@@ -95,7 +96,8 @@ def build_full_parser(prog_name):
                   DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
                   LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
                   ValidateDesignsCommand, ListFilesCommand,
-                  PingCommand, ExplainQueryCommand, ShowSettingsCommand]:
+                  PingCommand, ExplainQueryCommand, ShowSettingsCommand,
+                  EventsQueryCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -439,6 +441,21 @@ class ListFilesCommand(SubCommand):
 
     def callback(self, args, settings):
         etl.s3.list_files(settings, args.prefix, args.target, long_format=args.long_format)
+
+
+class EventsQueryCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("query",
+                         "Query the events table for the ETL",
+                         "Query the table of events written during an ETL")
+
+    def add_arguments(self, parser):
+        parser.add_argument("--etl-id", help="pick ETL id to look for")
+        add_standard_arguments(parser, ["target"])
+
+    def callback(self, args, settings):
+        etl.json_logger.query_for(args.target, args.etl_id)
 
 
 if __name__ == "__main__":
