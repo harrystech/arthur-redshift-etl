@@ -55,6 +55,17 @@ def assemble_selected_columns(table_design):
     return selected_columns
 
 
+def find_primary_key(table_design):
+    """
+    Return primary key (single column) from the table design, if defined, else None.
+    """
+    if "primary_key" in table_design.get("constraints", {}):
+        # Note that column constraints such as primary key are stored as one-element lists, hence:
+        return table_design["constraints"]["primary_key"][0]
+    else:
+        return None
+
+
 def extract_dsn(dsn_string):
     """
     Break the connection string into a JDBC URL and connection properties.
@@ -231,12 +242,10 @@ def determine_partitioning(source_table_name, table_design, read_access):
     """
     logger = logging.getLogger(__name__)
 
-    if "primary_key" not in table_design.get("constraints", {}):
+    primary_key = find_primary_key(table_design)
+    if "primary_key" is None:
         logger.info("No primary key defined for '%s', skipping partitioning", source_table_name.identifier)
         return []
-
-    # Note that column constraints such as primary key are stored as one-element lists, hence:
-    primary_key = table_design["constraints"]["primary_key"][0]
     logger.debug("Primary key for table '%s' is '%s'", source_table_name.identifier, primary_key)
 
     predicates = []
@@ -379,16 +388,24 @@ def dump_to_s3_with_spark(settings, table, prefix, keep_going=False, dry_run=Fal
                                      bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
 
 
-def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, password_file, source_table_files):
+def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, password_file, source_table_files,
+                        max_mappers=4):
     """
     Create set of Sqoop options.
 
     Starts with the command (import), then continues with generic options,
     tool specific options, and child-process options.
     """
-    source_table = source_table_files.source_table_name.table
+    source_table_name = source_table_files.source_table_name
+    table_design = etl.schemas.download_table_design(bucket_name, source_table_files.design_file,
+                                                     source_table_files.target_table_name)
+    columns = assemble_selected_columns(table_design)
+    select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
+    primary_key = find_primary_key(table_design)
 
-    return ["import",
+    # Maybe also needed: --null-string
+    # Fun note: if using --table, do not specify the schema or Sqoop won't be able to figure out the primary key.
+    args = ["import",
             "--connect", '"{}"'.format(jdbc_url),
             "--driver", "org.postgresql.Driver",
             "--connection-param-file", '\"/var/tmp/config/ssl.props\"',
@@ -397,17 +414,17 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, passwor
             "--verbose",
             "--fields-terminated-by", '","',
             "--lines-terminated-by", '"\\n"',
-            # "--enclosed-by", '"\\""',
-            # "--escaped-by", '"\\\\"',
-            # XXX Sqoop breaks when specifying the schema. wat?
-            "--table", str(source_table),
-            # Does not work with s3n:  "--delete-target-dir",
-            "--target-dir",
-            '\"s3n://{}/{}\"'.format(bucket_name, csv_path),
-            # mappers must be 1 if there is no primary key
-            "--num-mappers", "4",
-            "--autoreset-to-one-mapper"]
-    # Maybe: --where, --compress, --null-string, --query,
+            "--enclosed-by", '"\\""',
+            "--escaped-by", '"\\\\"',
+            # NOTE Does not work with s3n:  "--delete-target-dir",
+            "--target-dir", '\"s3n://{}/{}\"'.format(bucket_name, csv_path),
+            "--query", shlex.quote(select_statement),
+            "--compress"]
+    if primary_key:
+        args.extend(["--split-by", '"{}"'.format(primary_key), "--num-mappers", str(max_mappers)])
+    else:
+        args.extend(["--num-mappers", "1"])
+    return args
 
 
 def run_sqoop(options_file, dry_run=False):
@@ -461,6 +478,7 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_fi
     else:
         with tempfile.NamedTemporaryFile('w+', dir="/var/tmp/sqoop_options", delete=False) as fp:
             fp.write('\n'.join(args))
+            fp.write('\n')
             fp.close()
         options_file = fp.name
         logger.info("Wrote Sqoop options to '%s'", options_file)

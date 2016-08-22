@@ -194,7 +194,7 @@ def validate_table_design(table_design, table_name):
     to run inside json-schema.
     """
     logger = logging.getLogger(__name__)
-    logger.debug("Trying to validate table design for '%s' from stream", table_name.identifier)
+    logger.debug("Trying to validate table design for '%s' from input stream", table_name.identifier)
     try:
         table_design_schema = etl.config.load_json("table_design.schema")
     except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
