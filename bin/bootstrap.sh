@@ -32,6 +32,9 @@ cd /var/tmp/
 test -d passwords || mkdir passwords
 chmod go= passwords
 
+# Temp direoctory for Sqoop option files
+test -d sqoop_options || mkdir sqoop_options
+
 # Download code to all nodes, this includes Python code and requirements.txt
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
 

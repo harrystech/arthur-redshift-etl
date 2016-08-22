@@ -316,26 +316,32 @@ class DumpDataToS3Command(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "prefix", "dry-run"])
-        parser.add_argument("--spark",
-                            help="dump data using Spark Dataframe (using submit_arthur.sh)",
-                            default=False, action="store_true")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("--sqoop",
+                           help="dump data using Sqoop (using 'sqoop import', this is the default)",
+                           const="sqoop", action="store_const", dest="dumper", default="sqoop")
+        group.add_argument("--spark",
+                           help="dump data using Spark Dataframe (using submit_arthur.sh)",
+                           const="spark", action="store_const", dest="dumper")
         parser.add_argument("-k", "--keep-going",
                             help="dump as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
-        if args.spark:
+        if args.dumper == "spark":
             # Make sure that there is a Spark environment.  If not, re-launch with spark-submit.
             if "SPARK_ENV_LOADED" in os.environ:
                 with etl.pg.log_error():
-                    etl.dump.dump_to_s3_with_spark(settings, args.target, args.prefix, args.keep_going, args.dry_run)
+                    etl.dump.dump_to_s3_with_spark(settings, args.target, args.prefix,
+                                                   keep_going=args.keep_going, dry_run=args.dry_run)
             else:
                 print("+ exec submit_arthur.sh " + " ".join(sys.argv), file=sys.stderr)
                 os.execvp("submit_arthur.sh", ("submit_arthur.sh",) + tuple(sys.argv))
                 sys.exit(1)
         else:
             with etl.pg.log_error():
-                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, args.keep_going, args.dry_run)
+                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix,
+                                               keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 class LoadRedshiftCommand(SubCommand):
@@ -384,8 +390,7 @@ class ExtractLoadTransformCommand(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, settings):
-        etl.dump.dump_to_s3(settings, args.target, args.prefix, args.dry_run)
-        # TODO Check whether dump had found any tables (because then load is a no-op)
+        etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, dry_run=args.dry_run)
         etl.load.load_or_update_redshift(settings, args.target, args.prefix,
                                          add_explain_plan=False, drop=args.force, dry_run=args.dry_run)
 

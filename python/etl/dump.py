@@ -8,6 +8,7 @@ from contextlib import closing
 import logging
 import os
 import os.path
+import shlex
 import subprocess
 import tempfile
 
@@ -31,6 +32,9 @@ class UnknownTableSizeException(etl.ETLException):
 
 
 class MissingCsvFilesException(etl.ETLException):
+    pass
+
+class DataDumpException(etl.ETLException):
     pass
 
 
@@ -294,7 +298,7 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
         write_options = {
             "header": "true",
             "nullValue": r"\N",
-            "codec": "gzip",
+            "codec": "gzip"
         }
         df.write \
             .format(source='com.databricks.spark.csv') \
@@ -351,7 +355,7 @@ def dump_source_to_s3_with_spark(sql_context, source, tables_in_s3, bucket_name,
     for assoc_table_files in tables_in_s3:
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
-        with etl.monitor.Monitor('dump', target_table_name, args="with-spark"):
+        with etl.monitor.Monitor('dump', target_table_name, options="with-spark"):
             table_design = etl.schemas.download_table_design(bucket_name, assoc_table_files.design_file,
                                                              target_table_name)
             df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
@@ -375,62 +379,103 @@ def dump_to_s3_with_spark(settings, table, prefix, keep_going=False, dry_run=Fal
                                      bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
 
 
-def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_name, bucket_name, prefix, dry_run=False):
+def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, password_file, source_table_files):
     """
-    Run Sqoop for one table, creates the sub-process and all the pretty args for Sqoop.
+    Create set of Sqoop options.
+
+    Starts with the command (import), then continues with generic options,
+    tool specific options, and child-process options.
     """
-    logger = logging.getLogger(__name__)
+    source_table = source_table_files.source_table_name.table
 
-    with tempfile.NamedTemporaryFile('w+', dir="/var/tmp/passwords", delete=False) as fp:
-        fp.write(dsn_properties["password"])
-        fp.close()
-
-    csv_path = os.path.join(prefix, "data", source_name,
-                            "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
-    args = ["sqoop", "import",
+    return ["import",
             "--connect", '"{}"'.format(jdbc_url),
             "--driver", "org.postgresql.Driver",
             "--connection-param-file", '\"/var/tmp/config/ssl.props\"',
             "--username", '"{}"'.format(dsn_properties["user"]),
+            "--password-file", "file://{}".format(password_file),
+            "--verbose",
             "--fields-terminated-by", '","',
             "--lines-terminated-by", '"\\n"',
             # "--enclosed-by", '"\\""',
             # "--escaped-by", '"\\\\"',
-            # or --query? --split-by
             # XXX Sqoop breaks when specifying the schema. wat?
-            # "--table", str(source_table_name),
-            "--table", str(source_table_name.table),
+            "--table", str(source_table),
             # Does not work with s3n:  "--delete-target-dir",
             "--target-dir",
             '\"s3n://{}/{}\"'.format(bucket_name, csv_path),
             # mappers must be 1 if there is no primary key
             "--num-mappers", "4",
-            # TODO could the password file be in S3?
-            "--password-file", "file://{}".format(fp.name),
-            "--verbose"]
+            "--autoreset-to-one-mapper"]
     # Maybe: --where, --compress, --null-string, --query,
+
+
+def run_sqoop(options_file, dry_run=False):
+    """
+    Run Sqoop in a sub-process with the help of the given options file.
+    """
+    logger = logging.getLogger(__name__)
+    args = ["sqoop", "--options-file", shlex.quote(options_file)]
     if dry_run:
-        logger.info("Dry-run: Skipping ... %s", " ".join(args))
+        logger.info("Dry-run: Skipping call to: %s", " ".join(args))
     else:
         logger.debug("Starting: %s", " ".join(args))
         sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         logger.debug("Sqoop is running with pid %d", sqoop.pid)
         out, err = sqoop.communicate()
-        # XXX Check for exit code from sqoop
         logger.debug("Sqoop stdout: %s", out.decode())
-        logger.debug("Sqoop stderr: %s", err.decode())
         if sqoop.returncode == 0:
+            logger.debug("Sqoop stderr: %s", err.decode())
             logger.info("Sqoop finished successfully")
         else:
-            logger.error("Sqoop failed: %s", sqoop.returncode)
-            # XXX Raise exception
+            logger.info("Sqoop stderr: %s", err.decode())
+            logger.error("Sqoop failed with returncode %s", sqoop.returncode)
+            raise DataDumpException("Sqoop failed")
 
+
+def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_files, bucket_name, prefix, dry_run=False):
+    """
+    Run Sqoop for one table, creates the sub-process and all the pretty args for Sqoop.
+    """
+    logger = logging.getLogger(__name__)
+
+    source_table_name = source_table_files.source_table_name
+    csv_path = os.path.join(prefix, "data", source_name,
+                            "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
+
+    if dry_run:
+        logger.info("Dry-run: Skipping writing of password file")
+        password_file = None
+    else:
+        with tempfile.NamedTemporaryFile('w+', dir="/var/tmp/passwords", delete=False) as fp:
+            fp.write(dsn_properties["password"])
+            fp.close()
+        password_file = fp.name
+        logger.info("Wrote password to '%s'", password_file)
+
+    args = build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties,  password_file, source_table_files)
+    logger.info("Sqoop options are:\n%s", " ".join(args))
+    if dry_run:
+        logger.info("Dry-run: Skipping creation of Sqoop options file")
+        options_file = None
+    else:
+        with tempfile.NamedTemporaryFile('w+', dir="/var/tmp/sqoop_options", delete=False) as fp:
+            fp.write('\n'.join(args))
+            fp.close()
+        options_file = fp.name
+        logger.info("Wrote Sqoop options to '%s'", options_file)
+
+    # Need to first delete directory since sqoop won't overwrite (and can't delete)
+    deletable = etl.s3.list_files_in_folder(bucket_name, csv_path)
+    etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+
+    run_sqoop(options_file, dry_run=dry_run)
     write_manifest_file(bucket_name, csv_path, dry_run)
 
 
 def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, keep_going=False, dry_run=False):
     """
-    Dump all tables from a single source.
+    Dump all (selected) tables from a single upstream source.
     """
     logger = logging.getLogger(__name__)
     source_name = source["name"]
@@ -440,11 +485,10 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, keep
     copied = set()
     try:
         for assoc_table_files in tables_in_s3:
-            source_table_name = assoc_table_files.source_table_name
             target_table_name = assoc_table_files.target_table_name
             try:
-                with etl.monitor.Monitor('dump', target_table_name, args="with-sqoop"):
-                    dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_name, bucket_name, prefix,
+                with etl.monitor.Monitor('dump', target_table_name, options="with-sqoop"):
+                    dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, assoc_table_files, bucket_name, prefix,
                                           dry_run=dry_run)
             except Exception:
                 if keep_going:
@@ -458,23 +502,38 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, keep
         logger.exception("Dumping source '%s' with sqoop failed", source_name)
         raise
 
+    return len(copied)
+
 
 def dump_to_s3_with_sqoop(settings, table, prefix, keep_going=False, dry_run=False):
     """
-    Dump data from multiple upstream sources to S3 with calls to Sqoop
+    Dump data from upstream sources to S3 with calls to Sqoop
     """
+    logger = logging.getLogger(__name__)
     sources = settings("sources")
     bucket_name = settings("s3", "bucket_name")
     selected_sources, tables_in_s3 = find_files_for_sources(sources, bucket_name, prefix, table)
     validate_access(selected_sources.values())
 
+    if len(selected_sources) == 0:
+        logger.warning("No upstream sources selected (did you sync the table designs?)")
+        return
+
     # TODO Move to command line arg?
     max_workers = len(selected_sources)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
         for schema_name in tables_in_s3:
-            executor.submit(dump_source_to_s3_with_sqoop,
-                            selected_sources[schema_name], tables_in_s3[schema_name],
-                            bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
-
-    # XXX Raise exception if any of the jobs failed?
+            f = executor.submit(dump_source_to_s3_with_sqoop,
+                                selected_sources[schema_name], tables_in_s3[schema_name],
+                                bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
+            futures.append(f)
+        if keep_going:
+            done, failed = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+        else:
+            done, failed = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
+        total = sum(future.result() for future in done)
+        logger.info("Dumped data for %d table(s) with Sqoop", total)
+        if failed:
+            logger.error("Dump failed for %d source(s)", len(failed))
