@@ -125,7 +125,6 @@ def build_basic_parser(prog_name, description):
     # Set defaults so that we can avoid having to test the Namespace object.
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
-
     return parser
 
 
@@ -244,7 +243,7 @@ class InitialSetupCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["password"])
-        parser.add_argument("-k", "--skip-user-creation", help="skip user and groups; only create schemas",
+        parser.add_argument("-r", "--skip-user-creation", help="skip user and groups; only create schemas",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
@@ -266,7 +265,7 @@ class CreateUserCommand(SubCommand):
         group.add_argument("-a", "--add-user-schema",
                            help="add new schema, writable for the user",
                            action="store_true")
-        group.add_argument("-k", "--skip-user-creation",
+        group.add_argument("-r", "--skip-user-creation",
                            help="skip new user; only change search path of existing user",
                            default=False, action="store_true")
 
@@ -335,6 +334,7 @@ class DumpDataToS3Command(SubCommand):
                     etl.dump.dump_to_s3_with_spark(settings, args.target, args.prefix,
                                                    keep_going=args.keep_going, dry_run=args.dry_run)
             else:
+                # XXX This fails in the EMR cluster since /var/tmp/venv/bin is not in the PATH
                 print("+ exec submit_arthur.sh " + " ".join(sys.argv), file=sys.stderr)
                 os.execvp("submit_arthur.sh", ("submit_arthur.sh",) + tuple(sys.argv))
                 sys.exit(1)
@@ -391,8 +391,7 @@ class ExtractLoadTransformCommand(SubCommand):
 
     def callback(self, args, settings):
         etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, dry_run=args.dry_run)
-        etl.load.load_or_update_redshift(settings, args.target, args.prefix,
-                                         add_explain_plan=False, drop=args.force, dry_run=args.dry_run)
+        etl.load.load_or_update_redshift(settings, args.target, args.prefix, drop=args.force, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
@@ -403,7 +402,7 @@ class ValidateDesignsCommand(SubCommand):
                          "Validate table designs in local filesystem")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["prefix", "table-design-dir", "target"])
+        add_standard_arguments(parser, ["table-design-dir", "target"])
         parser.add_argument("-k", "--keep-going",
                             help="ignore errors and test as many files as possible",
                             default=False, action="store_true")

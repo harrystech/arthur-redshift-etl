@@ -448,7 +448,7 @@ def validate_designs(settings, target, table_design_dir, keep_going=False):
                 logger.info("Checking file '%s'", info.design_file)
                 with open(info.design_file, 'r') as design_file:
                     table_design = load_table_design(design_file, info.target_table_name)
-                    logger.debug("Validated table design for '%s'", table_design["name"])
+                logger.debug("Validated table design for '%s'", table_design["name"])
             except TableDesignError:
                 if keep_going:
                     logger.exception("Failed to validate table design and proceeding as requested")

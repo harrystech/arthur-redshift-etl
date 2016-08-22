@@ -10,7 +10,7 @@ import os
 import os.path
 import shlex
 import subprocess
-import tempfile
+from tempfile import NamedTemporaryFile
 
 # Note that we'll import pyspark modules only when starting a SQL context.
 import simplejson as json
@@ -27,14 +27,15 @@ from etl.timer import Timer
 APPLICATION_NAME = "DataWarehouseETL"
 
 
-class UnknownTableSizeException(etl.ETLException):
+class UnknownTableSizeError(etl.ETLException):
     pass
 
 
-class MissingCsvFilesException(etl.ETLException):
+class MissingCsvFilesError(etl.ETLException):
     pass
 
-class DataDumpException(etl.ETLException):
+
+class DataDumpError(etl.ETLException):
     pass
 
 
@@ -49,9 +50,9 @@ def assemble_selected_columns(table_design):
     for column in table_design["columns"]:
         if not column.get("skipped", False):
             if column.get("expression"):
-                selected_columns.append(column["expression"] + ' AS "%s"' % column["name"])
+                selected_columns.append('{expression} AS "{name}"'.format(**column))
             else:
-                selected_columns.append('"%s"' % column["name"])
+                selected_columns.append('"{name}"'.format(**column))
     return selected_columns
 
 
@@ -137,13 +138,14 @@ def find_files_for_sources(known_sources, bucket_name, prefix, target):
 
 def validate_access(sources):
     """
-    Check that all env vars are set to access upstream data-bases.  Raises exception if something is missing.
+    Check that all env vars are set to access (selected) upstream data-bases.
+    Raises exception if something is missing.
 
     It's annoying to have this fail for the last source without upfront warning.
     """
     for source in sources:
         if source["read_access"] not in os.environ:
-            raise KeyError("Environment variable to access '%s' not set: %s" % (source["name"], source["read_access"]))
+            raise KeyError("Environment variable to access '{name}' not set: {read_access}".format(**source))
 
 
 def suggest_best_partition_number(table_size):
@@ -199,7 +201,7 @@ def fetch_table_size(conn, table_name):
                                     , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
                             """.format(table_name, table_name))
     if len(rows) != 1:
-        raise UnknownTableSizeException("Failed to determine size of table")
+        raise UnknownTableSizeError("Failed to determine size of table")
     table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
     logger.info("Size of table '%s': %s (%d bytes) (%s)", table_name.identifier, pretty_table_size, table_size, timer)
     return table_size
@@ -303,10 +305,14 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
         logger.info("Dry-run: Skipping upload to '%s'", full_s3_path)
     else:
         logger.info("Writing data from '%s' to '%s'", source_path_name, full_s3_path)
-        # TODO Share this with load to construct the correct COPY command?
+        # N.B. This must match the Sqoop (import) and Redshift (COPY) options
+        # XXX Uses double quotes to escape double quotes ("Hello" becomes """Hello""")
+        # XXX Does not escape newlines ('\n' does not become '\\n' so is read as 'n' in Redshift)
         write_options = {
-            "header": "true",
+            "header": "false",
             "nullValue": r"\N",
+            "quoteMode": "NON_NUMERIC",
+            "escape": "\\",
             "codec": "gzip"
         }
         df.write \
@@ -314,10 +320,9 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
             .options(**write_options) \
             .mode('overwrite') \
             .save(full_s3_path)
-    write_manifest_file(bucket_name, csv_path, dry_run)
 
 
-def write_manifest_file(bucket_name, csv_path, dry_run=False):
+def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, dry_run=False):
     """
     Create manifest file to load all the CSV files from the given folder.
     The manifest file will be created in the folder ABOVE the CSV files.
@@ -328,23 +333,23 @@ def write_manifest_file(bucket_name, csv_path, dry_run=False):
     This will also test for the presence of the _SUCCESS file (added by map reduce jobs).
     """
     logger = logging.getLogger(__name__)
+    csv_path = os.path.join(prefix, "data", source_path_name, "csv")
 
     last_success = etl.s3.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
     if last_success is None and not dry_run:
-        raise MissingCsvFilesException("No valid CSV files (_SUCCESS is missing)")
+        raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
     csv_files = etl.s3.list_files_in_folder(bucket_name, csv_path + "/part-")
     if len(csv_files) == 0 and not dry_run:
-        raise MissingCsvFilesException("Found no CSV files")
-    remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
+        raise MissingCsvFilesError("Found no CSV files")
 
-    manifest_filename = os.path.dirname(csv_path) + ".manifest"
+    remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
     if dry_run:
         logger.info("Dry-run: Skipping writing manifest file '%s'", manifest_filename)
     else:
-        with tempfile.NamedTemporaryFile(mode="w+") as local_file:
+        with NamedTemporaryFile(mode="w+", prefix="mf_") as local_file:
             logger.debug("Writing manifest file locally to '%s'", local_file.name)
             json.dump(manifest, local_file, indent="    ", sort_keys=True)
             local_file.write('\n')
@@ -364,11 +369,19 @@ def dump_source_to_s3_with_spark(sql_context, source, tables_in_s3, bucket_name,
     for assoc_table_files in tables_in_s3:
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
-        with etl.monitor.Monitor('dump', target_table_name, options="with-spark"):
+        manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
+        with etl.monitor.Monitor('dump', target_table_name, dry_run=dry_run,
+                                 options=["with-spark"],
+                                 source={'name': source_name,
+                                         'schema': source_table_name.schema,
+                                         'table': source_table_name.table},
+                                 destination={'bucket_name': bucket_name,
+                                              'object_key': manifest_filename}):
             table_design = etl.schemas.download_table_design(bucket_name, assoc_table_files.design_file,
                                                              target_table_name)
             df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
             write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
+            write_manifest_file(bucket_name, prefix, assoc_table_files.source_path_name, manifest_filename, dry_run)
         copied.add(target_table_name)
     logger.info("Done with %d table(s) from source '%s'", len(copied), source_name)
 
@@ -403,25 +416,33 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, passwor
     select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
     primary_key = find_primary_key(table_design)
 
-    # Maybe also needed: --null-string
-    # Fun note: if using --table, do not specify the schema or Sqoop won't be able to figure out the primary key.
+    # Only the paranoid survive ... quote arguments of options, except for --select
+    def q(s):
+        # E731 do not assign a lambda expression, use a def -- whatever happened to Python?
+        return '"{}"'.format(s)
+
     args = ["import",
-            "--connect", '"{}"'.format(jdbc_url),
-            "--driver", "org.postgresql.Driver",
-            "--connection-param-file", '\"/var/tmp/config/ssl.props\"',
-            "--username", '"{}"'.format(dsn_properties["user"]),
-            "--password-file", "file://{}".format(password_file),
+            "--connect", q(jdbc_url),
+            "--driver", q("org.postgresql.Driver"),
+            "--connection-param-file", q("/var/tmp/config/ssl.props"),
+            "--username", q(dsn_properties["user"]),
+            "--password-file", '"file://{}"'.format(password_file),
             "--verbose",
-            "--fields-terminated-by", '","',
-            "--lines-terminated-by", '"\\n"',
-            "--enclosed-by", '"\\""',
-            "--escaped-by", '"\\\\"',
+            "--fields-terminated-by", q(","),
+            "--lines-terminated-by", r"'\n'",
+            "--enclosed-by", "'\"'",
+            "--escaped-by", r"'\\'",
+            "--null-string", r"'\\N'",
+            "--null-non-string", r"'\\N'",
             # NOTE Does not work with s3n:  "--delete-target-dir",
-            "--target-dir", '\"s3n://{}/{}\"'.format(bucket_name, csv_path),
-            "--query", shlex.quote(select_statement),
-            "--compress"]
+            "--target-dir", '"s3n://{}/{}"'.format(bucket_name, csv_path),
+            # NOTE Quoting the select statement (e.g. with shlex.quote) breaks the select in an unSQLy way.
+            "--query", select_statement,
+            # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
+            "--hive-drop-import-delims",
+            "--compress"]  # The default compression codec is gzip.
     if primary_key:
-        args.extend(["--split-by", '"{}"'.format(primary_key), "--num-mappers", str(max_mappers)])
+        args.extend(["--split-by", q(primary_key), "--num-mappers", str(max_mappers)])
     else:
         args.extend(["--num-mappers", "1"])
     return args
@@ -432,11 +453,11 @@ def run_sqoop(options_file, dry_run=False):
     Run Sqoop in a sub-process with the help of the given options file.
     """
     logger = logging.getLogger(__name__)
-    args = ["sqoop", "--options-file", shlex.quote(options_file)]
+    args = ["sqoop", "--options-file", options_file]
     if dry_run:
-        logger.info("Dry-run: Skipping call to: %s", " ".join(args))
+        logger.info("Dry-run: Skipping running Sqoop")
     else:
-        logger.debug("Starting: %s", " ".join(args))
+        logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
         sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         logger.debug("Sqoop is running with pid %d", sqoop.pid)
         out, err = sqoop.communicate()
@@ -447,7 +468,7 @@ def run_sqoop(options_file, dry_run=False):
         else:
             logger.info("Sqoop stderr: %s", err.decode())
             logger.error("Sqoop failed with returncode %s", sqoop.returncode)
-            raise DataDumpException("Sqoop failed")
+            raise DataDumpError("Sqoop failed")
 
 
 def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_files, bucket_name, prefix, dry_run=False):
@@ -459,12 +480,13 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_fi
     source_table_name = source_table_files.source_table_name
     csv_path = os.path.join(prefix, "data", source_name,
                             "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
+    manifest_filename = os.path.join(prefix, "data", source_table_files.source_path_name + ".manifest")
 
     if dry_run:
         logger.info("Dry-run: Skipping writing of password file")
         password_file = None
     else:
-        with tempfile.NamedTemporaryFile('w+', dir="/var/tmp/passwords", delete=False) as fp:
+        with NamedTemporaryFile('w+', dir="/var/tmp/passwords", prefix="pw_", delete=False) as fp:
             fp.write(dsn_properties["password"])
             fp.close()
         password_file = fp.name
@@ -476,7 +498,8 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_fi
         logger.info("Dry-run: Skipping creation of Sqoop options file")
         options_file = None
     else:
-        with tempfile.NamedTemporaryFile('w+', dir="/var/tmp/sqoop_options", delete=False) as fp:
+        # XXX Use a temp directory so that this works locally
+        with NamedTemporaryFile('w+', dir="/var/tmp/sqoop_options", prefix="so_", delete=False) as fp:
             fp.write('\n'.join(args))
             fp.write('\n')
             fp.close()
@@ -488,39 +511,50 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_fi
     etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
 
     run_sqoop(options_file, dry_run=dry_run)
-    write_manifest_file(bucket_name, csv_path, dry_run)
+    write_manifest_file(bucket_name, prefix, source_table_files.source_path_name, manifest_filename, dry_run=False)
 
 
 def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, keep_going=False, dry_run=False):
     """
-    Dump all (selected) tables from a single upstream source.
+    Dump all (selected) tables from a single upstream source.  Return list of tables for which dump failed.
     """
     logger = logging.getLogger(__name__)
     source_name = source["name"]
     read_access = etl.config.env_value(source["read_access"])
     jdbc_url, dsn_properties = extract_dsn(read_access)
 
-    copied = set()
+    dumped = 0
+    failed = []
     try:
         for assoc_table_files in tables_in_s3:
             target_table_name = assoc_table_files.target_table_name
+            source_table_name = assoc_table_files.source_table_name
+            # XXX Refactor ... calculated multiple times
+            manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
             try:
-                with etl.monitor.Monitor('dump', target_table_name, options="with-sqoop"):
+                with etl.monitor.Monitor('dump', target_table_name, dry_run=dry_run,
+                                         options=["with-sqoop"],
+                                         source={'name': source_name,
+                                                 'schema': source_table_name.schema,
+                                                 'table': source_table_name.table},
+                                         destination={'bucket_name': bucket_name,
+                                                      'object_key': manifest_filename}):
                     dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, assoc_table_files, bucket_name, prefix,
                                           dry_run=dry_run)
-            except Exception:
+            except DataDumpError:
                 if keep_going:
-                    logger.exception("Ignoring this exception ('--keep-going' = True)")
+                    logger.exception("Ignoring this exception and proceeding as requested")
+                    failed.append(target_table_name)
                 else:
                     raise
             else:
-                copied.add(target_table_name)
-        logger.info("Done with %d table(s) from source '%s'", len(copied), source_name)
+                dumped += 1
+        logger.info("Done with %d table(s) from source '%s'", dumped, source_name)
     except Exception:
-        logger.exception("Dumping source '%s' with sqoop failed", source_name)
+        logger.error("Dumping source '%s' with sqoop failed", source_name)
         raise
 
-    return len(copied)
+    return failed
 
 
 def dump_to_s3_with_sqoop(settings, table, prefix, keep_going=False, dry_run=False):
@@ -547,11 +581,17 @@ def dump_to_s3_with_sqoop(settings, table, prefix, keep_going=False, dry_run=Fal
                                 selected_sources[schema_name], tables_in_s3[schema_name],
                                 bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
             futures.append(f)
+        # XXX Test whether we need to cancel any remaining futures after failure
         if keep_going:
-            done, failed = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+            done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:
-            done, failed = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
-        total = sum(future.result() for future in done)
-        logger.info("Dumped data for %d table(s) with Sqoop", total)
-        if failed:
-            logger.error("Dump failed for %d source(s)", len(failed))
+            done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
+
+        missing_tables = []
+        for future in done:
+            missing_tables.extend(future.result())
+        for table_name in missing_tables:
+            logger.warning("Failed to dump: '%s'", table_name.identifier)
+
+        if not_done:
+            raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))

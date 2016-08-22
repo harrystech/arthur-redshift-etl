@@ -23,6 +23,14 @@ class Monitor:
     Context manager to monitor ETL steps for some target table
 
     All monitors of the same ETL run will have the same 'etl_id'.
+
+    The payloads will have at least:
+        etl_id: a UUID for reach ETL run
+        target: name of table or view in Redshift
+        step: command that is running, like 'dump', or 'load'
+        event: one of 'start', 'finish', 'fail'
+        timestamp: UTC timestamp
+    In case of errors, they are added as an array 'errors'.
     """
 
     shared_trace_key = None
@@ -37,6 +45,7 @@ class Monitor:
         self._payload['step'] = step
         self._payload['etl_id'] = Monitor.shared_trace_key
         self._payload['target'] = target.identifier
+        # XXX Pick up the prefix here?
         self._payload['environment'] = os.environ.get('ETL_ENVIRONMENT', 'local')
         if Monitor.aws_info:
             self._payload['aws'] = Monitor.aws_info
