@@ -5,6 +5,7 @@ This is a bit experimental in that we're trying to figure
 where to send the JSON blobs to that are coming from the application.
 """
 import collections
+from datetime import datetime
 import decimal
 import logging
 
@@ -13,6 +14,7 @@ import simplejson as json
 
 import etl.config
 import etl.pg
+
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -40,12 +42,11 @@ class JsonLogger:
             JsonLogger._rdbms_store = RDBMS(record['environment'])
 
         clean_record = dict(record)
-        clean_record['timestamp'] = decimal.Decimal(clean_record['timestamp'])
 
-        logging.getLogger(__name__).info("Sending record to dynamodb table")
+        logging.getLogger(__name__).info("Sending record to dynamodb table ...")
         JsonLogger._json_store.push(clean_record)
 
-        logging.getLogger(__name__).info("Sending record to relational db table")
+        logging.getLogger(__name__).info("Sending record to relational db table...")
         JsonLogger._rdbms_store.push(clean_record)
 
 
@@ -57,20 +58,23 @@ def query_for(target_list, etl_id=None):
 
 class JsonStore:
     def __init__(self, environment):
-        logging.getLogger(__name__).info("Initializing connection to non-relational store")
-        self._resource = boto3.resource('dynamodb')
-        self._client = boto3.client('dynamodb')
-        self._table_name = environment + '_etl_events'
+        logging.getLogger(__name__).info("Initializing connection to DynamoDB...")
+        self._resource_name = 'dynamodb'
+        self._resource = boto3.resource(self._resource_name)
+        self._client = boto3.client(self._resource_name)
+        self._table_name = 'etl_events_%s' % environment
         self.create_table_if_not_exists()
 
     def push(self, payload):
+        # we cannot store datetime in dynamo so we resort to epoch as numeric
+        payload['timestamp'] = decimal.Decimal(payload['timestamp'])
         self._resource.Table(self._table_name).put_item(Item=payload)
 
     def create_table_if_not_exists(self):
-        logging.getLogger(__name__).info("Checking to see if " + self._table_name + " already exists...")
+        logging.getLogger(__name__).info("Checking to see if %s already exists..." % self._table_name)
         try:
             table_desc = self._client.describe_table(TableName=self._table_name)
-            logging.getLogger(__name__).info(self._table_name + " already exists.")
+            logging.getLogger(__name__).info("%s already exists." % self._table_name)
         except Exception as e:
             if "Requested resource not found: Table" in str(e):
                 table = self._resource.create_table(
@@ -102,20 +106,21 @@ class JsonStore:
                     }
                 )
                 table.meta.client.get_waiter('table_exists').wait(TableName=self._table_name)
-                logging.getLogger(__name__).info("Table status: " + table.table_status)
+                logging.getLogger(__name__).info("Table status: %s" % table.table_status)
             else:
-                logging.getLogger(__name__).exception(self._table_name + " cannot be created.")
+                logging.getLogger(__name__).exception("%s cannot be created." % self._table_name)
                 raise
 
 
 class RDBMS:
     def __init__(self, environment):
-        self._table_name = environment + '_etl_events'
+        self._table_name = 'etl_events_%s' % environment
+        self._resource_name = 'postgresql'
         self.create_table_if_not_exists()
 
     def create_table_if_not_exists(self):
-        logging.getLogger(__name__).info("Creating " + self._table_name +
-                                         " in a RDBMS if it doesn't already exist.")
+        logging.getLogger(__name__).info("Creating %s in a %s if it doesn't already exist."
+                                         % (self._table_name, self._resource_name))
         try:
             dsn = etl.config.env_value("ETL_EVENT_TABLE_URI")
             conn = etl.pg.connection(dsn)
@@ -126,58 +131,39 @@ class RDBMS:
                     CREATE TABLE IF NOT EXISTS %s (
                     id serial primary key,
                     etl_id character varying (255) NOT NULL,
-                    "timestamp" numeric NOT NULL,
-                    aws_pipeline_id character varying(255),
-                    aws_emr_id character varying(255),
-                    aws_step_id character varying(255),
-                    aws_instance_id character varying(255),
-                    target character varying(255),
-                    step character varying(255),
-                    source_name character varying(255),
-                    source_schema character varying(255),
-                    source_table character varying(255),
-                    source_bucket_name character varying(255),
-                    source_object_key character varying(255),
-                    destination_name character varying (255),
-                    destination_schema character varying(255),
-                    destination_table character varying(255),
-                    destination_bucket_name character varying(255),
-                    destination_object_key character varying(255),
-                    event character varying(255),
-                    environment character varying(255),
-                    error_code character varying(255),
-                    error_message character varying(255))''' % self._table_name
+                    "timestamp" timestamp without TIME ZONE NOT NULL,
+                    target character varying(255) NOT NULL,
+                    step character varying(255) NOT NULL,
+                    event character varying(255) NOT NULL,
+                    payload jsonb)''' % self._table_name
                 curs.execute(create_table_cmd)
                 conn.commit()
-                logging.getLogger(__name__).info("Table created.")
+                logging.getLogger(__name__).info("Table (%s) created." % self._table_name)
 
             finally:
                 conn.close()
                 del conn
         except Exception as e:
-            logging.getLogger(__name__).exception("Connecting to relational store failed.")
+            logging.getLogger(__name__).exception("Connecting to %s failed." % self._resource_name)
 
     def push(self, payload):
-        def flatten(d, parent_key='', sep='_'):
-            items = []
-            for k, v in d.items():
-                new_key = parent_key + sep + k if parent_key else k
-                if isinstance(v, collections.MutableMapping):
-                    items.extend(flatten(v, new_key, sep=sep).items())
-                else:
-                    items.append((new_key, v))
-            return dict(items)
-
+        # we can store date time in RDBMS, so we should
+        payload['timestamp'] = datetime.fromtimestamp(payload['timestamp']).isoformat(' ')
+        reformed_payload = {}
+        reformed_payload['etl_id'] = payload['etl_id']
+        reformed_payload['timestamp'] = payload['timestamp']
+        reformed_payload['target'] = payload['target']
+        reformed_payload['step'] = payload['step']
+        reformed_payload['event'] = payload['event']
+        reformed_payload['payload'] = json.dumps(payload)
         try:
             dsn = etl.config.env_value("ETL_EVENT_TABLE_URI")
             conn = etl.pg.connection(dsn)
-
             try:
                 curs = conn.cursor()
-                flattened_payload = flatten(payload)
-                quoted_column_names = ", ".join('"{}"'.format(column) for column in flattened_payload.keys())
+                quoted_column_names = ", ".join('"{}"'.format(column) for column in reformed_payload.keys())
                 SQL = """INSERT INTO %s (%s) VALUES %%s""" % (self._table_name, quoted_column_names)
-                values = (tuple(flattened_payload.values()),)
+                values = (tuple(reformed_payload.values()),)
                 curs.execute(SQL, values)
                 conn.commit()
             finally:
@@ -185,4 +171,4 @@ class RDBMS:
                 del conn
 
         except Exception as e:
-            logging.getLogger(__name__).exception("Push to RDBMS failed")
+            logging.getLogger(__name__).exception("Push to %s failed" % self._resource_name)

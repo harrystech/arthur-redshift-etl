@@ -8,6 +8,7 @@ may be emitted to a persistence layer.
 """
 
 import logging
+from math import ceil
 import os
 import uuid
 
@@ -19,7 +20,6 @@ from etl.timer import utc_now, elapsed_seconds
 
 
 class Monitor:
-
     """
     Context manager to monitor ETL steps for some target table
 
@@ -53,7 +53,7 @@ class Monitor:
     def __exit__(self, exc_type, exc_value, traceback):
         seconds = elapsed_seconds(self._start_time)
         self._payload['timestamp'] = utc_now().timestamp()
-        self._payload['elapsed'] = seconds if seconds > 1e-3 else .0
+        self._payload['elapsed'] = ceil(seconds)
         if exc_type is None:
             self._logger.info("Finished %s step for '%s' (after %0.fs)", self._step, self._target.identifier, seconds)
             self._payload['event'] = 'finish'
