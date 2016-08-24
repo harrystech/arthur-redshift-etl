@@ -209,7 +209,7 @@ class SubCommand:
 
     def callback(self, args, settings):
         """Overwrite this method for sub-classes"""
-        raise NotImplementedError("Instance of %s has no proper callback" % self.__class__.__name__)
+        raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
 
 class SparkSubCommand(SubCommand):
@@ -398,13 +398,16 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "Validate table design files",
-                         "Validate table design files")
+                         "Validate table designs in local files")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix", "table-design-dir", "target"])
+        parser.add_argument("-k", "--keep-going",
+                            help="ignore errors and test as many files as possible",
+                            default=False, action="store_true")
 
     def callback(self, args, settings):
-        etl.schemas.validate_designs(settings, args.target, args.table_design_dir)
+        etl.schemas.validate_designs(settings, args.target, args.table_design_dir, keep_going=args.keep_going)
 
 
 class ExplainQueryCommand(SubCommand):
