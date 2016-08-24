@@ -15,7 +15,7 @@ import textwrap
 import psycopg2
 import psycopg2.extras
 
-from etl.monitor import Timer
+from etl.timer import Timer
 
 
 def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False, readonly=False):

@@ -25,7 +25,7 @@ import etl.load
 import etl.pg
 import etl.s3
 import etl.schemas
-import etl.monitor
+from etl.timer import Timer
 
 
 def croak(error, exit_code):
@@ -53,7 +53,7 @@ def run_arg_as_command(my_name="arthur.py"):
     else:
         etl.config.configure_logging(args.log_level)
         logger = logging.getLogger(__name__)
-        with etl.monitor.Timer() as timer:
+        with Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
                 args.func(args, settings)
