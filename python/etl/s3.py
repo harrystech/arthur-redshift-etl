@@ -46,7 +46,7 @@ from etl import TableName, AssociatedTableFiles
 _resources_for_thread = threading.local()
 
 
-class BadSourceDefinition(etl.ETLException):
+class BadSourceDefinitionError(etl.ETLException):
     pass
 
 
@@ -297,7 +297,7 @@ def _find_files_from(iterable, schemas, pattern):
         else:
             additional_files[(source_name, target_table_name)].append((filename, values["file_type"]))
     if errors:
-        raise BadSourceDefinition("Target table has multiple source tables")
+        raise BadSourceDefinitionError("Target table has multiple source tables")
     # Second pass -- only store SQL and data files for tables that have design files from first pass
     for source_name, target_table_name in additional_files:
         assoc_table = tables_by_source[source_name].get(target_table_name)

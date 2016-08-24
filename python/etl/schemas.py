@@ -13,6 +13,7 @@ import re
 import jsonschema
 import simplejson as json
 import yaml
+import yaml.parser
 
 import etl
 import etl.commands
@@ -22,13 +23,28 @@ import etl.pg
 import etl.s3
 
 
-class MissingMappingError(ValueError):
+class MissingMappingError(etl.ETLException):
     """Exception when an attribute type's target type is unknown"""
     pass
 
 
-class TableDesignError(ValueError):
+class TableDesignError(etl.ETLException):
     """Exception when a table design file is incorrect"""
+    pass
+
+
+class TableDesignParseError(TableDesignError):
+    """Exception when a table design file cannot be parsed"""
+    pass
+
+
+class TableDesignValidationError(TableDesignError):
+    """Exception when a table design file does not pass schema validation"""
+    pass
+
+
+class TableDesignSemanticError(TableDesignError):
+    """Exception when a table design file does not pass logic checks"""
     pass
 
 
@@ -128,7 +144,7 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
                                                                                  table_name.schema,
                                                                                  table_name.table,
                                                                                  attribute_name))
-        delimited_name = '"%s"' % attribute_name
+        delimited_name = '"{}"'.format(attribute_name)
         new_columns.append(etl.ColumnDefinition(name=attribute_name,
                                                 source_sql_type=attribute_type,
                                                 sql_type=mapping[0],
@@ -186,16 +202,17 @@ def validate_table_design(table_design, table_name):
         raise
     try:
         jsonschema.validate(table_design, table_design_schema)
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
+    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError) as exc:
         logger.error("Failed to validate table design for '%s'!", table_name.identifier)
-        raise
+        raise TableDesignValidationError() from exc
+
     # TODO Need more rules?
     if table_design["name"] != table_name.identifier:
-        raise TableDesignError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
+        raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
     if table_design["source_name"] == "VIEW":
         for column in table_design["columns"]:
             if column.get("skipped", False):
-                raise TableDesignError("columns may not be skipped in views")
+                raise TableDesignSemanticError("columns may not be skipped in views")
     else:
         for column in table_design["columns"]:
             if column.get("skipped", False):
@@ -203,19 +220,19 @@ def validate_table_design(table_design, table_name):
             if column.get("not_null", False):
                 # NOT NULL columns -- may not have "null" as type
                 if isinstance(column["type"], list) or column["type"] == "null":
-                    raise TableDesignError('"not null" column may not have null type')
+                    raise TableDesignSemanticError('"not null" column may not have null type')
             else:
                 # NULL columns -- must have "null" as type and may not be primary key (identity)
                 if not (isinstance(column["type"], list) and "null" in column["type"]):
-                    raise TableDesignError('"null" missing as type for null-able column')
+                    raise TableDesignSemanticError('"null" missing as type for null-able column')
                 if column.get("identity", False):
-                    raise TableDesignError("identity column must be set to not null")
+                    raise TableDesignSemanticError("identity column must be set to not null")
         identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
         if len(identity_columns) > 1:
-            raise TableDesignError("only one column should have identity")
+            raise TableDesignSemanticError("only one column should have identity")
         surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
         if len(surrogate_keys) and not surrogate_keys == identity_columns:
-            raise TableDesignError("surrogate key must be identity")
+            raise TableDesignSemanticError("surrogate key must be identity")
     return table_design
 
 
@@ -224,7 +241,10 @@ def load_table_design(stream, table_name):
     Load table design from stream (usually, an open file). The table design is
     validated before being returned.
     """
-    table_design = yaml.safe_load(stream)
+    try:
+        table_design = yaml.safe_load(stream)
+    except yaml.parser.ParserError as exc:
+        raise TableDesignParseError() from exc
     return validate_table_design(table_design, table_name)
 
 
@@ -396,7 +416,7 @@ def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=T
         logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
 
 
-def validate_designs(settings, target, table_design_dir):
+def validate_designs(settings, target, table_design_dir, keep_going=False):
     """
     Make sure that all (local) table design files pass the validation checks.
     """
@@ -411,9 +431,21 @@ def validate_designs(settings, target, table_design_dir):
         logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
         return
 
+    failed = []
     for source in found:
         for info in found[source]:
-            logger.info("Checking file '%s'", info.design_file)
-            with open(info.design_file, 'r') as design_file:
-                table_design = load_table_design(design_file, info.target_table_name)
-                logger.debug("Validated table design for '%s'", table_design["name"])
+            try:
+                logger.info("Checking file '%s'", info.design_file)
+                with open(info.design_file, 'r') as design_file:
+                    table_design = load_table_design(design_file, info.target_table_name)
+                    logger.debug("Validated table design for '%s'", table_design["name"])
+            except TableDesignError:
+                if keep_going:
+                    logger.exception("Failed to validate table design and proceeding as requested")
+                    failed.append(info)
+                else:
+                    raise
+
+    for info in failed:
+        # Just show the target table to make it easy to copy and paste into a 'arthur.py validate' commandline
+        logger.warning("Failed validation for '%s'", info.target_table_name.identifier)

@@ -48,6 +48,10 @@ def get_password(username):
 
 
 def initial_setup(settings, password, skip_user_creation):
+    """
+    Initialize data warehouse with schemas and users
+    """
+    logger = logging.getLogger(__name__)
 
     dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
     etl_user = settings("data_warehouse", "owner")
@@ -61,15 +65,15 @@ def initial_setup(settings, password, skip_user_creation):
     with closing(etl.pg.connection(dsn_admin)) as conn:
         if not skip_user_creation:
             with conn:
-                logging.info("Creating groups ('%s', '%s') and user ('%s')", etl_group, user_group, etl_user)
+                logger.info("Creating groups ('%s', '%s') and user ('%s')", etl_group, user_group, etl_user)
                 etl.pg.create_group(conn, etl_group)
                 etl.pg.create_group(conn, user_group)
                 etl.pg.create_user(conn, etl_user, password, etl_group)
         with conn:
             database_name = etl.pg.dbname(conn)
-            logging.info("Changing database '%s' to belong to the ETL owner '%s'", database_name, etl_user)
+            logger.info("Changing database '%s' to belong to the ETL owner '%s'", database_name, etl_user)
             etl.pg.execute(conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, etl_user))
-            logging.info("Dropping public schema in database '%s'", database_name)
+            logger.info("Dropping public schema in database '%s'", database_name)
             etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
             etl.pg.execute(conn, """REVOKE TEMPORARY ON DATABASE "{}" FROM PUBLIC""".format(database_name))
             # N.B. CTEs use temporary tables so to allow users WITH clause access, grant temp.
@@ -77,12 +81,12 @@ def initial_setup(settings, password, skip_user_creation):
             etl.pg.execute(conn, """GRANT TEMPORARY ON DATABASE "{}" TO GROUP "{}" """.format(database_name, user_group))
             # Create one schema for every source database
             for schema in schemas:
-                logging.info("Creating schema '%s' with owner '%s' and usage grant for '%s'",
+                logger.info("Creating schema '%s' with owner '%s' and usage grant for '%s'",
                              schema, etl_user, user_group)
                 etl.pg.create_schema(conn, schema, etl_user)
                 etl.pg.grant_all_on_schema(conn, schema, etl_group)
                 etl.pg.grant_usage(conn, schema, user_group)
-            logging.info("Clearing search path for user '%s'", etl_user)
+            logger.info("Clearing search path for user '%s'", etl_user)
             # Note that 'public' in the search path is ignored when 'public' does not exist.
             etl.pg.alter_search_path(conn, etl_user, ['public'])
 
@@ -93,6 +97,8 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     If so advised, creates a schema for the user.
     If so advised, adds the user to the ETL group, giving R/W access.
     """
+    logger = logging.getLogger(__name__)
+
     dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
     user_group = settings("data_warehouse", "groups", "users")
     etl_group = settings("data_warehouse", "groups", "etl")
@@ -104,19 +110,19 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     with closing(etl.pg.connection(dsn_admin)) as conn:
         with conn:
             if not skip_user_creation:
-                logging.info("Creating user '%s' in user group '%s'", new_user, user_group)
+                logger.info("Creating user '%s' in user group '%s'", new_user, user_group)
                 etl.pg.create_user(conn, new_user, password, user_group)
             if is_etl_user:
-                logging.info("Adding user '%s' to ETL group '%s'", new_user, etl_group)
+                logger.info("Adding user '%s' to ETL group '%s'", new_user, etl_group)
                 etl.pg.alter_group_add_user(conn, etl_group, new_user)
             if add_user_schema:
-                logging.info("Creating schema '%s' with owner '%s'", new_user, new_user)
+                logger.info("Creating schema '%s' with owner '%s'", new_user, new_user)
                 etl.pg.create_schema(conn, new_user, new_user)
                 etl.pg.grant_usage(conn, new_user, user_group)
                 etl.pg.grant_usage(conn, new_user, etl_group)
             # Always lead with the user's schema (even if it doesn't exist) to deal with schema updates gracefully.
             search_path = ["'$user'"] + list(reversed(schemas))
-            logging.info("Setting search path to: %s", search_path)
+            logger.info("Setting search path to: %s", search_path)
             etl.pg.alter_search_path(conn, new_user, search_path)
 
 
@@ -127,4 +133,4 @@ def ping(settings):
     dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
     with closing(etl.pg.connection(dsn_admin)) as conn:
         if etl.pg.ping(conn):
-            print("%s lives" % etl.pg.dbname(conn))
+            print("{} lives".format(etl.pg.dbname(conn)))
