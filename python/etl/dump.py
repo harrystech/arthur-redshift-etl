@@ -17,7 +17,7 @@ import etl.monitor
 import etl.pg
 import etl.s3
 import etl.schemas
-from etl.monitor import Timer
+from etl.timer import Timer
 
 
 APPLICATION_NAME = "DataWarehouseETL"
@@ -249,7 +249,7 @@ def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dr
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
         manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
-        with etl.monitor.Monitor('dump', target_table_name,
+        with etl.monitor.Monitor('dump', target_table_name, dry_run=dry_run,
                                  source={'name': source_name,
                                          'schema': source_table_name.schema, 'table': source_table_name.table},
                                  destination={'bucket_name': bucket_name, 'object_key': manifest_filename}):
@@ -271,11 +271,11 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     csv_path = os.path.join(prefix, "data", source_path_name, "csv")
 
     last_success = etl.s3.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
-    if last_success is None:
+    if last_success is None and not dry_run:
         raise MissingCsvFilesException("No valid CSV files (_SUCCESS is missing)")
 
     csv_files = etl.s3.list_files_in_folder(bucket_name, csv_path + "/part-")
-    if len(csv_files) == 0:
+    if len(csv_files) == 0 and not dry_run:
         raise MissingCsvFilesException("Found no CSV files")
     remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
 
