@@ -82,7 +82,7 @@ def initial_setup(settings, password, skip_user_creation):
             # Create one schema for every source database
             for schema in schemas:
                 logger.info("Creating schema '%s' with owner '%s' and usage grant for '%s'",
-                             schema, etl_user, user_group)
+                            schema, etl_user, user_group)
                 etl.pg.create_schema(conn, schema, etl_user)
                 etl.pg.grant_all_on_schema(conn, schema, etl_group)
                 etl.pg.grant_usage(conn, schema, user_group)
