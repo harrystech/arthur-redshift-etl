@@ -154,8 +154,8 @@ def add_standard_arguments(parser, options):
         prefix = parser.add_mutually_exclusive_group()
         prefix.add_argument("-p", "--prefix", default=getpass.getuser(),
                             help="select prefix in S3 bucket (default is user name: '%(default)s')")
-        prefix.add_argument("-e", "--prefix-with-date", dest="prefix", metavar="ENV", action=AppendDateAction,
-                            help="set prefix in S3 bucket to '<ENV>/<CURRENT_DATE>'")
+        prefix.add_argument("-e", "--prefix-with-date", dest="prefix", metavar="PREFIX", action=AppendDateAction,
+                            help="set prefix in S3 bucket to '<PREFIX>/<CURRENT_DATE>'")
     if "table-design-dir" in options:
         parser.add_argument("-t", "--table-design-dir",
                             help="set path to directory with table design files (default: '%(default)s')",
@@ -298,7 +298,7 @@ class DownloadSchemasCommand(SubCommand):
     def __init__(self):
         super().__init__("design",
                          "Bootstrap schema information from sources",
-                         "Download schema information from sources (and compare against current table designs)")
+                         "Download schema information from upstream sources (and compare against current table designs)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "table-design-dir", "dry-run"])
@@ -398,7 +398,7 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "Validate table design files",
-                         "Validate table designs in local files")
+                         "Validate table designs in local filesystem")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix", "table-design-dir", "target"])

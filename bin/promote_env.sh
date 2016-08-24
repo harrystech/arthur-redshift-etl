@@ -25,6 +25,6 @@ ask_to_confirm "Are you sure you want to promote staging to production?'"
 
 set -e -x
 
-for FOLDER in config jars bootstrap; do
+for FOLDER in config jars bootstrap schemas; do
     aws s3 cp --recursive "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/$FOLDER/" "s3://$CLUSTER_BUCKET/production/$FOLDER/"
 done

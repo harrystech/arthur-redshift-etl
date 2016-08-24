@@ -9,6 +9,7 @@
             "--config",
             "/var/tmp/config/",
             "etl",
+            "--verbose",
             "--prefix",
             "#{etl_environment}"
         ],
