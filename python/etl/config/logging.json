@@ -39,7 +39,13 @@
         "boto3": {
             "qualname": "boto3",
             "handlers": [ "console", "file" ],
-            "level": "INFO",
+            "level": "WARN",
+            "propagate": 0
+        },
+        "s3transfer": {
+            "qualname": "s3transfer",
+            "handlers": [ "console", "file" ],
+            "level": "WARN",
             "propagate": 0
         },
         "py4j.java_gateway": {
