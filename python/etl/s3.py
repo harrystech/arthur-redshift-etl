@@ -46,7 +46,7 @@ from etl import TableName, AssociatedTableFiles
 _resources_for_thread = threading.local()
 
 
-class BadSourceDefinition(etl.ETLException):
+class BadSourceDefinitionError(etl.ETLException):
     pass
 
 
@@ -125,6 +125,16 @@ def get_last_modified(bucket_name, object_key):
     return timestamp
 
 
+def object_stat(bucket_name, object_key):
+    """
+    Return content_length and last_modified timestamp from the object.
+    It is an error if the object does not exist.
+    """
+    bucket = _get_bucket(bucket_name)
+    s3_object = bucket.Object(object_key)
+    return s3_object.content_length, s3_object.last_modified
+
+
 def get_file_content(bucket_name, object_key):
     """
     Return stream for content of s3://bucket_name/object_key
@@ -178,7 +188,7 @@ def list_local_files(directory):
     logging.getLogger(__name__).info("Looking for files in '%s'", directory)
     for root, dirs, files in os.walk(os.path.normpath(directory)):
         for filename in sorted(files):
-            if not filename.endswith(('.swp', '~')):
+            if not filename.endswith(('.swp', '~', '.DS_Store')):
                 yield os.path.join(root, filename)
 
 
@@ -297,7 +307,7 @@ def _find_files_from(iterable, schemas, pattern):
         else:
             additional_files[(source_name, target_table_name)].append((filename, values["file_type"]))
     if errors:
-        raise BadSourceDefinition("Target table has multiple source tables")
+        raise BadSourceDefinitionError("Target table has multiple source tables")
     # Second pass -- only store SQL and data files for tables that have design files from first pass
     for source_name, target_table_name in additional_files:
         assoc_table = tables_by_source[source_name].get(target_table_name)
@@ -314,7 +324,7 @@ def _find_files_from(iterable, schemas, pattern):
     return ordered_found
 
 
-def list_files(settings, prefix, table):
+def list_files(settings, prefix, table, long_format=False):
     """
     List files in the S3 bucket.
 
@@ -336,10 +346,10 @@ def list_files(settings, prefix, table):
         print("Source: {}".format(source_name))
         for info in found[source_name]:
             if info.manifest_file is not None:
-                print("    Table: {} (with data: {})".format(info.target_table_name.table,
-                                                             info.source_table_name.identifier))
+                print("    Table: {} (with data from {})".format(info.target_table_name.table,
+                                                                 info.source_table_name.identifier))
             else:
-                print("    Table: {} (with query)".format(info.target_table_name.table))
+                print("    Table: {}".format(info.target_table_name.table))
             files = [("Design", info.design_file)]
             if info.sql_file is not None:
                 files.append(("SQL", info.sql_file))
@@ -348,4 +358,9 @@ def list_files(settings, prefix, table):
             if len(info.data_files) > 0:
                 files.extend(("Data", filename) for filename in info.data_files)
             for file_type, filename in files:
-                print("        {}: s3://{}/{}".format(file_type, bucket_name, filename))
+                if long_format:
+                    content_length, last_modified = object_stat(bucket_name, filename)
+                    print("        {}: s3://{}/{} ({:d}, {})".format(file_type, bucket_name, filename,
+                                                                     content_length, last_modified))
+                else:
+                    print("        {}: s3://{}/{}".format(file_type, bucket_name, filename))

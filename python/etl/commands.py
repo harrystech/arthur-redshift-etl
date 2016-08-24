@@ -430,9 +430,12 @@ class ListFilesCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix", "target"])
+        parser.add_argument("-l", "--long-format",
+                            help="add file size and timestamp of last modification",
+                            action="store_true")
 
     def callback(self, args, settings):
-        etl.s3.list_files(settings, args.prefix, args.target)
+        etl.s3.list_files(settings, args.prefix, args.target, long_format=args.long_format)
 
 
 if __name__ == "__main__":
