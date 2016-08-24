@@ -62,6 +62,7 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
     """
     Load settings (and environment) from defaults and config files.
     """
+    logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
     default_file = pkg_resources.resource_filename(__name__, default_file)
 
@@ -73,8 +74,10 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
         for filename in files:
             if filename.endswith(".sh"):
                 load_environ_file(filename)
-            else:
+            elif filename.endswith((".yaml", ".yml")):
                 load_settings_file(filename, settings)
+            else:
+                logger.info("Skipping config file '%s'", filename)
     try:
         schema = load_json("settings.schema")
         jsonschema.validate(settings, schema)
