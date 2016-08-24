@@ -1,5 +1,5 @@
 -- Create a table with various types to test the write to JSON in Spark followed by COPY in Redshift
-CREATE TABLE redshift_pipe_cleaner (
+CREATE TABLE IF NOT EXISTS redshift_pipe_cleaner (
   an_int INTEGER,
   a_default INTEGER DEFAULT 10 NOT NULL,
   a_double DOUBLE PRECISION,
@@ -9,6 +9,8 @@ CREATE TABLE redshift_pipe_cleaner (
   a_date DATE,
   a_timestamp TIMESTAMP
 );
+
+TRUNCATE TABLE redshift_pipe_cleaner;
 
 INSERT INTO redshift_pipe_cleaner VALUES
   (1, 2, 3.3, 4.4, TRUE, 'Hello', '2016-06-13', '2016-06-13 11:44:00'),
@@ -20,6 +22,8 @@ INSERT INTO redshift_pipe_cleaner VALUES
 INSERT INTO redshift_pipe_cleaner(a_text) VALUES
   (NULL),
   ('"'),
-  (','),
-  ('Jeffrey "The Dude" Lebowski, a Los Angeles slacker')
+  ('A comma , within the line'),
+  ('Jeffrey "The Dude" Lebowski, a Los Angeles slacker'),
+  ('This line\nbroke.'),
+  ('And now throwing it all in:\n''single'' and "double" quotes with line\nbreaks and commas.')
 ;
