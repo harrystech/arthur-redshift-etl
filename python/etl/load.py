@@ -390,7 +390,7 @@ def load_or_update_table(conn, bucket_name, assoc_table_files, table_owner,
         object_key = assoc_table_files.manifest_file
 
     vacuumable = []
-    with etl.monitor.Monitor('load', table_name,
+    with etl.monitor.Monitor('load', table_name, dry_run=dry_run,
                              source={'bucket_name': bucket_name, 'object_key': object_key},
                              destination={'schema': table_name.schema, 'table': table_name.table}):
         with conn:

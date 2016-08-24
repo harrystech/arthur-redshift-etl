@@ -249,7 +249,7 @@ def dump_source_to_s3(sql_context, source, tables_in_s3, bucket_name, prefix, dr
         source_table_name = assoc_table_files.source_table_name
         target_table_name = assoc_table_files.target_table_name
         manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
-        with etl.monitor.Monitor('dump', target_table_name,
+        with etl.monitor.Monitor('dump', target_table_name, dry_run=dry_run,
                                  source={'name': source_name,
                                          'schema': source_table_name.schema, 'table': source_table_name.table},
                                  destination={'bucket_name': bucket_name, 'object_key': manifest_filename}):
