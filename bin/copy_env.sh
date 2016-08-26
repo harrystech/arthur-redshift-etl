@@ -51,7 +51,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
 
     python3 setup.py sdist
     for FILE in requirements.txt \
-                dist/redshift-etl-0.6.7.tar.gz
+                dist/redshift-etl-0.7.0.tar.gz
     do
         aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/jars/"
     done
