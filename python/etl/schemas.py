@@ -194,7 +194,7 @@ def validate_table_design(table_design, table_name):
     to run inside json-schema.
     """
     logger = logging.getLogger(__name__)
-    logger.debug("Trying to validate table design for '%s' from stream", table_name.identifier)
+    logger.debug("Trying to validate table design for '%s' from input stream", table_name.identifier)
     try:
         table_design_schema = etl.config.load_json("table_design.schema")
     except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
@@ -246,6 +246,15 @@ def load_table_design(stream, table_name):
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError() from exc
     return validate_table_design(table_design, table_name)
+
+
+def download_table_design(bucket_name, design_file, table_name):
+    """
+    Download table design from file in S3.
+    """
+    with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
+        table_design = load_table_design(content, table_name)
+    return table_design
 
 
 def save_table_design(table_design, source_table_name, source_output_dir, dry_run=False):
@@ -438,7 +447,7 @@ def validate_designs(settings, target, table_design_dir, keep_going=False):
                 logger.info("Checking file '%s'", info.design_file)
                 with open(info.design_file, 'r') as design_file:
                     table_design = load_table_design(design_file, info.target_table_name)
-                    logger.debug("Validated table design for '%s'", table_design["name"])
+                logger.debug("Validated table design for '%s'", table_design["name"])
             except TableDesignError:
                 if keep_going:
                     logger.exception("Failed to validate table design and proceeding as requested")

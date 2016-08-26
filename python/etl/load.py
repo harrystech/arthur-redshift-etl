@@ -16,6 +16,15 @@ as materialized views.)
 (3) "VIEWS" are views and so must have a SQL file.
 
 
+Details for (1):
+
+CSV files must have fields delimited by commas, quotes around fields if they
+contain a comma, and have doubled-up quotes if there's a quote within the field.
+
+Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
+
+TODO What is the date format and timestamp format of Sqoop and Spark?
+
 Details for (2):
 
 Expects for every derived table (CTAS) a SQL file in the S3 bucket with a valid
@@ -45,11 +54,11 @@ import etl.s3
 import etl.schemas
 
 
-class MissingQueryException(etl.ETLException):
+class MissingQueryError(etl.ETLException):
     pass
 
 
-class MissingManifestException(etl.ETLException):
+class MissingManifestError(etl.ETLException):
     pass
 
 
@@ -201,11 +210,11 @@ def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=Fal
         try:
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
+            # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
             etl.pg.execute(conn, """COPY {}
                                     FROM %s
                                     CREDENTIALS %s MANIFEST
-                                    FORMAT AS CSV GZIP IGNOREHEADER 1
-                                    NULL AS '\\\\N'
+                                    DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
@@ -341,12 +350,13 @@ def grant_access(conn, table_name, etl_group, user_group, dry_run=False):
     """
     Grant select permission to users and all privileges to etl group.
     """
+    logger = logging.getLogger(__name__)
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping permissions grant on '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping permissions grant on '%s'", table_name.identifier)
     else:
-        logging.getLogger(__name__).info("Granting all privileges on '%s' to '%s'", table_name.identifier, etl_group)
+        logger.info("Granting all privileges on '%s' to '%s'", table_name.identifier, etl_group)
         etl.pg.grant_all(conn, table_name.schema, table_name.table, etl_group)
-        logging.getLogger(__name__).info("Granting select access on '%s' to '%s'", table_name.identifier, user_group)
+        logger.info("Granting select access on '%s' to '%s'", table_name.identifier, user_group)
         etl.pg.grant_select(conn, table_name.schema, table_name.table, user_group)
 
 
@@ -372,13 +382,14 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_table(conn, bucket_name, assoc_table_files, table_owner,
-                         credentials,  etl_group, user_group,
-                         add_explain_plan=False, drop=False, dry_run=False):
+def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
+                                     table_owner, etl_group, user_group,
+                                     add_explain_plan=False, drop=False, dry_run=False):
+    """
+    Load single table from CSV or using a SQL query or create new view.
+    """
     table_name = assoc_table_files.target_table_name
-    design_file = assoc_table_files.design_file
-    with closing(etl.s3.get_file_content(bucket_name, design_file)) as content:
-        table_design = etl.schemas.load_table_design(content, table_name)
+    table_design = etl.schemas.download_table_design(bucket_name, assoc_table_files.design_file, table_name)
 
     if table_design["source_name"] in ("CTAS", "VIEW"):
         with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
@@ -386,31 +397,30 @@ def load_or_update_table(conn, bucket_name, assoc_table_files, table_owner,
         object_key = assoc_table_files.sql_file
     else:
         if assoc_table_files.manifest_file is None:
-            raise MissingManifestException("Missing manifest file")
+            raise MissingManifestError("Missing manifest file")
         object_key = assoc_table_files.manifest_file
 
-    vacuumable = []
+    modified = False
     with etl.monitor.Monitor('load', table_name, dry_run=dry_run,
                              source={'bucket_name': bucket_name, 'object_key': object_key},
                              destination={'schema': table_name.schema, 'table': table_name.table}):
         with conn:
             if table_design["source_name"] == "VIEW":
-                create_view(conn, table_design, table_name, table_owner, query,
-                            drop_view=drop, dry_run=dry_run)
+                create_view(conn, table_design, table_name, table_owner, query, drop_view=drop, dry_run=dry_run)
             elif table_design["source_name"] == "CTAS":
                 create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
                 create_temp_table_as_and_copy(conn, table_name, table_design, query,
                                               add_explain_plan=add_explain_plan, dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
-                vacuumable.append(table_name)
+                modified = True
             else:
                 create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
                 copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
                           dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
-                vacuumable.append(table_name)
+                modified = True
             grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
-    return vacuumable
+    return modified
 
 
 def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=False):
@@ -445,9 +455,12 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
     with closing(etl.pg.connection(dw)) as conn:
         for source_name in files_in_s3:
             for assoc_table_files in files_in_s3[source_name]:
-                vacuumable.extend(load_or_update_table(conn, bucket_name, assoc_table_files, table_owner,
-                                                       credentials,  etl_group, user_group,
-                                                       add_explain_plan=False, drop=False, dry_run=False))
+                modified = load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
+                                                            table_owner, etl_group, user_group,
+                                                            add_explain_plan=add_explain_plan, drop=drop,
+                                                            dry_run=dry_run)
+                if modified:
+                    vacuumable.append(assoc_table_files.target_table_name)
 
     # Reconnect to run vacuum outside transaction block
     if not drop:
@@ -494,7 +507,7 @@ def test_queries(settings, target, table_design_dir):
                     continue
 
                 if sql_file is None:
-                    raise MissingQueryException("Missing SQL file for %s" % table_name.identifier)
+                    raise MissingQueryError("Missing SQL file for {}".format(table_name.identifier))
                 logger.info("Reading query from local file '%s'", sql_file)
                 with open(sql_file) as f:
                     query = f.read()

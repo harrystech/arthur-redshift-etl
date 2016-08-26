@@ -38,6 +38,9 @@ import etl.pg
 
 
 def get_password(username):
+    """
+    Read password from stdin (twice to make sure that it was correctly entered)
+    """
     password = getpass.getpass("Password for %s: " % username)
     if len(password) < 1:
         raise RuntimeError("Empty password")
