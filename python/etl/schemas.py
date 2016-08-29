@@ -219,20 +219,72 @@ def validate_table_design(table_design, table_name):
         for column in table_design["columns"]:
             if column.get("skipped", False):
                 raise TableDesignSemanticError("columns may not be skipped in views")
-    else:
-        for column in table_design["columns"]:
-            if column.get("skipped", False):
-                continue
-            if column.get("identity", False) and not column.get("not_null", False):
-                # NULL columns may not be primary key (identity)
+
+        # VIEW validation ends here
+        return table_design
+
+    # Designs for physical tables need further validation for columns:
+    column_set = set()
+    for column in table_design["columns"]:
+        column_set.add(column['name'])
+        if column.get("skipped", False):
+            continue
+        if column.get("not_null", False):
+            # NOT NULL columns -- may not have "null" as type
+            if isinstance(column["type"], list) or column["type"] == "null":
+                raise TableDesignSemanticError('"not null" column may not have null type')
+        else:
+            # NULL columns -- must have "null" as type and may not be primary key (identity)
+            if not (isinstance(column["type"], list) and "null" in column["type"]):
+                raise TableDesignSemanticError('"null" missing as type for null-able column')
+            if column.get("identity", False):
                 raise TableDesignSemanticError("identity column must be set to not null")
-        identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
-        if len(identity_columns) > 1:
-            raise TableDesignSemanticError("only one column should have identity")
-        surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
-        if len(surrogate_keys) and not surrogate_keys == identity_columns:
-            raise TableDesignSemanticError("surrogate key must be identity")
+    identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
+    if len(identity_columns) > 1:
+        raise TableDesignSemanticError("only one column should have identity")
+    surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
+    if len(surrogate_keys) and not surrogate_keys == identity_columns:
+        raise TableDesignSemanticError("surrogate key must be identity")
+    column_list_references = [
+        ('constraints', 'primary_key'),
+        ('constraints', 'natural_key'),
+        ('constraints', 'surrogate_key'),
+        ('constraints', 'foreign_key'),
+        ('constraints', 'unique'),
+        ('attributes', 'interleaved_sort'),
+        ('attributes', 'compound_sort')
+    ]
+
+    invalid_col_list_template = "{obj}'s {key} list should only contain named columns but it does not"
+    for obj, key in column_list_references:
+        if not _column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
+            raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
+
     return table_design
+
+
+def _column_list_has_columns(column_set, possible_column_list):
+    """
+    Accepts a set of known columns and a list of strings that may be columns (or a string that should be a column)
+    Returns True if the possible column list is found within column_set and False otherwise
+
+    >>> _column_list_has_columns({'a'}, 'a')
+    True
+    >>> _column_list_has_columns({'fish'}, 'a')
+    False
+    >>> _column_list_has_columns({'a', 'b'}, ['b', 'a'])
+    True
+    >>> _column_list_has_columns({'a', 'b'}, ['b', 'c'])
+    False
+    """
+    if not possible_column_list:
+        return True
+    if not isinstance(possible_column_list, list):
+        possible_column_list = [possible_column_list]
+    for column in possible_column_list:
+        if column not in column_set:
+            return False
+    return True
 
 
 def load_table_design(stream, table_name):

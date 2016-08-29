@@ -158,7 +158,14 @@
                 { "required": [ "distribution", "interleaved_sort" ] }
             ],
             "additionalProperties": false
-        }
+        },
+        "depends_on": {
+            "type": "array",
+            "description": "List of all dependency tables of this transformation",
+            "items": { "$ref": "#/properties/name" },
+            "minItems": 1,
+            "uniqueItems": true            
+        }        
     },
     "required": [ "name", "source_name", "columns" ],
     "additionalProperties": false
