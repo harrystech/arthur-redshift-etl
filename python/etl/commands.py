@@ -14,6 +14,7 @@ import uuid
 import sys
 import traceback
 
+import boto3
 import pkg_resources
 import simplejson as json
 
@@ -21,14 +22,12 @@ import etl
 import etl.config
 import etl.dump
 import etl.dw
-import etl.json_logger
+from etl.json_encoder import FancyJsonEncoder
 import etl.load
+import etl.monitor
 import etl.pg
 import etl.s3
 import etl.schemas
-
-import boto3
-
 from etl.timer import Timer
 
 
@@ -61,11 +60,15 @@ def run_arg_as_command(my_name="arthur.py"):
     elif args.cluster_id:
         submit_step(args.cluster_id, args.sub_command)
     else:
-        etl.config.configure_logging(args.log_level)
+        etl.config.configure_logging(args.prolix, args.log_level)
         logger = logging.getLogger(__name__)
         with Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
+                etl_events = settings("etl_events")
+                etl.monitor.set_environment(getattr(args, "prefix", None),
+                                            dynamodb_settings=etl_events.get("dynamodb", {}),
+                                            postgresql_settings=etl_events.get("postgresql", {}))
                 args.func(args, settings)
             except etl.ETLException as exc:
                 logger.exception("Something bad happened in the ETL:")
@@ -80,16 +83,7 @@ def run_arg_as_command(my_name="arthur.py"):
                 logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
                 croak(exc, 3)
             else:
-                logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
-
-
-def _datetime2string(obj):
-    """
-    Turn datetime.datetime object returned by boto into string for json dump
-    """
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    raise TypeError("{} is not JSON-serializable".format(type(obj)))
+                logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
 def submit_step(cluster_id, sub_command):
@@ -117,11 +111,43 @@ def submit_step(cluster_id, sub_command):
         )
         step_id = response['StepIds'][0]
         status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
-        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, default=_datetime2string)
+        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
         sys.stdout.write('\n')
     except Exception as exc:
-        logging.getLogger(__name__).exception("oops")
+        logging.getLogger(__name__).exception("Adding step to job flow failed:")
         croak(exc, 1)
+
+
+def build_basic_parser(prog_name, description=None):
+    """
+    Build basic parser that knows about the configuration setting.
+
+    The `--config` option is central and can be easily avoided using the environment
+    variable so is always here (meaning between 'arthur.py' and the sub-command).
+
+    Similarly, '--submit-to-cluster' is shared for all sub-commands.
+    """
+    parser = argparse.ArgumentParser(prog=prog_name, description=description)
+    group = parser.add_mutually_exclusive_group()
+
+    # Show different help message depending on whether user has already set the environment variable.
+    default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
+    if default_config is None:
+        group.add_argument("-c", "--config",
+                           help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
+                           action="append", default=[])
+        # N.B. With mutually exclusive params, cannot require config ... so this will fail with missing settings.
+    else:
+        group.add_argument("-c", "--config",
+                           help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
+                           action="append", default=[default_config])
+    group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
+                       dest="cluster_id")
+
+    # Set defaults so that we can avoid having to test the Namespace object.
+    parser.set_defaults(log_level=None)
+    parser.set_defaults(func=None)
+    return parser
 
 
 def build_full_parser(prog_name):
@@ -155,38 +181,6 @@ def build_full_parser(prog_name):
     return parser
 
 
-def build_basic_parser(prog_name, description=None):
-    """
-    Build basic parser that knows about the configuration setting.
-
-    The `--config` option is central and can be easily avoided using the environment
-    variable so is always here (meaning between 'arthur.py' and the sub-command).
-
-    Similarly, '--submit-to-cluster' is shared for all sub-commands.
-    """
-    parser = argparse.ArgumentParser(prog=prog_name, description=description)
-    group = parser.add_mutually_exclusive_group()
-
-    # Show different help message depending on whether user has already set the environment variable.
-    default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
-    if default_config is None:
-        group.add_argument("-c", "--config",
-                           help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
-                           action="append", default=[])
-        # FIXME With mutually exclusive params, cannot require config.
-    else:
-        group.add_argument("-c", "--config",
-                           help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
-                           action="append", default=[default_config])
-    group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
-                       dest="cluster_id")
-
-    # Set defaults so that we can avoid having to test the Namespace object.
-    parser.set_defaults(log_level=None)
-    parser.set_defaults(func=None)
-    return parser
-
-
 def add_standard_arguments(parser, options):
     """
     Provide "standard arguments in the sense that the name and description should be the
@@ -199,6 +193,7 @@ def add_standard_arguments(parser, options):
 
     # Choice between verbose and silent simply affects the log level.
     group = parser.add_mutually_exclusive_group()
+    group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
     group.add_argument("-v", "--verbose", help="increase verbosity",
                        action="store_const", const="DEBUG", dest="log_level")
     group.add_argument("-s", "--silent", help="decrease verbosity",
@@ -218,6 +213,9 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-t", "--table-design-dir",
                             help="set path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
+    if "max-partitions" in options:
+        parser.add_argument("-m", "--max-partitions", metavar="N",
+                            help="set max number of partitions to write to N (default: %(default)s)", default=4)
     if "drop" in options:
         parser.add_argument("-d", "--drop",
                             help="first drop table or view to force update of definition", default=False,
@@ -373,7 +371,7 @@ class DumpDataToS3Command(SubCommand):
                          "Dump table contents to files in S3 along with a manifest file")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["target", "prefix", "max-partitions", "dry-run"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--sqoop",
                            help="dump data using Sqoop (using 'sqoop import', this is the default)",
@@ -402,7 +400,7 @@ class DumpDataToS3Command(SubCommand):
                 sys.exit(1)
         else:
             with etl.pg.log_error():
-                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix,
+                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, args.max_partitions,
                                                keep_going=args.keep_going, dry_run=args.dry_run)
 
 
@@ -446,13 +444,13 @@ class ExtractLoadTransformCommand(SubCommand):
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["target", "prefix", "max-partitions", "dry-run"])
         parser.add_argument("-f", "--force",
                             help="force loading, run 'dump' then 'load' (instead of 'dump' then 'update')",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
-        etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, dry_run=args.dry_run)
+        etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, args.max_partitions, dry_run=args.dry_run)
         etl.load.load_or_update_redshift(settings, args.target, args.prefix, drop=args.force, dry_run=args.dry_run)
 
 
@@ -516,7 +514,7 @@ class EventsQueryCommand(SubCommand):
         add_standard_arguments(parser, ["target"])
 
     def callback(self, args, settings):
-        etl.json_logger.query_for(args.target, args.etl_id)
+        etl.monitor.query_for(args.target, args.etl_id)
 
 
 if __name__ == "__main__":

@@ -185,8 +185,7 @@ def create_table_design(source_name, source_table_name, table_name, columns):
 
 def validate_table_design(table_design, table_name):
     """
-    Validate table design against schema.  Raise exception if anything is not
-    right.
+    Validate table design against schema.  Raise exception if anything is not right.
 
     Phase 1 of validation is based on a schema and json-schema validation.
     Phase 2 is built on specific rules that I couldn't figure out how
@@ -198,7 +197,7 @@ def validate_table_design(table_design, table_name):
         jsonschema.exceptions.ValidationError,
         jsonschema.exceptions.SchemaError,
         json.scanner.JSONDecodeError)
-
+    # Two things can break here: reading the schema, which is validated, and then reading the table design.
     try:
         table_design_schema = etl.config.load_json("table_design.schema")
     except validation_internal_errors:
@@ -344,7 +343,7 @@ def compare_columns(live_design, file_design):
     logger.info("Checking design for %s", live_design["name"])
     live_columns = {column["name"] for column in live_design["columns"]}
     file_columns = {column["name"] for column in file_design["columns"]}
-    # TODO define policy to declare columns "ETL-only"
+    # TODO define policy to declare columns "ETL-only" Or remove this "feature"?
     etl_columns = {name for name in file_columns if name.startswith("etl__")}
     logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
                  file_design["name"], len(live_columns), len(file_columns), len(etl_columns))
@@ -494,7 +493,7 @@ def validate_designs(settings, target, table_design_dir, keep_going=False):
                 logger.debug("Validated table design for '%s'", table_design["name"])
             except TableDesignError:
                 if keep_going:
-                    logger.exception("Failed to validate table design and proceeding as requested")
+                    logger.exception("Failed to validate table design and proceeding as requested:")
                     failed.append(info)
                 else:
                     raise

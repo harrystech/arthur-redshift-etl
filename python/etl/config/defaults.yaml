@@ -16,6 +16,19 @@
         # Schemas that are filled out based on CTAS or views and have no direct upstream source
         "schemas": []
     },
+    # Logging of the ETL into events tables
+    "etl_events": {
+        # Send ETL events to DynamoDB table
+        "dynamodb": {
+            "table_prefix": "redshift-etl-events",
+            "capacity": 3
+        # },
+        # # Send ETL events to an RDS instance / PostgreSQL host
+        # "postgresql": {
+        #     "table_prefix": "redshift_etl_events",
+        #     "write_access": "REDSHIFT_ETL_EVENTS_URI"
+        }
+    },
     # Type information from source (PostgreSQL) to target (Redshift)
     "type_maps": {
         # Types that may be used "as-is", see also
@@ -45,7 +58,7 @@
             "character varying": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "text": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
-            # TODO Make the time zone configurable
+            # TODO Make the time zone configurable (and make sure it's actually correct)
             "timestamp with time zone": ["timestamp without time zone", "%s AT TIME ZONE 'America/New_York'", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
             # N.B. Newer versions of PostgreSQL have a more useful hstore_to_json function but this works for 9.2

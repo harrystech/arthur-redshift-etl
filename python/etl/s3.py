@@ -335,13 +335,13 @@ def list_files(settings, prefix, table, long_format=False):
     combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
     schemas = selection.match_field(combined_schemas, "name")
     schema_names = [s["name"] for s in schemas]
-
     bucket_name = settings("s3", "bucket_name")
     found = find_files_for_schemas(bucket_name, prefix, schema_names, selection)
     if not found:
         logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
         return
 
+    total_length = 0
     for source_name in found:
         print("Source: {}".format(source_name))
         for info in found[source_name]:
@@ -360,7 +360,10 @@ def list_files(settings, prefix, table, long_format=False):
             for file_type, filename in files:
                 if long_format:
                     content_length, last_modified = object_stat(bucket_name, filename)
+                    total_length += content_length
                     print("        {}: s3://{}/{} ({:d}, {})".format(file_type, bucket_name, filename,
                                                                      content_length, last_modified))
                 else:
                     print("        {}: s3://{}/{}".format(file_type, bucket_name, filename))
+    if total_length != 0:
+        print("Total size in bytes: {:d}".format(total_length))

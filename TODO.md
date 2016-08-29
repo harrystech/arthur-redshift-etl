@@ -2,6 +2,8 @@
 
 ## Features, bug fixes, nitpicks etc.
 
+Review all log messages: messages that can stop the ETL should be CRITICAL, others are ERROR or WARNING.
+
 Warn on validate when a description field is missing.
 
 Allow to specify which group has access to any source.  (Goal: differentiate users of ETL, full read-only analytics groups)

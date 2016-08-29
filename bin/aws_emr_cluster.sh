@@ -3,19 +3,7 @@
 # Start a EMR cluster in AWS for a Spark job.
 #   Non-interactive jobs will run the steps and then quit.
 #   Interactive jobs will run the steps and then wait for additional work.
-
-# TODO
-# (1) Copy the jar files into {environment}/jars:
-#      RedshiftJDBC41-1.1.10.1010.jar
-#      commons-csv-1.4.jar
-#      postgresql-9.4.1208.jar
-#      spark-csv_2.10-1.4.0.jar
-# (2.1) Package up the Python code (python3 setup.py sdist) and copy it into the same dir:
-#      redshift-etl-0.6.2.tar.gz
-# (2.2) Along with the requirements file for the ETL package:
-#      requirements.txt
-# (3) Copy the configuration into {environment}/config:
-#      aws s3 cp --recursive ~/gits/.../config/ s3://{BUCKET_NAME}/${USER}/config/
+# Checkout the copy_env.sh script to have files ready in S3 for the EMR cluster.
 
 set -e
 

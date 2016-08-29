@@ -219,7 +219,7 @@ def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=Fal
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
             conn.commit()
-            # TODO Retrieve list of files that were actually loaded
+            # FIXME Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
         except psycopg2.Error as exc:
@@ -403,8 +403,9 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
             raise MissingManifestError("Missing manifest file")
         object_key = assoc_table_files.manifest_file
 
+    # FIXME The monitor should contain the database we're connected to and the number of rows that were loaded.
     modified = False
-    with etl.monitor.Monitor('load', table_name, dry_run=dry_run,
+    with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
                              source={'bucket_name': bucket_name, 'object_key': object_key},
                              destination={'schema': table_name.schema, 'table': table_name.table}):
         with conn:
