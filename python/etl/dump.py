@@ -26,6 +26,9 @@ from etl.timer import Timer
 
 APPLICATION_NAME = "DataWarehouseETL"
 
+# N.B. This must match value in deploy scripts in /bin
+REDSHIFT_ETL_HOME = "/tmp/redshift_etl"
+
 
 class UnknownTableSizeError(etl.ETLException):
     pass
@@ -424,7 +427,7 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, passwor
     args = ["import",
             "--connect", q(jdbc_url),
             "--driver", q("org.postgresql.Driver"),
-            "--connection-param-file", q("/var/tmp/config/ssl.props"),
+            "--connection-param-file", q(os.path.join(REDSHIFT_ETL_HOME, "sqoop", "ssl.props")),
             "--username", q(dsn_properties["user"]),
             "--password-file", '"file://{}"'.format(password_file),
             "--verbose",
@@ -448,6 +451,41 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, passwor
     return args
 
 
+def write_password_file(password, dry_run=False):
+    """
+    Write password to a (temporary) file, return name of file created.
+    """
+    logger = logging.getLogger(__name__)
+    if dry_run:
+        logger.info("Dry-run: Skipping writing of password file")
+        password_file = None
+    else:
+        with NamedTemporaryFile('w+', dir=os.path.join(REDSHIFT_ETL_HOME, "sqoop"), prefix="pw_", delete=False) as fp:
+            fp.write(password)
+            fp.close()
+        password_file = fp.name
+        logger.info("Wrote password to '%s'", password_file)
+    return password_file
+
+
+def write_options_file(args, dry_run=False):
+    """
+    Write options to a (temporary) file, return name of file created.
+    """
+    logger = logging.getLogger(__name__)
+    if dry_run:
+        logger.info("Dry-run: Skipping creation of Sqoop options file")
+        options_file = None
+    else:
+        with NamedTemporaryFile('w+', dir=os.path.join(REDSHIFT_ETL_HOME, "sqoop"), prefix="so_", delete=False) as fp:
+            fp.write('\n'.join(args))
+            fp.write('\n')
+            fp.close()
+        options_file = fp.name
+        logger.info("Wrote Sqoop options to '%s'", options_file)
+    return options_file
+
+
 def run_sqoop(options_file, dry_run=False):
     """
     Run Sqoop in a sub-process with the help of the given options file.
@@ -455,7 +493,7 @@ def run_sqoop(options_file, dry_run=False):
     logger = logging.getLogger(__name__)
     args = ["sqoop", "--options-file", options_file]
     if dry_run:
-        logger.info("Dry-run: Skipping running Sqoop")
+        logger.info("Dry-run: Skipping Sqoop run")
     else:
         logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
         sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -481,37 +519,26 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_fi
     csv_path = os.path.join(prefix, "data", source_name,
                             "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
     manifest_filename = os.path.join(prefix, "data", source_table_files.source_path_name + ".manifest")
+    sqoop_files = os.path.join(REDSHIFT_ETL_HOME, 'sqoop')
 
-    if dry_run:
-        logger.info("Dry-run: Skipping writing of password file")
-        password_file = None
-    else:
-        with NamedTemporaryFile('w+', dir="/var/tmp/passwords", prefix="pw_", delete=False) as fp:
-            fp.write(dsn_properties["password"])
-            fp.close()
-        password_file = fp.name
-        logger.info("Wrote password to '%s'", password_file)
+    if not os.path.isdir(sqoop_files) and not dry_run:
+        logger.info("Creating directory '%s' (with mode 750)", sqoop_files)
+        os.makedirs(sqoop_files, mode=0o750, exist_ok=True)
+
+    # TODO Create ssl.props here instead of bootstrap.sh script
+
+    password_file = write_password_file(dsn_properties["password"], dry_run=dry_run)
 
     args = build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties,  password_file, source_table_files)
     logger.info("Sqoop options are:\n%s", " ".join(args))
-    if dry_run:
-        logger.info("Dry-run: Skipping creation of Sqoop options file")
-        options_file = None
-    else:
-        # XXX Use a temp directory so that this works locally
-        with NamedTemporaryFile('w+', dir="/var/tmp/sqoop_options", prefix="so_", delete=False) as fp:
-            fp.write('\n'.join(args))
-            fp.write('\n')
-            fp.close()
-        options_file = fp.name
-        logger.info("Wrote Sqoop options to '%s'", options_file)
+    options_file = write_options_file(args, dry_run=dry_run)
 
     # Need to first delete directory since sqoop won't overwrite (and can't delete)
     deletable = etl.s3.list_files_in_folder(bucket_name, csv_path)
     etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
 
     run_sqoop(options_file, dry_run=dry_run)
-    write_manifest_file(bucket_name, prefix, source_table_files.source_path_name, manifest_filename, dry_run=False)
+    write_manifest_file(bucket_name, prefix, source_table_files.source_path_name, manifest_filename, dry_run=dry_run)
 
 
 def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, keep_going=False, dry_run=False):

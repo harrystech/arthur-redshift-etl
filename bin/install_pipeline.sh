@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 
-CLUSTER_BUCKET="${1?'Missing bucket name'}"
-CLUSTER_ENVIRONMENT="${2?'Missing name of environment'}"
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+    echo "Usage: `basename $0` <bucket_name> [<environment>]"
+    echo "The environment defaults to 'production'."
+    exit 0
+fi
 
-PIPELINE_ID_FILE="/var/tmp/pipeline_id_${USER}_$$.json"
+CLUSTER_BUCKET="${1?'Missing bucket name'}"
+CLUSTER_ENVIRONMENT="${2-production}"
+
+PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
 set -e -x
 
 aws datapipeline create-pipeline \
     --name "ETL Pipeline ($CLUSTER_ENVIRONMENT)" \
-    --unique-id etl_pipeline \
+    --unique-id redshift_etl_pipeline \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`

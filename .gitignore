@@ -21,7 +21,7 @@
 credentials.*
 
 # ignore jars
-jars/*
+jars/
 
 # Mac stuff
 .DS_Store
