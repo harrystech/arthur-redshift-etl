@@ -229,16 +229,10 @@ def validate_table_design(table_design, table_name):
         column_set.add(column['name'])
         if column.get("skipped", False):
             continue
-        if column.get("not_null", False):
-            # NOT NULL columns -- may not have "null" as type
-            if isinstance(column["type"], list) or column["type"] == "null":
-                raise TableDesignSemanticError('"not null" column may not have null type')
-        else:
-            # NULL columns -- must have "null" as type and may not be primary key (identity)
-            if not (isinstance(column["type"], list) and "null" in column["type"]):
-                raise TableDesignSemanticError('"null" missing as type for null-able column')
-            if column.get("identity", False):
-                raise TableDesignSemanticError("identity column must be set to not null")
+        if column.get("identity", False) and not column.get("not_null", False):
+            # NULL columns may not be primary key (identity)
+            raise TableDesignSemanticError("identity column must be set to not null")
+
     identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
     if len(identity_columns) > 1:
         raise TableDesignSemanticError("only one column should have identity")
