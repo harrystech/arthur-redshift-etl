@@ -2,9 +2,9 @@
     {
         "Name": "Redshift ETL",
         "Args": [
-            "/var/tmp/venv/bin/arthur.py",
+            "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
-            "/var/tmp/config/",
+            "/tmp/redshift_etl/config/",
             "etl",
             "--verbose",
             "--prefix",

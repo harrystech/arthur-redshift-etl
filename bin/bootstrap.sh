@@ -15,6 +15,7 @@ fi
 
 BUCKET_NAME="$1"
 ETL_ENVIRONMENT="$2"
+REDSHIFT_ETL_HOME="/tmp/redshift_etl"
 
 # Fail if any install step fails
 set -e -x
@@ -26,14 +27,8 @@ umask 0027
 sudo yum install -y postgresql94-devel
 
 # Send all files to temp directory
-cd /var/tmp/
-
-# Temp directory for password files
-test -d passwords || mkdir passwords
-chmod go= passwords
-
-# Temp direoctory for Sqoop option files
-test -d sqoop_options || mkdir sqoop_options
+test -d "$REDSHIFT_ETL_HOME" || mkdir -p "$REDSHIFT_ETL_HOME"
+cd "$REDSHIFT_ETL_HOME"
 
 # Download code to all nodes, this includes Python code and requirements.txt
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
@@ -42,7 +37,8 @@ aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
 
 # Write file for Sqoop to be able to connect using SSL to upstream sources
-cat > ./config/ssl.props <<EOF
+test -d sqoop || mkdir sqoop
+cat > ./sqoop/ssl.props <<EOF
 ssl=true
 sslfactory=org.postgresql.ssl.NonValidatingFactory
 EOF

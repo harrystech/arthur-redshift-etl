@@ -84,7 +84,7 @@ BINDIR=`dirname $0`
 TOPDIR=`\cd $BINDIR/.. && \pwd`
 CLUSTER_CONFIG_SOURCE="$TOPDIR/aws_config"
 
-CLUSTER_CONFIG_DIR="/var/tmp/cluster_config_${USER}_${CLUSTER_ENVIRONMENT}_$$"
+CLUSTER_CONFIG_DIR="/tmp/cluster_config_${USER}_${CLUSTER_ENVIRONMENT}_$$"
 if [[ -d "$CLUSTER_CONFIG_DIR" ]]; then
     rm -f "$CLUSTER_CONFIG_DIR"/*
 else

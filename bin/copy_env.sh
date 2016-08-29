@@ -2,19 +2,20 @@
 
 # Copy production setup to new env
 
-if [[ "X$1" = "X-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <target_env> [<source_env>]"
-    echo "If the source_env is 'local', then copy files from your local files."
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+    echo "Usage: `basename $0` <bucket_name> [<source_env>] <target_env>"
+    echo "If the source_env is 'local', then copy files from your local files, not another folder."
+    echo "The source_env defaults to 'production'."
     exit 0
 fi
 
-CLUSTER_BUCKET="${1?'Missing bucket name'}"
-CLUSTER_ENVIRONMENT="${2?'Missing name of new environment'}"
-CLUSTER_SOURCE_ENVIRONMENT="${3-production}"
-
-if [[ "$CLUSTER_ENVIRONMENT" = "production" ]]; then
-    echo >&2 "Cannot overwrite production setup (maybe try promote_env.sh instead?)"
-    exit 1
+CLUSTER_BUCKET="$1"
+if [[ $# -eq 3 ]]; then
+    CLUSTER_SOURCE_ENVIRONMENT="$2"
+    CLUSTER_ENVIRONMENT="$3"
+else
+    CLUSTER_SOURCE_ENVIRONMENT="production"
+    CLUSTER_ENVIRONMENT="$2"
 fi
 
 ask_to_confirm () {
@@ -33,7 +34,7 @@ ask_to_confirm () {
     done
 }
 
-ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_ENVIRONMENT' (from '$CLUSTER_SOURCE_ENVIRONMENT')?"
+ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_ENVIRONMENT'?"
 
 
 if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
@@ -71,9 +72,18 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     done
 else
     set -e -x
-    for FOLDER in config jars bootstrap; do
+    for FOLDER in bootstrap jars schemas; do
         aws s3 cp --recursive \
-            "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER/"\
+            "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER/" \
             "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/$FOLDER/"
+    done
+    # Copy config without credentials
+    for FILE in `aws s3 ls --recursive "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config/" | awk '{ print $4 }'`
+    do
+        if [[ "$FILE" == */credentials* ]]; then
+            echo "Skipping s3://$CLUSTER_BUCKET/$FILE"
+        else
+            aws s3 cp "s3://$CLUSTER_BUCKET/$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/config/"
+        fi
     done
 fi

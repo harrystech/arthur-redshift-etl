@@ -337,9 +337,12 @@ class DumpDataToS3Command(SubCommand):
                     etl.dump.dump_to_s3_with_spark(settings, args.target, args.prefix,
                                                    keep_going=args.keep_going, dry_run=args.dry_run)
             else:
-                # XXX This fails in the EMR cluster since /var/tmp/venv/bin is not in the PATH
-                print("+ exec submit_arthur.sh " + " ".join(sys.argv), file=sys.stderr)
-                os.execvp("submit_arthur.sh", ("submit_arthur.sh",) + tuple(sys.argv))
+                # Try the full path (in the EMR cluster), or try without path and hope for the best.
+                submit_arthur = "/tmp/redshift_etl/venv/bin/submit_arthur.sh"
+                if not os.path.exists(submit_arthur):
+                    submit_arthur = "submit_arthur.sh"
+                print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
+                os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
                 sys.exit(1)
         else:
             with etl.pg.log_error():

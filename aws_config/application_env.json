@@ -6,7 +6,7 @@
                 "Classification": "export",
                 "Configurations": [],
                 "Properties": {
-                    "PYSPARK_PYTHON": "/var/tmp/venv/bin/python3",
+                    "PYSPARK_PYTHON": "/tmp/redshift_etl/venv/bin/python3",
                     "ETL_ENVIRONMENT": "#{etl_environment}"
                 }
             }
