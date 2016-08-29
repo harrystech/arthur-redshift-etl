@@ -37,15 +37,6 @@
                 "date"
             ]
         },
-        "generic_type_with_null": {
-            "description": "Deprecated, don't write a union of null and underlying type any more!",
-            "type": "array",
-            "items": [
-                { "enum": [ "null" ] },
-                { "$ref": "#/definitions/generic_type" }
-            ],
-            "additionalItems": false
-        },
         "compression_encoding": {
             "description": "Encoding types for columns in Redshift tables",
             "enum": [
@@ -92,12 +83,7 @@
                             "sql_type": { "$ref": "#/definitions/identifier" },
                             "source_sql_type": { "$ref": "#/definitions/identifier" },
                             "expression": { "$ref": "#/definitions/expression" },
-                            "type": {
-                                "oneOf": [
-                                    { "$ref": "#/definitions/generic_type" },
-                                    { "$ref": "#/definitions/generic_type_with_null" }
-                                ]
-                            },
+                            "type": { "$ref": "#/definitions/generic_type" },
                             "encoding": { "$ref": "#/definitions/compression_encoding" },
                             "references": {
                                 "type": "array",
