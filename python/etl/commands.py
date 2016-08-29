@@ -27,6 +27,8 @@ import etl.pg
 import etl.s3
 import etl.schemas
 
+import boto3
+
 from etl.timer import Timer
 
 
@@ -48,10 +50,16 @@ def croak(error, exit_code):
 
 
 def run_arg_as_command(my_name="arthur.py"):
+    """
+    Use the sub-command's callback to actually run the sub-command.
+    Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
+    """
     parser = build_full_parser(my_name)
     args = parser.parse_args()
     if not args.func:
         parser.print_usage()
+    elif args.cluster_id:
+        submit_step(args.cluster_id, args.sub_command)
     else:
         etl.config.configure_logging(args.log_level)
         logger = logging.getLogger(__name__)
@@ -75,6 +83,47 @@ def run_arg_as_command(my_name="arthur.py"):
                 logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
+def _datetime2string(obj):
+    """
+    Turn datetime.datetime object returned by boto into string for json dump
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError("{} is not JSON-serializable".format(type(obj)))
+
+
+def submit_step(cluster_id, sub_command):
+    """
+    Send the current arthur command to a cluster instead of running it locally.
+    """
+    # We need to remove --submit and --config to avoid an infinite loop and insert a redirect to the config directory
+    partial_parser = build_basic_parser('arthur.py')
+    done, remaining = partial_parser.parse_known_args()
+    try:
+        client = boto3.client('emr')
+        response = client.add_job_flow_steps(
+            JobFlowId=cluster_id,
+            Steps=[
+                {
+                    "Name": "Arthur command: {}".format(sub_command),
+                    "ActionOnFailure": "CANCEL_AND_WAIT",
+                    "HadoopJarStep": {
+                        "Jar": "command-runner.jar",
+                        "Args": ["/tmp/redshift_etl/venv/bin/arthur.py",
+                                 "--config", "/tmp/redshift_etl/config"] + remaining
+                    }
+                }
+            ]
+        )
+        step_id = response['StepIds'][0]
+        status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
+        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, default=_datetime2string)
+        sys.stdout.write('\n')
+    except Exception as exc:
+        logging.getLogger(__name__).exception("oops")
+        croak(exc, 1)
+
+
 def build_full_parser(prog_name):
     """
     Build a parser by adding sub-parsers for sub-commands.
@@ -91,7 +140,8 @@ def build_full_parser(prog_name):
 
     # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.
     subparsers = parser.add_subparsers(help="specify one of these sub-commands (which can all provide more help)",
-                                       title="available sub-commands")
+                                       title="available sub-commands",
+                                       dest='sub_command')
 
     for klass in [InitialSetupCommand, CreateUserCommand,
                   DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
@@ -105,25 +155,31 @@ def build_full_parser(prog_name):
     return parser
 
 
-def build_basic_parser(prog_name, description):
+def build_basic_parser(prog_name, description=None):
     """
     Build basic parser that knows about the configuration setting.
 
     The `--config` option is central and can be easily avoided using the environment
     variable so is always here (meaning between 'arthur.py' and the sub-command).
+
+    Similarly, '--submit-to-cluster' is shared for all sub-commands.
     """
     parser = argparse.ArgumentParser(prog=prog_name, description=description)
+    group = parser.add_mutually_exclusive_group()
 
     # Show different help message depending on whether user has already set the environment variable.
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
     if default_config is None:
-        parser.add_argument("-c", "--config",
-                            help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
-                            action="append", required=True)
+        group.add_argument("-c", "--config",
+                           help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
+                           action="append")
+        # FIXME With mutually exclusive params, cannot require config.
     else:
-        parser.add_argument("-c", "--config",
-                            help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
-                            action="append", default=[default_config])
+        group.add_argument("-c", "--config",
+                           help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
+                           action="append", default=[default_config])
+    group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
+                       dest="cluster_id")
 
     # Set defaults so that we can avoid having to test the Namespace object.
     parser.set_defaults(log_level=None)

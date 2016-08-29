@@ -8,11 +8,11 @@ set -e
 # CAVEAT If you make changes here, be sure to re-install the package to make sure changes
 # propagate to the copy of this script in your path.
 
-# XXX This assumes that the script in venv/bin is called
+# FIXME This works for the default installation (see bootstrap script)
 BIN_DIR=`dirname $0`
 TOP_DIR=`\cd $BIN_DIR/../.. && \pwd`
 JARS_DIR="$TOP_DIR/jars"
-PYTHON3=`which python3`
+PYTHON3="$BIN_DIR/python3"
 
 if [[ ! -d "$JARS_DIR" ]]; then
     echo "Directory does not exist: $JARS_DIR"
@@ -36,7 +36,7 @@ if [[ "$COMMAND" = "" ]]; then
 fi
 shift
 
-# XXX Switch to "local:" files
+# FIXME Switch to "local:" files
 JAR_FILES=`ls -1 "$JARS_DIR" | grep 'jar$' | sed -e "s:^:$JARS_DIR/:"`
 JARS_ARG=`echo $JAR_FILES | sed 's: :,:g'`
 
