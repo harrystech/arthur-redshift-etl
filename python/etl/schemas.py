@@ -135,7 +135,7 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
                 mapping = (attribute_type, None, avro_type)
                 break
         else:
-            for re_att_type, mapping in cast_needed_att_type.items():
+            for re_att_type, (mapping_sql_type, mapping_expression, mapping_avro_type) in cast_needed_att_type.items():
                 if re.match(re_att_type, attribute_type):
                     # Found tuple with new SQL type, expression and Avro type.  Rejoice.
                     break
@@ -147,12 +147,11 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
         delimited_name = '"{}"'.format(attribute_name)
         new_columns.append(etl.ColumnDefinition(name=attribute_name,
                                                 source_sql_type=attribute_type,
-                                                sql_type=mapping[0],
+                                                sql_type=mapping_sql_type,
                                                 # Replace %s in the column expression by the column name.
-                                                expression=(mapping[1] % delimited_name if mapping[1] else None),
-                                                # Add "null" to Avro type if column may have nulls.
-                                                type=(mapping[2] if column["not_null_constraint"]
-                                                      else ["null", mapping[2]]),
+                                                expression=(mapping_expression % delimited_name
+                                                            if mapping_expression else None),
+                                                type=mapping_avro_type,
                                                 not_null=column["not_null_constraint"],
                                                 references=None))
     return new_columns
@@ -195,45 +194,91 @@ def validate_table_design(table_design, table_name):
     """
     logger = logging.getLogger(__name__)
     logger.debug("Trying to validate table design for '%s' from input stream", table_name.identifier)
+    validation_internal_errors = (
+        jsonschema.exceptions.ValidationError,
+        jsonschema.exceptions.SchemaError,
+        json.scanner.JSONDecodeError)
+
     try:
         table_design_schema = etl.config.load_json("table_design.schema")
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError):
+    except validation_internal_errors:
         logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
         raise
     try:
         jsonschema.validate(table_design, table_design_schema)
-    except (jsonschema.exceptions.ValidationError, jsonschema.exceptions.SchemaError, json.scanner.JSONDecodeError) as exc:
+    except validation_internal_errors as exc:
         logger.error("Failed to validate table design for '%s'!", table_name.identifier)
         raise TableDesignValidationError() from exc
 
     # TODO Need more rules?
     if table_design["name"] != table_name.identifier:
-        raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier))
+        raise TableDesignSemanticError(
+            "Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier)
+        )
     if table_design["source_name"] == "VIEW":
         for column in table_design["columns"]:
             if column.get("skipped", False):
                 raise TableDesignSemanticError("columns may not be skipped in views")
-    else:
-        for column in table_design["columns"]:
-            if column.get("skipped", False):
-                continue
-            if column.get("not_null", False):
-                # NOT NULL columns -- may not have "null" as type
-                if isinstance(column["type"], list) or column["type"] == "null":
-                    raise TableDesignSemanticError('"not null" column may not have null type')
-            else:
-                # NULL columns -- must have "null" as type and may not be primary key (identity)
-                if not (isinstance(column["type"], list) and "null" in column["type"]):
-                    raise TableDesignSemanticError('"null" missing as type for null-able column')
-                if column.get("identity", False):
-                    raise TableDesignSemanticError("identity column must be set to not null")
-        identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
-        if len(identity_columns) > 1:
-            raise TableDesignSemanticError("only one column should have identity")
-        surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
-        if len(surrogate_keys) and not surrogate_keys == identity_columns:
-            raise TableDesignSemanticError("surrogate key must be identity")
+
+        # VIEW validation ends here
+        return table_design
+
+    # Designs for physical tables need further validation for columns:
+    column_set = set()
+    for column in table_design["columns"]:
+        column_set.add(column['name'])
+        if column.get("skipped", False):
+            continue
+        if column.get("identity", False) and not column.get("not_null", False):
+            # NULL columns may not be primary key (identity)
+            raise TableDesignSemanticError("identity column must be set to not null")
+
+    identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
+    if len(identity_columns) > 1:
+        raise TableDesignSemanticError("only one column should have identity")
+    surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
+    if len(surrogate_keys) and not surrogate_keys == identity_columns:
+        raise TableDesignSemanticError("surrogate key must be identity")
+    column_list_references = [
+        ('constraints', 'primary_key'),
+        ('constraints', 'natural_key'),
+        ('constraints', 'surrogate_key'),
+        ('constraints', 'foreign_key'),
+        ('constraints', 'unique'),
+        ('attributes', 'interleaved_sort'),
+        ('attributes', 'compound_sort')
+    ]
+
+    invalid_col_list_template = "{obj}'s {key} list should only contain named columns but it does not"
+    for obj, key in column_list_references:
+        if not _column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
+            raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
+
     return table_design
+
+
+def _column_list_has_columns(column_set, possible_column_list):
+    """
+    Accepts a set of known columns and a list of strings that may be columns (or a string that should be a column)
+    Returns True if the possible column list is found within column_set and False otherwise
+
+    >>> _column_list_has_columns({'a'}, 'a')
+    True
+    >>> _column_list_has_columns({'fish'}, 'a')
+    False
+    >>> _column_list_has_columns({'a', 'b'}, ['b', 'a'])
+    True
+    >>> _column_list_has_columns({'a', 'b'}, ['b', 'c'])
+    False
+    """
+    if not possible_column_list:
+        return True
+    if not isinstance(possible_column_list, list):
+        possible_column_list = [possible_column_list]
+    for column in possible_column_list:
+        if column not in column_set:
+            return False
+    return True
 
 
 def load_table_design(stream, table_name):
