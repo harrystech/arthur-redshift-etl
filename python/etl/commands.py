@@ -172,7 +172,7 @@ def build_basic_parser(prog_name, description=None):
     if default_config is None:
         group.add_argument("-c", "--config",
                            help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
-                           action="append")
+                           action="append", default=[])
         # FIXME With mutually exclusive params, cannot require config.
     else:
         group.add_argument("-c", "--config",
