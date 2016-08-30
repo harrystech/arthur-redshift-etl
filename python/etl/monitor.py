@@ -82,17 +82,21 @@ class Monitor:
     @staticmethod
     def load_aws_info(filename):
         """
-        Load instance ID and EMR ID from the local instance info and set the data for the Monitor class
+        Load instance ID and EMR ID from the local instance info and set the data for the Monitor class.
+        If we appear to be running as a step, then add the step-id (from the current working dir) as well.
 
         On EMR instances, the JSON-formatted file is in /mnt/var/lib/info/job-flow.json
         """
         if os.path.exists(filename):
             with open(filename) as f:
                 data = json.load(f)
-                Monitor.aws_info = {
-                    'emr_id': data['jobFlowId'],
-                    'instance_id': data['masterInstanceId']
-                }
+            Monitor.aws_info = {
+                'emr_id': data['jobFlowId'],
+                'instance_id': data['masterInstanceId']
+            }
+            parent_dir, current_dir = os.path.split(os.getcwd())
+            if parent_dir == "/mnt/var/lib/hadoop/steps":
+                Monitor.aws_info["step_id"] = current_dir
 
 
 # Setup shared ETL id for all monitor events:

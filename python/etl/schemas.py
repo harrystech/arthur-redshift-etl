@@ -212,9 +212,8 @@ def validate_table_design(table_design, table_name):
 
     # TODO Need more rules?
     if table_design["name"] != table_name.identifier:
-        raise TableDesignSemanticError(
-            "Name of table (%s) must match target (%s)" % (table_design["name"], table_name.identifier)
-        )
+        raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
+                                                                                      table_name.identifier))
     if table_design["source_name"] == "VIEW":
         for column in table_design["columns"]:
             if column.get("skipped", False):

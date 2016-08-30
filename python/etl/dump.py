@@ -308,10 +308,11 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
     if dry_run:
         logger.info("Dry-run: Skipping upload to '%s'", full_s3_path)
     else:
-        logger.info("Writing data from '%s' to '%s'", source_path_name, full_s3_path)
+        logger.info("Writing dataframe for '%s' to '%s'", source_path_name, full_s3_path)
         # N.B. This must match the Sqoop (import) and Redshift (COPY) options
-        # XXX Uses double quotes to escape double quotes ("Hello" becomes """Hello""")
-        # XXX Does not escape newlines ('\n' does not become '\\n' so is read as 'n' in Redshift)
+        # BROKEN Uses double quotes to escape double quotes ("Hello" becomes """Hello""")
+        # BROKEN Does not escape newlines ('\n' does not become '\\n' so is read as 'n' in Redshift)
+        # FIXME Patch the com.databricks.spark.csv format to match Sqoop output?
         write_options = {
             "header": "false",
             "nullValue": r"\N",
@@ -559,7 +560,7 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, keep
         for assoc_table_files in tables_in_s3:
             target_table_name = assoc_table_files.target_table_name
             source_table_name = assoc_table_files.source_table_name
-            # XXX Refactor ... calculated multiple times
+            # FIXME Refactor ... calculated multiple times
             manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
             try:
                 with etl.monitor.Monitor('dump', target_table_name, dry_run=dry_run,
@@ -609,7 +610,7 @@ def dump_to_s3_with_sqoop(settings, table, prefix, keep_going=False, dry_run=Fal
                                 selected_sources[schema_name], tables_in_s3[schema_name],
                                 bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
             futures.append(f)
-        # XXX Test whether we need to cancel any remaining futures after failure
+        # FIXME Test whether we need to cancel any remaining futures after failure
         if keep_going:
             done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:

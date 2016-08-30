@@ -157,7 +157,7 @@ def list_files_in_folder(bucket_name, prefix):
     or if prefix is a tuple, then list files in "s3://{bucket_name}/{common path} which start with one of
     the elements in the prefix tuple.
     """
-    logging.getLogger(__name__).info("Looking for files at 's3://%s/%s'", bucket_name, prefix)
+    logging.getLogger(__name__).debug("Looking for files at 's3://%s/%s'", bucket_name, prefix)
     bucket = _get_bucket(bucket_name)
     if isinstance(prefix, tuple):
         return [obj.key for obj in bucket.objects.filter(Prefix=os.path.commonprefix(prefix))

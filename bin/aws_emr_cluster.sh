@@ -79,7 +79,7 @@ fi
 
 # === Fill in config templates ===
 
-# XXX Allow users to set top dir (when virtual env is not adjacent to bin, config, etc.)
+# FIXME Allow users to set top dir (when virtual env is not adjacent to bin, config, etc.)
 BINDIR=`dirname $0`
 TOPDIR=`\cd $BINDIR/.. && \pwd`
 CLUSTER_CONFIG_SOURCE="$TOPDIR/aws_config"

@@ -219,6 +219,9 @@ def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=Fal
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
             conn.commit()
+            # TODO Retrieve list of files that were actually loaded
+            row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
+            logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
         except psycopg2.Error as exc:
             conn.rollback()
             if "stl_load_errors" in exc.pgerror:
