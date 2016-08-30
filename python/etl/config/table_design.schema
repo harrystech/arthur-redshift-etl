@@ -3,6 +3,11 @@
     "title": "Table Design",
     "description": "Description of a table design as a JSON schema",
     "definitions": {
+        "table_name": {
+            "description": "Fully qualified name of the table or view, <schema name>.<table name>",
+            "type" : "string",
+            "pattern": "^\\w[^.]*[.]\\w[^.]*$"
+        },
         "identifier": {
             "type": "string",
             "pattern": "^\\w"
@@ -37,15 +42,6 @@
                 "date"
             ]
         },
-        "generic_type_with_null": {
-            "description": "Deprecated, don't write a union of null and underlying type any more!",
-            "type": "array",
-            "items": [
-                { "enum": [ "null" ] },
-                { "$ref": "#/definitions/generic_type" }
-            ],
-            "additionalItems": false
-        },
         "compression_encoding": {
             "description": "Encoding types for columns in Redshift tables",
             "enum": [
@@ -65,11 +61,7 @@
     },
     "type" : "object",
     "properties" : {
-        "name" : {
-            "description": "Fully qualified name of the table or view, <schema name>.<table name>",
-            "type" : "string",
-            "pattern": "^\\w[^.]*[.]\\w[^.]*$"
-        },
+        "name" : { "$ref": "#/definitions/table_name" },
         "description": {
             "type": "string",
             "description": "Description of the table (may start with qualifier such as 'DEPRECATED')"
@@ -92,12 +84,7 @@
                             "sql_type": { "$ref": "#/definitions/identifier" },
                             "source_sql_type": { "$ref": "#/definitions/identifier" },
                             "expression": { "$ref": "#/definitions/expression" },
-                            "type": {
-                                "oneOf": [
-                                    { "$ref": "#/definitions/generic_type" },
-                                    { "$ref": "#/definitions/generic_type_with_null" }
-                                ]
-                            },
+                            "type": { "$ref": "#/definitions/generic_type" },
                             "encoding": { "$ref": "#/definitions/compression_encoding" },
                             "references": {
                                 "type": "array",
@@ -172,7 +159,14 @@
                 { "required": [ "distribution", "interleaved_sort" ] }
             ],
             "additionalProperties": false
-        }
+        },
+        "depends_on": {
+            "type": "array",
+            "description": "List of all dependency tables of this transformation",
+            "items": { "$ref": "#/definitions/table_name" },
+            "minItems": 1,
+            "uniqueItems": true            
+        }        
     },
     "required": [ "name", "source_name", "columns" ],
     "additionalProperties": false

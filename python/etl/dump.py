@@ -117,6 +117,7 @@ def create_sql_context():
 def find_files_for_sources(known_sources, bucket_name, prefix, target):
     """
     Return file information for selected upstream sources, along with the selected upstream sources.
+    (Or returns an empty dictionary and empty list in case no matching table description was found.)
 
     Mostly a convenience function for shared code between "dump with Spark" and "dump with Sqoop".
     """
@@ -124,8 +125,8 @@ def find_files_for_sources(known_sources, bucket_name, prefix, target):
     selection = etl.TableNamePatterns.from_list(target)
     sources = selection.match_field(known_sources, "name")
     if not sources:
-        logger.warning("Found no matching source, looking for '%s'", selection.str_schemas())
-        return
+        logger.warning("No upstream sources selected for '%s'", selection.str_schemas())
+        return {}, []  # FIXME Use an exception instead?
 
     schema_names = [source["name"] for source in sources]
     tables_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)
@@ -397,6 +398,8 @@ def dump_to_s3_with_spark(settings, table, prefix, keep_going=False, dry_run=Fal
     sources = settings("sources")
     bucket_name = settings("s3", "bucket_name")
     selected_sources, tables_in_s3 = find_files_for_sources(sources, bucket_name, prefix, table)
+    if len(selected_sources) == 0:
+        return
     validate_access(selected_sources.values())
 
     sql_context = create_sql_context()
@@ -593,11 +596,9 @@ def dump_to_s3_with_sqoop(settings, table, prefix, keep_going=False, dry_run=Fal
     sources = settings("sources")
     bucket_name = settings("s3", "bucket_name")
     selected_sources, tables_in_s3 = find_files_for_sources(sources, bucket_name, prefix, table)
-    validate_access(selected_sources.values())
-
     if len(selected_sources) == 0:
-        logger.warning("No upstream sources selected (did you sync the table designs?)")
         return
+    validate_access(selected_sources.values())
 
     # TODO Move to command line arg?
     max_workers = len(selected_sources)
