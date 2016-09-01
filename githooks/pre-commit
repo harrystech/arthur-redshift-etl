@@ -1,0 +1,14 @@
+#!/bin/sh
+
+. $(git --exec-path)/git-sh-setup # for die
+echo "Checking for pep8 violations"
+tmpdir=$(mktemp -d commitXXXXXX)
+trap "rm -rf $tmpdir" EXIT
+git checkout-index --prefix=$tmpdir/ -af
+files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
+echo $files | (cd $tmpdir; xargs pep8)
+echo "Checking for outstanding to-dos"
+if [ -n "$files" ]; then
+    echo $files | (cd $tmpdir; xargs grep '# XXX') && die Blocking commit because string '# XXX' detected in patch
+fi
+

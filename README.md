@@ -232,6 +232,11 @@ Pull requests are welcome!
 pep8 python
 ```
 
+* Even better, set up the git pre-commit hook to prevent you from accidentally breaking convention
+```shell
+ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
+```
+
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/)!)
 
