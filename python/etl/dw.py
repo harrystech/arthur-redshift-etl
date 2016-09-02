@@ -135,4 +135,4 @@ def ping(dsn):
     """
     with closing(etl.pg.connection(dsn)) as conn:
         if etl.pg.ping(conn):
-            print("{} lives".format(etl.pg.dbname(conn)))
+            print("{} is alive".format(etl.pg.dbname(conn)))

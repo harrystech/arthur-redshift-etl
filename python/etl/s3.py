@@ -142,7 +142,7 @@ def get_file_content(bucket_name, object_key):
     You must close the stream when you're done with it.
     """
     logger = logging.getLogger(__name__)
-    logger.info("Downloading 's3://%s/%s'", bucket_name, object_key)
+    logger.debug("Downloading 's3://%s/%s'", bucket_name, object_key)
     bucket = _get_bucket(bucket_name)
     s3_object = bucket.Object(object_key)
     response = s3_object.get()
@@ -157,7 +157,7 @@ def list_files_in_folder(bucket_name, prefix):
     or if prefix is a tuple, then list files in "s3://{bucket_name}/{common path} which start with one of
     the elements in the prefix tuple.
     """
-    logging.getLogger(__name__).debug("Looking for files at 's3://%s/%s'", bucket_name, prefix)
+    logging.getLogger(__name__).info("Looking for files at 's3://%s/%s'", bucket_name, prefix)
     bucket = _get_bucket(bucket_name)
     if isinstance(prefix, tuple):
         return [obj.key for obj in bucket.objects.filter(Prefix=os.path.commonprefix(prefix))
@@ -337,10 +337,6 @@ def list_files(settings, prefix, table, long_format=False):
     schema_names = [s["name"] for s in schemas]
     bucket_name = settings("s3", "bucket_name")
     found = find_files_for_schemas(bucket_name, prefix, schema_names, selection)
-    if not found:
-        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
-        return
-
     total_length = 0
     for source_name in found:
         print("Source: {}".format(source_name))

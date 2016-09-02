@@ -192,7 +192,7 @@ def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_vie
         etl.pg.execute(conn, ddl_stmt)
 
 
-def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=False):
+def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, skip_copy=False, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
     A manifest for the CSV files must be provided.
@@ -205,9 +205,12 @@ def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, dry_run=Fal
     s3_path = "s3://{}/{}".format(bucket_name, manifest)
     if dry_run:
         logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
+    elif skip_copy:
+        logger.info("Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     else:
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
+            # FIXME Given that we're always running as the owner now, could we truncate?
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
@@ -387,7 +390,7 @@ def vacuum(conn, table_name, dry_run=False):
 
 def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
                                      table_owner, etl_group, user_group,
-                                     add_explain_plan=False, drop=False, dry_run=False):
+                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
@@ -406,6 +409,7 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
     # FIXME The monitor should contain the database we're connected to and the number of rows that were loaded.
     modified = False
     with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
+                             options=["skip_copy"] if skip_copy else [],
                              source={'bucket_name': bucket_name, 'object_key': object_key},
                              destination={'schema': table_name.schema, 'table': table_name.table}):
         with conn:
@@ -420,18 +424,23 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
             else:
                 create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
                 copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
-                          dry_run=dry_run)
+                          skip_copy=skip_copy, dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
             grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
     return modified
 
 
-def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, drop=False, dry_run=False):
+def load_or_update_redshift(settings, target, prefix, drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
     This is forceful if drop is True ... and replaces anything that might already exist.
+
+    You can skip the COPY command to bring up the database schemas with all tables quickly although without
+    any content.  So a load with drop=True, skip_copy=True followed by a load with drop=False, skip_copy=False
+    should be a quick way to load data that is "under development" and may not have all dependencies or
+    names / types correct.
     """
     logger = logging.getLogger(__name__)
     dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
@@ -461,8 +470,8 @@ def load_or_update_redshift(settings, target, prefix, add_explain_plan=False, dr
             for assoc_table_files in files_in_s3[source_name]:
                 modified = load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
                                                             table_owner, etl_group, user_group,
-                                                            add_explain_plan=add_explain_plan, drop=drop,
-                                                            dry_run=dry_run)
+                                                            drop=drop, skip_copy=skip_copy,
+                                                            add_explain_plan=add_explain_plan, dry_run=dry_run)
                 if modified:
                     vacuumable.append(assoc_table_files.target_table_name)
 

@@ -132,7 +132,7 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
         for re_att_type, avro_type in as_is_att_type.items():
             if re.match('^' + re_att_type + '$', attribute_type):
                 # Keep the type, use no expression, and pick Avro type from map.
-                mapping = (attribute_type, None, avro_type)
+                mapping_sql_type, mapping_expression, mapping_avro_type = attribute_type, None, avro_type
                 break
         else:
             for re_att_type, (mapping_sql_type, mapping_expression, mapping_avro_type) in cast_needed_att_type.items():

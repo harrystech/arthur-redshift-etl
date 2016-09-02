@@ -273,7 +273,7 @@ class ShowSettingsCommand(SubCommand):
 
     def __init__(self):
         super().__init__("show",
-                         "Show settings",
+                         "show settings",
                          "Show data warehouse and ETL settings after loading all config files")
 
     def callback(self, args, settings):
@@ -284,7 +284,7 @@ class PingCommand(SubCommand):
 
     def __init__(self):
         super().__init__("ping",
-                         "Ping data warehouse",
+                         "ping data warehouse",
                          "Try to connect to the data warehouse to test connection settings")
 
     def add_arguments(self, parser):
@@ -304,7 +304,7 @@ class InitialSetupCommand(SubCommand):
 
     def __init__(self):
         super().__init__("initialize",
-                         "Create schemas, users, and groups",
+                         "create schemas, users, and groups",
                          "Create schemas for each source, users, and user groups for etl and analytics")
 
     def add_arguments(self, parser):
@@ -321,7 +321,7 @@ class CreateUserCommand(SubCommand):
 
     def __init__(self):
         super().__init__("create_user",
-                         "Add new user",
+                         "add new user",
                          "Add new user and set group membership, optionally add a personal schema")
 
     def add_arguments(self, parser):
@@ -345,7 +345,7 @@ class DownloadSchemasCommand(SubCommand):
 
     def __init__(self):
         super().__init__("design",
-                         "Bootstrap schema information from sources",
+                         "bootstrap schema information from sources",
                          "Download schema information from upstream sources (and compare against current table designs)")
 
     def add_arguments(self, parser):
@@ -359,7 +359,7 @@ class CopyToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("sync",
-                         "Copy table design files to S3",
+                         "copy table design files to S3",
                          "Copy table design files from local directory to S3."
                          " If using the '--force' option, this will delete schema and *data* files.")
 
@@ -376,7 +376,7 @@ class DumpDataToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("dump",
-                         "Dump table data from sources",
+                         "dump table data from sources",
                          "Dump table contents to files in S3 along with a manifest file")
 
     def add_arguments(self, parser):
@@ -417,23 +417,26 @@ class LoadRedshiftCommand(SubCommand):
 
     def __init__(self):
         super().__init__("load",
-                         "Load data into Redshift from files in S3",
+                         "load data into Redshift from files in S3",
                          "Load data into Redshift from files in S3 (as a forced reload)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "prefix", "explain", "dry-run"])
+        parser.add_argument("-y", "--skip-copy",
+                            help="skip the COPY command (for debugging)",
+                            action="store_true")
 
     def callback(self, args, settings):
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(settings, args.target, args.prefix,
-                                             add_explain_plan=args.add_explain_plan, drop=True, dry_run=args.dry_run)
+            etl.load.load_or_update_redshift(settings, args.target, args.prefix, drop=True, skip_copy=args.skip_copy,
+                                             add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
 
 class UpdateRedshiftCommand(SubCommand):
 
     def __init__(self):
         super().__init__("update",
-                         "Update data in Redshift",
+                         "update data in Redshift",
                          "Update data in Redshift from files in S3 (without schema modifications)")
 
     def add_arguments(self, parser):
@@ -442,14 +445,14 @@ class UpdateRedshiftCommand(SubCommand):
     def callback(self, args, settings):
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(settings, args.target, args.prefix,
-                                             add_explain_plan=args.add_explain_plan, drop=False, dry_run=args.dry_run)
+                                             drop=False, add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
 
 class ExtractLoadTransformCommand(SubCommand):
 
     def __init__(self):
         super().__init__("etl",
-                         "Run complete ETL (or ELT)",
+                         "run complete ETL (or ELT)",
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
@@ -467,7 +470,7 @@ class ValidateDesignsCommand(SubCommand):
 
     def __init__(self):
         super().__init__("validate",
-                         "Validate table design files",
+                         "validate table design files",
                          "Validate table designs in local filesystem")
 
     def add_arguments(self, parser):
@@ -484,7 +487,7 @@ class ExplainQueryCommand(SubCommand):
 
     def __init__(self):
         super().__init__("explain",
-                         "Collect explain plans",
+                         "collect explain plans",
                          "Run EXPLAIN on queries (for CTAS or VIEW) for LOCAL files")
 
     def add_arguments(self, parser):
@@ -498,7 +501,7 @@ class ListFilesCommand(SubCommand):
 
     def __init__(self):
         super().__init__("ls",
-                         "List files in S3",
+                         "list files in S3",
                          "List files in the S3 bucket and starting with prefix by source, table, and type")
 
     def add_arguments(self, parser):
@@ -515,7 +518,7 @@ class EventsQueryCommand(SubCommand):
 
     def __init__(self):
         super().__init__("query",
-                         "Query the events table for the ETL",
+                         "query the events table for the ETL",
                          "Query the table of events written during an ETL")
 
     def add_arguments(self, parser):

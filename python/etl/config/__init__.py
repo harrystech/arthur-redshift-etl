@@ -76,7 +76,7 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
 
     for name in [default_file] + config_files:
         if os.path.isdir(name):
-            files = [os.path.join(name, n) for n in os.listdir(name)]
+            files = sorted(os.path.join(name, n) for n in os.listdir(name))
         else:
             files = [name]
         for filename in files:
