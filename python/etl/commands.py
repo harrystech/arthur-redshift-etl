@@ -65,10 +65,12 @@ def run_arg_as_command(my_name="arthur.py"):
         with Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
-                etl_events = settings("etl_events")
-                etl.monitor.set_environment(getattr(args, "prefix", None),
-                                            dynamodb_settings=etl_events.get("dynamodb", {}),
-                                            postgresql_settings=etl_events.get("postgresql", {}))
+                if hasattr(args, "prefix"):
+                    # Only commands which require an environment should require a monitor.
+                    etl_events = settings("etl_events")
+                    etl.monitor.set_environment(args.prefix,
+                                                dynamodb_settings=etl_events.get("dynamodb", {}),
+                                                postgresql_settings=etl_events.get("postgresql", {}))
                 args.func(args, settings)
             except etl.ETLException as exc:
                 logger.exception("Something bad happened in the ETL:")
@@ -184,21 +186,11 @@ def build_full_parser(prog_name):
 def add_standard_arguments(parser, options):
     """
     Provide "standard arguments in the sense that the name and description should be the
-    same when used by multiple sub-commands. Also there are some common arguments
-    like verbosity that should be part of every sub-command's parser without asking for it.
+    same when used by multiple sub-commands.
 
     :param parser: should be a sub-parser
     :param options: see option strings below, like "prefix", "drop" etc.
     """
-
-    # Choice between verbose and silent simply affects the log level.
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
-    group.add_argument("-v", "--verbose", help="increase verbosity",
-                       action="store_const", const="DEBUG", dest="log_level")
-    group.add_argument("-s", "--silent", help="decrease verbosity",
-                       action="store_const", const="WARNING", dest="log_level")
-
     example_password = uuid.uuid4().hex.title()
 
     if "dry-run" in options:
@@ -256,15 +248,24 @@ class SubCommand:
                                           help=self.help,
                                           description=self.description)
         parser.set_defaults(func=self.callback)
+
+        # Log level and prolix setting need to be always known since `run_arg_as_command` depends on them.
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
+        group.add_argument("-v", "--verbose", help="increase verbosity",
+                           action="store_const", const="DEBUG", dest="log_level")
+        group.add_argument("-s", "--silent", help="decrease verbosity",
+                           action="store_const", const="WARNING", dest="log_level")
+
         self.add_arguments(parser)
         return parser
 
     def add_arguments(self, parser):
-        """Overwrite this method for sub-classes"""
+        """Override this method for sub-classes"""
         pass
 
     def callback(self, args, settings):
-        """Overwrite this method for sub-classes"""
+        """Override this method for sub-classes"""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
 
@@ -286,9 +287,17 @@ class PingCommand(SubCommand):
                          "Ping data warehouse",
                          "Try to connect to the data warehouse to test connection settings")
 
+    def add_arguments(self, parser):
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("--as-etl-user", help="try to connect as ETL user (default)",
+                           action="store_const", const="etl_access", dest="access", default="etl_access")
+        group.add_argument("--as-admin-user",help="try to connect as ETL user",
+                           action="store_const", const="admin_access", dest="access")
+
     def callback(self, args, settings):
+        uri = etl.config.env_value(settings("data_warehouse", args.access))
         with etl.pg.log_error():
-            etl.dw.ping(settings)
+            etl.dw.ping(uri)
 
 
 class InitialSetupCommand(SubCommand):

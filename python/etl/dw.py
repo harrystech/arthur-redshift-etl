@@ -129,11 +129,10 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
             etl.pg.alter_search_path(conn, new_user, search_path)
 
 
-def ping(settings):
+def ping(dsn):
     """
     Send a test query to the data warehouse
     """
-    dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
-    with closing(etl.pg.connection(dsn_admin)) as conn:
+    with closing(etl.pg.connection(dsn)) as conn:
         if etl.pg.ping(conn):
             print("{} lives".format(etl.pg.dbname(conn)))
