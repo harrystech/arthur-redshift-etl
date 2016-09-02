@@ -51,7 +51,8 @@ set -x
 CLUSTER_BUCKET="$1"
 CLUSTER_ENVIRONMENT="${2-$USER}"
 
-SSH_KEY_PAIR_FILE="$HOME/.ssh/emr-spark-cluster.pem"
+# FIXME Remove harrys reference? Use config?
+SSH_KEY_PAIR_FILE="$HOME/.ssh/harrys-dw-cluster-key.pem"
 
 # === Derived cluster configuration ===
 

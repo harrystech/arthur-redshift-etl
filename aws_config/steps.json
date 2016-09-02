@@ -6,7 +6,7 @@
             "--config",
             "/tmp/redshift_etl/config/",
             "etl",
-            "--verbose",
+            "--prolix",
             "--prefix",
             "#{etl_environment}"
         ],
