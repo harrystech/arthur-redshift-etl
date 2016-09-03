@@ -324,6 +324,41 @@ def _find_files_from(iterable, schemas, pattern):
     return ordered_found
 
 
+def approx_pretty_size(total_bytes):
+    """
+    Return a humane and pretty size approximation.
+
+    This looks silly bellow 1KB but I'm OK with that.
+    Don't call this with negative total_bytes or your pet hamster will go bald.
+
+    >>> approx_pretty_size(50)
+    '1KB'
+    >>> approx_pretty_size(2000)
+    '2KB'
+    >>> approx_pretty_size(2048)
+    '2KB'
+    >>> approx_pretty_size(3000000)
+    '3MB'
+    >>> approx_pretty_size(4000000000)
+    '4GB'
+    >>> approx_pretty_size(-314)
+    Traceback (most recent call last):
+        ...
+    ValueError: total_bytes may not be negative
+    """
+    if total_bytes < 0:
+        raise ValueError("total_bytes may not be negative")
+    for scale, unit in ((1024 * 1024 * 1024, 'GB'), (1024 * 1024, 'MB'), (1024, 'KB')):
+        div, rem = divmod(total_bytes, scale)
+        if div > 0:
+            if rem > 0:
+                div += 1  # always round up
+            break
+    else:
+        div = 1
+    return "{:d}{}".format(div, unit)
+
+
 def list_files(settings, prefix, table, long_format=False):
     """
     List files in the S3 bucket.
@@ -361,5 +396,5 @@ def list_files(settings, prefix, table, long_format=False):
                                                                      content_length, last_modified))
                 else:
                     print("        {}: s3://{}/{}".format(file_type, bucket_name, filename))
-    if total_length != 0:
-        print("Total size in bytes: {:d}".format(total_length))
+    if total_length > 0:
+        print("Total size in bytes: {:d} ({})".format(total_length, approx_pretty_size(total_length)))

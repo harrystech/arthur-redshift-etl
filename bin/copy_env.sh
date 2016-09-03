@@ -12,10 +12,10 @@ fi
 CLUSTER_BUCKET="$1"
 if [[ $# -eq 3 ]]; then
     CLUSTER_SOURCE_ENVIRONMENT="$2"
-    CLUSTER_ENVIRONMENT="$3"
+    CLUSTER_TARGET_ENVIRONMENT="$3"
 else
     CLUSTER_SOURCE_ENVIRONMENT="production"
-    CLUSTER_ENVIRONMENT="$2"
+    CLUSTER_TARGET_ENVIRONMENT="$2"
 fi
 
 ask_to_confirm () {
@@ -34,7 +34,7 @@ ask_to_confirm () {
     done
 }
 
-ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_ENVIRONMENT'?"
+ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'?"
 
 
 if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
@@ -51,16 +51,17 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     set -e -x
 
     python3 setup.py sdist
+
     for FILE in requirements.txt \
                 dist/redshift-etl-0.8.1.tar.gz
     do
-        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/jars/"
+        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars/"
     done
 
-    aws s3 cp "bin/bootstrap.sh" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/"
+    aws s3 cp "bin/bootstrap.sh" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bootstrap/"
 
     for FILE in "$DATA_WAREHOUSE_CONFIG"/*; do
-        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/config/"
+        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/"
     done
 
     for FILE in jars/commons-csv-1.4.jar \
@@ -68,22 +69,14 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
                 jars/RedshiftJDBC41-1.1.10.1010.jar \
                 jars/spark-csv_2.10-1.4.0.jar
     do
-        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/jars/"
+        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars/"
     done
+
 else
     set -e -x
-    for FOLDER in bootstrap jars schemas; do
-        aws s3 cp --recursive \
-            "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER/" \
-            "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/$FOLDER/"
-    done
-    # Copy config without credentials
-    for FILE in `aws s3 ls --recursive "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config/" | awk '{ print $4 }'`
-    do
-        if [[ "$FILE" == */credentials* ]]; then
-            echo "Skipping s3://$CLUSTER_BUCKET/$FILE"
-        else
-            aws s3 cp "s3://$CLUSTER_BUCKET/$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/config/"
-        fi
+    for FOLDER in bootstrap config jars schemas; do
+        aws s3 sync --delete --exclude "credentials*" \
+            "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
+            "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
     done
 fi
