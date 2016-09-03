@@ -402,7 +402,7 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
             query = content.read().decode()
         object_key = assoc_table_files.sql_file
     else:
-        if assoc_table_files.manifest_file is None:
+        if assoc_table_files.manifest_file is None and not skip_copy:
             raise MissingManifestError("Missing manifest file")
         object_key = assoc_table_files.manifest_file
 
