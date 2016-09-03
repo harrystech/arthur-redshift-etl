@@ -48,4 +48,4 @@ test -d venv || mkdir venv
 virtualenv --python=python3 venv
 source venv/bin/activate
 pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
-pip3 install --upgrade ./jars/redshift-etl-0.8.1.tar.gz --disable-pip-version-check
+pip3 install --upgrade ./jars/redshift-etl-0.8.2.tar.gz --disable-pip-version-check
