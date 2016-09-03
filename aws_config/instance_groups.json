@@ -1,14 +1,14 @@
 [
-  {
-    "Name": "Master instance group - 1",
-    "InstanceGroupType": "MASTER",
-    "InstanceCount": 1,
-    "InstanceType": "m3.xlarge"
-  },
-  {
-    "Name": "Core instance group - 2",
-    "InstanceGroupType": "CORE",
-    "InstanceCount": 1,
-    "InstanceType": "r3.2xlarge"
-  }
+    {
+        "Name": "Master instance group - 1",
+        "InstanceGroupType": "MASTER",
+        "InstanceCount": 1,
+        "InstanceType": "m3.xlarge"
+    },
+    {
+        "Name": "Core instance group - 2",
+        "InstanceGroupType": "CORE",
+        "InstanceCount": 4,
+        "InstanceType": "r3.xlarge"
+    }
 ]

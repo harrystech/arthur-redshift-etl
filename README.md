@@ -245,13 +245,13 @@ ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 ## EMR login
 
 You can use the `.ssh/config` file to pick the correct user (`hadoop`) for the cluster and to automatically
-pick up a key file.
+pick up a key file (replace the `IdentityFile` value with the location of the key pair file).
 
 ```
 Host ec2-*.amazonaws.com
   ServerAliveInterval 60
   User hadoop
-  IdentityFile ~/.ssh/emr-spark-cluster.pem
+  IdentityFile ~/.ssh/emr-cluster-key.pem
 ```
 
 ## Development
