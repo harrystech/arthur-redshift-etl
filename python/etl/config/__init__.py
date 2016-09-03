@@ -10,17 +10,22 @@ import jsonschema
 import simplejson as json
 import yaml
 
-import etl.s3
 
-
-def configure_logging(log_level: str=None) -> None:
+def configure_logging(full_format: bool=False, log_level: str=None,) -> None:
     """
     Setup logging to go to console and application log file
+
+    If full_format is True, then use the terribly verbose format of
+    the application log file also for the console.  And log at the DEBUG level.
+    Otherwise, you can choose the log level by passing one in.
     """
     config = load_json('logging.json')
-    if log_level:
+    if full_format:
+        config["formatters"]["console"]["format"] = config["formatters"]["file"]["format"]
+        config["handlers"]["console"]["level"] = logging.DEBUG
+    elif log_level:
         config["handlers"]["console"]["level"] = log_level
-    logging.config.dictConfig(load_json("logging.json"))
+    logging.config.dictConfig(config)
     logging.captureWarnings(True)
     logging.getLogger(__name__).info("Starting log for '%s'", sys.argv[0])
 
@@ -61,6 +66,9 @@ def load_settings_file(filename: str, settings: dict) -> None:
 def load_settings(config_files: list, default_file: str="defaults.yaml"):
     """
     Load settings (and environment) from defaults and config files.
+
+    If the config "file" is actually a directory, (try to) read all the
+    files in that directory.
     """
     logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
@@ -68,7 +76,7 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
 
     for name in [default_file] + config_files:
         if os.path.isdir(name):
-            files = etl.s3.list_local_files(name)
+            files = sorted(os.path.join(name, n) for n in os.listdir(name))
         else:
             files = [name]
         for filename in files:
@@ -78,11 +86,8 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
                 load_settings_file(filename, settings)
             else:
                 logger.info("Skipping config file '%s'", filename)
-    try:
-        schema = load_json("settings.schema")
-        jsonschema.validate(settings, schema)
-    except Exception:
-        raise
+    schema = load_json("settings.schema")
+    jsonschema.validate(settings, schema)
 
     class Accessor:
         def __init__(self, data):

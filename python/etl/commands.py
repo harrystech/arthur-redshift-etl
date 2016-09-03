@@ -14,6 +14,7 @@ import uuid
 import sys
 import traceback
 
+import boto3
 import pkg_resources
 import simplejson as json
 
@@ -21,14 +22,12 @@ import etl
 import etl.config
 import etl.dump
 import etl.dw
-import etl.json_logger
+from etl.json_encoder import FancyJsonEncoder
 import etl.load
+import etl.monitor
 import etl.pg
 import etl.s3
 import etl.schemas
-
-import boto3
-
 from etl.timer import Timer
 
 
@@ -61,11 +60,17 @@ def run_arg_as_command(my_name="arthur.py"):
     elif args.cluster_id:
         submit_step(args.cluster_id, args.sub_command)
     else:
-        etl.config.configure_logging(args.log_level)
+        etl.config.configure_logging(args.prolix, args.log_level)
         logger = logging.getLogger(__name__)
         with Timer() as timer:
             try:
                 settings = etl.config.load_settings(args.config)
+                if hasattr(args, "prefix"):
+                    # Only commands which require an environment should require a monitor.
+                    etl_events = settings("etl_events")
+                    etl.monitor.set_environment(args.prefix,
+                                                dynamodb_settings=etl_events.get("dynamodb", {}),
+                                                postgresql_settings=etl_events.get("postgresql", {}))
                 args.func(args, settings)
             except etl.ETLException as exc:
                 logger.exception("Something bad happened in the ETL:")
@@ -80,16 +85,7 @@ def run_arg_as_command(my_name="arthur.py"):
                 logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
                 croak(exc, 3)
             else:
-                logging.getLogger(__name__).info("Ran for %.2fs and finished successfully!", timer.elapsed)
-
-
-def _datetime2string(obj):
-    """
-    Turn datetime.datetime object returned by boto into string for json dump
-    """
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    raise TypeError("{} is not JSON-serializable".format(type(obj)))
+                logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
 def submit_step(cluster_id, sub_command):
@@ -117,11 +113,43 @@ def submit_step(cluster_id, sub_command):
         )
         step_id = response['StepIds'][0]
         status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
-        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, default=_datetime2string)
+        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
         sys.stdout.write('\n')
     except Exception as exc:
-        logging.getLogger(__name__).exception("oops")
+        logging.getLogger(__name__).exception("Adding step to job flow failed:")
         croak(exc, 1)
+
+
+def build_basic_parser(prog_name, description=None):
+    """
+    Build basic parser that knows about the configuration setting.
+
+    The `--config` option is central and can be easily avoided using the environment
+    variable so is always here (meaning between 'arthur.py' and the sub-command).
+
+    Similarly, '--submit-to-cluster' is shared for all sub-commands.
+    """
+    parser = argparse.ArgumentParser(prog=prog_name, description=description)
+    group = parser.add_mutually_exclusive_group()
+
+    # Show different help message depending on whether user has already set the environment variable.
+    default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
+    if default_config is None:
+        group.add_argument("-c", "--config",
+                           help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
+                           action="append", default=[])
+        # N.B. With mutually exclusive params, cannot require config ... so this will fail with missing settings.
+    else:
+        group.add_argument("-c", "--config",
+                           help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
+                           action="append", default=[default_config])
+    group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
+                       dest="cluster_id")
+
+    # Set defaults so that we can avoid having to test the Namespace object.
+    parser.set_defaults(log_level=None)
+    parser.set_defaults(func=None)
+    return parser
 
 
 def build_full_parser(prog_name):
@@ -155,55 +183,14 @@ def build_full_parser(prog_name):
     return parser
 
 
-def build_basic_parser(prog_name, description=None):
-    """
-    Build basic parser that knows about the configuration setting.
-
-    The `--config` option is central and can be easily avoided using the environment
-    variable so is always here (meaning between 'arthur.py' and the sub-command).
-
-    Similarly, '--submit-to-cluster' is shared for all sub-commands.
-    """
-    parser = argparse.ArgumentParser(prog=prog_name, description=description)
-    group = parser.add_mutually_exclusive_group()
-
-    # Show different help message depending on whether user has already set the environment variable.
-    default_config = os.environ.get("DATA_WAREHOUSE_CONFIG")
-    if default_config is None:
-        group.add_argument("-c", "--config",
-                           help="add configuration path or file (required if DATA_WAREHOUSE_CONFIG is not set)",
-                           action="append", default=[])
-        # FIXME With mutually exclusive params, cannot require config.
-    else:
-        group.add_argument("-c", "--config",
-                           help="add configuration path or file (adds to DATA_WAREHOUSE_CONFIG='%s')" % default_config,
-                           action="append", default=[default_config])
-    group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
-                       dest="cluster_id")
-
-    # Set defaults so that we can avoid having to test the Namespace object.
-    parser.set_defaults(log_level=None)
-    parser.set_defaults(func=None)
-    return parser
-
-
 def add_standard_arguments(parser, options):
     """
     Provide "standard arguments in the sense that the name and description should be the
-    same when used by multiple sub-commands. Also there are some common arguments
-    like verbosity that should be part of every sub-command's parser without asking for it.
+    same when used by multiple sub-commands.
 
     :param parser: should be a sub-parser
     :param options: see option strings below, like "prefix", "drop" etc.
     """
-
-    # Choice between verbose and silent simply affects the log level.
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-v", "--verbose", help="increase verbosity",
-                       action="store_const", const="DEBUG", dest="log_level")
-    group.add_argument("-s", "--silent", help="decrease verbosity",
-                       action="store_const", const="WARNING", dest="log_level")
-
     example_password = uuid.uuid4().hex.title()
 
     if "dry-run" in options:
@@ -218,6 +205,9 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-t", "--table-design-dir",
                             help="set path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
+    if "max-partitions" in options:
+        parser.add_argument("-m", "--max-partitions", metavar="N",
+                            help="set max number of partitions to write to N (default: %(default)s)", default=4)
     if "drop" in options:
         parser.add_argument("-d", "--drop",
                             help="first drop table or view to force update of definition", default=False,
@@ -258,15 +248,24 @@ class SubCommand:
                                           help=self.help,
                                           description=self.description)
         parser.set_defaults(func=self.callback)
+
+        # Log level and prolix setting need to be always known since `run_arg_as_command` depends on them.
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
+        group.add_argument("-v", "--verbose", help="increase verbosity",
+                           action="store_const", const="DEBUG", dest="log_level")
+        group.add_argument("-s", "--silent", help="decrease verbosity",
+                           action="store_const", const="WARNING", dest="log_level")
+
         self.add_arguments(parser)
         return parser
 
     def add_arguments(self, parser):
-        """Overwrite this method for sub-classes"""
+        """Override this method for sub-classes"""
         pass
 
     def callback(self, args, settings):
-        """Overwrite this method for sub-classes"""
+        """Override this method for sub-classes"""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
 
@@ -274,7 +273,7 @@ class ShowSettingsCommand(SubCommand):
 
     def __init__(self):
         super().__init__("show",
-                         "Show settings",
+                         "show settings",
                          "Show data warehouse and ETL settings after loading all config files")
 
     def callback(self, args, settings):
@@ -285,19 +284,27 @@ class PingCommand(SubCommand):
 
     def __init__(self):
         super().__init__("ping",
-                         "Ping data warehouse",
+                         "ping data warehouse",
                          "Try to connect to the data warehouse to test connection settings")
 
+    def add_arguments(self, parser):
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("--as-etl-user", help="try to connect as ETL user (default)",
+                           action="store_const", const="etl_access", dest="access", default="etl_access")
+        group.add_argument("--as-admin-user",help="try to connect as ETL user",
+                           action="store_const", const="admin_access", dest="access")
+
     def callback(self, args, settings):
+        uri = etl.config.env_value(settings("data_warehouse", args.access))
         with etl.pg.log_error():
-            etl.dw.ping(settings)
+            etl.dw.ping(uri)
 
 
 class InitialSetupCommand(SubCommand):
 
     def __init__(self):
         super().__init__("initialize",
-                         "Create schemas, users, and groups",
+                         "create schemas, users, and groups",
                          "Create schemas for each source, users, and user groups for etl and analytics")
 
     def add_arguments(self, parser):
@@ -314,7 +321,7 @@ class CreateUserCommand(SubCommand):
 
     def __init__(self):
         super().__init__("create_user",
-                         "Add new user",
+                         "add new user",
                          "Add new user and set group membership, optionally add a personal schema")
 
     def add_arguments(self, parser):
@@ -338,7 +345,7 @@ class DownloadSchemasCommand(SubCommand):
 
     def __init__(self):
         super().__init__("design",
-                         "Bootstrap schema information from sources",
+                         "bootstrap schema information from sources",
                          "Download schema information from upstream sources (and compare against current table designs)")
 
     def add_arguments(self, parser):
@@ -352,7 +359,7 @@ class CopyToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("sync",
-                         "Copy table design files to S3",
+                         "copy table design files to S3",
                          "Copy table design files from local directory to S3."
                          " If using the '--force' option, this will delete schema and *data* files.")
 
@@ -369,11 +376,11 @@ class DumpDataToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("dump",
-                         "Dump table data from sources",
+                         "dump table data from sources",
                          "Dump table contents to files in S3 along with a manifest file")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["target", "prefix", "max-partitions", "dry-run"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--sqoop",
                            help="dump data using Sqoop (using 'sqoop import', this is the default)",
@@ -402,7 +409,7 @@ class DumpDataToS3Command(SubCommand):
                 sys.exit(1)
         else:
             with etl.pg.log_error():
-                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix,
+                etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, args.max_partitions,
                                                keep_going=args.keep_going, dry_run=args.dry_run)
 
 
@@ -410,23 +417,26 @@ class LoadRedshiftCommand(SubCommand):
 
     def __init__(self):
         super().__init__("load",
-                         "Load data into Redshift from files in S3",
+                         "load data into Redshift from files in S3",
                          "Load data into Redshift from files in S3 (as a forced reload)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["target", "prefix", "explain", "dry-run"])
+        parser.add_argument("-y", "--skip-copy",
+                            help="skip the COPY command (for debugging)",
+                            action="store_true")
 
     def callback(self, args, settings):
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(settings, args.target, args.prefix,
-                                             add_explain_plan=args.add_explain_plan, drop=True, dry_run=args.dry_run)
+            etl.load.load_or_update_redshift(settings, args.target, args.prefix, drop=True, skip_copy=args.skip_copy,
+                                             add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
 
 class UpdateRedshiftCommand(SubCommand):
 
     def __init__(self):
         super().__init__("update",
-                         "Update data in Redshift",
+                         "update data in Redshift",
                          "Update data in Redshift from files in S3 (without schema modifications)")
 
     def add_arguments(self, parser):
@@ -435,24 +445,24 @@ class UpdateRedshiftCommand(SubCommand):
     def callback(self, args, settings):
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(settings, args.target, args.prefix,
-                                             add_explain_plan=args.add_explain_plan, drop=False, dry_run=args.dry_run)
+                                             drop=False, add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
 
 class ExtractLoadTransformCommand(SubCommand):
 
     def __init__(self):
         super().__init__("etl",
-                         "Run complete ETL (or ELT)",
+                         "run complete ETL (or ELT)",
                          "Validate designs, extract data, and load data, possibly with transforms")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["target", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["target", "prefix", "max-partitions", "dry-run"])
         parser.add_argument("-f", "--force",
                             help="force loading, run 'dump' then 'load' (instead of 'dump' then 'update')",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
-        etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, dry_run=args.dry_run)
+        etl.dump.dump_to_s3_with_sqoop(settings, args.target, args.prefix, args.max_partitions, dry_run=args.dry_run)
         etl.load.load_or_update_redshift(settings, args.target, args.prefix, drop=args.force, dry_run=args.dry_run)
 
 
@@ -460,7 +470,7 @@ class ValidateDesignsCommand(SubCommand):
 
     def __init__(self):
         super().__init__("validate",
-                         "Validate table design files",
+                         "validate table design files",
                          "Validate table designs in local filesystem")
 
     def add_arguments(self, parser):
@@ -477,7 +487,7 @@ class ExplainQueryCommand(SubCommand):
 
     def __init__(self):
         super().__init__("explain",
-                         "Collect explain plans",
+                         "collect explain plans",
                          "Run EXPLAIN on queries (for CTAS or VIEW) for LOCAL files")
 
     def add_arguments(self, parser):
@@ -491,7 +501,7 @@ class ListFilesCommand(SubCommand):
 
     def __init__(self):
         super().__init__("ls",
-                         "List files in S3",
+                         "list files in S3",
                          "List files in the S3 bucket and starting with prefix by source, table, and type")
 
     def add_arguments(self, parser):
@@ -508,7 +518,7 @@ class EventsQueryCommand(SubCommand):
 
     def __init__(self):
         super().__init__("query",
-                         "Query the events table for the ETL",
+                         "query the events table for the ETL",
                          "Query the table of events written during an ETL")
 
     def add_arguments(self, parser):
@@ -516,7 +526,7 @@ class EventsQueryCommand(SubCommand):
         add_standard_arguments(parser, ["target"])
 
     def callback(self, args, settings):
-        etl.json_logger.query_for(args.target, args.etl_id)
+        etl.monitor.query_for(args.target, args.etl_id)
 
 
 if __name__ == "__main__":

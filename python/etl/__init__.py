@@ -208,7 +208,7 @@ class ColumnDefinition(namedtuple("_ColumnDefinition",
                                    "source_sql_type", "expression", "not_null", "references"  # optional
                                    ])):
     """
-    Wrapper for column attributes ... describes columns by name, type (for Avro), sql_type.
+    Wrapper for column attributes ... describes columns by name, type (e.g. for Avro), sql_type.
     """
     __slots__ = ()
 
