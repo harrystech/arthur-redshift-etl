@@ -9,12 +9,17 @@ set -e
 
 # === Command line args ===
 
+show_usage_and_exit() {
+    set +x
+    echo "Usage: $0 [-i] <bucket_name> [<environment>]"
+    exit ${1-0}
+}
+
 CLUSTER_IS_INTERACTIVE=no
 while getopts ":hi" opt; do
   case $opt in
     h)
-      echo "Usage: $0 [-i] <bucket_name> [<environment>]"
-      exit 0
+      show_usage_and_exit
       ;;
     i)
       CLUSTER_IS_INTERACTIVE=yes
@@ -28,8 +33,7 @@ while getopts ":hi" opt; do
 done
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "Usage: $0 [-i] <bucket_name> [<environment>]"
-    exit 0
+    show_usage_and_exit 1
 fi
 
 set -x
@@ -64,6 +68,13 @@ elif [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
     CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=interactive"
 else
     CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=development"
+fi
+
+# === Validate bucket and environment information (sanity check on args) ===
+
+BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/bootstrap.sh"
+if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
+    show_usage_and_exit 1
 fi
 
 # === Fill in config templates ===

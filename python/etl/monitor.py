@@ -12,6 +12,7 @@ from copy import deepcopy
 from decimal import Decimal
 import logging
 import os
+import traceback
 import uuid
 
 import boto3
@@ -157,7 +158,7 @@ class Monitor(metaclass=MetaMonitor):
         payload.emit(dry_run=self._dry_run)
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type, exc_value, tb):
         self._end_time = utc_now()
         seconds = elapsed_seconds(self._start_time, self._end_time)
         if exc_type is None:
@@ -166,7 +167,8 @@ class Monitor(metaclass=MetaMonitor):
         else:
             self._logger.warning("Failed %s step for '%s' (after %0.fs)", self._step, self._target, seconds)
             payload = MonitorPayload(self, 'fail', self._end_time, extra=self._extra)
-            payload.errors = [{'code': str(type(exc_type)), 'message': "%s: %s" % (exc_type, exc_value)}]
+            payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
+                               'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
 
 

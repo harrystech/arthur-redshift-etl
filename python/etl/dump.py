@@ -136,7 +136,7 @@ def find_files_for_sources(known_sources, bucket_name, prefix, target):
         if schema_name in tables_in_s3:
             useful_sources[schema_name] = source
         else:
-            logger.warning("No information found for source '%s' in s3://%s/%s", schema_name, bucket_name, prefix)
+            logger.warning("No matches found in 's3://%s/%s/schemas/%s/'", bucket_name, prefix, schema_name)
     return useful_sources, tables_in_s3
 
 
@@ -502,18 +502,19 @@ def run_sqoop(options_file, dry_run=False):
     else:
         with Timer() as timer:
             logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
-            sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     universal_newlines=True)
             logger.debug("Sqoop is running with pid %d", sqoop.pid)
             out, err = sqoop.communicate()
             if sqoop.returncode == 0:
-                logger.debug("Sqoop stdout: %s", out.decode())
-                logger.debug("Sqoop stderr: %s", err.decode())
+                logger.debug("Sqoop stdout:\n%s", out)
+                logger.debug("Sqoop stderr:\n%s", err)
                 logger.info("Sqoop finished successfully (%s)", timer)
             else:
-                logger.info("Sqoop stdout: %s", out.decode())
-                logger.warning("Sqoop stderr: %s", err.decode())
-                logger.error("Sqoop failed with returncode %s", sqoop.returncode)
-                raise DataDumpError("Sqoop execution failed (%s)", timer)
+                logger.info("Sqoop stdout:\n%s", out)
+                logger.warning("Sqoop stderr:\n%s", err)
+                logger.error("Sqoop failed with return code %s", sqoop.returncode)
+                raise DataDumpError("Sqoop execution failed (%s)" % timer)
 
 
 def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_files, bucket_name, prefix,
