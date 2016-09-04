@@ -121,7 +121,7 @@ def execute(cx, stmt, args=(), return_result=False):
                 cursor.execute(stmt, args)
             else:
                 cursor.execute(stmt)
-        logger.debug("QUERY STATUS: %s (%.1fs)", cursor.statusmessage, timer.elapsed)
+        logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
             for msg in cx.notices:
                 logger.debug("QUERY " + msg.rstrip('\n'))

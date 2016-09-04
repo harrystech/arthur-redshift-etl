@@ -146,7 +146,8 @@ def build_basic_parser(prog_name, description=None):
     group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
                        dest="cluster_id")
 
-    # Set defaults so that we can avoid having to test the Namespace object.
+    # Set some defaults (in case no sub-command's add_to_parser is called)
+    parser.set_defaults(prolix=None)
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
     return parser
@@ -291,7 +292,7 @@ class PingCommand(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--as-etl-user", help="try to connect as ETL user (default)",
                            action="store_const", const="etl_access", dest="access", default="etl_access")
-        group.add_argument("--as-admin-user",help="try to connect as ETL user",
+        group.add_argument("--as-admin-user", help="try to connect as ETL user",
                            action="store_const", const="admin_access", dest="access")
 
     def callback(self, args, settings):

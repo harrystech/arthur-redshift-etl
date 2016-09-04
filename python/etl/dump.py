@@ -42,6 +42,10 @@ class DataDumpError(etl.ETLException):
     pass
 
 
+class SqoopExecutionError(DataDumpError):
+    pass
+
+
 def assemble_selected_columns(table_design):
     """
     Pick columns and decide how they are selected (as-is or with an expression).
@@ -389,7 +393,7 @@ def dump_source_to_s3_with_spark(sql_context, source, tables_in_s3, bucket_name,
                 write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
                 write_manifest_file(bucket_name, prefix, assoc_table_files.source_path_name, manifest_filename, dry_run)
             copied.add(target_table_name)
-    logger.info("Finished with %d table(s) from source '%s' in %s", len(copied), source_name, timer)
+    logger.info("Finished with %d table(s) from source '%s' (%s)", len(copied), source_name, timer)
 
 
 def dump_to_s3_with_spark(settings, table, prefix, keep_going=False, dry_run=False):
@@ -500,21 +504,18 @@ def run_sqoop(options_file, dry_run=False):
     if dry_run:
         logger.info("Dry-run: Skipping Sqoop run")
     else:
-        with Timer() as timer:
-            logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
-            sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     universal_newlines=True)
-            logger.debug("Sqoop is running with pid %d", sqoop.pid)
-            out, err = sqoop.communicate()
-            if sqoop.returncode == 0:
-                logger.debug("Sqoop stdout:\n%s", out)
-                logger.debug("Sqoop stderr:\n%s", err)
-                logger.info("Sqoop finished successfully (%s)", timer)
-            else:
-                logger.info("Sqoop stdout:\n%s", out)
-                logger.warning("Sqoop stderr:\n%s", err)
-                logger.error("Sqoop failed with return code %s", sqoop.returncode)
-                raise DataDumpError("Sqoop execution failed (%s)" % timer)
+        logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
+        sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 universal_newlines=True)
+        logger.debug("Sqoop is running with pid %d", sqoop.pid)
+        out, err = sqoop.communicate()
+        # Thanks to universal_newlines, out and err are str not bytes (even if PyCharm thinks differently)
+        nice_out, nice_err = ('\n' + out).rstrip(), ('\n' + err).rstrip()
+        logger.debug("Sqoop finished with return code %d", sqoop.returncode)
+        logger.debug("Sqoop stdout:%s", nice_out)
+        logger.debug("Sqoop stderr:%s", nice_err)
+        if sqoop.returncode != 0:
+            raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 
 def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_files, bucket_name, prefix,
@@ -563,37 +564,36 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_
 
     dumped = 0
     failed = []
-    try:
-        with Timer() as timer:
-            for assoc_table_files in tables_in_s3:
-                target_table_name = assoc_table_files.target_table_name
-                source_table_name = assoc_table_files.source_table_name
-                # FIXME Refactor ... calculated multiple times
-                manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
-                try:
-                    with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
-                                             options=["with-sqoop"],
-                                             source={'name': source_name,
-                                                     'schema': source_table_name.schema,
-                                                     'table': source_table_name.table},
-                                             destination={'bucket_name': bucket_name,
-                                                          'object_key': manifest_filename}):
-                        dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, assoc_table_files,
-                                              bucket_name, prefix, max_partitions, dry_run=dry_run)
-                except DataDumpError:
-                    if keep_going:
-                        logger.exception("Ignoring this exception and proceeding as requested:")
-                        failed.append(target_table_name)
-                    else:
-                        raise
-                else:
-                    dumped += 1
-        logger.info("Finished with %d table(s) from source '%s' in %s", dumped, source_name, timer)
-    except Exception:
-        logger.exception("Dumping source '%s' with sqoop failed:", source_name)
-        # This exception will stop the thread only.
-        raise
 
+    with Timer() as timer:
+        for assoc_table_files in tables_in_s3:
+            target_table_name = assoc_table_files.target_table_name
+            source_table_name = assoc_table_files.source_table_name
+            # FIXME Refactor ... calculated multiple times
+            manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
+            try:
+                with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
+                                         options=["with-sqoop"],
+                                         source={'name': source_name,
+                                                 'schema': source_table_name.schema,
+                                                 'table': source_table_name.table},
+                                         destination={'bucket_name': bucket_name,
+                                                      'object_key': manifest_filename}):
+                    dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, assoc_table_files,
+                                          bucket_name, prefix, max_partitions, dry_run=dry_run)
+            except DataDumpError:
+                if keep_going:
+                    logger.exception("Ignoring this exception and proceeding as requested:")
+                    failed.append(target_table_name)
+                else:
+                    raise
+            else:
+                dumped += 1
+    if failed:
+        logger.warning("Finished with %d table(s) from source '%s', %d failed (%s)",
+                       dumped, source_name, len(failed), timer)
+    else:
+        logger.info("Finished with %d table(s) from source '%s' (%s)", dumped, source_name, timer)
     return failed
 
 
@@ -624,11 +624,12 @@ def dump_to_s3_with_sqoop(settings, table, prefix, max_partitions, keep_going=Fa
         else:
             done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
 
-        missing_tables = []
-        for future in done:
-            missing_tables.extend(future.result())
-        for table_name in missing_tables:
-            logger.warning("Failed to dump: '%s'", table_name.identifier)
+    # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
+    missing_tables = []
+    for future in done:
+        missing_tables.extend(future.result())
+    for table_name in missing_tables:
+        logger.warning("Failed to dump: '%s'", table_name.identifier)
 
-        if not_done:
-            raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))
+    if not_done:
+        raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))

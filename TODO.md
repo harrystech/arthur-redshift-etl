@@ -10,8 +10,6 @@ Allow to specify which group has access to any source.  (Goal: differentiate use
 
 Query the database for the existence of a user's schema or the current search path instead of relying on args.
 
-Warn if distribution key is not also a sort key.
-
 Test whether relation is table or view to invoke the correct drop command.  (When switching from VIEW to CTAS
 (or back) the --drop option breaks.)
 

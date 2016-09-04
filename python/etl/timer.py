@@ -48,6 +48,7 @@ class Timer:
         self._end = utc_now()
 
     def __str__(self):
+        # Breaking with tradition, the timer instances return the elapsed time, not a description of the instance.
         return "%.2fs" % self.elapsed
 
     @property

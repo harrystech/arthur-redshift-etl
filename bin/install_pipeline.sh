@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> [<environment>]"
     echo "The environment defaults to 'production'."
     exit 0
@@ -8,6 +8,12 @@ fi
 
 CLUSTER_BUCKET="${1?'Missing bucket name'}"
 CLUSTER_ENVIRONMENT="${2-production}"
+
+BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/bootstrap.sh"
+if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
+    echo "Invalid parameters!"
+    exit 1
+fi
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 

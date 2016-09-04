@@ -108,13 +108,19 @@ def delete_in_s3(bucket_name: str, object_keys, dry_run: bool=False):
 def get_last_modified(bucket_name, object_key):
     """
     Return last_modified timestamp from the object.  Returns None if object does not exist.
+
+    Assuming that you're actually expecting this file to exist, this method helpfully waits first
+    for the object to exist.
     """
     logger = logging.getLogger(__name__)
     bucket = _get_bucket(bucket_name)
     try:
         s3_object = bucket.Object(object_key)
+        s3_object.wait_until_exists()
         timestamp = s3_object.last_modified
         logger.debug("Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp)
+    except botocore.exceptions.WaiterError:
+        timestamp = None
     except botocore.exceptions.ClientError as e:
         error_code = int(e.response['Error']['Code'])
         if error_code == 404:

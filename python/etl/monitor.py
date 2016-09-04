@@ -221,12 +221,18 @@ class DynamoDBStorage:
     """
 
     def __init__(self, table_name, capacity):
+        self.table_name = table_name
+        self.capacity = capacity
+        self._table = None
+
+    def set_table(self):
+        """Fetch table or create it, then set reference"""
         logger = logging.getLogger(__name__)
         dynamodb = boto3.resource('dynamodb')
         try:
-            table = dynamodb.Table(table_name)
+            table = dynamodb.Table(self.table_name)
             status = table.table_status
-            logger.info("Found existing table '%s' in DynamoDB (status: %s)", table_name, status)
+            logger.info("Found existing events table '%s' in DynamoDB (status: %s)", self.table_name, status)
         except botocore.exceptions.ClientError as exc:
             # Check whether this is just a ResourceNotFoundException (sadly a 400, not a 404)
             if exc.response["ResponseMetadata"]["HTTPStatusCode"] != 400:
@@ -234,9 +240,9 @@ class DynamoDBStorage:
             # Nullify assignment and start over
             table = None
         if table is None:
-            logger.info("Creating DynamoDB table: '%s'", table_name)
+            logger.info("Creating DynamoDB table: '%s'", self.table_name)
             table = dynamodb.create_table(
-                TableName=table_name,
+                TableName=self.table_name,
                 KeySchema=[
                     {'AttributeName': 'target', 'KeyType': 'HASH'},
                     {'AttributeName': 'timestamp', 'KeyType': 'RANGE'}
@@ -245,15 +251,17 @@ class DynamoDBStorage:
                     {'AttributeName': 'target', 'AttributeType': 'S'},
                     {'AttributeName': 'timestamp', 'AttributeType': 'N'}
                 ],
-                ProvisionedThroughput={'ReadCapacityUnits': capacity, 'WriteCapacityUnits': capacity}
+                ProvisionedThroughput={'ReadCapacityUnits': self.capacity, 'WriteCapacityUnits': self.capacity}
             )
-            logger.debug("Waiting for table '%s' to exist", table_name)
+            logger.debug("Waiting for new events table '%s' to exist", self.table_name)
             table.wait_until_exists()
-            logger.info("Finished creating table '%s' (arn=%s)", table_name, table.table_arn)
+            logger.info("Finished creating events table '%s' (arn=%s)", self.table_name, table.table_arn)
         # TODO Should we readjust the capacity if a new number is passed in?
         self._table = table
 
     def store(self, payload):
+        if not self._table:
+            self.set_table()
         item = dict(payload)
         # Cast timestamp (and elpased seconds) into Decimal since DynamoDB cannot handle float.
         # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
