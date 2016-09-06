@@ -12,6 +12,7 @@ from copy import deepcopy
 from decimal import Decimal
 import logging
 import os
+import threading
 import traceback
 import uuid
 
@@ -223,12 +224,14 @@ class DynamoDBStorage:
     def __init__(self, table_name, capacity):
         self.table_name = table_name
         self.capacity = capacity
-        self._table = None
+        # Avoid default sessions and have one table reference per thread
+        self._thread_local_table = threading.local()
 
-    def set_table(self):
-        """Fetch table or create it, then set reference"""
+    def _get_table(self):
+        """Fetch table or create it (within a new session)"""
         logger = logging.getLogger(__name__)
-        dynamodb = boto3.resource('dynamodb')
+        session = boto3.session.Session()
+        dynamodb = session.resource('dynamodb')
         try:
             table = dynamodb.Table(self.table_name)
             status = table.table_status
@@ -239,6 +242,7 @@ class DynamoDBStorage:
                 raise
             # Nullify assignment and start over
             table = None
+        # TODO Should we readjust the capacity if a new number is passed in?
         if table is None:
             logger.info("Creating DynamoDB table: '%s'", self.table_name)
             table = dynamodb.create_table(
@@ -256,19 +260,20 @@ class DynamoDBStorage:
             logger.debug("Waiting for new events table '%s' to exist", self.table_name)
             table.wait_until_exists()
             logger.info("Finished creating events table '%s' (arn=%s)", self.table_name, table.table_arn)
-        # TODO Should we readjust the capacity if a new number is passed in?
-        self._table = table
+        return table
 
     def store(self, payload):
-        if not self._table:
-            self.set_table()
+        table = getattr(self._thread_local_table, 'table', None)
+        if not table:
+            table = self._get_table()
+            setattr(self._thread_local_table, 'table', table)
         item = dict(payload)
         # Cast timestamp (and elpased seconds) into Decimal since DynamoDB cannot handle float.
         # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
         item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
         if "elapsed" in item:
             item["elapsed"] = Decimal("%.6f" % item['elapsed'])
-        self._table.put_item(Item=item)
+        table.put_item(Item=item)
 
 
 class RelationalStorage:
