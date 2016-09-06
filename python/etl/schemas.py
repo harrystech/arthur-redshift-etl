@@ -473,6 +473,11 @@ def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefi
     logger = logging.getLogger(__name__)
     tmp_view_name = etl.TableName(schema=table_name.schema, table=''.join([tmp_prefix, table_name.table]))
     ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, query_stmt)
+    logger.info("Creating view '{tmp_view}' for table '{table}'".format(
+        tmp_view=tmp_view_name.identifier, table=table_name)
+    )
+    with conn:
+        etl.pg.execute(conn, ddl_stmt)
 
     # based off example query in AWS docs; *_p is for parent, *_c is for child
     dependency_stmt = """SELECT DISTINCT
@@ -490,21 +495,20 @@ def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefi
       AND c_p.oid != c_c.oid""".format(
         schema=tmp_view_name.schema, table=tmp_view_name.table)
 
-    etl.pg.execute(conn, ddl_stmt)
-    conn.commit()
-    dependencies = [etl.TableName(
-        schema=row['dependency_schema'], table=row['dependency_name']
-    ) for row in etl.pg.query(conn, dependency_stmt)]
+    dependencies = [etl.TableName(schema=row['dependency_schema'], table=row['dependency_name'])
+                    for row in etl.pg.query(conn, dependency_stmt)]
 
-    dependencies_for_humans = list(map(str, dependencies))
+    dependencies_for_humans = [d.identifier for d in dependencies]
     dependencies_for_humans.sort()
     logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies_for_humans)))
 
-    observed_deps = set([d.identifier for d in dependencies])
+    observed_deps = set(dependencies_for_humans)
     expected_deps = set(table_design.get('depends_on', []))
     if not observed_deps == expected_deps:
         logger.warning(
             'Dependency tracking mismatch! payload = {}'.format(json.dumps(dict(
+             full_dependencies=dependencies_for_humans,
+             table=table_name,
              actual_but_unlisted=list(observed_deps - expected_deps),
              listed_but_not_actual=list(expected_deps - observed_deps)
             )))
@@ -525,6 +529,10 @@ def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefi
 
     observed_cols = [r['attname'] for r in etl.pg.query(conn, columns_stmt)]
     expected_cols = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
+
+    if expected_cols[0] == 'key':
+        # handle identity column
+        observed_cols = ['key'] + observed_cols
 
     if not observed_cols == expected_cols:
         logger.warning(
@@ -570,7 +578,6 @@ def validate_designs(settings, target, table_design_dir, keep_going=False, local
                 else:
                     raise
 
-
     for info in failed:
         # Just show the target table to make it easy to copy and paste into a 'arthur.py validate' commandline
         logger.warning("Failed validation for '%s'", info.target_table_name.identifier)
@@ -580,7 +587,17 @@ def validate_designs(settings, target, table_design_dir, keep_going=False, local
 
     dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
     with closing(etl.pg.connection(dw)) as conn:
-        for table_name, table_design in tables_to_validate_as_views:
+        for info, table_design in tables_to_validate_as_views:
+            if table_design["source_name"] not in ("VIEW", "CTAS"):
+                # don't check dependencies for upstream source tables
+                continue
             query_stmt = open(info.sql_file, 'r').read()
-            validate_table_as_view(conn, table_design, info.target_table_name, query_stmt)
+            try:
+                validate_table_as_view(conn, table_design, info.target_table_name, query_stmt)
+            except Exception as err:
+                if keep_going:
+                    logger.exception("Failed to run {} as view:".format(info.target_table_name))
+                else:
+                    raise
+
     return
