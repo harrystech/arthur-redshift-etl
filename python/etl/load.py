@@ -390,7 +390,8 @@ def vacuum(conn, table_name, dry_run=False):
 
 def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
                                      table_owner, etl_group, user_group,
-                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
+                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False
+                                     ):
     """
     Load single table from CSV or using a SQL query or create new view.
     """

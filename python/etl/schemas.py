@@ -6,6 +6,7 @@ should be organized once loaded into Redshift, like the distribution style or so
 """
 
 from contextlib import closing
+import difflib
 import logging
 import os.path
 import re
@@ -468,7 +469,76 @@ def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=T
         logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
 
 
-def validate_designs(settings, target, table_design_dir, keep_going=False):
+def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefix='arthur_tmp_'):
+    logger = logging.getLogger(__name__)
+    tmp_view_name = etl.TableName(schema=table_name.schema, table=''.join([tmp_prefix, table_name.table]))
+    ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, query_stmt)
+
+    # based off example query in AWS docs; *_p is for parent, *_c is for child
+    dependency_stmt = """SELECT DISTINCT
+      n_c.nspname AS dependency_schema
+    , c_c.relname AS dependency_name
+    FROM pg_class c_p
+    JOIN pg_depend d_p ON c_p.relfilenode = d_p.refobjid
+    JOIN pg_depend d_c ON d_p.objid = d_c.objid
+    -- the following OR statement covers the case where a COPY has issued a new OID for an upstream table
+    JOIN pg_class c_c ON d_c.refobjid = c_c.relfilenode OR d_c.refobjid = c_c.oid
+    LEFT JOIN pg_namespace n_p ON c_p.relnamespace = n_p.oid
+    LEFT JOIN pg_namespace n_c ON c_c.relnamespace = n_c.oid
+    WHERE c_p.relname = '{table}' AND n_p.nspname = '{schema}'
+    -- do not include the table itself in its dependency list
+      AND c_p.oid != c_c.oid""".format(
+        schema=tmp_view_name.schema, table=tmp_view_name.table)
+
+    etl.pg.execute(conn, ddl_stmt)
+    conn.commit()
+    dependencies = [etl.TableName(
+        schema=row['dependency_schema'], table=row['dependency_name']
+    ) for row in etl.pg.query(conn, dependency_stmt)]
+
+    dependencies_for_humans = list(map(str, dependencies))
+    dependencies_for_humans.sort()
+    logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies_for_humans)))
+
+    observed_deps = set([d.identifier for d in dependencies])
+    expected_deps = set(table_design.get('depends_on', []))
+    if not observed_deps == expected_deps:
+        logger.warning(
+            'Dependency tracking mismatch! payload = {}'.format(json.dumps(dict(
+             actual_but_unlisted=list(observed_deps - expected_deps),
+             listed_but_not_actual=list(expected_deps - observed_deps)
+            )))
+        )
+    else:
+        logger.info('Dependencies listing in design file matches SQL')
+
+    columns_stmt = """SELECT a.attname
+      FROM pg_class c, pg_attribute a, pg_type t, pg_namespace n
+     WHERE c.relname = '{table}'
+       AND a.attnum > 0
+       AND a.attrelid = c.oid
+       AND a.atttypid = t.oid
+       AND c.relnamespace = n.oid
+       AND n.nspname = '{schema}'
+     ORDER BY attnum ASC""".format(
+        schema=tmp_view_name.schema, table=tmp_view_name.table)
+
+    observed_cols = [r['attname'] for r in etl.pg.query(conn, columns_stmt)]
+    expected_cols = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
+
+    if not observed_cols == expected_cols:
+        logger.warning(
+            'Column listing mismatch! Diff of observed vs expected follows: {}'.format(
+             '\n'.join(difflib.context_diff(observed_cols, expected_cols)))
+            )
+    else:
+        logger.info('Column listing in design file matches column listing in SQL')
+    logger.info("Dropping view '%s'", tmp_view_name.identifier)
+    etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
+    conn.commit()
+
+
+def validate_designs(settings, target, table_design_dir, keep_going=False, local_only=False):
     """
     Make sure that all (local) table design files pass the validation checks.
     """
@@ -484,12 +554,14 @@ def validate_designs(settings, target, table_design_dir, keep_going=False):
         return
 
     failed = []
+    tables_to_validate_as_views = []
     for source in found:
         for info in found[source]:
             try:
                 logger.info("Checking file '%s'", info.design_file)
                 with open(info.design_file, 'r') as design_file:
                     table_design = load_table_design(design_file, info.target_table_name)
+                tables_to_validate_as_views.append((info, table_design))
                 logger.debug("Validated table design for '%s'", table_design["name"])
             except TableDesignError:
                 if keep_going:
@@ -498,6 +570,17 @@ def validate_designs(settings, target, table_design_dir, keep_going=False):
                 else:
                     raise
 
+
     for info in failed:
         # Just show the target table to make it easy to copy and paste into a 'arthur.py validate' commandline
         logger.warning("Failed validation for '%s'", info.target_table_name.identifier)
+
+    if local_only:
+        return
+
+    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
+    with closing(etl.pg.connection(dw)) as conn:
+        for table_name, table_design in tables_to_validate_as_views:
+            query_stmt = open(info.sql_file, 'r').read()
+            validate_table_as_view(conn, table_design, info.target_table_name, query_stmt)
+    return
