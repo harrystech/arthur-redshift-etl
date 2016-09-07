@@ -561,9 +561,10 @@ def _check_columns(observed, table_design):
     """
     expected = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
 
-    if expected[0] == 'key':
-        # handle identity column
-        observed = ['key'] + observed
+    # handle identity columns by inserting a column into observed in the expected position
+    for index, column in enumerate(table_design['columns']):
+        if column.get('identity', False):
+            observed.insert(index, column['name'])
 
     if observed != expected:
         return 'Column listing mismatch! Diff of observed vs expected follows: {}'.format(
