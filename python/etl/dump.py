@@ -331,6 +331,13 @@ def write_dataframe_as_csv(df, source_path_name, bucket_name, prefix, dry_run=Fa
             .save(full_s3_path)
 
 
+def create_dir_unless_exists(name, dry_run=False):
+    logger = logging.getLogger(__name__)
+    if not os.path.isdir(name) and not dry_run:
+        logger.info("Creating directory '%s' (with mode 750)", name)
+        os.makedirs(name, mode=0o750, exist_ok=True)
+
+
 def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, dry_run=False):
     """
     Create manifest file to load all the CSV files from the given folder.
@@ -406,6 +413,7 @@ def dump_to_s3_with_spark(settings, table, prefix, keep_going=False, dry_run=Fal
     if len(selected_sources) == 0:
         return
     validate_access(selected_sources.values())
+    create_dir_unless_exists(REDSHIFT_ETL_HOME)
 
     sql_context = create_sql_context()
     for schema_name in tables_in_s3:
@@ -530,10 +538,7 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_fi
                             "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
     manifest_filename = os.path.join(prefix, "data", source_table_files.source_path_name + ".manifest")
     sqoop_files = os.path.join(REDSHIFT_ETL_HOME, 'sqoop')
-
-    if not os.path.isdir(sqoop_files) and not dry_run:
-        logger.info("Creating directory '%s' (with mode 750)", sqoop_files)
-        os.makedirs(sqoop_files, mode=0o750, exist_ok=True)
+    create_dir_unless_exists(sqoop_files)
 
     # TODO Create ssl.props here instead of bootstrap.sh script
 
