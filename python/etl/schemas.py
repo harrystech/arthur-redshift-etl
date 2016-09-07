@@ -495,26 +495,13 @@ def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefi
       AND c_p.oid != c_c.oid""".format(
         schema=tmp_view_name.schema, table=tmp_view_name.table)
 
-    dependencies = [etl.TableName(schema=row['dependency_schema'], table=row['dependency_name'])
+    dependencies = [etl.TableName(schema=row['dependency_schema'], table=row['dependency_name']).identifier
                     for row in etl.pg.query(conn, dependency_stmt)]
+    dependencies.sort()
+    logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies)))
 
-    dependencies_for_humans = [d.identifier for d in dependencies]
-    dependencies_for_humans.sort()
-    logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies_for_humans)))
-
-    observed_deps = set(dependencies_for_humans)
-    expected_deps = set(table_design.get('depends_on', []))
-    if not observed_deps == expected_deps:
-        logger.warning(
-            'Dependency tracking mismatch! payload = {}'.format(json.dumps(dict(
-             full_dependencies=dependencies_for_humans,
-             table=table_name,
-             actual_but_unlisted=list(observed_deps - expected_deps),
-             listed_but_not_actual=list(expected_deps - observed_deps)
-            )))
-        )
-    else:
-        logger.info('Dependencies listing in design file matches SQL')
+    (method, content) = _check_dependencies(dependencies, table_design)
+    getattr(logger, method)(content)
 
     columns_stmt = """SELECT a.attname
       FROM pg_class c, pg_attribute a, pg_type t, pg_namespace n
@@ -527,23 +514,65 @@ def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefi
      ORDER BY attnum ASC""".format(
         schema=tmp_view_name.schema, table=tmp_view_name.table)
 
-    observed_cols = [r['attname'] for r in etl.pg.query(conn, columns_stmt)]
-    expected_cols = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
+    (method, content) = _check_columns([r['attname'] for r in etl.pg.query(conn, columns_stmt)], table_design)
+    getattr(logger, method)(content)
 
-    if expected_cols[0] == 'key':
-        # handle identity column
-        observed_cols = ['key'] + observed_cols
-
-    if not observed_cols == expected_cols:
-        logger.warning(
-            'Column listing mismatch! Diff of observed vs expected follows: {}'.format(
-             '\n'.join(difflib.context_diff(observed_cols, expected_cols)))
-            )
-    else:
-        logger.info('Column listing in design file matches column listing in SQL')
     logger.info("Dropping view '%s'", tmp_view_name.identifier)
-    etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
-    conn.commit()
+    with conn:
+        etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
+
+
+def _check_dependencies(observed, table_design):
+    """
+    Compare actual dependencies to a table design object and return instructions for logger
+
+    >>> _check_dependencies(['abc.123', '123.abc'], dict(name='fish', depends_on=['123.abc']))  # doctest: +ELLIPSIS
+    ('warning', 'Dependency tracking mismatch! payload =...]}')
+
+    >>> _check_dependencies(['abc.123', '123.abc'], dict(name='fish', depends_on=['123.abc', 'abc.123']))
+    ('info', 'Dependencies listing in design file matches SQL')
+    """
+    expected = table_design.get('depends_on', [])
+
+    observed_deps = set(observed)
+    expected_deps = set(expected)
+    if not observed_deps == expected_deps:
+        return ('warning',
+                'Dependency tracking mismatch! payload = {}'.format(json.dumps(dict(
+                 full_dependencies=observed,
+                 table=table_design['name'],
+                 actual_but_unlisted=list(observed_deps - expected_deps),
+                 listed_but_not_actual=list(expected_deps - observed_deps)
+                ))))
+
+    else:
+        return ('info', 'Dependencies listing in design file matches SQL')
+
+
+def _check_columns(observed, table_design):
+    """
+    Compare actual columns in query to those in table design object and return instructions for logger
+
+    >>> _check_columns(['a', 'b'], dict(columns=[dict(name='b'), dict(name='a')])) # doctest: +ELLIPSIS
+    ('warning', 'Column listing mismatch! Diff of observed vs expected follows:...')
+
+    >>> _check_columns(['a', 'b'], dict(columns=[dict(name='a'), dict(name='b')]))
+    ('info', 'Column listing in design file matches column listing in SQL')
+
+    """
+    expected = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
+
+    if expected[0] == 'key':
+        # handle identity column
+        observed = ['key'] + observed
+
+    if observed == expected:
+        return ('info', 'Column listing in design file matches column listing in SQL')
+    else:
+        return ('warning',
+                'Column listing mismatch! Diff of observed vs expected follows: {}'.format(
+                 '\n'.join(difflib.context_diff(observed, expected)))
+                )
 
 
 def validate_designs(settings, target, table_design_dir, keep_going=False, local_only=False):
