@@ -43,7 +43,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         echo "Cannot find configuration files.  Please set DATA_WAREHOUSE_CONFIG."
         exit 2
     elif [[ ! -d "$DATA_WAREHOUSE_CONFIG" ]]; then
-        echo "Expected $DATA_WAREHOUSE_CONFIG to be a directory"
+        echo "Expected DATA_WAREHOUSE_CONFIG to point to a directory"
         exit 2
     fi
     echo "Creating Python dist file, then uploading files (including configuration) to s3"

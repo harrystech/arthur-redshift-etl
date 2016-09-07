@@ -103,7 +103,7 @@ The EMR releases 4.5 and later include python3 so there's no need to install Pyt
 The easiest way to add PySpark so that code completion and type checking works while working on ETL code
 might be to just add a pointer in the virtual environment.
 
-First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set. 
+First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set.
 
 Then, with Spark 2.0.0, try this for example:
 ```shell
@@ -158,6 +158,19 @@ arthur.py create_users
 ```
 
 ## Running the ETL
+
+### Prerequisites for running the ETL in a cluster
+
+All commands below will assume that you run `arthur.py` locally.  But if you want to
+run the ETL in an EMR cluster instead, then you need to create a file with the
+credentials that the cluster will need (a list of environment variables), then copy files needed in
+the cluster and launch the cluster.
+
+```shell
+export DATA_WAREHOUSE_CONFIG='path to directory with config files and credentials'
+bin/copy_env.sh 'name of your S3 bucket' local $USER
+bin/aws_emr_cluster.sh -i 'name of your S3 bucket'
+```
 
 ### Overview
 
