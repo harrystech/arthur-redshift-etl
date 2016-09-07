@@ -163,10 +163,10 @@ class Monitor(metaclass=MetaMonitor):
         self._end_time = utc_now()
         seconds = elapsed_seconds(self._start_time, self._end_time)
         if exc_type is None:
-            self._logger.info("Finished %s step for '%s' (after %0.fs)", self._step, self._target, seconds)
+            self._logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
             payload = MonitorPayload(self, 'finish', self._end_time, elapsed=seconds, extra=self._extra)
         else:
-            self._logger.warning("Failed %s step for '%s' (after %0.fs)", self._step, self._target, seconds)
+            self._logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
             payload = MonitorPayload(self, 'fail', self._end_time, extra=self._extra)
             payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]

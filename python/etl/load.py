@@ -398,8 +398,9 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
     table_design = etl.schemas.download_table_design(bucket_name, assoc_table_files.design_file, table_name)
 
     if table_design["source_name"] in ("CTAS", "VIEW"):
+        # FIXME Ugly ... move this 'download query and cleanup' somewhere separate (and testable)
         with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
-            query = content.read().decode()
+            query = content.read().decode().strip().rstrip(';')
         object_key = assoc_table_files.sql_file
     else:
         if assoc_table_files.manifest_file is None and not skip_copy:
