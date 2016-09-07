@@ -369,7 +369,9 @@ def list_files(settings, prefix, table, long_format=False):
     """
     List files in the S3 bucket.
 
-    Useful to discover whether pattern matching works.
+    In the long format, tallies up the total size in bytes.
+
+    (Also useful to discover whether pattern matching works.)
     """
     logger = logging.getLogger(__name__)
     selection = etl.TableNamePatterns.from_list(table)
@@ -394,6 +396,7 @@ def list_files(settings, prefix, table, long_format=False):
                 files.append(("Manifest", info.manifest_file))
             if len(info.data_files) > 0:
                 files.extend(("Data", filename) for filename in info.data_files)
+            # FIXME we should check whether data is older than the design file
             for file_type, filename in files:
                 if long_format:
                     content_length, last_modified = object_stat(bucket_name, filename)

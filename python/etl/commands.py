@@ -102,7 +102,8 @@ def submit_step(cluster_id, sub_command):
             Steps=[
                 {
                     "Name": "Arthur command: {}".format(sub_command),
-                    "ActionOnFailure": "CANCEL_AND_WAIT",
+                    # For "interactive" steps, allow a sequence of steps to continue on failure
+                    "ActionOnFailure": "CONTINUE",
                     "HadoopJarStep": {
                         "Jar": "command-runner.jar",
                         "Args": ["/tmp/redshift_etl/venv/bin/arthur.py",
@@ -290,9 +291,9 @@ class PingCommand(SubCommand):
 
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("--as-etl-user", help="try to connect as ETL user (default)",
+        group.add_argument("-e", "--as-etl-user", help="try to connect as ETL user (default)",
                            action="store_const", const="etl_access", dest="access", default="etl_access")
-        group.add_argument("--as-admin-user", help="try to connect as ETL user",
+        group.add_argument("-a", "--as-admin-user", help="try to connect as ETL user",
                            action="store_const", const="admin_access", dest="access")
 
     def callback(self, args, settings):

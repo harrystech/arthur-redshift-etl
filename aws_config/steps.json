@@ -5,7 +5,8 @@
             "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
             "/tmp/redshift_etl/config/",
-            "etl",
+            "load",
+            "--skip-copy",
             "--prolix",
             "--prefix",
             "#{etl_environment}"

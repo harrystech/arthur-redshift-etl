@@ -8,7 +8,7 @@
     {
         "Name": "Core instance group - 2",
         "InstanceGroupType": "CORE",
-        "InstanceCount": 4,
+        "InstanceCount": 2,
         "InstanceType": "r3.xlarge"
     }
 ]

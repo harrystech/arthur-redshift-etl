@@ -46,31 +46,30 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         echo "Expected DATA_WAREHOUSE_CONFIG to point to a directory"
         exit 2
     fi
-    echo "Creating Python dist file, then uploading files (including configuration) to s3"
 
+    echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to s3"
     set -e -x
 
     python3 setup.py sdist
-
-    for FILE in requirements.txt \
-                dist/redshift-etl-0.8.2.tar.gz
+    LATEST_TAR_FILE=`ls -1t dist/redshift-etl*tar.gz | head -1`
+    for FILE in requirements.txt "$LATEST_TAR_FILE"
     do
         aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars/"
     done
 
-    aws s3 cp "bin/bootstrap.sh" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bootstrap/"
-
-    for FILE in "$DATA_WAREHOUSE_CONFIG"/*; do
-        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/"
-    done
-
-    for FILE in jars/commons-csv-1.4.jar \
-                jars/postgresql-9.4.1208.jar \
-                jars/RedshiftJDBC41-1.1.10.1010.jar \
-                jars/spark-csv_2.10-1.4.0.jar
-    do
-        aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars/"
-    done
+    aws s3 sync --delete bootstrap "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bootstrap"
+    aws s3 sync --delete \
+        --include "*.yaml" \
+        --include "*.sh" \
+        --exclude "credentials*" \
+        config "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
+    aws s3 sync --delete \
+        --exclude "*" \
+        --include commons-csv-1.4.jar \
+        --include postgresql-9.4.1208.jar \
+        --include RedshiftJDBC41-1.1.10.1010.jar \
+        --include spark-csv_2.10-1.4.0.jar \
+        jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
 
 else
     set -e -x

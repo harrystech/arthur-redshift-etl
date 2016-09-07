@@ -27,7 +27,7 @@ def configure_logging(full_format: bool=False, log_level: str=None,) -> None:
         config["handlers"]["console"]["level"] = log_level
     logging.config.dictConfig(config)
     logging.captureWarnings(True)
-    logging.getLogger(__name__).info("Starting log for '%s'", sys.argv[0])
+    logging.getLogger(__name__).info("Starting log for '%s'", ' '.join(sys.argv))
 
 
 def load_environ_file(filename: str) -> None:
