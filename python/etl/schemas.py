@@ -471,7 +471,7 @@ def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=T
 
 def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefix='arthur_tmp_'):
     logger = logging.getLogger(__name__)
-    tmp_view_name = etl.TableName(schema=table_name.schema, table=''.join([tmp_prefix, table_name.table]))
+    tmp_view_name = etl.TableName(schema=table_name.schema, table='$'.join([tmp_prefix, table_name.table]))
     ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, query_stmt)
     logger.info("Creating view '%s' for table '%s'" % (tmp_view_name.identifier, table_name))
     with conn:
