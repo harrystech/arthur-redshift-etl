@@ -557,8 +557,8 @@ def _check_columns(observed, table_design):
 
     >>> _check_columns(['a', 'b'], dict(columns=[dict(name='a'), dict(name='b')]))
 
-
     """
+    observed = list(observed)
     expected = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
 
     # handle identity columns by inserting a column into observed in the expected position
