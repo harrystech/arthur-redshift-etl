@@ -10,6 +10,8 @@ import jsonschema
 import simplejson as json
 import yaml
 
+from etl import package_version
+
 
 def configure_logging(full_format: bool=False, log_level: str=None,) -> None:
     """
@@ -27,7 +29,7 @@ def configure_logging(full_format: bool=False, log_level: str=None,) -> None:
         config["handlers"]["console"]["level"] = log_level
     logging.config.dictConfig(config)
     logging.captureWarnings(True)
-    logging.getLogger(__name__).info("Starting log for '%s'", ' '.join(sys.argv))
+    logging.getLogger(__name__).info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
 
 
 def load_environ_file(filename: str) -> None:
@@ -74,6 +76,7 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
     settings = defaultdict(dict)
     default_file = pkg_resources.resource_filename(__name__, default_file)
 
+    count_settings = 0
     for name in [default_file] + config_files:
         if os.path.isdir(name):
             files = sorted(os.path.join(name, n) for n in os.listdir(name))
@@ -84,8 +87,14 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
                 load_environ_file(filename)
             elif filename.endswith((".yaml", ".yml")):
                 load_settings_file(filename, settings)
+                count_settings += 1
             else:
                 logger.info("Skipping config file '%s'", filename)
+
+    # Need to load at least the defaults and some installation specific file:
+    if count_settings < 2:
+        raise RuntimeError("Failed to find enough configuration files")
+
     schema = load_json("settings.schema")
     jsonschema.validate(settings, schema)
 

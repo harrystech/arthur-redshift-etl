@@ -45,17 +45,12 @@ import psycopg2
 
 import etl
 from etl import TableName
-import etl.commands
 import etl.config
-import etl.dump
+import etl.design
+import etl.file_sets
 import etl.monitor
 import etl.pg
-import etl.s3
-import etl.schemas
-
-
-class MissingQueryError(etl.ETLException):
-    pass
+import etl.relation
 
 
 class MissingManifestError(etl.ETLException):
@@ -145,7 +140,7 @@ def assemble_table_ddl(table_design, table_name, use_identity=False, is_temp=Fal
                                                           "\n".join(s_attributes)).replace('\n', "\n    ")
 
 
-def create_table(conn, table_design, table_name, table_owner, drop_table=False, dry_run=False):
+def create_table(conn, description, table_owner, drop_table=False, dry_run=False):
     """
     Run the CREATE TABLE statement before trying to copy data into table.
     Also assign ownership to make sure all tables are owned by same user.
@@ -153,6 +148,8 @@ def create_table(conn, table_design, table_name, table_owner, drop_table=False, 
     allowed to do so.
     """
     logger = logging.getLogger(__name__)
+    table_name = description.target_table_name
+    table_design = description.table_design
     ddl_stmt = assemble_table_ddl(table_design, table_name)
 
     if dry_run:
@@ -162,24 +159,24 @@ def create_table(conn, table_design, table_name, table_owner, drop_table=False, 
         if drop_table:
             logger.info("Dropping table '%s'", table_name.identifier)
             etl.pg.execute(conn, "DROP TABLE IF EXISTS {} CASCADE".format(table_name))
-
         logger.info("Creating table '%s' (if not exists)", table_name.identifier)
         etl.pg.execute(conn, ddl_stmt)
 
+        # FIXME Do we still need this?
         logger.info("Making user '%s' owner of table '%s'", table_owner, table_name.identifier)
         etl.pg.alter_table_owner(conn, table_name.schema, table_name.table, table_owner)
 
 
-def create_view(conn, table_design, view_name, table_owner, query_stmt, drop_view=False, dry_run=False):
+def create_view(conn, description, drop_view=False, dry_run=False):
     """
     Run the CREATE VIEW statement.
 
-    Optionally drop the view first.  This is necessary if the name or type
-    of columns changes.
+    Optionally drop the view first.  This is necessary if the name or type of columns changes.
     """
     logger = logging.getLogger(__name__)
-    s_columns = format_column_list(column["name"] for column in table_design["columns"])
-    ddl_stmt = """CREATE OR REPLACE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, query_stmt)
+    view_name = description.target_table_name
+    s_columns = format_column_list(column["name"] for column in description.table_design["columns"])
+    ddl_stmt = """CREATE OR REPLACE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
     if dry_run:
         logger.info("Dry-run: Skipping creation of view '%s'", view_name.identifier)
         logger.debug("Skipped DDL:\n%s", ddl_stmt)
@@ -300,11 +297,9 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                        FROM {})""".format(table_name, s_columns, temp_name)
 
 
-def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt,
-                                  skip_copy=False, add_explain_plan=False, dry_run=False):
+def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
-    Run the CREATE TABLE AS statement to load data into temp table,
-    then copy into final table.
+    Run the CREATE TABLE AS statement to load data into temp table, then copy into final table.
 
     Actual implementation:
     (1) If there is a column marked with identity=True, then create a temporary
@@ -317,6 +312,10 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt,
     table in order to have full flexibility how we define the destination table.
     """
     logger = logging.getLogger(__name__)
+    table_name = description.target_table_name
+    table_design = description.table_design
+    query_stmt = description.query_stmt
+
     temp_identifier = '$'.join(("arthur_temp", table_name.table))
     temp_name = '"{}"'.format(temp_identifier)
     has_any_identity = any([column.get("identity", False) for column in table_design["columns"]])
@@ -394,24 +393,21 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
+def load_or_update_redshift_relation(conn, bucket_name, file_set, credentials,
                                      table_owner, etl_group, user_group,
                                      drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
-    table_name = assoc_table_files.target_table_name
-    table_design = etl.schemas.download_table_design(bucket_name, assoc_table_files.design_file, table_name)
+    description = etl.relation.RelationDescription(file_set, bucket_name)
+    table_name = description.target_table_name
 
-    if table_design["source_name"] in ("CTAS", "VIEW"):
-        # FIXME Ugly ... move this 'download query and cleanup' somewhere separate (and testable)
-        with closing(etl.s3.get_file_content(bucket_name, assoc_table_files.sql_file)) as content:
-            query = content.read().decode().strip().rstrip(';')
-        object_key = assoc_table_files.sql_file
+    if description.is_ctas_relation or description.is_view_relation:
+        object_key = description.sql_file_name
     else:
-        if assoc_table_files.manifest_file is None and not skip_copy:
-            raise MissingManifestError("Missing manifest file")
-        object_key = assoc_table_files.manifest_file
+        object_key = description.manifest_file_name
+        if object_key is None and not skip_copy:
+            raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
 
     # FIXME The monitor should contain the database we're connected to and the number of rows that were loaded.
     modified = False
@@ -420,17 +416,17 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
                              source={'bucket_name': bucket_name, 'object_key': object_key},
                              destination={'schema': table_name.schema, 'table': table_name.table}):
         with conn:
-            if table_design["source_name"] == "VIEW":
-                create_view(conn, table_design, table_name, table_owner, query, drop_view=drop, dry_run=dry_run)
-            elif table_design["source_name"] == "CTAS":
-                create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                create_temp_table_as_and_copy(conn, table_name, table_design, query,
-                                              skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run)
+            if description.is_view_relation:
+                create_view(conn, description, drop_view=drop, dry_run=dry_run)
+            elif description.is_ctas_relation:
+                create_table(conn, description, table_owner, drop_table=drop, dry_run=dry_run)
+                create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
+                                              dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
             else:
-                create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
-                copy_data(conn, credentials, table_name, bucket_name, assoc_table_files.manifest_file,
+                create_table(conn, description, table_owner, drop_table=drop, dry_run=dry_run)
+                copy_data(conn, credentials, table_name, bucket_name, file_set.manifest_file,
                           skip_copy=skip_copy, dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
@@ -438,7 +434,8 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
     return modified
 
 
-def load_or_update_redshift(settings, target, prefix, drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
+def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, skip_copy=False,
+                            add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -449,91 +446,24 @@ def load_or_update_redshift(settings, target, prefix, drop=False, skip_copy=Fals
     should be a quick way to load data that is "under development" and may not have all dependencies or
     names / types correct.
     """
-    logger = logging.getLogger(__name__)
-    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
-    credentials = settings("data_warehouse", "iam_role")
-
-    table_owner = settings("data_warehouse", "owner")
-    etl_group = settings("data_warehouse", "groups", "etl")
-    user_group = settings("data_warehouse", "groups", "users")
-
-    selection = etl.TableNamePatterns.from_list(target)
-    combined_schemas = settings("sources") + settings("data_warehouse", "schemas")
-    schemas = selection.match_field(combined_schemas, "name")
-    schema_names = [source["name"] for source in schemas]
-    if not schema_names:
-        logger.warning("Found no matching source or target schema, looking for '%s'", selection.str_schemas())
-        return
-
-    bucket_name = settings("s3", "bucket_name")
-    files_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)
-    if not files_in_s3:
-        logger.error("No applicable files found in 's3://%s/%s' for '%s'", bucket_name, prefix, selection)
-        return
+    credentials = data_warehouse["iam_role"]
+    table_owner = data_warehouse["owner"]
+    etl_group = data_warehouse["groups"]["etl"]
+    user_group = data_warehouse["groups"]["users"]
+    dsn = etl.config.env_value(data_warehouse["etl_access"])
 
     vacuumable = []
-    with closing(etl.pg.connection(dw)) as conn:
-        for source_name in files_in_s3:
-            for assoc_table_files in files_in_s3[source_name]:
-                modified = load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, credentials,
-                                                            table_owner, etl_group, user_group,
-                                                            drop=drop, skip_copy=skip_copy,
-                                                            add_explain_plan=add_explain_plan, dry_run=dry_run)
-                if modified:
-                    vacuumable.append(assoc_table_files.target_table_name)
+    with closing(etl.pg.connection(dsn)) as conn:
+        for file_set in file_sets:
+            modified = load_or_update_redshift_relation(conn, bucket_name, file_set, credentials,
+                                                        table_owner, etl_group, user_group,
+                                                        drop=drop, skip_copy=skip_copy,
+                                                        add_explain_plan=add_explain_plan, dry_run=dry_run)
+            if modified:
+                vacuumable.append(file_set.target_table_name)
 
     # Reconnect to run vacuum outside transaction block
     if not drop:
-        with closing(etl.pg.connection(dw, autocommit=True)) as conn:
+        with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
             for table_name in vacuumable:
                 vacuum(conn, table_name, dry_run=dry_run)
-
-
-def test_queries(settings, target, table_design_dir):
-    """
-    Test queries by running EXPLAIN with the query.
-
-    This will only test queries for schemas defined for the warehouse and
-    not for any sources (which should be loaded using CSV files).
-    """
-    logger = logging.getLogger(__name__)
-    dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
-
-    selection = etl.TableNamePatterns.from_list(target)
-    schemas = selection.match_field(settings("data_warehouse", "schemas"), "name")
-    schema_names = [s["name"] for s in schemas]
-    if not schema_names:
-        logger.warning("Found no matching target schema, looking for '%s'", selection.str_schemas())
-        return
-
-    local_files = etl.s3.find_local_files(table_design_dir, schema_names, selection)
-    if not local_files:
-        logger.error("No applicable files found in '%s' for '%s'", table_design_dir, selection)
-        return
-
-    # We can't use a read-only connection here because Redshift needs to (or wants to) create
-    # temporary tables when building the query plan if temporary tables (probably from CTEs)
-    # will be needed during query execution.  (Look for scans on volt_tt_* tables.)
-    with closing(etl.pg.connection(dw, autocommit=True)) as conn:
-        for source_name in local_files:
-            for assoc_table_files in local_files[source_name]:
-                table_name = assoc_table_files.target_table_name
-                design_file = assoc_table_files.design_file
-                sql_file = assoc_table_files.sql_file
-
-                with open(design_file) as f:
-                    table_design = etl.schemas.load_table_design(f, table_name)
-                if table_design["source_name"] not in ("CTAS", "VIEW"):
-                    continue
-
-                if sql_file is None:
-                    raise MissingQueryError("Missing SQL file for {}".format(table_name.identifier))
-                logger.info("Reading query from local file '%s'", sql_file)
-                with open(sql_file) as f:
-                    query = f.read()
-
-                logger.debug("Trying query for %s", table_name.identifier)
-                plan = etl.pg.query(conn, "EXPLAIN\n" + query)
-                logger.info("Explain plan for %s query:\n | %s",
-                            table_name.identifier,
-                            "\n | ".join(row[0] for row in plan))

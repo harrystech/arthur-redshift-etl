@@ -74,7 +74,7 @@ fi
 
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Failed to find $BOOTSTRAP -- did you initialize the folder $CLUSTER_ENVIRONMENT?"
+    echo "Failed to find $BOOTSTRAP -- did you initialize the folder \"$CLUSTER_ENVIRONMENT\"?"
     exit 2
 fi
 
@@ -120,9 +120,7 @@ aws emr create-cluster \
         $CLUSTER_TERMINATION_PROTECTION \
         | tee "$CLUSTER_ID_FILE"
 CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
-
-# Wait for cluster to initialize
-sleep 10
+sleep 1
 
 if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
     aws emr wait cluster-running --cluster-id "$CLUSTER_ID"

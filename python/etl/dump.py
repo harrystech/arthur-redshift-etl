@@ -5,7 +5,9 @@ Functions to deal with dumping data from PostgreSQL databases to CSV.
 from collections import OrderedDict
 import concurrent.futures
 from contextlib import closing
+from itertools import groupby
 import logging
+from operator import attrgetter
 import os
 import os.path
 import shlex
@@ -17,16 +19,15 @@ import simplejson as json
 
 import etl
 import etl.config
+import etl.design
 import etl.monitor
 import etl.pg
-import etl.s3
-import etl.schemas
+import etl.file_sets
+import etl.relation
 from etl.timer import Timer
 
 
-APPLICATION_NAME = "DataWarehouseETL"
-
-# N.B. This must match value in deploy scripts in /bin
+# N.B. This must match value in deploy scripts in ./bin (and should be in a config file)
 REDSHIFT_ETL_HOME = "/tmp/redshift_etl"
 
 
@@ -46,52 +47,6 @@ class SqoopExecutionError(DataDumpError):
     pass
 
 
-def assemble_selected_columns(table_design):
-    """
-    Pick columns and decide how they are selected (as-is or with an expression).
-
-    Whether there's an expression or just a name the resulting column is always
-    called out delimited.
-    """
-    selected_columns = []
-    for column in table_design["columns"]:
-        if not column.get("skipped", False):
-            if column.get("expression"):
-                selected_columns.append('{expression} AS "{name}"'.format(**column))
-            else:
-                selected_columns.append('"{name}"'.format(**column))
-    return selected_columns
-
-
-def find_primary_key(table_design):
-    """
-    Return primary key (single column) from the table design, if defined, else None.
-    """
-    if "primary_key" in table_design.get("constraints", {}):
-        # Note that column constraints such as primary key are stored as one-element lists, hence:
-        return table_design["constraints"]["primary_key"][0]
-    else:
-        return None
-
-
-def extract_dsn(dsn_string):
-    """
-    Break the connection string into a JDBC URL and connection properties.
-
-    This is necessary since a JDBC URL may not contain all the properties needed
-    to successfully connect, e.g. username, password.  These properties must
-    be passed in separately.
-    """
-    dsn_properties = etl.pg.parse_connection_string(dsn_string)
-    dsn_properties.update({
-        "ApplicationName": APPLICATION_NAME,
-        "readOnly": "true",
-        "driver": "org.postgresql.Driver"  # necessary, weirdly enough
-    })
-    jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
-    return jdbc_url, dsn_properties
-
-
 def create_sql_context():
     """
     Create a new SQL context within a new Spark context.
@@ -109,16 +64,16 @@ def create_sql_context():
 
     from pyspark import SparkConf, SparkContext, SQLContext
 
-    logger.info("Starting SparkSQL context for %s", APPLICATION_NAME)
+    logger.info("Starting SparkSQL context")
     conf = SparkConf()
-    conf.setAppName(APPLICATION_NAME)
+    conf.setAppName(__name__)
     conf.set("spark.logConf", "true")
     # TODO Add spark.jars here? spark.submit.pyFiles?
     sc = SparkContext(conf=conf)
     return SQLContext(sc)
 
 
-def find_files_for_sources(known_sources, bucket_name, prefix, target):
+def find_files_for_sources(bucket_name, prefix, sources, selector):
     """
     Return file information for selected upstream sources, along with the selected upstream sources.
     (Or returns an empty dictionary and empty list in case no matching table description was found.)
@@ -126,14 +81,9 @@ def find_files_for_sources(known_sources, bucket_name, prefix, target):
     Mostly a convenience function for shared code between "dump with Spark" and "dump with Sqoop".
     """
     logger = logging.getLogger(__name__)
-    selection = etl.TableNamePatterns.from_list(target)
-    sources = selection.match_field(known_sources, "name")
-    if not sources:
-        logger.warning("No upstream sources selected for '%s'", selection.str_schemas())
-        return {}, []  # TODO Use an exception instead?
 
     schema_names = [source["name"] for source in sources]
-    tables_in_s3 = etl.s3.find_files_for_schemas(bucket_name, prefix, schema_names, selection)
+    tables_in_s3 = etl.file_sets.find_files_for_schemas(bucket_name, prefix, schema_names, selector)
 
     useful_sources = OrderedDict()
     for source, schema_name in zip(sources, schema_names):
@@ -277,13 +227,41 @@ def determine_partitioning(source_table_name, table_design, read_access):
     return predicates
 
 
+def assemble_selected_columns(table_design):
+    """
+    Pick columns and decide how they are selected (as-is or with an expression).
+
+    Whether there's an expression or just a name the resulting column is always
+    called out delimited.
+    """
+    selected_columns = []
+    for column in table_design["columns"]:
+        if not column.get("skipped", False):
+            if column.get("expression"):
+                selected_columns.append('{expression} AS "{name}"'.format(**column))
+            else:
+                selected_columns.append('"{name}"'.format(**column))
+    return selected_columns
+
+
+def find_primary_key(table_design):
+    """
+    Return primary key (single column) from the table design, if defined, else None.
+    """
+    if "primary_key" in table_design.get("constraints", {}):
+        # Note that column constraints such as primary key are stored as one-element lists, hence:
+        return table_design["constraints"]["primary_key"][0]
+    else:
+        return None
+
+
 def read_table_as_dataframe(sql_context, source, source_table_name, table_design):
     """
     Read dataframe (with partitions) by contacting upstream JDBC-reachable source.
     """
     logger = logging.getLogger(__name__)
     read_access = etl.config.env_value(source["read_access"])
-    jdbc_url, dsn_properties = extract_dsn(read_access)
+    jdbc_url, dsn_properties = etl.pg.extract_dsn(read_access)
 
     selected_columns = assemble_selected_columns(table_design)
     select_statement = """(SELECT {} FROM {}) AS t""".format(", ".join(selected_columns), source_table_name)
@@ -351,11 +329,11 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     logger = logging.getLogger(__name__)
     csv_path = os.path.join(prefix, "data", source_path_name, "csv")
 
-    last_success = etl.s3.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
+    last_success = etl.file_sets.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
     if last_success is None and not dry_run:
         raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-    csv_files = etl.s3.list_files_in_folder(bucket_name, csv_path + "/part-")
+    csv_files = etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-")
     if len(csv_files) == 0 and not dry_run:
         raise MissingCsvFilesError("Found no CSV files")
 
@@ -371,57 +349,52 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
             local_file.write('\n')
             local_file.flush()
             logger.debug("Done writing '%s'", local_file.name)
-            etl.s3.upload_to_s3(local_file.name, bucket_name, object_key=manifest_filename)
+            etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
 
 
-def dump_source_to_s3_with_spark(sql_context, source, tables_in_s3, bucket_name, prefix,
-                                 keep_going=False, dry_run=False):
+def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_sets, dry_run=False):
     """
     Dump all the tables from one source into CSV files in S3.  The selector may be used to pick a subset of tables.
     """
     logger = logging.getLogger(__name__)
-    source_name = source["name"]
     copied = set()
     with Timer() as timer:
-        for assoc_table_files in tables_in_s3:
-            source_table_name = assoc_table_files.source_table_name
-            target_table_name = assoc_table_files.target_table_name
-            manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
+        for file_set in file_sets:
+            source_table_name = file_set.source_table_name
+            target_table_name = file_set.target_table_name
+            manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
             with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
                                      options=["with-spark"],
-                                     source={'name': source_name,
+                                     source={'name': file_set.source_name,
                                              'schema': source_table_name.schema,
                                              'table': source_table_name.table},
                                      destination={'bucket_name': bucket_name,
                                                   'object_key': manifest_filename}):
-                table_design = etl.schemas.download_table_design(bucket_name, assoc_table_files.design_file,
-                                                                 target_table_name)
+                table_design = etl.design.download_table_design(bucket_name, file_set.design_file, target_table_name)
                 df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
-                write_dataframe_as_csv(df, assoc_table_files.source_path_name, bucket_name, prefix, dry_run)
-                write_manifest_file(bucket_name, prefix, assoc_table_files.source_path_name, manifest_filename, dry_run)
+                write_dataframe_as_csv(df, file_set.source_path_name, bucket_name, prefix, dry_run=dry_run)
+                write_manifest_file(bucket_name, prefix, file_set.source_path_name, manifest_filename,
+                                    dry_run=dry_run)
             copied.add(target_table_name)
-    logger.info("Finished with %d table(s) from source '%s' (%s)", len(copied), source_name, timer)
+    logger.info("Finished with %d table(s) from source '%s' (%s)", len(copied), source["name"], timer)
 
 
-def dump_to_s3_with_spark(settings, table, prefix, keep_going=False, dry_run=False):
+def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False):
     """
     Dump data from multiple upstream sources to S3 with Spark Dataframes
     """
-    sources = settings("sources")
-    bucket_name = settings("s3", "bucket_name")
-    selected_sources, tables_in_s3 = find_files_for_sources(sources, bucket_name, prefix, table)
-    if len(selected_sources) == 0:
-        return
-    validate_access(selected_sources.values())
-    create_dir_unless_exists(REDSHIFT_ETL_HOME)
+    for source in sources:
+        source["dsn"] = etl.config.env_value(source["read_access"])
+    source_lookup = {source["name"]: source for source in sources}
 
     sql_context = create_sql_context()
-    for schema_name in tables_in_s3:
-        dump_source_to_s3_with_spark(sql_context, selected_sources[schema_name], tables_in_s3[schema_name],
-                                     bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
+    create_dir_unless_exists(REDSHIFT_ETL_HOME)
+    for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
+        dump_source_to_s3_with_spark(sql_context, source_lookup[source_name], bucket_name, prefix, file_group,
+                                     dry_run=dry_run)
 
 
-def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, password_file, source_table_files,
+def build_sqoop_options(bucket_name, csv_path, jdbc_url, username, password_file, source_table_files,
                         max_mappers=4):
     """
     Create set of Sqoop options.
@@ -430,8 +403,8 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, passwor
     tool specific options, and child-process options.
     """
     source_table_name = source_table_files.source_table_name
-    table_design = etl.schemas.download_table_design(bucket_name, source_table_files.design_file,
-                                                     source_table_files.target_table_name)
+    table_design = etl.design.download_table_design(bucket_name, source_table_files.design_file,
+                                                    source_table_files.target_table_name)
     columns = assemble_selected_columns(table_design)
     select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
     primary_key = find_primary_key(table_design)
@@ -445,7 +418,7 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, passwor
             "--connect", q(jdbc_url),
             "--driver", q("org.postgresql.Driver"),
             "--connection-param-file", q(os.path.join(REDSHIFT_ETL_HOME, "sqoop", "ssl.props")),
-            "--username", q(dsn_properties["user"]),
+            "--username", q(username),
             "--password-file", '"file://{}"'.format(password_file),
             "--verbose",
             "--fields-terminated-by", q(","),
@@ -526,35 +499,33 @@ def run_sqoop(options_file, dry_run=False):
             raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 
-def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_table_files, bucket_name, prefix,
+def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set, bucket_name, prefix,
                           max_partitions, dry_run=False):
     """
     Run Sqoop for one table, creates the sub-process and all the pretty args for Sqoop.
     """
     logger = logging.getLogger(__name__)
 
-    source_table_name = source_table_files.source_table_name
+    source_table_name = source_file_set.source_table_name
     csv_path = os.path.join(prefix, "data", source_name,
                             "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
-    manifest_filename = os.path.join(prefix, "data", source_table_files.source_path_name + ".manifest")
+    manifest_filename = os.path.join(prefix, "data", source_file_set.source_path_name + ".manifest")
+
     sqoop_files = os.path.join(REDSHIFT_ETL_HOME, 'sqoop')
     create_dir_unless_exists(sqoop_files)
 
-    # TODO Create ssl.props here instead of bootstrap.sh script
-
     password_file = write_password_file(dsn_properties["password"], dry_run=dry_run)
-
-    args = build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties, password_file,
-                               source_table_files, max_mappers=max_partitions)
+    args = build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties["user"], password_file,
+                               source_file_set, max_mappers=max_partitions)
     logger.info("Sqoop options are:\n%s", " ".join(args))
     options_file = write_options_file(args, dry_run=dry_run)
 
     # Need to first delete directory since sqoop won't overwrite (and can't delete)
-    deletable = etl.s3.list_files_in_folder(bucket_name, csv_path)
-    etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+    deletable = etl.file_sets.list_files_in_folder(bucket_name, csv_path)
+    etl.file_sets.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
 
     run_sqoop(options_file, dry_run=dry_run)
-    write_manifest_file(bucket_name, prefix, source_table_files.source_path_name, manifest_filename, dry_run=dry_run)
+    write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename, dry_run=dry_run)
 
 
 def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_partitions,
@@ -564,18 +535,17 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_
     """
     logger = logging.getLogger(__name__)
     source_name = source["name"]
-    read_access = etl.config.env_value(source["read_access"])
-    jdbc_url, dsn_properties = extract_dsn(read_access)
+    jdbc_url, dsn_properties = etl.pg.extract_dsn(source["dsn"])
 
     dumped = 0
     failed = []
 
     with Timer() as timer:
-        for assoc_table_files in tables_in_s3:
-            target_table_name = assoc_table_files.target_table_name
-            source_table_name = assoc_table_files.source_table_name
+        for file_set in tables_in_s3:
+            target_table_name = file_set.target_table_name
+            source_table_name = file_set.source_table_name
             # FIXME Refactor ... calculated multiple times
-            manifest_filename = os.path.join(prefix, "data", assoc_table_files.source_path_name + ".manifest")
+            manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
             try:
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
                                          options=["with-sqoop"],
@@ -584,7 +554,7 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_
                                                  'table': source_table_name.table},
                                          destination={'bucket_name': bucket_name,
                                                       'object_key': manifest_filename}):
-                    dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, assoc_table_files,
+                    dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, file_set,
                                           bucket_name, prefix, max_partitions, dry_run=dry_run)
             except DataDumpError:
                 if keep_going:
@@ -602,27 +572,32 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_
     return failed
 
 
-def dump_to_s3_with_sqoop(settings, table, prefix, max_partitions, keep_going=False, dry_run=False):
+def dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets, max_partitions, keep_going=False, dry_run=False):
     """
     Dump data from upstream sources to S3 with calls to Sqoop
+
+    It is ok to call this method with "sources" that are actually just derived schemas since
+    those will be ignored.
     """
     logger = logging.getLogger(__name__)
-    sources = settings("sources")
-    bucket_name = settings("s3", "bucket_name")
-    selected_sources, tables_in_s3 = find_files_for_sources(sources, bucket_name, prefix, table)
-    if len(selected_sources) == 0:
+    source_lookup = {source["name"]: source for source in schemas if "read_access" in source}
+    if not source_lookup:
+        logger.warning("Nothing to do here since list of upstream sources is empty")
         return
-    validate_access(selected_sources.values())
+    for source in source_lookup.values():
+        source["dsn"] = etl.config.env_value(source["read_access"])
 
-    # TODO Will run all sources in parallel ... should this be a command line arg?
-    max_workers = len(selected_sources)
+    # TODO This will run all sources in parallel ... should this be a command line arg?
+    max_workers = len(source_lookup)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
-        for schema_name in tables_in_s3:
-            f = executor.submit(dump_source_to_s3_with_sqoop,
-                                selected_sources[schema_name], tables_in_s3[schema_name],
-                                bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)
-            futures.append(f)
+        for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
+            if source_name in source_lookup:
+                f = executor.submit(dump_source_to_s3_with_sqoop,
+                                    source_lookup[source_name], file_group,
+                                    bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)
+                futures.append(f)
         # FIXME Test whether we need to cancel any remaining futures after failure
         if keep_going:
             done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)

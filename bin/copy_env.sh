@@ -2,8 +2,9 @@
 
 # Copy production setup to new env
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
+if [[ $# -lt 2 || $# -gt 3 || "$1" = "local" ]]; then
     echo "Usage: `basename $0` <bucket_name> [<source_env>] <target_env>"
+    echo
     echo "If the source_env is 'local', then copy files from your local files, not another folder."
     echo "The source_env defaults to 'production'."
     exit 0
@@ -47,6 +48,10 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         exit 2
     fi
 
+    if [[ ! -r setup.py ]]; then
+        echo "Failed to find 'setup.py' file"
+        exit 2
+    fi
     echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to s3"
     set -e -x
 

@@ -63,6 +63,25 @@ def parse_connection_string(dsn: str) -> dict:
     return values
 
 
+def extract_dsn(dsn_string):
+    """
+    Break the connection string into a JDBC URL and connection properties.
+
+    This is necessary since a JDBC URL may not contain all the properties needed
+    to successfully connect, e.g. username, password.  These properties must
+    be passed in separately.
+    """
+    dsn_properties = parse_connection_string(dsn_string)
+    dsn_properties.update({
+        "ApplicationName": __name__,
+        "readOnly": "true",
+        "driver": "org.postgresql.Driver"  # necessary, weirdly enough
+        # FIXME can ssl.props be done here?
+    })
+    jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
+    return jdbc_url, dsn_properties
+
+
 def dbname(cx):
     """
     Return name of database that connection points to
