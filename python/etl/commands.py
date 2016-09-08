@@ -480,9 +480,13 @@ class ValidateDesignsCommand(SubCommand):
         parser.add_argument("-k", "--keep-going",
                             help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
+        parser.add_argument("-l", "--local",
+                            help="check local yaml files and don't connect to S3 or databases",
+                            default=False, action="store_true")
 
     def callback(self, args, settings):
-        etl.schemas.validate_designs(settings, args.target, args.table_design_dir, keep_going=args.keep_going)
+        etl.schemas.validate_designs(settings, args.target, args.table_design_dir,
+                                     keep_going=args.keep_going, local_only=args.local)
 
 
 class ExplainQueryCommand(SubCommand):
