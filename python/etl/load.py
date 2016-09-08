@@ -317,7 +317,7 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt,
     table in order to have full flexibility how we define the destination table.
     """
     logger = logging.getLogger(__name__)
-    temp_identifier = "{}${}".format("staging", table_name.table)
+    temp_identifier = '$'.join(("arthur_temp", table_name.table))
     temp_name = '"{}"'.format(temp_identifier)
     has_any_identity = any([column.get("identity", False) for column in table_design["columns"]])
 
