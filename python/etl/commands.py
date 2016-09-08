@@ -173,12 +173,15 @@ def build_full_parser(prog_name):
                                        title="available sub-commands",
                                        dest='sub_command')
 
-    for klass in [InitialSetupCommand, CreateUserCommand,
-                  DownloadSchemasCommand, CopyToS3Command, DumpDataToS3Command,
-                  LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
-                  ValidateDesignsCommand, ListFilesCommand,
-                  PingCommand, ExplainQueryCommand, ShowSettingsCommand,
-                  EventsQueryCommand]:
+    for klass in [
+            # Commands to deal with data warehouse as admin:
+            InitialSetupCommand, CreateUserCommand,
+            # Commands to help with table designs and uploading them
+            DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
+            # ETL commands to extract, load/update or do both
+            DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
+            # Helper comands
+            ListFilesCommand, PingCommand, ShowSettingsCommand, EventsQueryCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 

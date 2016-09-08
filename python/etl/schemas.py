@@ -469,9 +469,9 @@ def copy_to_s3(settings, table, table_design_dir, prefix, force=False, dry_run=T
         logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
 
 
-def validate_table_as_view(conn, table_design, table_name, query_stmt, tmp_prefix='arthur_tmp_'):
+def validate_table_as_view(conn, table_design, table_name, query_stmt):
     logger = logging.getLogger(__name__)
-    tmp_view_name = etl.TableName(schema=table_name.schema, table='$'.join([tmp_prefix, table_name.table]))
+    tmp_view_name = etl.TableName(schema=table_name.schema, table='$'.join(["arthur_temp", table_name.table]))
     ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, query_stmt)
     logger.info("Creating view '%s' for table '%s'" % (tmp_view_name.identifier, table_name))
     with conn:
@@ -594,7 +594,8 @@ def validate_designs(settings, target, table_design_dir, keep_going=False, local
                 logger.info("Checking file '%s'", info.design_file)
                 with open(info.design_file, 'r') as design_file:
                     table_design = load_table_design(design_file, info.target_table_name)
-                tables_to_validate_as_views.append((info, table_design))
+                if table_design["source_name"] in ("VIEW", "CTAS"):
+                    tables_to_validate_as_views.append((info, table_design))
                 logger.debug("Validated table design for '%s'", table_design["name"])
             except TableDesignError:
                 if keep_going:
@@ -605,24 +606,21 @@ def validate_designs(settings, target, table_design_dir, keep_going=False, local
 
     for info in failed:
         # Just show the target table to make it easy to copy and paste into a 'arthur.py validate' commandline
+        # Hint: Run `arthur.py validate -s` to just see all the errors
         logger.warning("Failed validation for '%s'", info.target_table_name.identifier)
 
-    if local_only:
+    if local_only or not tables_to_validate_as_views:
         return
 
     dw = etl.config.env_value(settings("data_warehouse", "etl_access"))
     with closing(etl.pg.connection(dw)) as conn:
         for info, table_design in tables_to_validate_as_views:
-            if table_design["source_name"] not in ("VIEW", "CTAS"):
-                # don't check dependencies for upstream source tables
-                continue
             query_stmt = open(info.sql_file, 'r').read()
             try:
                 validate_table_as_view(conn, table_design, info.target_table_name, query_stmt)
-            except Exception as err:
+            except Exception:
                 if keep_going:
                     logger.exception("Failed to run {} as view:".format(info.target_table_name))
                 else:
                     raise
-
     return

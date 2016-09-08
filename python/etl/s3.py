@@ -50,6 +50,10 @@ class BadSourceDefinitionError(etl.ETLException):
     pass
 
 
+class S3ServiceError(etl.ETLException):
+    pass
+
+
 def _get_bucket(name):
     """
     Return new Bucket object for a bucket that does exist (waits until it does)
@@ -83,7 +87,7 @@ def upload_to_s3(filename, bucket_name, prefix=None, object_key=None, dry_run=Fa
         bucket.upload_file(filename, object_key)
 
 
-def delete_in_s3(bucket_name: str, object_keys, dry_run: bool=False):
+def delete_in_s3(bucket_name: str, object_keys: list, dry_run: bool=False, retry: bool=True):
     """
     Delete objects from bucket.
     """
@@ -94,6 +98,7 @@ def delete_in_s3(bucket_name: str, object_keys, dry_run: bool=False):
     else:
         bucket = _get_bucket(bucket_name)
         keys = [{'Key': key} for key in object_keys]
+        failed = []
         chunk_size = 1000
         while len(keys) > 0:
             result = bucket.delete_objects(Delete={'Objects': keys[:chunk_size]})
@@ -101,8 +106,15 @@ def delete_in_s3(bucket_name: str, object_keys, dry_run: bool=False):
             for deleted in result.get('Deleted', {}):
                 logger.info("Deleted 's3://%s/%s'", bucket_name, deleted['Key'])
             for error in result.get('Errors', {}):
-                logger.warning("Failed to delete 's3://%s/%s': %s %s", bucket_name, error['Key'],
-                               error['Code'], error['Message'])
+                logger.error("Failed to delete 's3://%s/%s' with %s: %s", bucket_name, error['Key'],
+                             error['Code'], error['Message'])
+                failed.append(error['Key'])
+        if failed:
+            if retry:
+                logger.warning("Failed to delete %d objects, trying one more time", len(failed))
+                delete_in_s3(bucket_name, failed, retry=False)
+            else:
+                raise S3ServiceError("Failed to delete %d files" % len(failed))
 
 
 def get_last_modified(bucket_name, object_key):

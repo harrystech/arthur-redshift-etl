@@ -4,6 +4,9 @@
 Thin wrapper around PostgreSQL API, adding niceties like logging,
 transaction handling, simple DSN strings, as well as simple commands
 (for new users, schema creation, etc.)
+
+For a description of the connection string, take inspiration from:
+https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
 from contextlib import contextmanager
@@ -48,7 +51,7 @@ def parse_connection_string(dsn: str) -> dict:
                             (?P<user>\w+)(?::(?P<password>[-\w]+))?@  # user information with optional password
                             (?P<host>[-\w.]+)(:?:(?P<port>\d+))?/  # host and optional port information
                             (?P<database>\w+)  # database (and not dbname)
-                            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option
+                            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
                         re.VERBOSE)
     match = dsn_re.match(os.path.expandvars(dsn))
     if match is None:
