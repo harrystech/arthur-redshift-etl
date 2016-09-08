@@ -300,7 +300,8 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                        FROM {})""".format(table_name, s_columns, temp_name)
 
 
-def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, add_explain_plan=False, dry_run=False):
+def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt,
+                                  skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Run the CREATE TABLE AS statement to load data into temp table,
     then copy into final table.
@@ -340,6 +341,11 @@ def create_temp_table_as_and_copy(conn, table_name, table_design, query_stmt, ad
         logger.debug("Skipped DDL for '%s': %s", temp_identifier, ddl_temp_stmt)
         logger.debug("Skipped DML for '%s': %s", temp_identifier, dml_temp_stmt)
         logger.debug("Skipped DML for '%s': %s", table_name.identifier, dml_stmt)
+    elif skip_copy:
+        logger.info("Skipping copy for '%s' from query", table_name.identifier)
+        if not add_explain_plan:
+            # Run explain plan to test the query and ensure upstream tables and views exist
+            etl.pg.execute(conn, "EXPLAIN\n" + query_stmt)
     else:
         logger.info("Creating temp table '%s'", temp_identifier)
         etl.pg.execute(conn, ddl_temp_stmt)
@@ -419,7 +425,7 @@ def load_or_update_redshift_relation(conn, bucket_name, assoc_table_files, crede
             elif table_design["source_name"] == "CTAS":
                 create_table(conn, table_design, table_name, table_owner, drop_table=drop, dry_run=dry_run)
                 create_temp_table_as_and_copy(conn, table_name, table_design, query,
-                                              add_explain_plan=add_explain_plan, dry_run=dry_run)
+                                              skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
             else:
