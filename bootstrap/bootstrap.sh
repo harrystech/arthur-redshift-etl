@@ -36,6 +36,9 @@ aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
 # Download configuration and credentials
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
 
+# Add custom hosts to EMR
+sudo sed -i -e "\$a$(cat ./config/*.hosts)" /etc/hosts
+
 # Write file for Sqoop to be able to connect using SSL to upstream sources
 test -d sqoop || mkdir sqoop
 cat > ./sqoop/ssl.props <<EOF
