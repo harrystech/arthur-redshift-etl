@@ -61,8 +61,9 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     aws s3 sync --delete \
         --include "*.yaml" \
         --include "*.sh" \
+        --include "*.hosts" \
         --exclude "credentials*" \
-        config "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
+        "$DATA_WAREHOUSE_CONFIG" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
     aws s3 sync --delete \
         --exclude "*" \
         --include commons-csv-1.4.jar \
