@@ -124,22 +124,26 @@ aws emr create-cluster \
         $CLUSTER_TERMINATION_PROTECTION \
         | tee "$CLUSTER_ID_FILE"
 CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
-sleep 1
 
-if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
-    aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
-    say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
-    aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
+if [[ -r "$CLUSTER_CONFIG_DIR/steps_$CLUSTER_ENVIRONMENT.json" ]]; then
+    STEPS_FILE="file://$CLUSTER_CONFIG_DIR/steps_$CLUSTER_ENVIRONMENT.json"
 else
-    if [[ -r "$CLUSTER_CONFIG_DIR/steps_$CLUSTER_ENVIRONMENT.json" ]]; then
-        STEPS_FILE="file://$CLUSTER_CONFIG_DIR/steps_$CLUSTER_ENVIRONMENT.json"
-    else
-        STEPS_FILE="file://$CLUSTER_CONFIG_DIR/steps_default.json"
-    fi
-    aws emr add-steps --cluster-id "$CLUSTER_ID" --steps "$STEPS_FILE"
-    echo "If you need to proxy into the cluster, use:"
-    echo "aws emr socks --cluster-id \"$CLUSTER_ID\" --key-pair-file \"$SSH_KEY_PAIR_FILE\""
+    STEPS_FILE="file://$CLUSTER_CONFIG_DIR/steps_default.json"
 fi
+aws emr add-steps --cluster-id "$CLUSTER_ID" --steps "$STEPS_FILE"
 
 aws emr describe-cluster --cluster-id "$CLUSTER_ID" | \
     jq '.Cluster.Status | {"State": .State}, .Timeline, .StateChangeReason | if has("CreationDateTime") then map_values(todate) else . end'
+
+if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
+    sleep 10
+    aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
+    set +x
+
+    say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
+    aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
+else
+    set +x
+    echo "If you need to proxy into the cluster, use:"
+    echo "aws emr socks --cluster-id \"$CLUSTER_ID\" --key-pair-file \"$SSH_KEY_PAIR_FILE\""
+fi

@@ -259,14 +259,13 @@ def read_table_as_dataframe(sql_context, source, source_table_name, table_design
     Read dataframe (with partitions) by contacting upstream JDBC-reachable source.
     """
     logger = logging.getLogger(__name__)
-    read_access = etl.config.env_value(source["read_access"])
-    jdbc_url, dsn_properties = etl.pg.extract_dsn(read_access)
+    jdbc_url, dsn_properties = etl.pg.extract_dsn(source["dsn"])
 
     selected_columns = assemble_selected_columns(table_design)
     select_statement = """(SELECT {} FROM {}) AS t""".format(", ".join(selected_columns), source_table_name)
     logger.debug("Table query: SELECT * FROM %s", select_statement)
 
-    predicates = determine_partitioning(source_table_name, table_design, read_access)
+    predicates = determine_partitioning(source_table_name, table_design, source["dsn"])
     if predicates:
         df = sql_context.read.jdbc(url=jdbc_url,
                                    properties=dsn_properties,
@@ -332,7 +331,7 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     if last_success is None and not dry_run:
         raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-    csv_files = etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-")
+    csv_files = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-"))
     if len(csv_files) == 0 and not dry_run:
         raise MissingCsvFilesError("Found no CSV files")
 
@@ -382,9 +381,11 @@ def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False
     """
     Dump data from multiple upstream sources to S3 with Spark Dataframes
     """
-    for source in sources:
-        source["dsn"] = etl.config.env_value(source["read_access"])
-    source_lookup = {source["name"]: source for source in sources}
+    logger = logging.getLogger(__name__)
+    source_lookup = {source["name"]: source for source in sources if "dsn" in source}
+    if not source_lookup:
+        logger.warning("Nothing to do here since list of upstream sources is empty")
+        return
 
     sql_context = create_sql_context()
     create_dir_unless_exists(REDSHIFT_ETL_HOME)
@@ -520,7 +521,7 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set
     options_file = write_options_file(args, dry_run=dry_run)
 
     # Need to first delete directory since sqoop won't overwrite (and can't delete)
-    deletable = etl.file_sets.list_files_in_folder(bucket_name, csv_path)
+    deletable = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path))
     etl.file_sets.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
 
     run_sqoop(options_file, dry_run=dry_run)
@@ -546,6 +547,7 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
             # FIXME Refactor into relation description ... calculated multiple times
             manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
             try:
+                # FIXME The monitor should contain the number of rows that were dumped.
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
                                          options=["with-sqoop"],
                                          source={'name': source_name,
@@ -571,7 +573,7 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
     return failed
 
 
-def dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets, max_partitions, keep_going=False, dry_run=False):
+def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partitions, keep_going=False, dry_run=False):
     """
     Dump data from upstream sources to S3 with calls to Sqoop
 
@@ -579,12 +581,10 @@ def dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets, max_partition
     those will be ignored.
     """
     logger = logging.getLogger(__name__)
-    source_lookup = {source["name"]: source for source in schemas if "read_access" in source}
+    source_lookup = {source["name"]: source for source in sources if "dsn" in source}
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
-    for source in source_lookup.values():
-        source["dsn"] = etl.config.env_value(source["read_access"])
 
     # TODO This will run all sources in parallel ... should this be a command line arg?
     max_workers = len(source_lookup)
@@ -594,7 +594,7 @@ def dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets, max_partition
         for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
             if source_name in source_lookup:
                 f = executor.submit(dump_source_to_s3_with_sqoop,
-                                    source_lookup[source_name], file_group,
+                                    source_lookup[source_name], list(file_group),
                                     bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)
                 futures.append(f)
         if keep_going:

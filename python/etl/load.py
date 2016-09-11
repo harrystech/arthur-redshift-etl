@@ -409,12 +409,15 @@ def load_or_update_redshift_relation(conn, bucket_name, file_set, credentials,
         if object_key is None and not skip_copy:
             raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
 
-    # FIXME The monitor should contain the database we're connected to and the number of rows that were loaded.
+    # FIXME The monitor should contain the number of rows that were loaded.
     modified = False
     with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
                              options=["skip_copy"] if skip_copy else [],
-                             source={'bucket_name': bucket_name, 'object_key': object_key},
-                             destination={'schema': table_name.schema, 'table': table_name.table}):
+                             source={'bucket_name': bucket_name,
+                                     'object_key': object_key},
+                             destination={'name': etl.pg.dbname(conn),
+                                          'schema': table_name.schema,
+                                          'table': table_name.table}):
         with conn:
             if description.is_view_relation:
                 create_view(conn, description, drop_view=drop, dry_run=dry_run)
@@ -463,7 +466,7 @@ def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, 
                 vacuumable.append(file_set.target_table_name)
 
     # Reconnect to run vacuum outside transaction block
-    if not drop:
+    if vacuumable and not drop:
         with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
             for table_name in vacuumable:
                 vacuum(conn, table_name, dry_run=dry_run)

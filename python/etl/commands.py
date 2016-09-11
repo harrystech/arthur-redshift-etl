@@ -107,7 +107,7 @@ def submit_step(cluster_id, sub_command):
             JobFlowId=cluster_id,
             Steps=[
                 {
-                    "Name": "Arthur command: {}".format(sub_command),
+                    "Name": "Arthur command: {}".format(str(sub_command).upper()),
                     # For "interactive" steps, allow a sequence of steps to continue after failure of one
                     "ActionOnFailure": "CONTINUE",
                     "HadoopJarStep": {
@@ -270,6 +270,15 @@ class SubCommand:
         return selected_schemas, selector
 
     @staticmethod
+    def add_dsn_for_read_access(sources):
+        """
+        Lookup environment variables for read access to upstream sources and add the DSN
+        """
+        for source in sources:
+            if "read_access" in source:
+                source["dsn"] = etl.config.env_value(source["read_access"])
+
+    @staticmethod
     def find_files_in_s3(bucket_name, prefix, schemas, selector):
         """
         Return file sets from the "environment" (meaning bucket and prefix)
@@ -384,6 +393,7 @@ class DownloadSchemasCommand(SubCommand):
 
     def callback(self, args, settings):
         schemas, selector = self.pick_schemas(settings("sources"), args.pattern)
+        self.add_dsn_for_read_access(schemas)
         local_files = self.find_files_locally(args.table_design_dir, schemas, selector, empty_is_ok=True)
         etl.design.download_schemas(args.table_design_dir, local_files, schemas, selector, settings("type_maps"),
                                     dry_run=args.dry_run)
@@ -421,10 +431,10 @@ class DumpDataToS3Command(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("--sqoop",
+        group.add_argument("--with-sqoop",
                            help="dump data using Sqoop (using 'sqoop import', this is the default)",
                            const="sqoop", action="store_const", dest="dumper", default="sqoop")
-        group.add_argument("--spark",
+        group.add_argument("--with-spark",
                            help="dump data using Spark Dataframe (using submit_arthur.sh)",
                            const="spark", action="store_const", dest="dumper")
         parser.add_argument("-k", "--keep-going",
@@ -434,6 +444,7 @@ class DumpDataToS3Command(SubCommand):
     def callback(self, args, settings):
         bucket_name = settings("s3", "bucket_name")
         sources, selector = self.pick_schemas(settings("sources"), args.pattern)
+        self.add_dsn_for_read_access(sources)
         file_sets = self.find_files_in_s3(bucket_name, args.prefix, sources, selector)
 
         if args.dumper == "sqoop":
@@ -514,11 +525,14 @@ class ExtractLoadTransformCommand(SubCommand):
     def callback(self, args, settings):
         bucket_name = settings("s3", "bucket_name")
         schemas, selector = self.pick_schemas(settings("sources") + settings("data_warehouse", "schemas"), args.pattern)
-        file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
+        self.add_dsn_for_read_access(schemas)
 
         with etl.pg.log_error():
+            file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
             etl.dump.dump_to_s3_with_sqoop(schemas, bucket_name, args.prefix, file_sets, args.max_partitions,
                                            dry_run=args.dry_run)
+            # Need to rerun find files since the dump step has added files (data and manifests)
+            file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
             etl.load.load_or_update_redshift(settings("data_warehouse"), bucket_name, file_sets,
                                              drop=args.force, dry_run=args.dry_run)
 

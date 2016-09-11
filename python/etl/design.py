@@ -449,16 +449,11 @@ def download_schemas(table_design_dir, local_files, sources, selector, type_maps
     """
     logger = logging.getLogger(__name__)
 
-    # Check that all env vars are set--it's annoying to have this fail for the last source without upfront warning.
-    for source in sources:
-        source["dsn"] = etl.config.env_value(source["read_access"])
-
     total = 0
     for source in sources:
         normalize_and_create(os.path.join(table_design_dir, source["name"]), dry_run=dry_run)
         total = create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
                                                            type_maps, dry_run=dry_run)
-
     if not local_files:
         logger.warning("Found no matching files in '%s' for '%s'", table_design_dir, selector)
     if not total:
