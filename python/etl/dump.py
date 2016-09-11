@@ -135,7 +135,6 @@ def suggest_best_partition_number(table_size):
     elif table_size <= 1024 * meg:
         target = 10 * meg
     else:
-        # TODO Should be closer to 100 meg?
         target = 20 * meg
 
     num_partitions = 1
@@ -528,7 +527,7 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename, dry_run=dry_run)
 
 
-def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_partitions,
+def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_partitions,
                                  keep_going=False, dry_run=False):
     """
     Dump all (selected) tables from a single upstream source.  Return list of tables for which dump failed.
@@ -541,10 +540,10 @@ def dump_source_to_s3_with_sqoop(source, tables_in_s3, bucket_name, prefix, max_
     failed = []
 
     with Timer() as timer:
-        for file_set in tables_in_s3:
+        for file_set in file_sets:
             target_table_name = file_set.target_table_name
             source_table_name = file_set.source_table_name
-            # FIXME Refactor ... calculated multiple times
+            # FIXME Refactor into relation description ... calculated multiple times
             manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
             try:
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
@@ -598,7 +597,6 @@ def dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets, max_partition
                                     source_lookup[source_name], file_group,
                                     bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)
                 futures.append(f)
-        # FIXME Test whether we need to cancel any remaining futures after failure
         if keep_going:
             done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:

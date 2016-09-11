@@ -489,7 +489,7 @@ class UpdateRedshiftCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "prefix", "explain", "dry-run"])
 
     def callback(self, args, settings):
-        # TODO refactor with load command
+        # FIXME refactor with load command
         bucket_name = settings("s3", "bucket_name")
         schemas, selector = self.pick_schemas(settings("sources") + settings("data_warehouse", "schemas"), args.pattern)
         file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
@@ -543,7 +543,7 @@ class ValidateDesignsCommand(SubCommand):
         schemas, selector = self.pick_schemas(settings("sources") + settings("data_warehouse", "schemas"), args.pattern)
         local_files = self.find_files_locally(args.table_design_dir, schemas, selector)
         dsn = etl.config.env_value(settings("data_warehouse", "etl_access"))
-        etl.relation.validate_designs(local_files, dsn, keep_going=args.keep_going, local_only=args.local)
+        etl.relation.validate_designs(dsn, local_files, keep_going=args.keep_going, local_only=args.local)
 
 
 class ExplainQueryCommand(SubCommand):
@@ -560,7 +560,7 @@ class ExplainQueryCommand(SubCommand):
         schemas, selector = self.pick_schemas(settings("data_warehouse", "schemas"), args.pattern)
         local_files = self.find_files_locally(args.table_design_dir, schemas, selector)
         dsn = etl.config.env_value(settings("data_warehouse", "etl_access"))
-        etl.relation.test_queries(local_files, dsn)
+        etl.relation.test_queries(dsn, local_files)
 
 
 class ListFilesCommand(SubCommand):

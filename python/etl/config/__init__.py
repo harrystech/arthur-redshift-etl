@@ -103,7 +103,6 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
             self._data = data
 
         def __call__(self, *argv):
-            # TODO Add better error handling
             value = self._data
             for arg in argv:
                 value = value[arg]

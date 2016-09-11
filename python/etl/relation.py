@@ -14,12 +14,10 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
-from collections import deque
 from contextlib import closing
 import difflib
 from functools import partial
 import logging
-import os.path
 
 import simplejson as json
 
@@ -156,7 +154,7 @@ def validate_table_as_view(conn, description):
      ORDER BY attnum ASC""".format(
         schema=tmp_view_name.schema, table=tmp_view_name.table)
 
-    actual_columns = [r['attname'] for r in etl.pg.query(conn, columns_stmt)]
+    actual_columns = [row['attname'] for row in etl.pg.query(conn, columns_stmt)]
     comparison_output = _check_columns(actual_columns, description.table_design)
     if comparison_output:
         logger.warning(comparison_output)
@@ -248,7 +246,7 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_designs(local_files, dsn, keep_going=False, local_only=False):
+def validate_designs(dsn, local_files, keep_going=False, local_only=False):
     """
     Make sure that all (local) table design files pass the validation checks.
     """
@@ -266,7 +264,7 @@ def validate_designs(local_files, dsn, keep_going=False, local_only=False):
         logger.info("Skipping remote validation (nothing left to do)")
 
 
-def test_queries(local_files, dsn):
+def test_queries(dsn, local_files):
     """
     Test queries by running EXPLAIN with the query.
     """

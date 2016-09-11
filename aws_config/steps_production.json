@@ -1,0 +1,18 @@
+[
+    {
+        "Name": "ETL (#{etl_environment})",
+        "Args": [
+            "/tmp/redshift_etl/venv/bin/arthur.py",
+            "--config",
+            "/tmp/redshift_etl/config/",
+            "etl",
+            "--prolix",
+            "--prefix",
+            "#{etl_environment}"
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    }
+]

@@ -1,19 +1,16 @@
 [
     {
-        "Name": "Redshift ETL",
+        "Name": "Ping",
         "Args": [
             "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
             "/tmp/redshift_etl/config/",
-            "load",
-            "--skip-copy",
-            "--prolix",
-            "--prefix",
-            "#{etl_environment}"
+            "ping",
+            "--prolix"
         ],
         "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",
-        "ActionOnFailure": "CANCEL_AND_WAIT",
+        "ActionOnFailure": "CONTINUE",
         "Properties": ""
     }
 ]

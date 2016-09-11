@@ -2,7 +2,7 @@
 
 # Copy production setup to new env
 
-if [[ $# -lt 2 || $# -gt 3 || "$1" = "local" ]]; then
+if [[ $# -lt 2 || $# -gt 3 ]]; then
     echo "Usage: `basename $0` <bucket_name> [<source_env>] <target_env>"
     echo
     echo "If the source_env is 'local', then copy files from your local files, not another folder."
@@ -17,6 +17,11 @@ if [[ $# -eq 3 ]]; then
 else
     CLUSTER_SOURCE_ENVIRONMENT="production"
     CLUSTER_TARGET_ENVIRONMENT="$2"
+fi
+
+if [[ "$CLUSTER_BUCKET" = "local" ]]; then
+    echo "Not a valid bucket name: $CLUSTER_BUCKET"
+    exit 1
 fi
 
 ask_to_confirm () {
@@ -41,19 +46,28 @@ ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'
 if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
 
     if [[ -z "$DATA_WAREHOUSE_CONFIG" ]]; then
-        echo "Cannot find configuration files.  Please set DATA_WAREHOUSE_CONFIG."
+        echo "Cannot find configuration files.  Please set DATA_WAREHOUSE_CONFIG to a directory."
         exit 2
     elif [[ ! -d "$DATA_WAREHOUSE_CONFIG" ]]; then
         echo "Expected DATA_WAREHOUSE_CONFIG to point to a directory"
         exit 2
     fi
-
     if [[ ! -r setup.py ]]; then
         echo "Failed to find 'setup.py' file"
         exit 2
     fi
+
     echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to s3"
     set -e -x
+
+    # Collect distribution information
+    TMP_FILE="/tmp/copy_env_release_${USER}_$$.txt"
+    > "$TMP_FILE"
+    trap "rm \"$TMP_FILE\"" EXIT
+    python3 setup.py --fullname >> "$TMP_FILE"
+    git rev-parse --show-toplevel >> "$TMP_FILE"
+    git rev-parse HEAD >> "$TMP_FILE"
+    aws s3 cp "$TMP_FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/release.txt"
 
     python3 setup.py sdist
     LATEST_TAR_FILE=`ls -1t dist/redshift-etl*tar.gz | head -1`
@@ -67,6 +81,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         --include "*.yaml" \
         --include "*.sh" \
         --include "*.hosts" \
+        --exclude "release.txt" \
         --exclude "credentials*" \
         "$DATA_WAREHOUSE_CONFIG" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
     aws s3 sync --delete \
@@ -76,7 +91,6 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         --include RedshiftJDBC41-1.1.10.1010.jar \
         --include spark-csv_2.10-1.4.0.jar \
         jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
-
 else
     set -e -x
     for FOLDER in bootstrap config jars schemas; do

@@ -484,7 +484,7 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
     for file_set in local_files:
         table_design = validate_table_design_from_file(file_set.design_file, file_set.target_table_name)
         local_files = [file_set.design_file]
-        # FIXME Move this logic into RelationDescription
+        # FIXME Use logic from RelationDescription
         if table_design["source_name"] in ("CTAS", "VIEW"):
             if file_set.sql_file:
                 local_files.append(file_set.sql_file)
