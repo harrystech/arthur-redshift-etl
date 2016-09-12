@@ -189,7 +189,7 @@ def create_view(conn, description, drop_view=False, dry_run=False):
         etl.pg.execute(conn, ddl_stmt)
 
 
-def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, skip_copy=False, dry_run=False):
+def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
     A manifest for the CSV files must be provided.
@@ -199,7 +199,8 @@ def copy_data(conn, aws_iam_role, table_name, bucket_name, manifest, skip_copy=F
     """
     logger = logging.getLogger(__name__)
     credentials = "aws_iam_role={}".format(aws_iam_role)
-    s3_path = "s3://{}/{}".format(bucket_name, manifest)
+    s3_path = "s3://{}/{}".format(description.bucket_name, description.manifest_file_name)
+    table_name = description.target_table_name
     if dry_run:
         logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     elif skip_copy:
@@ -393,27 +394,27 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift_relation(conn, bucket_name, file_set, credentials,
+def load_or_update_redshift_relation(conn, description, credentials,
                                      table_owner, etl_group, user_group,
                                      drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
-    description = etl.relation.RelationDescription(file_set, bucket_name)
     table_name = description.target_table_name
 
     if description.is_ctas_relation or description.is_view_relation:
         object_key = description.sql_file_name
     else:
+        # FIXME Need to differentiate expected manifest filename and presence of the file
         object_key = description.manifest_file_name
-        if object_key is None and not skip_copy:
+        if object_key is None and not (skip_copy or dry_run):
             raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
 
     # FIXME The monitor should contain the number of rows that were loaded.
     modified = False
     with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
                              options=["skip_copy"] if skip_copy else [],
-                             source={'bucket_name': bucket_name,
+                             source={'bucket_name': description.bucket_name,
                                      'object_key': object_key},
                              destination={'name': etl.pg.dbname(conn),
                                           'schema': table_name.schema,
@@ -429,8 +430,7 @@ def load_or_update_redshift_relation(conn, bucket_name, file_set, credentials,
                 modified = True
             else:
                 create_table(conn, description, table_owner, drop_table=drop, dry_run=dry_run)
-                copy_data(conn, credentials, table_name, bucket_name, file_set.manifest_file,
-                          skip_copy=skip_copy, dry_run=dry_run)
+                copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
             grant_access(conn, table_name, etl_group, user_group, dry_run=dry_run)
@@ -449,21 +449,26 @@ def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, 
     should be a quick way to load data that is "under development" and may not have all dependencies or
     names / types correct.
     """
+    logger = logging.getLogger(__name__)
     credentials = data_warehouse["iam_role"]
     table_owner = data_warehouse["owner"]
     etl_group = data_warehouse["groups"]["etl"]
     user_group = data_warehouse["groups"]["users"]
     dsn = etl.config.env_value(data_warehouse["etl_access"])
 
+    logger.info("Loading table designs and pondering evaluation order")
+    descriptions = [etl.relation.RelationDescription(file_set, bucket_name) for file_set in file_sets]
+    execution_order = etl.relation.order_by_dependencies(descriptions)
+
     vacuumable = []
     with closing(etl.pg.connection(dsn)) as conn:
-        for file_set in file_sets:
-            modified = load_or_update_redshift_relation(conn, bucket_name, file_set, credentials,
+        for description in execution_order:
+            modified = load_or_update_redshift_relation(conn, description, credentials,
                                                         table_owner, etl_group, user_group,
                                                         drop=drop, skip_copy=skip_copy,
                                                         add_explain_plan=add_explain_plan, dry_run=dry_run)
             if modified:
-                vacuumable.append(file_set.target_table_name)
+                vacuumable.append(description.target_table_name)
 
     # Reconnect to run vacuum outside transaction block
     if vacuumable and not drop:

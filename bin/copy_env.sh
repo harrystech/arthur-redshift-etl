@@ -26,7 +26,7 @@ fi
 
 ask_to_confirm () {
     while true; do
-        read -r -p "$1 [y/N] " ANSWER
+        read -r -p "$1 (y/[n]) " ANSWER
         case "$ANSWER" in
             y|Y)
                 echo "Proceeding"
@@ -67,6 +67,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     python3 setup.py --fullname >> "$TMP_FILE"
     git rev-parse --show-toplevel >> "$TMP_FILE"
     git rev-parse HEAD >> "$TMP_FILE"
+    date "+%Y-%m-%d %H:%M:%S%z" >> "$TMP_FILE"
     aws s3 cp "$TMP_FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/release.txt"
 
     python3 setup.py sdist

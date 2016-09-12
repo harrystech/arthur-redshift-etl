@@ -14,11 +14,12 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
-from collections import deque
 from contextlib import closing
 import difflib
 from functools import partial
 import logging
+from operator import attrgetter
+from queue import PriorityQueue
 
 import simplejson as json
 
@@ -34,6 +35,10 @@ class MissingQueryError(etl.ETLException):
     pass
 
 
+class CyclicDependencyError(etl.ETLException):
+    pass
+
+
 class RelationDescription:
 
     def __init__(self, discovered_files: etl.file_sets.TableFileSet, bucket_name=None):
@@ -46,20 +51,16 @@ class RelationDescription:
         self.sql_file_name = discovered_files.sql_file
         self.manifest_file_name = discovered_files.manifest_file
         # Remove or not? If bucket_name is specified, assume S3 otherwise go with local files
-        self._bucket_name = bucket_name
-        # Properties for ordering relations
-        self.initial_order = None
-        self.dependency_level = None
+        self.bucket_name = bucket_name
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
         self._query_stmt = None
+        # Properties for ordering relations
+        self.order = None
+        self._dependencies = None
 
     def __str__(self):
-        return "{}({}:{},#d={},#i={})".format(self.__class__.__name__,
-                                              self.identifier,
-                                              self.source_path_name,
-                                              self.dependency_level,
-                                              self.initial_order)
+        return "{}({}:{},#{})".format(self.__class__.__name__, self.identifier, self.source_path_name, self.order)
 
     @property
     def identifier(self):
@@ -68,8 +69,8 @@ class RelationDescription:
     @property
     def table_design(self):
         if self._table_design is None:
-            if self._bucket_name:
-                loader = partial(etl.design.download_table_design, self._bucket_name)
+            if self.bucket_name:
+                loader = partial(etl.design.download_table_design, self.bucket_name)
             else:
                 loader = partial(etl.design.validate_table_design_from_file)
             self._table_design = loader(self.design_file_name, self.target_table_name)
@@ -88,8 +89,8 @@ class RelationDescription:
         if self._query_stmt is None:
             if self.sql_file_name is None:
                 raise MissingQueryError("Missing SQL file for '{}'".format(self.identifier))
-            if self._bucket_name:
-                with closing(etl.file_sets.get_file_content(self._bucket_name, self.sql_file_name)) as content:
+            if self.bucket_name:
+                with closing(etl.file_sets.get_file_content(self.bucket_name, self.sql_file_name)) as content:
                     query_stmt = content.read().decode()
             else:
                 with open(self.sql_file_name) as f:
@@ -98,59 +99,57 @@ class RelationDescription:
         return self._query_stmt
 
     @property
-    def depends_on(self):
-        return self.table_design.get("depends_on", [])
+    def dependencies(self):
+        if self._dependencies is None:
+            self._dependencies = set(self.table_design.get("depends_on", []))
+        return self._dependencies
+
+    @dependencies.setter
+    def dependencies(self, value):
+        self._dependencies = value
 
 
-def order_descriptions_by_dependencies(table_descriptions):
+def order_by_dependencies(table_descriptions):
     """
     Sort the relations such that any dependents surely are loaded afterwards.
+
+    If a table (or view) depends on other tables, then its order is larger
+    than any of its dependencies.
+    If a table (or view) depends on a table that is not actually part of our input,
+    then the order is forced to have a gap and start at N where N is the total number
+    of known tables. (This creates an imaginary table at the end of the list that that
+    table depends on. Of sorts.)
     """
-    logger = logging.getLogger(__name__)
+    known_tables = frozenset({description.identifier for description in table_descriptions})
+    n = len(known_tables)
 
+    queue = PriorityQueue()
     for i, description in enumerate(table_descriptions):
-        description.initial_order = i
-
-    known_tables = {description.identifier: description for description in table_descriptions}
-    unknown_tables = set()
-
-    # FIXME Add detection of cycles!
-    queue = deque(table_descriptions)
-    while queue:
-        description = queue.popleft()
-        level = None
-        for table_name in description.depends_on:
-            if table_name in known_tables:
-                that_level = known_tables[table_name].dependency_level
-                if that_level is None:
-                    break
-                elif level is None or that_level >= level:
-                    level = that_level + 1
-            else:
-                unknown_tables.add(table_name)
+        unknown = description.dependencies.difference(known_tables)
+        if unknown:
+            description.dependencies = description.dependencies.difference(unknown)
+            queue.put((n + 1, i, description))
         else:
-            # Made it through the loop so dependencies are either known with level or unknown
-            if level is None:
-                level = 0
+            queue.put((1, i, description))
 
-        # Check whether level is now known ... if not, try again later by adding description back into the queue.
-        if level is None:
-            queue.append(description)
+    table_map = {description.identifier: description for description in table_descriptions}
+    latest = 0
+    while not queue.empty():
+        minimum, tie_breaker, description = queue.get()
+        if minimum > 2 * n:
+            raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
+        others = [table_map[dep].order for dep in description.dependencies]
+        if not others:
+            latest = description.order = max(latest + 1, minimum)
+        elif all(others):
+            latest = description.order = max(max(others) + 1, latest + 1, minimum)
+        elif any(others):
+            at_least = max(order for order in others if order is not None)
+            queue.put((max(at_least, latest, minimum) + 1, tie_breaker, description))
         else:
-            description.dependency_level = level
+            queue.put((max(latest, minimum) + 1, tie_breaker, description))
 
-    new_order = sorted(table_descriptions, key=lambda d: (d.dependency_level, d.initial_order))
-    # for new_i, description in enumerate(new_order):
-    #     if new_i != description.initial_order:
-    #         logger.warning("Found sequence error in '%s': initial = %d, current = %d",
-    #                        description.target_table_name.identifier, description.initial_order, new_i)
-    #     else:
-    #         logger.debug("Passed sequence check: %s", description)
-
-    if unknown_tables:
-        logger.warning("Encountered tables that were not part of the validation: %s", sorted(unknown_tables))
-
-    return new_order
+    return sorted(table_descriptions, key=attrgetter("order"))
 
 
 def validate_table_as_view(conn, description):
@@ -288,7 +287,11 @@ def validate_dependency_ordering(table_descriptions):
     """
     logger = logging.getLogger(__name__)
     logger.info("Validating dependency ordering")
-    execution_order = order_descriptions_by_dependencies(table_descriptions)
+    execution_order = order_by_dependencies(table_descriptions)
+    max_ok = len(execution_order)
+    has_missing_deps = [description for description in execution_order if description.order > max_ok]
+    logger.warning("Relation(s) with missing dependencies: %s",
+                   ', '.join("'{}'".format(d.identifier) for d in sorted(has_missing_deps)))
 
 
 def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
@@ -315,7 +318,7 @@ def validate_designs(dsn, file_sets, bucket_name=None, keep_going=False, skip_de
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_sets, bucket_name) for file_sets in file_sets]
+    descriptions = [RelationDescription(file_set, bucket_name) for file_set in file_sets]
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
     validate_dependency_ordering(valid_descriptions)
 
@@ -337,7 +340,7 @@ def test_queries(dsn, file_sets, bucket_name=None):
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_sets, bucket_name) for file_sets in file_sets]
+    descriptions = [RelationDescription(file_set, bucket_name) for file_set in file_sets]
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
