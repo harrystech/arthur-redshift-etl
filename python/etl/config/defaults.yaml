@@ -58,8 +58,8 @@
             "character varying": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "text": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
-            # TODO Make the time zone configurable (and make sure it's actually correct)
-            "timestamp with time zone": ["timestamp without time zone", "%s AT TIME ZONE 'America/New_York'", "string"],
+            # TODO Make the time zone configurable (stringifying is correct for UTC sources to UTC storage)
+            "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
             # N.B. Newer versions of PostgreSQL have a more useful hstore_to_json function but this works for 9.2
             "hstore": ["varchar(65535)", "public.hstore_to_matrix(%s)::varchar(65535)", "string"],
