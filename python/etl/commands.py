@@ -205,6 +205,12 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-t", "--table-design-dir",
                             help="set path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
+    if "stay-local" in options:
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("-l", "--local-files", help="use files available on local filesystem",
+                           action="store_true", dest="stay_local", default=True)
+        group.add_argument("-r", "--remote-files", help="use files in S3",
+                           action="store_false", dest="stay_local")
     if "max-partitions" in options:
         parser.add_argument("-m", "--max-partitions", metavar="N",
                             help="set max number of partitions to write to N (default: %(default)s)", default=4)
@@ -238,7 +244,9 @@ class SubCommand:
         group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
         group.add_argument("-v", "--verbose", help="increase verbosity",
                            action="store_const", const="DEBUG", dest="log_level")
-        group.add_argument("-s", "--silent", help="decrease verbosity",
+        group.add_argument("-q", "--quiet", help="decrease verbosity",
+                           action="store_const", const="WARNING", dest="log_level")
+        group.add_argument("-s", "--silent", help="DEPRECATED use --quiet instead",
                            action="store_const", const="WARNING", dest="log_level")
 
         self.add_arguments(parser)
@@ -368,12 +376,10 @@ class CreateUserCommand(SubCommand):
         add_standard_arguments(parser, ["username"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
-        group.add_argument("-a", "--add-user-schema",
-                           help="add new schema, writable for the user",
+        group.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
                            action="store_true")
-        group.add_argument("-r", "--skip-user-creation",
-                           help="skip new user; only change search path of existing user",
-                           default=False, action="store_true")
+        group.add_argument("-r", "--skip-user-creation", help="skip new user; only change search path of existing user",
+                           action="store_true")
 
     def callback(self, args, settings):
         with etl.pg.log_error():
@@ -431,11 +437,9 @@ class DumpDataToS3Command(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("--with-sqoop",
-                           help="dump data using Sqoop (using 'sqoop import', this is the default)",
+        group.add_argument("--with-sqoop", help="dump data using Sqoop (using 'sqoop import', this is the default)",
                            const="sqoop", action="store_const", dest="dumper", default="sqoop")
-        group.add_argument("--with-spark",
-                           help="dump data using Spark Dataframe (using submit_arthur.sh)",
+        group.add_argument("--with-spark", help="dump data using Spark Dataframe (using submit_arthur.sh)",
                            const="spark", action="store_const", dest="dumper")
         parser.add_argument("-k", "--keep-going",
                             help="dump as much data as possible, ignoring errors along the way (Sqoop only)",
@@ -542,22 +546,27 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "validate table design files",
-                         "Validate table designs in local filesystem (use '-s' to only see errors/warnings)")
+                         "Validate table designs (use '-q' to only see errors/warnings)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir"])
-        parser.add_argument("-k", "--keep-going",
-                            help="ignore errors and test as many files as possible",
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "stay-local"])
+        parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
-        parser.add_argument("-l", "--local",
-                            help="check local yaml files and don't test queries using databases",
+        parser.add_argument("-n", "--skip-dependencies-check",
+                            help="skip check of dependencies against dependencies",
                             default=False, action="store_true")
 
     def callback(self, args, settings):
         schemas, selector = self.pick_schemas(settings("sources") + settings("data_warehouse", "schemas"), args.pattern)
-        local_files = self.find_files_locally(args.table_design_dir, schemas, selector)
+        if args.stay_local:
+            bucket_name = None  # implies localhost
+            file_sets = self.find_files_locally(args.table_design_dir, schemas, selector)
+        else:
+            bucket_name = settings("s3", "bucket_name")
+            file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
         dsn = etl.config.env_value(settings("data_warehouse", "etl_access"))
-        etl.relation.validate_designs(dsn, local_files, keep_going=args.keep_going, local_only=args.local)
+        etl.relation.validate_designs(dsn, file_sets, bucket_name,
+                                      keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
 
 class ExplainQueryCommand(SubCommand):
@@ -568,13 +577,18 @@ class ExplainQueryCommand(SubCommand):
                          "Run EXPLAIN on queries (for CTAS or VIEW) for files in local filesystem")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir"])
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "stay-local"])
 
     def callback(self, args, settings):
         schemas, selector = self.pick_schemas(settings("data_warehouse", "schemas"), args.pattern)
-        local_files = self.find_files_locally(args.table_design_dir, schemas, selector)
+        if args.stay_local:
+            bucket_name = None  # implies localhost
+            file_sets = self.find_files_locally(args.table_design_dir, schemas, selector)
+        else:
+            bucket_name = settings("s3", "bucket_name")
+            file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
         dsn = etl.config.env_value(settings("data_warehouse", "etl_access"))
-        etl.relation.test_queries(dsn, local_files)
+        etl.relation.test_queries(dsn, file_sets, bucket_name)
 
 
 class ListFilesCommand(SubCommand):
@@ -585,16 +599,20 @@ class ListFilesCommand(SubCommand):
                          "List files in the S3 bucket and starting with prefix by source, table, and type")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix"])
-        parser.add_argument("-l", "--long-format",
-                            help="add file size and timestamp of last modification",
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "stay-local"])
+        parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
                             action="store_true")
 
     def callback(self, args, settings):
-        bucket_name = settings("s3", "bucket_name")
         schemas, selector = self.pick_schemas(settings("sources") + settings("data_warehouse", "schemas"), args.pattern)
-        file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
-        etl.file_sets.list_files(bucket_name, file_sets, long_format=args.long_format)
+        # TODO This should be refactored such that the bucket name is stored with the file set (or relation description)
+        if args.stay_local:
+            bucket_name = None  # implies localhost
+            file_sets = self.find_files_locally(args.table_design_dir, schemas, selector)
+        else:
+            bucket_name = settings("s3", "bucket_name")
+            file_sets = self.find_files_in_s3(bucket_name, args.prefix, schemas, selector)
+        etl.file_sets.list_files(file_sets, bucket_name, long_format=args.long_format)
 
 
 class EventsQueryCommand(SubCommand):

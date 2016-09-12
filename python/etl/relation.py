@@ -14,6 +14,7 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
+from collections import deque
 from contextlib import closing
 import difflib
 from functools import partial
@@ -99,6 +100,57 @@ class RelationDescription:
     @property
     def depends_on(self):
         return self.table_design.get("depends_on", [])
+
+
+def order_descriptions_by_dependencies(table_descriptions):
+    """
+    Sort the relations such that any dependents surely are loaded afterwards.
+    """
+    logger = logging.getLogger(__name__)
+
+    for i, description in enumerate(table_descriptions):
+        description.initial_order = i
+
+    known_tables = {description.identifier: description for description in table_descriptions}
+    unknown_tables = set()
+
+    # FIXME Add detection of cycles!
+    queue = deque(table_descriptions)
+    while queue:
+        description = queue.popleft()
+        level = None
+        for table_name in description.depends_on:
+            if table_name in known_tables:
+                that_level = known_tables[table_name].dependency_level
+                if that_level is None:
+                    break
+                elif level is None or that_level >= level:
+                    level = that_level + 1
+            else:
+                unknown_tables.add(table_name)
+        else:
+            # Made it through the loop so dependencies are either known with level or unknown
+            if level is None:
+                level = 0
+
+        # Check whether level is now known ... if not, try again later by adding description back into the queue.
+        if level is None:
+            queue.append(description)
+        else:
+            description.dependency_level = level
+
+    new_order = sorted(table_descriptions, key=lambda d: (d.dependency_level, d.initial_order))
+    # for new_i, description in enumerate(new_order):
+    #     if new_i != description.initial_order:
+    #         logger.warning("Found sequence error in '%s': initial = %d, current = %d",
+    #                        description.target_table_name.identifier, description.initial_order, new_i)
+    #     else:
+    #         logger.debug("Passed sequence check: %s", description)
+
+    if unknown_tables:
+        logger.warning("Encountered tables that were not part of the validation: %s", sorted(unknown_tables))
+
+    return new_order
 
 
 def validate_table_as_view(conn, description):
@@ -230,6 +282,15 @@ def validate_design_file_semantics(descriptions, keep_going=False):
     return ok
 
 
+def validate_dependency_ordering(table_descriptions):
+    """
+    Try to build a dependency order and report whether graph is possible
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Validating dependency ordering")
+    execution_order = order_descriptions_by_dependencies(table_descriptions)
+
+
 def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
     """
     Iterate over all relations (CTAS or VIEW) to test how table design and query match up.
@@ -246,30 +307,37 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_designs(dsn, local_files, keep_going=False, local_only=False):
+def validate_designs(dsn, file_sets, bucket_name=None, keep_going=False, skip_deps=False):
     """
-    Make sure that all (local) table design files pass the validation checks.
+    Make sure that all table design files pass the validation checks.
+
+    If a bucket name is given, assume files are objects in that bucket.
+    Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_sets) for file_sets in local_files]
+    descriptions = [RelationDescription(file_sets, bucket_name) for file_sets in file_sets]
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
+    validate_dependency_ordering(valid_descriptions)
 
     tables_to_validate_as_views = [description for description in valid_descriptions
                                    if description.is_ctas_relation or description.is_view_relation]
-    if local_only:
-        logger.info("Skipping remote validation")
+    if skip_deps:
+        logger.info("Skipping validation against database")
     elif tables_to_validate_as_views:
         validate_designs_using_views(dsn, tables_to_validate_as_views, keep_going=keep_going)
     else:
-        logger.info("Skipping remote validation (nothing left to do)")
+        logger.info("Skipping validation against database (nothing to do)")
 
 
-def test_queries(dsn, local_files):
+def test_queries(dsn, file_sets, bucket_name=None):
     """
     Test queries by running EXPLAIN with the query.
+
+    If a bucket name is given, assume files are objects in that bucket.
+    Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_sets) for file_sets in local_files]
+    descriptions = [RelationDescription(file_sets, bucket_name) for file_sets in file_sets]
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)

@@ -1,16 +1,19 @@
 [
     {
-        "Name": "Ping",
+        "Name": "Validate (files in S3)",
         "Args": [
             "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
             "/tmp/redshift_etl/config/",
-            "ping",
-            "--prolix"
+            "validate",
+            "--prolix",
+            "--prefix",
+            "#{etl_environment}",
+            "--remote"
         ],
         "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",
-        "ActionOnFailure": "CONTINUE",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
         "Properties": ""
     }
 ]

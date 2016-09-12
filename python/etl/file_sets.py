@@ -19,6 +19,8 @@ configuration.  The 'source_schema_name' is only used for sorting.
 """
 
 from collections import defaultdict
+from datetime import datetime
+from functools import partial
 import logging
 from itertools import groupby
 from operator import attrgetter
@@ -191,6 +193,7 @@ def get_last_modified(bucket_name, object_key):
         timestamp = s3_object.last_modified
         logger.debug("Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp)
     except botocore.exceptions.WaiterError:
+        logger.debug("Waiting for object in 's3://%s/%s' failed", bucket_name, object_key)
         timestamp = None
     except botocore.exceptions.ClientError as e:
         error_code = int(e.response['Error']['Code'])
@@ -210,6 +213,13 @@ def object_stat(bucket_name, object_key):
     bucket = _get_bucket(bucket_name)
     s3_object = bucket.Object(object_key)
     return s3_object.content_length, s3_object.last_modified
+
+
+def local_file_stat(filename):
+    """
+    Return size in bytes and last modification timestamp from local file.
+    """
+    return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(' ')
 
 
 def get_file_content(bucket_name, object_key):
@@ -258,7 +268,7 @@ def list_local_files(directory):
     normed_directory = os.path.normpath(directory)
     if not os.path.isdir(normed_directory):
         raise FileNotFoundError("Failed to find directory: '%s'" % normed_directory)
-    logger.info("Looking for files in '%s'", normed_directory)
+    logger.info("Looking for files locally in '%s'", normed_directory)
     for root, dirs, files in os.walk(os.path.normpath(normed_directory)):
         for filename in sorted(files):
             if not filename.endswith(('.swp', '~', '.DS_Store')):
@@ -412,12 +422,18 @@ def approx_pretty_size(total_bytes):
     return "{:d}{}".format(div, unit)
 
 
-def list_files(bucket_name, file_sets, long_format=False):
+def list_files(file_sets, bucket_name=None, long_format=False):
     """
-    List files in the the S3 bucket for the given schemas and matching the pattern-based selection.
+    List files in the given S3 bucket (or from current directory).
 
-    With the long format (only S3), shows content length and tallies up the total size in bytes.
+    With the long format, shows content length and tallies up the total size in bytes.
     """
+    if bucket_name:
+        scheme_netloc = "s3://{}/".format(bucket_name)
+        stat_func = partial(object_stat, bucket_name)
+    else:
+        scheme_netloc = ""  # meaning we ignore the beauty of file://localhost/...
+        stat_func = partial(local_file_stat)
     total_length = 0
     for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
         print("Schema: '{}'".format(schema_name))
@@ -434,13 +450,12 @@ def list_files(bucket_name, file_sets, long_format=False):
                 files.append(file_set.manifest_file)
             if len(file_set.data_files) > 0:
                 files.extend(file_set.data_files)
-            # FIXME we should check whether data is older than the design file?
             for filename in files:
                 if long_format:
-                    content_length, last_modified = object_stat(bucket_name, filename)
+                    content_length, last_modified = stat_func(filename)
                     total_length += content_length
-                    print("        s3://{}/{} ({:d}, {})".format(bucket_name, filename, content_length, last_modified))
+                    print("        {}{} ({:d}, {})".format(scheme_netloc, filename, content_length, last_modified))
                 else:
-                    print("        s3://{}/{}".format(bucket_name, filename))
+                    print("        {}{}".format(scheme_netloc, filename))
     if total_length > 0:
         print("Total size in bytes: {:d} ({})".format(total_length, approx_pretty_size(total_length)))
