@@ -327,13 +327,15 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     logger = logging.getLogger(__name__)
     csv_path = os.path.join(prefix, "data", source_path_name, "csv")
 
-    last_success = etl.file_sets.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
-    if last_success is None and not dry_run:
-        raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
-
-    csv_files = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-"))
-    if len(csv_files) == 0 and not dry_run:
-        raise MissingCsvFilesError("Found no CSV files")
+    if dry_run:
+        csv_files = []
+    else:
+        last_success = etl.file_sets.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
+        if last_success is None:
+            raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
+        csv_files = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-"))
+        if len(csv_files) == 0:
+            raise MissingCsvFilesError("Found no CSV files")
 
     remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}

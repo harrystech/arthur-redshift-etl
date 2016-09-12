@@ -65,6 +65,18 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 settings[key] = new_settings[key]
 
 
+def read_release_file(filename: str) -> None:
+    """
+    Read the release file and echo its contents to the log.
+    Life's exciting. And short. But mostly exciting.
+    """
+    logger = logging.getLogger(__name__)
+    logger.debug("Loading release information from '%s'", filename)
+    with open(filename) as f:
+        lines = [line.strip() for line in f]
+    logger.info("Release information: %s", ', '.join(lines))
+
+
 def load_settings(config_files: list, default_file: str="defaults.yaml"):
     """
     Load settings (and environment) from defaults and config files.
@@ -88,6 +100,8 @@ def load_settings(config_files: list, default_file: str="defaults.yaml"):
             elif filename.endswith((".yaml", ".yml")):
                 load_settings_file(filename, settings)
                 count_settings += 1
+            elif filename.endswith("release.txt"):
+                read_release_file(filename)
             else:
                 logger.info("Skipping config file '%s'", filename)
 
