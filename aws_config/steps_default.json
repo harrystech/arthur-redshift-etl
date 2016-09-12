@@ -1,19 +1,19 @@
 [
     {
-        "Name": "Redshift ETL",
+        "Name": "Validate (files in S3)",
         "Args": [
             "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
             "/tmp/redshift_etl/config/",
-            "load",
-            "--skip-copy",
+            "validate",
             "--prolix",
             "--prefix",
-            "#{etl_environment}"
+            "#{etl_environment}",
+            "--remote"
         ],
         "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",
-        "ActionOnFailure": "CANCEL_AND_WAIT",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
         "Properties": ""
     }
 ]

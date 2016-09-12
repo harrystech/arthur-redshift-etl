@@ -5,6 +5,13 @@ Utilities and classes to support the ETL in general
 from collections import namedtuple
 from fnmatch import fnmatch
 
+import pkg_resources
+
+
+# TODO rename package to "redshift_etl" and rename python module to "redshift_etl"
+def package_version(package_name="redshift-etl"):
+    return "{} v{}".format(package_name, pkg_resources.get_distribution(package_name).version)
+
 
 class ETLException(Exception):
     """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
@@ -30,6 +37,10 @@ class TableName(namedtuple("_TableName", ["schema", "table"])):
 
     def match(self, glob):
         return fnmatch(self.identifier, glob)
+
+    @staticmethod
+    def join_with_quotes(table_names):
+        return ', '.join(sorted("'{}'".format(table.identifier) for table in table_names))
 
 
 class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
@@ -151,7 +162,7 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
 
     def match_schema(self, schema):
         """
-        Match against schema.
+        Match against schema name.
 
         >>> tnp = TableNamePatterns.from_list(["www.orders", "www.products"])
         >>> tnp.match_schema("www")
@@ -163,7 +174,7 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
 
     def match_table(self, table):
         """
-        Pattern match against table.
+        Pattern match against table name.
 
         >>> tnp = TableNamePatterns.from_list(["www.order?", "www.products"])
         >>> tnp.match_table("orders")
@@ -191,116 +202,9 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         """
         return self.match_schema(table_name.schema) and self.match_table(table_name.table)
 
-    def match_field(self, lod, field: str) -> list:
+    def match_field(self, lod, field: str):
         """
         Match fields with this pattern while traversing list of dictionaries
         (and picking up the field from those dictionaries).
-
-        Note that it is an error if there's no match.  (So the returned list
-        will always have at least one element.
         """
         return [d for d in lod if self.match_schema(d[field])]
-
-
-class ColumnDefinition(namedtuple("_ColumnDefinition",
-                                  ["name",  # always
-                                   "type", "sql_type",  # always for tables
-                                   "source_sql_type", "expression", "not_null", "references"  # optional
-                                   ])):
-    """
-    Wrapper for column attributes ... describes columns by name, type (e.g. for Avro), sql_type.
-    """
-    __slots__ = ()
-
-
-class AssociatedTableFiles:
-    """
-    Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
-
-    Note that tables are addressed using their target name, where the schema is equal
-    to the source name.  To allow for sorting, the original schema name (in the source
-    database) is kept.  For views and CTAS, the sort order is used to create a predictable
-    instantiation order where one view or CTAS may depend on another being up-to-date already.
-    """
-
-    def __init__(self, source_table_name, target_table_name, design_file):
-        self._source_table_name = source_table_name
-        self._target_table_name = target_table_name
-        self._design_file = design_file
-        self._sql_file = None
-        self._manifest_file = None
-        self._data_files = []
-
-    def __str__(self):
-        return "{}({}:{},{},{}{})".format(self.__class__.__name__,
-                                          self.source_path_name,
-                                          self.design_file,
-                                          self._sql_file,
-                                          self._manifest_file,
-                                          self._data_files)
-
-    @property
-    def target_table_name(self):
-        return self._target_table_name
-
-    @property
-    def source_table_name(self):
-        return self._source_table_name
-
-    @property
-    def source_path_name(self):
-        return "{}/{}-{}".format(self._target_table_name.schema,
-                                 self._source_table_name.schema,
-                                 self._source_table_name.table)
-
-    @property
-    def design_file(self):
-        return self._design_file
-
-    @property
-    def sql_file(self):
-        return self._sql_file
-
-    @property
-    def manifest_file(self):
-        return self._manifest_file
-
-    @property
-    def data_files(self):
-        return tuple(self._data_files)
-
-    @property
-    def all_files(self):
-        files = [self._design_file]
-        if self._sql_file:
-            files.append(self._sql_file)
-        if self._manifest_file:
-            files.append(self._manifest_file)
-        if self._data_files:
-            files.extend(self._data_files)
-        return tuple(files)
-
-    def __len__(self):
-        return 1 + (self._sql_file is not None) + (self._manifest_file is not None) + len(self._data_files)
-
-    def set_sql_file(self, filename):
-        self._sql_file = filename
-
-    def set_manifest_file(self, filename):
-        self._manifest_file = filename
-
-    def add_data_file(self, filename):
-        self._data_files.append(filename)
-
-    def create_manifest(self, bucket_name):
-        if len(self._data_files) == 0:
-            return None
-        else:
-            return {
-                "entries": [
-                    {
-                        "mandatory": True,
-                        "url": "s3://{}/{}".format(bucket_name, filename)
-                    } for filename in self._data_files
-                ]
-            }

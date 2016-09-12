@@ -270,3 +270,7 @@ Host ec2-*.amazonaws.com
 ## Development
 
 Re-install the ETL code after pulling a new version. (Especially changes in scripts may not get picked up until you do.)
+```shell
+pip3 install -r requirements.txt
+python3 setup.py develop
+```

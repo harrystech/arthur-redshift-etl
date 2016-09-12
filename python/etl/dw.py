@@ -28,11 +28,16 @@ the '$user' from the search path accidentally.)
 from contextlib import closing
 import getpass
 import logging
+import uuid
 
 import etl
 import etl.commands
 import etl.config
 import etl.pg
+
+
+def get_example_password():
+    return uuid.uuid4().hex.title()
 
 
 def get_password(username):
@@ -48,20 +53,19 @@ def get_password(username):
     return password
 
 
-def initial_setup(settings, password, skip_user_creation):
+def initial_setup(data_warehouse, sources, skip_user_creation=False):
     """
     Initialize data warehouse with schemas and users
     """
     logger = logging.getLogger(__name__)
 
-    dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
-    etl_user = settings("data_warehouse", "owner")
-    etl_group = settings("data_warehouse", "groups", "etl")
-    user_group = settings("data_warehouse", "groups", "users")
-    schemas = [source["name"] for source in settings("sources") + settings("data_warehouse", "schemas")]
+    dsn_admin = etl.config.env_value(data_warehouse["admin_access"])
+    etl_user = data_warehouse["owner"]
+    etl_group = data_warehouse["groups"]["etl"]
+    user_group = data_warehouse["groups"]["users"]
+    schemas = [source["name"] for source in (sources + data_warehouse["schemas"])]
 
-    if password is None and not skip_user_creation:
-        password = get_password(settings("data_warehouse", "owner"))
+    password = get_password(etl_user) if not skip_user_creation else None
 
     with closing(etl.pg.connection(dsn_admin)) as conn:
         if not skip_user_creation:
@@ -92,7 +96,7 @@ def initial_setup(settings, password, skip_user_creation):
             etl.pg.alter_search_path(conn, etl_user, ['public'])
 
 
-def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip_user_creation):
+def create_user(data_warehouse, sources, new_user, is_etl_user=False, add_user_schema=False, skip_user_creation=False):
     """
     Add new user to database within user group and with given password.
     If so advised, creates a schema for the user.
@@ -100,13 +104,12 @@ def create_user(settings, new_user, password, is_etl_user, add_user_schema, skip
     """
     logger = logging.getLogger(__name__)
 
-    dsn_admin = etl.config.env_value(settings("data_warehouse", "admin_access"))
-    user_group = settings("data_warehouse", "groups", "users")
-    etl_group = settings("data_warehouse", "groups", "etl")
-    schemas = [source["name"] for source in settings("sources") + settings("data_warehouse", "schemas")]
+    dsn_admin = etl.config.env_value(data_warehouse["admin_access"])
+    etl_group = data_warehouse["groups"]["etl"]
+    user_group = data_warehouse["groups"]["users"]
+    schemas = [source["name"] for source in (sources + data_warehouse["schemas"])]
 
-    if password is None and not skip_user_creation:
-        password = get_password(new_user)
+    password = get_password(new_user) if not skip_user_creation else None
 
     with closing(etl.pg.connection(dsn_admin)) as conn:
         with conn:
