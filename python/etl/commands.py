@@ -299,13 +299,14 @@ class SubCommand:
         return file_sets
 
     @staticmethod
-    def find_files_locally(schemas_dir, schemas, selector, empty_is_ok=False):
+    def find_files_locally(schemas_dir, schemas, selector, empty_is_ok=False, orphans=False):
         """
         Return file sets from the local directory with table designs.
         Unless it is ok to have an empty set, an exception is raised.
+        If `orphans` is set to True, TableFileSets lacking Design files will also be returned.
         """
         if os.path.exists(schemas_dir):
-            file_sets = etl.file_sets.find_local_files_for_schemas(schemas_dir, schemas, selector)
+            file_sets = etl.file_sets.find_local_files_for_schemas(schemas_dir, schemas, selector, orphans=orphans)
             if not file_sets and not empty_is_ok:
                 raise InvalidArgumentsError("Found no matching files in '{}' for '{}'".format(schemas_dir, selector))
         elif empty_is_ok:
@@ -396,13 +397,30 @@ class DownloadSchemasCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
+        parser.add_argument("-a", "--auto", help="run a new transformation as a view & autogenerate a design file from the view",
+                            default=False, action="store_true")
 
     def callback(self, args, settings):
-        schemas, selector = self.pick_schemas(settings("sources"), args.pattern)
-        self.add_dsn_for_read_access(schemas)
-        local_files = self.find_files_locally(args.table_design_dir, schemas, selector, empty_is_ok=True)
-        etl.design.download_schemas(args.table_design_dir, local_files, schemas, selector, settings("type_maps"),
-                                    dry_run=args.dry_run)
+        if args.auto:
+            schemas, selector = self.pick_schemas(settings('data_warehouse', 'schemas'), args.pattern)
+            for schema in schemas:
+                schema['dsn'] = etl.config.env_value(settings('data_warehouse', 'etl_access'))
+                schema['include_tables'] = [schema['name'] + '.*']
+        else:
+            schemas, selector = self.pick_schemas(settings("sources"), args.pattern)
+            self.add_dsn_for_read_access(schemas)
+
+        local_files = self.find_files_locally(args.table_design_dir, schemas, selector,
+                                              empty_is_ok=True, orphans=args.auto)
+        if args.auto:
+            created = etl.design.bootstrap_views(local_files, schemas, dry_run=args.dry_run)
+        else:
+            created = []
+        try:
+            etl.design.download_schemas(args.table_design_dir, local_files, schemas, selector, settings("type_maps"),
+                                        dry_run=args.dry_run)
+        finally:
+            etl.design.cleanup_views(created, schemas, dry_run=args.dry_run)
 
 
 class CopyToS3Command(SubCommand):

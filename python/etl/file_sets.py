@@ -287,7 +287,7 @@ def find_files_for_schemas(bucket_name, prefix, schemas, pattern):
     return _find_files_from(files, schema_names, pattern)
 
 
-def find_local_files_for_schemas(directory, schemas, pattern):
+def find_local_files_for_schemas(directory, schemas, pattern, orphans=False):
     """
     Discover local design and data files starting from the given directory, for the given schemas,
     and apply pattern-based selection along the way.
@@ -296,7 +296,7 @@ def find_local_files_for_schemas(directory, schemas, pattern):
     """
     schema_names = [schema["name"] for schema in schemas]
     files = list_local_files(directory)
-    return _find_files_from(files, schema_names, pattern)
+    return _find_files_from(files, schema_names, pattern, orphans=orphans)
 
 
 def delete_files_in_bucket(bucket_name, prefix, schema_names, selection, dry_run=False):
@@ -347,7 +347,7 @@ def _find_matching_files_from(iterable, schema_names, pattern, return_extra_file
             logging.getLogger(__name__).warning("Found file not matching expected format: '%s'", filename)
 
 
-def _find_files_from(iterable, schema_names, pattern):
+def _find_files_from(iterable, schema_names, pattern, orphans=False):
     """
     Return list of file sets groupbed by source name, ordered by source_schema_name and source_table_name.
 
@@ -365,26 +365,43 @@ def _find_files_from(iterable, schema_names, pattern):
                 raise BadSourceDefinitionError("Target table '%s' has multiple sources" % target_table_name.identifier)
             targets[target_table_name] = TableFileSet(source_table_name, target_table_name, filename)
         else:
-            additional_files[target_table_name].append((filename, values["file_type"]))
+            additional_files[target_table_name].append((filename, values))
     # Second pass -- only store SQL and data files for tables that have design files from first pass
     for target_table_name in additional_files:
         if target_table_name in targets:
             file_set = targets[target_table_name]
-            for filename, file_type in additional_files[target_table_name]:
-                if file_type == 'sql':
-                    file_set.set_sql_file(filename)
-                elif file_type == 'manifest':
-                    file_set.set_manifest_file(filename)
-                elif file_type == 'data':
-                    file_set.add_data_file(filename)
+            for filename, values in additional_files[target_table_name]:
+                _add_file(file_set, filename, values)
         else:
-            logger.warning("Found files without corresponding table design: %s",
-                           ", ".join("'{}'".format(filename) for filename, values in additional_files[target_table_name]))
+            if orphans:
+                source_table_name = etl.TableName(values["schema_name"], values["table_name"])
+                target_table_name = etl.TableName(values["source_name"], values["table_name"])
+                orphan_fileset = TableFileSet(source_table_name, target_table_name, None)
+                for filename, values in additional_files[target_table_name]:
+                    _add_file(orphan_fileset, filename, values)
+                targets[target_table_name] = orphan_fileset
+            else:
+                logger.warning("Found files without corresponding table design: %s",
+                               ", ".join("'{}'".format(filename) for filename, values in additional_files[target_table_name]))
     # Always return files sorted by sources (in original order) and target name
     schemas_order = {name: order for order, name in enumerate(schema_names)}
     file_sets = sorted(targets.values(), key=lambda fs: (schemas_order[fs.source_name], fs.source_path_name))
     logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
     return file_sets
+
+
+def _add_file(file_set, filename, values):
+    """
+    Use appropriate TableFileSet setter to attach the file described by `filename` and `values`
+    to the TableFileSet `fileset`
+    """
+    file_type = values['file_type']
+    if file_type == 'sql':
+        file_set.set_sql_file(filename)
+    elif file_type == 'manifest':
+        file_set.set_manifest_file(filename)
+    elif file_type == 'data':
+        file_set.add_data_file(filename)
 
 
 def approx_pretty_size(total_bytes):
