@@ -66,11 +66,9 @@ else
 fi
 
 if [ "$CLUSTER_ENVIRONMENT" = "production" ]; then
-    CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=production"
-elif [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
-    CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=interactive"
+    CLUSTER_TAGS="HarrysDataWarehouse=Production"
 else
-    CLUSTER_TAGS="EMR_SPARK_ETL_TYPE=development"
+    CLUSTER_TAGS="HarrysDataWarehouse=Development"
 fi
 
 # === Validate bucket and environment information (sanity check on args) ===
