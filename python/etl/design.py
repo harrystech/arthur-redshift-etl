@@ -20,6 +20,7 @@ import etl
 import etl.config
 import etl.pg
 import etl.file_sets
+from etl.relation import RelationDescription
 
 
 class MissingMappingError(etl.ETLException):
@@ -418,6 +419,46 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
     return len(source_tables)
 
 
+def bootstrap_views(local_files, schemas, dry_run=False):
+    """
+    When running design --auto, newly authored transformations need to be ran as views to autogenerate design files
+    """
+    logger = logging.getLogger(__name__)
+    created = []
+    for schema in schemas:
+        for file in local_files:
+            if file.source_name != schema['name'] or file.design_file:
+                continue
+            with closing(etl.pg.connection(schema["dsn"], autocommit=True)) as conn:
+                description = RelationDescription(file)
+                logger.info('Creating view for %s', file.target_table_name)
+                ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file.target_table_name, description.query_stmt)
+                if dry_run:
+                    logger.info('Dry run: skipping view creation')
+                else:
+                    etl.pg.execute(conn, ddl_stmt)
+                created.append(file)
+    return created
+
+
+def cleanup_views(created, schemas, dry_run=False):
+    """
+    When running design --auto, views created for inspection should be dropped afterwards
+    """
+    logger = logging.getLogger(__name__)
+    for schema in schemas:
+        for file in created:
+            if file.source_name != schema['name']:
+                continue
+            with closing(etl.pg.connection(schema["dsn"], autocommit=True)) as conn:
+                ddl_stmt = """DROP VIEW IF EXISTS {} """.format(file.target_table_name)
+                logger.info('Dropping view for %s', file.target_table_name)
+                if dry_run:
+                    logger.info('Dry run: skipping view deletion')
+                else:
+                    etl.pg.execute(conn, ddl_stmt)
+
+
 def compare_columns(live_design, file_design):
     """
     Compare columns between what is actually present in a table vs. what is described in a table design
@@ -448,7 +489,6 @@ def download_schemas(table_design_dir, local_files, sources, selector, type_maps
     Download schemas from upstream source tables and compare against local design files (if available).
     """
     logger = logging.getLogger(__name__)
-
     total = 0
     for source in sources:
         normalize_and_create(os.path.join(table_design_dir, source["name"]), dry_run=dry_run)
