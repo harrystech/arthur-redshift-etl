@@ -379,21 +379,20 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
     Whenever some table designs already exist locally, validate them against the information found from upstream.
     """
     logger = logging.getLogger(__name__)
-    source_name = source["name"]
     local_design_files = {file_set.source_table_name: file_set.design_file
-                          for file_set in local_files if file_set.source_name == source_name}
+                          for file_set in local_files if file_set.source_name == source.name}
     try:
-        logger.info("Connecting to source database '%s'", source_name)
-        with closing(etl.pg.connection(source["dsn"], autocommit=True, readonly=True)) as conn:
-            source_tables = fetch_tables(conn, source["include_tables"], source.get("exclude_tables", []), selection)
+        logger.info("Connecting to source database '%s'", source.name)
+        with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
+            source_tables = fetch_tables(conn, source.include_tables, source.exclude_tables, selection)
             for source_table_name in sorted(source_tables):
                 source_columns = fetch_columns(conn, source_table_name)
                 target_columns = map_types_in_ddl(source_table_name,
                                                   source_columns,
                                                   type_maps["as_is_att_type"],
                                                   type_maps["cast_needed_att_type"])
-                target_table_name = etl.TableName(source_name, source_table_name.table)
-                table_design = create_table_design(source_name, source_table_name, target_table_name, target_columns)
+                target_table_name = etl.TableName(source.name, source_table_name.table)
+                table_design = create_table_design(source.name, source_table_name, target_table_name, target_columns)
 
                 if source_table_name in local_design_files:
                     # Replace bootstrapped table design with one from file but check whether set of columns changed.
@@ -401,11 +400,11 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
                     existing_table_design = validate_table_design_from_file(design_file, target_table_name)
                     compare_columns(table_design, existing_table_design)
                 else:
-                    save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=dry_run)
+                    save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
     except Exception:
-        logger.critical("Error while processing source '%s':", source_name)
+        logger.critical("Error while processing source '%s':", source.name)
         raise
-    logger.info("Done with %d table(s) from source '%s'", len(source_tables), source_name)
+    logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
 
     existent = frozenset(local_design_files)
     upstream = frozenset(source_tables)
@@ -427,9 +426,9 @@ def bootstrap_views(local_files, schemas, dry_run=False):
     created = []
     for schema in schemas:
         for file in local_files:
-            if file.source_name != schema['name'] or file.design_file:
+            if file.source_name != schema.name or file.design_file:
                 continue
-            with closing(etl.pg.connection(schema["dsn"], autocommit=True)) as conn:
+            with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
                 description = RelationDescription(file)
                 logger.info('Creating view for %s', file.target_table_name)
                 ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file.target_table_name, description.query_stmt)
@@ -448,9 +447,9 @@ def cleanup_views(created, schemas, dry_run=False):
     logger = logging.getLogger(__name__)
     for schema in schemas:
         for file in created:
-            if file.source_name != schema['name']:
+            if file.source_name != schema.name:
                 continue
-            with closing(etl.pg.connection(schema["dsn"], autocommit=True)) as conn:
+            with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
                 ddl_stmt = """DROP VIEW IF EXISTS {} """.format(file.target_table_name)
                 logger.info('Dropping view for %s', file.target_table_name)
                 if dry_run:
@@ -491,7 +490,7 @@ def download_schemas(table_design_dir, local_files, sources, selector, type_maps
     logger = logging.getLogger(__name__)
     total = 0
     for source in sources:
-        normalize_and_create(os.path.join(table_design_dir, source["name"]), dry_run=dry_run)
+        normalize_and_create(os.path.join(table_design_dir, source.name), dry_run=dry_run)
         total = create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
                                                            type_maps, dry_run=dry_run)
     if not local_files:
@@ -504,7 +503,7 @@ def delete_in_s3(bucket_name, prefix, schemas, selection, dry_run=False):
     """
     Cleanup folder in S3 by deleting matching files
     """
-    schema_names = [schema["name"] for schema in schemas]
+    schema_names = [schema.name for schema in schemas]
     etl.file_sets.delete_files_in_bucket(bucket_name, prefix, schema_names, selection, dry_run=dry_run)
 
 

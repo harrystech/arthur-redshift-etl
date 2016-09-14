@@ -1,11 +1,27 @@
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "Settings",
-    "description": "Validation of Data Warehouse and ETL settings",
+    "description": "Schema for settings of data warehouse, upstream sources, and ETL",
     "definitions": {
         "identifier": {
             "type": "string",
             "pattern": "^\\w"
+        },
+        "identifier_list": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/identifier" },
+            "uniqueItems": true,
+            "minItems": 1
+        },
+        "user_info": {
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/definitions/identifier" },
+                "group": { "$ref": "#/definitions/identifier" },
+                "schema": { "$ref": "#/definitions/identifier" }
+            },
+            "required": [ "name", "group" ],
+            "additionalProperties": false
         }
     },
     "type": "object",
@@ -15,14 +31,15 @@
             "properties": {
                 "admin_access": { "$ref": "#/definitions/identifier" },
                 "etl_access": { "$ref": "#/definitions/identifier" },
-                "owner": { "$ref": "#/definitions/identifier" },
-                "groups": {
-                    "type": "object",
-                    "additionalProperties": { "$ref": "#/definitions/identifier" },
-                    "minProperties": 2
+                "owner": { "$ref": "#/definitions/user_info" },
+                "users": {
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/user_info" },
+                    "uniqueItems": true
                 },
                 "iam_role": {
-                    "type": "string"
+                    "type": "string",
+                    "pattern": "arn:aws:iam:.*"
                 },
                 "schemas": {
                     "type": "array",
@@ -30,7 +47,8 @@
                         "type": "object",
                         "properties": {
                             "name": { "$ref": "#/definitions/identifier" },
-                            "description": { "type": "string" }
+                            "description": { "type": "string" },
+                            "groups": { "$ref": "#/definitions/identifier_list" }
                         },
                         "required": [ "name" ],
                         "additionalProperties": false
@@ -38,7 +56,7 @@
                     "uniqueItems": true
                 }
             },
-            "required": [ "admin_access", "etl_access", "owner", "groups", "iam_role" ],
+            "required": [ "admin_access", "etl_access", "owner", "iam_role" ],
             "additionalProperties": false
         },
         "s3": {
@@ -67,7 +85,8 @@
                         "type": "array",
                         "items": { "type": "string" },
                         "uniqueItems": true
-                    }
+                    },
+                    "groups": { "$ref": "#/definitions/identifier_list" }
                 },
                 "required": [ "name", "include_tables", "read_access" ],
                 "additionalProperties": false

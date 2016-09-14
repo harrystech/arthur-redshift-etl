@@ -26,6 +26,13 @@ from etl.timer import utc_now, elapsed_seconds
 import etl.pg
 
 
+def trace_key():
+    """
+    Return a "trace key" suitable to track program execution.  It's most likely unique between invocations.
+    """
+    return uuid.uuid4().hex[:16].upper()
+
+
 class MetaMonitor(type):
     """
     Metaclass to implement read-only attributes of our ETL's Monitor
@@ -41,7 +48,7 @@ class MetaMonitor(type):
     def etl_id(cls):
         if cls._trace_key is None:
             # We will never make a 32-bit operating system.
-            cls._trace_key = uuid.uuid4().hex.upper()[:16]
+            cls._trace_key = trace_key()
         return cls._trace_key
 
     @property
@@ -126,15 +133,22 @@ class Monitor(metaclass=MetaMonitor):
 
     def __init__(self: "Monitor", target: str, step: str, dry_run: bool=False, **kwargs):
         self._logger = logging.getLogger(__name__)
+        self._monitor_id = trace_key()
         self._target = target
         self._step = step
         self._dry_run = dry_run
         # Create a deep copy so that changes that the caller might make later do not alter our payload
         self._extra = deepcopy(dict(**kwargs))
 
+    # Read-only properties (in order of cardinality)
+
     @property
     def environment(self):
         return Monitor.environment
+
+    @property
+    def cluster_info(self):
+        return Monitor.cluster_info
 
     @property
     def etl_id(self):
@@ -149,8 +163,8 @@ class Monitor(metaclass=MetaMonitor):
         return self._step
 
     @property
-    def cluster_info(self):
-        return Monitor.cluster_info
+    def monitor_id(self):
+        return self._monitor_id
 
     def __enter__(self):
         self._logger.info("Starting %s step for '%s'", self.step, self.target)
@@ -268,7 +282,7 @@ class DynamoDBStorage:
             table = self._get_table()
             setattr(self._thread_local_table, 'table', table)
         item = dict(payload)
-        # Cast timestamp (and elpased seconds) into Decimal since DynamoDB cannot handle float.
+        # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
         # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
         item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
         if "elapsed" in item:
@@ -290,28 +304,29 @@ class RelationalStorage:
         logger.info("Creating table '%s' (unless it already exists)", table_name)
         with closing(etl.pg.connection(self.dsn)) as conn:
             etl.pg.execute(conn, """
-                CREATE TABLE IF NOT EXISTS %s (
-                    id          SERIAL PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS "{0.table_name}" (
                     environment CHARACTER VARYING(255),
                     etl_id      CHARACTER VARYING(255) NOT NULL,
                     target      CHARACTER VARYING(255) NOT NULL,
                     step        CHARACTER VARYING(255) NOT NULL,
+                    monitor_id  CHARACTER VARYING(16) NOT NULL,
                     event       CHARACTER VARYING(255) NOT NULL,
                     "timestamp" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-                    payload     JSONB NOT NULL)""" % self.table_name)
+                    payload     JSONB NOT NULL
+                )""".format(self))
             conn.commit()
 
     def store(self, payload):
-        data = {key: payload[key] for key in ["environment", "etl_id", "target", "step", "event"]}
+        data = {key: payload[key] for key in ["environment", "etl_id", "target", "step", "monitor_id", "event"]}
         data["timestamp"] = payload["timestamp"].isoformat(' ')
         data["payload"] = json.dumps(payload, sort_keys=True, cls=FancyJsonEncoder)
 
         with closing(etl.pg.connection(self.dsn)) as conn:
-            with conn:
+            with conn.cursor() as cursor:
                 quoted_column_names = ", ".join('"{}"'.format(column) for column in data)
-                etl.pg.execute(conn,
-                               """INSERT INTO "%s" (%s) VALUES %%s""" % (self.table_name, quoted_column_names),
-                               (tuple(data.values()),))
+                column_values = tuple(data.values())
+                cursor.execute('INSERT INTO "{0.table_name}" ({}) VALUES %s'.format(self, quoted_column_names),
+                               (column_values,))
 
 
 class InsertTraceKey(logging.Filter):
@@ -336,3 +351,4 @@ def set_environment(environment, dynamodb_settings, postgresql_settings):
 def query_for(target_list, etl_id=None):
     logger = logging.getLogger(__name__)
     logger.info("Querying for: etl_id=%s target=%s", etl_id, target_list)
+    # Left for the reader as an exercise.

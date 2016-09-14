@@ -17,33 +17,21 @@ import textwrap
 
 import psycopg2
 import psycopg2.extras
+import pgpasslib
 
 from etl.timer import Timer
-
-
-def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False, readonly=False):
-    """
-    Open a connection to the database described by dsn_string which needs to
-    be of the format "postgres://user:password@host:port/database"
-
-    By default, this turns on autocommit on the connection.
-    """
-    logger = logging.getLogger(__name__)
-    dsn_values = parse_connection_string(dsn_string)
-    dsn_values["application_name"] = application_name
-
-    logger.info("Connecting to: host={host} port={port} database={database} "
-                "user={user} password=***".format(**dsn_values))
-    cx = psycopg2.connect(cursor_factory=psycopg2.extras.DictCursor, **dsn_values)
-    cx.set_session(autocommit=autocommit, readonly=readonly)
-    logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
-                 cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
-    return cx
 
 
 def parse_connection_string(dsn: str) -> dict:
     """
     Extract connection value from JDBC-style connection string.
+
+    The fields "user", "host", "database" will be set.
+    The fields "password", "port" and "sslmode" may be set.
+
+    >>> dsn = parse_connection_string("postgresql://john_doe:secret@pg.example.com/xyzzy")
+    >>> unparse_connection(dsn)
+    'host=pg.example.com dbname=xyzzy user=john_doe password=***'
     """
     # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
     # Now they have two problems.
@@ -58,9 +46,38 @@ def parse_connection_string(dsn: str) -> dict:
         raise ValueError("Value of connection string does not conform to expected format.")
     values = match.groupdict()
     # Remove optional key/value pairs
-    if values['sslmode'] is None:
-        del values['sslmode']
+    for key in ["password", "port", "sslmode"]:
+        if values[key] is None:
+            del values[key]
     return values
+
+
+def unparse_connection(dsn: dict) -> str:
+    """
+    Return connection string for pretty printing or copying when starting psql
+    """
+    if "port" in dsn:
+        return "host={host} port={port} dbname={database} user={user} password=***".format(**dsn)
+    else:
+        return "host={host} dbname={database} user={user} password=***".format(**dsn)
+
+
+def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False, readonly=False):
+    """
+    Open a connection to the database described by dsn_string which needs to
+    be of the format "postgresql://user:password@host:port/database"
+
+    By default, this turns on autocommit on the connection.
+    """
+    logger = logging.getLogger(__name__)
+    dsn_values = parse_connection_string(dsn_string)
+    dsn_values["application_name"] = application_name
+    logger.info("Connecting to: %s", unparse_connection(dsn_values))
+    cx = psycopg2.connect(cursor_factory=psycopg2.extras.DictCursor, **dsn_values)
+    cx.set_session(autocommit=autocommit, readonly=readonly)
+    logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
+                 cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
+    return cx
 
 
 def extract_dsn(dsn_string):
@@ -78,13 +95,16 @@ def extract_dsn(dsn_string):
         "driver": "org.postgresql.Driver"  # necessary, weirdly enough
         # FIXME can ssl.props be done here?
     })
-    jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
+    if "port" in dsn_properties:
+        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
+    else:
+        jdbc_url = "jdbc:postgresql://{host}/{database}".format(**dsn_properties)
     return jdbc_url, dsn_properties
 
 
 def dbname(cx):
     """
-    Return name of database that connection points to
+    Return name of database that this connection points to.
     """
     dsn = dict(kv.split('=') for kv in cx.dsn.split(" "))
     return dsn["dbname"]
@@ -172,7 +192,12 @@ def create_group(cx, group):
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
 
-def create_user(cx, user, password, group):
+def create_user(cx, user, group):
+    dsn_complete = dict(kv.split('=') for kv in cx.dsn.split(" "))
+    dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
+    password = pgpasslib.getpass(user=user, **dsn_partial)
+    if password is None:
+        raise RuntimeError("Password missing from PGPASSFILE")
     execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
@@ -260,7 +285,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) != 2:
         print("Usage: {} dsn_string".format(sys.argv[0]))
-        print('Hint: Try "postgres://${USER}@localhost:5432/${USER}" as dsn_string')
+        print('Hint: Try "postgresql://${USER}@localhost:5432/${USER}" as dsn_string')
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)

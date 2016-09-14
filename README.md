@@ -115,7 +115,7 @@ EOF
 
 ## Configuring the ETL (and upstream sources)
 
-The best approach is probably to have another repo that contains the configuration file
+The best approach is probably to have a separate repo that contains the configuration file
 and all the table design files and transformations.
 
 ### Redshift cluster and users
@@ -127,6 +127,7 @@ helper scripts will make setting up the cluster consistently much easier.
 Also, add the AWS IAM role that the database owner may assume within Redshift
 to your settings file so that Redshift has the needed permissions to access the
 folder in S3.
+(And don't forget to add the role to the list of known IAM roles in Redshift.)
 
 ### Sources
 
@@ -138,8 +139,8 @@ a description of configurations.
 
 | Sub-command   | options |
 | ------------- | ----------------------------------------------------- |
-| initialize  | config, password, skip-user-creation |
-| add_user    | config, etl-user, add-user-schema, skip-user-creation |
+| `initialize`  | config, skip-user-creation |
+| `create_user`    | config, etl-user, add-user-schema, skip-user-creation |
 
 ### Initial setup
 
@@ -186,21 +187,20 @@ While working on the table designs or SQL for views and CTASs expressions, the s
 | Sub-command   | options |
 | ------------- | ----------------------------------------------------- |
 | design  | config, dry-run, target, table design dir |
-| sync    | config, dry-run, prefix or env, target, table design dir, git-modified |
-| dump    | config, dry-run, prefix or env, target |
-| load, update | config, dry-run, prefix or env, target, explain-plan |
-| etl | config, dry-run, prefix or env, target, force |
+| sync    | config, dry-run, prefix, target, table design dir, git-modified |
+| dump    | config, dry-run, prefix, target |
+| load, update | config, dry-run, prefix, target, explain-plan |
+| etl | config, dry-run, prefix, target, force |
 
-* Also `--verbose` or `--silent`
-* Still needed ? `--force`
+* Also `--verbose`, `--quiet`, and `--prolix`
 
 **Notes**
 
 * Commands expect a config file.
 * Commands accept `--dry-run` command line flag.
-* Commands allow to specify a selector (specific source or table name(s)).
-* Commands allow either `--prefix` or `--env` to select a folder in the S3 bucket.
-* Log files are by default in `etl.log`.
+* Commands allow to specify glob patterns to select specific schema(s) or table(s).
+* Commands use `--prefix` to select a folder in the S3 bucket.
+* Log files are by default in `arthur.log`.
 * To copy data, use `aws s3 --recursive`.
 
 
