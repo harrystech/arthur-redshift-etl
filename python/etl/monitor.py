@@ -342,10 +342,12 @@ class InsertTraceKey(logging.Filter):
 def set_environment(environment, dynamodb_settings, postgresql_settings):
     Monitor.environment = environment
     if dynamodb_settings:
-        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment, dynamodb_settings["capacity"])
+        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
+                              dynamodb_settings["capacity"])
         MonitorPayload.persister.append(ddb)
     if postgresql_settings:
-        rel = RelationalStorage(postgresql_settings["table_prefix"] + '_' + environment, postgresql_settings["write_access"])
+        rel = RelationalStorage(postgresql_settings["table_prefix"] + '_' + environment,
+                                postgresql_settings["write_access"])
         MonitorPayload.persister.append(rel)
 
 

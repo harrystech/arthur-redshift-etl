@@ -440,7 +440,7 @@ def load_or_update_redshift_relation(conn, description, credentials, owner, grou
     return modified
 
 
-def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, skip_copy=False,
+def load_or_update_redshift(data_warehouse, file_sets, drop=False, skip_copy=False,
                             add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
@@ -454,7 +454,7 @@ def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, 
     """
     logger = logging.getLogger(__name__)
     logger.info("Loading table designs and pondering evaluation order")
-    descriptions = [etl.relation.RelationDescription(file_set, bucket_name) for file_set in file_sets]
+    descriptions = [etl.relation.RelationDescription(file_set) for file_set in file_sets]
     execution_order = etl.relation.order_by_dependencies(descriptions)
     schema_lookup = {schema.name: schema for schema in data_warehouse.schemas}
 

@@ -241,7 +241,8 @@ def log_sql_error(exc):
     """
     Send information from psycopg2.Error instance to logfile.
 
-    See PostgreSQL documentation at http://www.postgresql.org/docs/current/static/libpq-exec.html#LIBPQ-PQRESULTERRORFIELD
+    See PostgreSQL documentation at
+    http://www.postgresql.org/docs/current/static/libpq-exec.html#LIBPQ-PQRESULTERRORFIELD
     and psycopg2 documentation at http://initd.org/psycopg/docs/extensions.html
     """
     logger = logging.getLogger(__name__)

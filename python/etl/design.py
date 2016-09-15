@@ -179,7 +179,7 @@ def create_table_design(source_name, source_table_name, table_name, columns):
     # FIXME Extract actual primary keys from pg_catalog, add unique constraints
     if any(column.name == "id" for column in columns):
         table_design["constraints"] = {"primary_key": ["id"]}
-    # Remove empty expressions (since columns can be selected by name) and default settings
+    # Remove default settings as well as empty expressions (when columns can be selected by name)
     for column in table_design["columns"]:
         if column["expression"] is None:
             del column["expression"]
@@ -217,12 +217,14 @@ def validate_table_design(table_design, table_name):
     logger.debug("Trying to validate table design for '%s'", table_name.identifier)
     validate_table_design_syntax(table_design, table_name)
     validate_table_design_semantics(table_design, table_name)
+    logger.debug("Validated table design for '%s'", table_name.identifier)
     return table_design
 
 
 def validate_table_design_syntax(table_design, table_name):
     """
-    Validate table design based on the (JSON) schema (which can only check syntax but not values)
+    Validate table design based on the (JSON) schema (which can only check syntax but not values).
+    Raise an exception if anything is amiss.
     """
     logger = logging.getLogger(__name__)
     validation_internal_errors = (
@@ -244,7 +246,8 @@ def validate_table_design_syntax(table_design, table_name):
 
 def validate_table_design_semantics(table_design, table_name):
     """
-    Validate table design against rule set based on values (e.g. name of columns)
+    Validate table design against rule set based on values (e.g. name of columns).
+    Raise an exception if anything is amiss.
     """
     if table_design["name"] != table_name.identifier:
         raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
@@ -341,7 +344,8 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
     logger = logging.getLogger(__name__)
     table = table_design["name"]
     # FIXME Move this logic into file sets
-    filename = os.path.join(local_dir, source_name, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
+    filename = os.path.join(local_dir, source_name, "{}-{}.yaml".format(source_table_name.schema,
+                                                                        source_table_name.table))
     if dry_run:
         logger.info("Dry-run: Skipping writing new table design file for '%s'", table)
     elif os.path.exists(filename):
@@ -379,10 +383,10 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
     Whenever some table designs already exist locally, validate them against the information found from upstream.
     """
     logger = logging.getLogger(__name__)
-    local_design_files = {file_set.source_table_name: file_set.design_file
-                          for file_set in local_files if file_set.source_name == source.name}
+    source_files = {file_set.source_table_name: file_set
+                    for file_set in local_files if file_set.source_name == source.name}
     try:
-        logger.info("Connecting to source database '%s'", source.name)
+        logger.info("Connecting to database '%s' to look for tables", source.name)
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source.include_tables, source.exclude_tables, selection)
             for source_table_name in sorted(source_tables):
@@ -394,19 +398,21 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
                 target_table_name = etl.TableName(source.name, source_table_name.table)
                 table_design = create_table_design(source.name, source_table_name, target_table_name, target_columns)
 
-                if source_table_name in local_design_files:
+                source_file_set = source_files.get(source_table_name)
+                if source_file_set and source_file_set.design_file:
                     # Replace bootstrapped table design with one from file but check whether set of columns changed.
-                    design_file = local_design_files[source_table_name]
+                    design_file = source_file_set.design_file
                     existing_table_design = validate_table_design_from_file(design_file, target_table_name)
                     compare_columns(table_design, existing_table_design)
                 else:
+                    # TODO In case there's a local SQL file, that name should be used as basis for new table design
                     save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
     except Exception:
         logger.critical("Error while processing source '%s':", source.name)
         raise
     logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
 
-    existent = frozenset(local_design_files)
+    existent = frozenset(source_files)
     upstream = frozenset(source_tables)
     not_found = upstream.difference(existent)
     if not_found:
@@ -420,7 +426,7 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
 
 def bootstrap_views(local_files, schemas, dry_run=False):
     """
-    When running design --auto, newly authored transformations need to be ran as views to autogenerate design files
+    When running design --auto, newly authored transformations need to be run as views to auto-generate design files
     """
     logger = logging.getLogger(__name__)
     created = []
@@ -428,12 +434,13 @@ def bootstrap_views(local_files, schemas, dry_run=False):
         for file in local_files:
             if file.source_name != schema.name or file.design_file:
                 continue
+            # TODO Pull out the connection so that we don't open it per table but per schema
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
                 description = RelationDescription(file)
-                logger.info('Creating view for %s', file.target_table_name)
+                logger.info("Creating view for '%s' which has no design file", file.target_table_name.identifier)
                 ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file.target_table_name, description.query_stmt)
                 if dry_run:
-                    logger.info('Dry run: skipping view creation')
+                    logger.info('Dry-run: skipping view creation')
                 else:
                     etl.pg.execute(conn, ddl_stmt)
                 created.append(file)
@@ -450,10 +457,10 @@ def cleanup_views(created, schemas, dry_run=False):
             if file.source_name != schema.name:
                 continue
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
-                ddl_stmt = """DROP VIEW IF EXISTS {} """.format(file.target_table_name)
-                logger.info('Dropping view for %s', file.target_table_name)
+                ddl_stmt = """DROP VIEW IF EXISTS {}""".format(file.target_table_name)
+                logger.info("Dropping view for '%s'", file.target_table_name.identifier)
                 if dry_run:
-                    logger.info('Dry run: skipping view deletion')
+                    logger.info('Dry-run: skipping view deletion')
                 else:
                     etl.pg.execute(conn, ddl_stmt)
 
@@ -463,7 +470,7 @@ def compare_columns(live_design, file_design):
     Compare columns between what is actually present in a table vs. what is described in a table design
     """
     logger = logging.getLogger(__name__)
-    logger.info("Checking design for %s", live_design["name"])
+    logger.info("Checking design for '%s'", live_design["name"])
     live_columns = {column["name"] for column in live_design["columns"]}
     file_columns = {column["name"] for column in file_design["columns"]}
     # TODO define policy to declare columns "ETL-only" Or remove this "feature"?
@@ -483,28 +490,21 @@ def compare_columns(live_design, file_design):
         logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
 
 
-def download_schemas(table_design_dir, local_files, sources, selector, type_maps, dry_run=False):
+def download_schemas(sources, selector, table_design_dir, local_files, type_maps, dry_run=False):
     """
     Download schemas from upstream source tables and compare against local design files (if available).
     """
     logger = logging.getLogger(__name__)
     total = 0
     for source in sources:
-        normalize_and_create(os.path.join(table_design_dir, source.name), dry_run=dry_run)
-        total = create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
-                                                           type_maps, dry_run=dry_run)
+        if selector.match_schema(source.name):
+            normalize_and_create(os.path.join(table_design_dir, source.name), dry_run=dry_run)
+            total = create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
+                                                               type_maps, dry_run=dry_run)
     if not local_files:
         logger.warning("Found no matching files in '%s' for '%s'", table_design_dir, selector)
     if not total:
         logger.warning("Found no matching table in any upstream source for '%s'", selector)
-
-
-def delete_in_s3(bucket_name, prefix, schemas, selection, dry_run=False):
-    """
-    Cleanup folder in S3 by deleting matching files
-    """
-    schema_names = [schema.name for schema in schemas]
-    etl.file_sets.delete_files_in_bucket(bucket_name, prefix, schema_names, selection, dry_run=dry_run)
 
 
 def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
@@ -516,16 +516,15 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
     logger = logging.getLogger(__name__)
 
     for file_set in local_files:
-        table_design = validate_table_design_from_file(file_set.design_file, file_set.target_table_name)
-        local_files = [file_set.design_file]
-        # FIXME Use logic from RelationDescription
-        if table_design["source_name"] in ("CTAS", "VIEW"):
-            if file_set.sql_file:
-                local_files.append(file_set.sql_file)
+        description = RelationDescription(file_set)
+        files = [description.design_file_name]
+        if description.is_ctas_relation or description.is_view_relation:
+            if description.sql_file_name:
+                files.append(description.sql_file_name)
             else:
-                logger.warning("Missing SQL file for %s '%s'",
-                               table_design["source_name"], file_set.target_table_name.identifier)
-        for local_filename in local_files:
+                # TODO should we error out here?
+                logger.warning("Missing matching SQL file for '%s'", description.design_file_name)
+        for local_filename in files:
             # FIXME Move this logic into TableFileSet
             object_key = "{}/schemas/{}/{}".format(prefix, file_set.source_name, os.path.basename(local_filename))
             etl.file_sets.upload_to_s3(local_filename, bucket_name, object_key, dry_run=dry_run)

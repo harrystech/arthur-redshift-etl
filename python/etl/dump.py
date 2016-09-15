@@ -83,7 +83,7 @@ def find_files_for_sources(bucket_name, prefix, sources, selector):
     logger = logging.getLogger(__name__)
 
     schema_names = [source.name for source in sources]
-    tables_in_s3 = etl.file_sets.find_files_for_schemas(bucket_name, prefix, schema_names, selector)
+    tables_in_s3 = etl.file_sets.find_files_in_s3(bucket_name, prefix, schema_names, selector)
 
     useful_sources = OrderedDict()
     for source, schema_name in zip(sources, schema_names):
@@ -329,7 +329,7 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
     if dry_run:
-        logger.info("Dry-run: Skipping writing manifest file '%s'", manifest_filename)
+        logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s'", bucket_name, manifest_filename)
     else:
         with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
             logger.debug("Writing manifest file locally to '%s'", local_file.name)
@@ -358,6 +358,7 @@ def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_
                                              'table': source_table_name.table},
                                      destination={'bucket_name': bucket_name,
                                                   'object_key': manifest_filename}):
+                # TODO move this logic to use relation description
                 table_design = etl.design.download_table_design(bucket_name, file_set.design_file, target_table_name)
                 df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
                 write_dataframe_as_csv(df, file_set.source_path_name, bucket_name, prefix, dry_run=dry_run)
@@ -377,6 +378,7 @@ def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
+    logger.info("Dumping from these sources: %s", etl.join_with_quotes(source_lookup))
 
     sql_context = create_sql_context()
     create_dir_unless_exists(REDSHIFT_ETL_HOME)
@@ -428,6 +430,7 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, username, password_file
     if primary_key:
         args.extend(["--split-by", q(primary_key), "--num-mappers", str(max_mappers)])
     else:
+        # TODO use "--autoreset-to-one-mapper" ?
         args.extend(["--num-mappers", "1"])
     return args
 
@@ -575,6 +578,7 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
+    logger.info("Dumping from these sources: %s", etl.join_with_quotes(source_lookup))
 
     # TODO This will run all sources in parallel ... should this be a command line arg?
     max_workers = len(source_lookup)
@@ -587,6 +591,8 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
                                     source_lookup[source_name], list(file_group),
                                     bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)
                 futures.append(f)
+            else:
+                logger.info("Skipping schema '%s' which is not an upstream source", source_name)
         if keep_going:
             done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
         else:

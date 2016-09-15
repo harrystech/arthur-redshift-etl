@@ -18,9 +18,7 @@ For CTAS or views, the directory after 'schemas' is the name of the schema in th
 configuration.  The 'source_schema_name' is only used for sorting.
 """
 
-from collections import defaultdict
 from datetime import datetime
-from functools import partial
 import logging
 from itertools import groupby
 from operator import attrgetter
@@ -32,7 +30,7 @@ import threading
 import boto3
 import botocore.exceptions
 
-import etl
+from etl import TableName
 import etl.config
 
 
@@ -51,93 +49,97 @@ class TableFileSet:
     """
     Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
 
-    Note that tables are addressed using their target name, where the schema is equal
-    to the source name.  To allow for sorting, the original schema name (in the source
-    database) is kept.  For views and CTAS, the sort order is used to create a predictable
-    instantiation order where one view or CTAS may depend on another being up-to-date already.
+    Note that all tables are addressed using their "target name" within the data warehouse, where
+    the schema name is equal to the source name and the table name is the same as in the upstream
+    source. To allow for sorting, the original schema name (in the source
+    database) is kept.  For CTAS and VIEWs, the "target name" consists of the schema name within
+    the data warehouse and the table or view name assigned.  Since there is no source schema, that
+    portion may be omitted.
     """
 
-    def __init__(self, source_table_name, target_table_name, design_file):
-        self._source_table_name = source_table_name
-        self._target_table_name = target_table_name
-        self._design_file = design_file
-        self._sql_file = None
-        self._manifest_file = None
+    def __init__(self, source_table_name, target_table_name):
+        self.source_table_name = source_table_name
+        self.target_table_name = target_table_name
+        self.design_file = None
+        self.sql_file = None
+        self.manifest_file = None
         self._data_files = []
+        # Used when binding the files to either local filesystem or S3
+        self.scheme = None
+        self.netloc = None
+        self.path = None
 
     def __str__(self):
-        extensions = [".yaml"]
-        if self._sql_file:
+        extensions = []
+        if self.design_file:
+            extensions.append(".yaml")
+        if self.sql_file:
             extensions.append(".sql")
-        if self._manifest_file:
+        if self.manifest_file:
             extensions.append(".manifest")
         if self._data_files:
             extensions.append("/csv/part-*")
         return "{}('{}{{{}}}')".format(self.__class__.__name__, self.source_path_name, ','.join(extensions))
 
+    def bind_to_uri(self, scheme, netloc, path):
+        self.scheme = scheme
+        self.netloc = netloc
+        self.path = path
+
+    def uri(self, filename):
+        """
+        Return the full URI for the filename, which probably should be one of the files from this set
+        """
+        if self.scheme == "s3":
+            return "{0.scheme}://{0.netloc}/{1}".format(self, filename)
+        elif self.scheme == "file":
+            return filename
+        else:
+            raise RuntimeError("Illegal scheme in file set")
+
+    def stat(self, filename):
+        """
+        Return file size (in bytes) and timestamp of last modification for the file which should be one from this set.
+        """
+        if self.scheme == "s3":
+            return object_stat(self.netloc, filename)
+        elif self.scheme == "file":
+            return local_file_stat(filename)
+        else:
+            raise RuntimeError("Illegal scheme in file set")
+
     @property
     def source_name(self):
-        return self._target_table_name.schema
-
-    @property
-    def source_table_name(self):
-        return self._source_table_name
-
-    @property
-    def target_table_name(self):
-        return self._target_table_name
+        return self.target_table_name.schema
 
     @property
     def source_path_name(self):
-        return "{}/{}-{}".format(self._target_table_name.schema,
-                                 self._source_table_name.schema,
-                                 self._source_table_name.table)
-
-    @property
-    def design_file(self):
-        return self._design_file
-
-    @property
-    def sql_file(self):
-        return self._sql_file
-
-    @property
-    def manifest_file(self):
-        return self._manifest_file
+        return "{}/{}-{}".format(self.target_table_name.schema,
+                                 self.source_table_name.schema,
+                                 self.source_table_name.table)
 
     @property
     def data_files(self):
         return tuple(self._data_files)
 
-    def __len__(self):
-        return 1 + (self._sql_file is not None) + (self._manifest_file is not None) + len(self._data_files)
-
-    def set_sql_file(self, filename):
-        self._sql_file = filename
-
-    def set_manifest_file(self, filename):
-        self._manifest_file = filename
-
     def add_data_file(self, filename):
         self._data_files.append(filename)
 
+    @property
+    def files(self):
+        _files = []
+        if self.design_file:
+            _files.append(self.design_file)
+        if self.sql_file:
+            _files.append(self.sql_file)
+        if self.manifest_file:
+            _files.append(self.manifest_file)
+        if self._data_files:
+            _files.extend(self._data_files)
+        return _files
 
-def find_files(scheme, netloc, path, schemas, selector, empty_is_ok=False, orphans=False):
-    if scheme == "s3":
-        file_sets = find_files_for_schemas(netloc, path, schemas, selector)
-        if not file_sets:
-            raise FileNotFoundError(
-                "Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector))
-    else:
-        if os.path.exists(path):
-            file_sets = find_local_files_for_schemas(path, schemas, selector, orphans=orphans)
-            if not file_sets and not empty_is_ok:
-                raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
-        elif empty_is_ok:
-            file_sets = []
-        else:
-            raise FileNotFoundError("Failed to find directory: '%s'" % path)
-    return file_sets
+    def __len__(self):
+        return len(self.files)
 
 
 def _get_bucket(name):
@@ -146,7 +148,7 @@ def _get_bucket(name):
     """
     s3 = getattr(_resources_for_thread, 's3', None)
     if s3 is None:
-        # When multi-threaded, we can't use the default session.  So keep one per thread.
+        # When multi-threaded, we can't use the default session. So keep one per thread.
         session = boto3.session.Session()
         s3 = session.resource("s3")
         setattr(_resources_for_thread, 's3', s3)
@@ -256,6 +258,15 @@ def get_file_content(bucket_name, object_key):
     return response['Body']
 
 
+def delete_files_in_bucket(bucket_name, prefix, selection, dry_run=False):
+    """
+    Delete all files that might be relevant given the choice of schemas and the target selection.
+    """
+    iterable = list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas'))
+    deletable = [filename for filename, v in _find_matching_files_from(iterable, selection, return_success_file=True)]
+    delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+
+
 def list_files_in_folder(bucket_name, prefix):
     """
     List all the files in "s3://{bucket_name}/{prefix}" (where prefix is probably a path and not an object key)
@@ -293,43 +304,38 @@ def list_local_files(directory):
                 yield os.path.join(root, filename)
 
 
-def find_files_for_schemas(bucket_name, prefix, schemas, pattern):
+def find_file_sets(uri_parts, selector, error_if_empty=True):
     """
-    Discover design and data files in the given bucket and folder, for the given schemas,
-    and apply pattern-based selection along the way.
-
-    Only files in 'data' or 'schemas' sub-folders are examined (so this ignores 'config' or 'jars').
+    Generic method to collect files from either s3://bucket/prefix or file://localhost/directory
     """
-    schema_names = [schema.name for schema in schemas]
-    files = list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas'))
-    return _find_files_from(files, schema_names, pattern)
+    logger = logging.getLogger(__name__)
+    scheme, netloc, path = uri_parts
+    if scheme == "s3":
+        file_sets = _find_file_sets_from(list_files_in_folder(netloc, (path + '/data', path + '/schemas')), selector)
+        if not file_sets:
+            raise FileNotFoundError("Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector))
+    else:
+        if os.path.exists(path):
+            file_sets = _find_file_sets_from(list_local_files(path), selector)
+            if not file_sets:
+                if error_if_empty:
+                    raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
+                else:
+                    logger.warning("Found no matching files in '%s' for '%s' (proceeding recklessly...)",
+                                   path, selector)
+        elif not error_if_empty:
+            file_sets = []
+        else:
+            raise FileNotFoundError("Failed to find directory: '%s'" % path)
+    # Bind the files that were found to where they were found
+    for file_set in file_sets:
+        file_set.bind_to_uri(scheme, netloc, path)
+    return file_sets
 
 
-def find_local_files_for_schemas(directory, schemas, pattern, orphans=False):
+def _find_matching_files_from(iterable, pattern, return_success_file=False):
     """
-    Discover local design and data files starting from the given directory, for the given schemas,
-    and apply pattern-based selection along the way.
-
-    The directory should be the './schemas' directory, probably.
-    """
-    schema_names = [schema.name for schema in schemas]
-    files = list_local_files(directory)
-    return _find_files_from(files, schema_names, pattern, orphans=orphans)
-
-
-def delete_files_in_bucket(bucket_name, prefix, schema_names, selection, dry_run=False):
-    """
-    Delete all files that might be relevant given the choice of schemas and the target selection.
-    """
-    iterable = list_files_in_folder(bucket_name, (prefix + '/data', prefix + '/schemas'))
-    deletable = [filename for filename, values in _find_matching_files_from(iterable, schema_names, selection,
-                                                                            return_extra_files=True)]
-    delete_in_s3(bucket_name, deletable, dry_run=dry_run)
-
-
-def _find_matching_files_from(iterable, schema_names, pattern, return_extra_files=False):
-    """
-    Match file names against schemas list, the target pattern and expected path format,
+    Match file names against the target pattern and expected path format,
     return file information based on source name, source schema, table name and file type.
 
     This generator provides all files that are possibly relevant and it
@@ -341,86 +347,56 @@ def _find_matching_files_from(iterable, schema_names, pattern, return_extra_file
     file_names_re = re.compile(r"""(?:^schemas|/schemas|^data|/data)
                                    /(?P<source_name>\w+)
                                    /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/part-.*(:?\.gz)?)
-                                      |.*(?P<ignorable_suffix>_SUCCESS|_\$folder\$))$
+                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
                                """, re.VERBOSE)
 
     for filename in iterable:
         match = file_names_re.search(filename)
         if match:
             values = match.groupdict()
-            source_name = values['source_name']
-            if source_name in schema_names:
-                target_table_name = etl.TableName(source_name, values['table_name'])
-                if pattern.match(target_table_name):
-                    if values['ignorable_suffix']:
-                        if not return_extra_files:
-                            continue
-                    elif values["file_ext"].startswith("/csv"):
-                        values["file_type"] = "data"
-                    else:
-                        values["file_type"] = values["file_ext"][1:]
+            target_table_name = TableName(values['source_name'], values['table_name'])
+            if pattern.match(target_table_name):
+                file_ext = values["file_ext"]
+                if file_ext in [".yaml", ".sql", ".manifest"]:
+                    values["file_type"] = file_ext[1:]
+                elif file_ext.endswith("_SUCCESS"):
+                    values["file_type"] = "success"
+                elif file_ext.startswith("/csv"):
+                    values["file_type"] = "data"
+                # E.g. when deleting files out of a folder we want to know about the /csv/_SUCCESS file.
+                if return_success_file or values["file_type"] != "success":
                     yield (filename, values)
         elif not filename.endswith("_$folder$"):
             logging.getLogger(__name__).warning("Found file not matching expected format: '%s'", filename)
 
 
-def _find_files_from(iterable, schema_names, pattern, orphans=False):
+def _find_file_sets_from(iterable, pattern):
     """
-    Return list of file sets groupbed by source name, ordered by source_schema_name and source_table_name.
-
-    Note that all tables must have a table design file. It's not ok to have a CSV or SQL file by itself.
+    Return list of file sets ordered by source name, source_schema_name and source_table_name.
     """
     logger = logging.getLogger(__name__)
-    # First pass -- pick up all the design files, keep matches around for second pass
     targets = {}
-    additional_files = defaultdict(list)
-    for filename, values in _find_matching_files_from(iterable, schema_names, pattern):
+    for filename, values in _find_matching_files_from(iterable, pattern):
         source_table_name = etl.TableName(values["schema_name"], values["table_name"])
         target_table_name = etl.TableName(values["source_name"], values["table_name"])
-        if values['file_type'] == 'yaml':
-            if target_table_name in targets:
-                raise BadSourceDefinitionError("Target table '%s' has multiple sources" % target_table_name.identifier)
-            targets[target_table_name] = TableFileSet(source_table_name, target_table_name, filename)
-        else:
-            additional_files[target_table_name].append((filename, values))
-    # Second pass -- only store SQL and data files for tables that have design files from first pass
-    for target_table_name in additional_files:
-        if target_table_name in targets:
-            file_set = targets[target_table_name]
-            for filename, values in additional_files[target_table_name]:
-                _add_file(file_set, filename, values)
-        else:
-            if orphans:
-                source_table_name = etl.TableName(values["schema_name"], values["table_name"])
-                target_table_name = etl.TableName(values["source_name"], values["table_name"])
-                orphan_fileset = TableFileSet(source_table_name, target_table_name, None)
-                for filename, values in additional_files[target_table_name]:
-                    _add_file(orphan_fileset, filename, values)
-                targets[target_table_name] = orphan_fileset
-            else:
-                logger.warning("Found files without corresponding table design: %s",
-                               ", ".join("'{}'".format(filename)
-                                         for filename, values in additional_files[target_table_name]))
+        if target_table_name not in targets:
+            targets[target_table_name] = TableFileSet(source_table_name, target_table_name)
+        file_set = targets[target_table_name]
+
+        file_type = values['file_type']
+        if file_type == 'yaml':
+            file_set.design_file = filename
+        elif file_type == 'sql':
+            file_set.sql_file = filename
+        elif file_type == 'manifest':
+            file_set.manifest_file = filename
+        elif file_type == 'data':
+            file_set.add_data_file(filename)
+
     # Always return files sorted by sources (in original order) and target name
-    schemas_order = {name: order for order, name in enumerate(schema_names)}
-    file_sets = sorted(targets.values(), key=lambda fs: (schemas_order[fs.source_name], fs.source_path_name))
+    file_sets = sorted(targets.values(), key=attrgetter("source_path_name"))
     logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
     return file_sets
-
-
-def _add_file(file_set, filename, values):
-    """
-    Use appropriate TableFileSet setter to attach the file described by `filename` and `values`
-    to the TableFileSet `fileset`
-    """
-    file_type = values['file_type']
-    if file_type == 'sql':
-        file_set.set_sql_file(filename)
-    elif file_type == 'manifest':
-        file_set.set_manifest_file(filename)
-    elif file_type == 'data':
-        file_set.add_data_file(filename)
 
 
 def approx_pretty_size(total_bytes):
@@ -454,22 +430,16 @@ def approx_pretty_size(total_bytes):
                 div += 1  # always round up
             break
     else:
-        div = 1
+        div, unit = 1, 'KB'
     return "{:d}{}".format(div, unit)
 
 
-def list_files(file_sets, bucket_name, long_format=False):
+def list_files(file_sets, long_format=False):
     """
-    List files in the given S3 bucket (or from current directory).
+    List files in the given S3 bucket or from current directory.
 
     With the long format, shows content length and tallies up the total size in bytes.
     """
-    if bucket_name == "localhost":
-        scheme_netloc = ""  # meaning we ignore the beauty of file://localhost/...
-        stat_func = partial(local_file_stat)
-    else:
-        scheme_netloc = "s3://{}/".format(bucket_name)
-        stat_func = partial(object_stat, bucket_name)
     total_length = 0
     for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
         print("Schema: '{}'".format(schema_name))
@@ -479,19 +449,12 @@ def list_files(file_sets, bucket_name, long_format=False):
             else:
                 print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.table,
                                                                      file_set.source_table_name.identifier))
-            files = [file_set.design_file]
-            if file_set.sql_file is not None:
-                files.append(file_set.sql_file)
-            if file_set.manifest_file is not None:
-                files.append(file_set.manifest_file)
-            if len(file_set.data_files) > 0:
-                files.extend(file_set.data_files)
-            for filename in files:
+            for filename in file_set.files:
                 if long_format:
-                    content_length, last_modified = stat_func(filename)
+                    content_length, last_modified = file_set.stat(filename)
                     total_length += content_length
-                    print("        {}{} ({:d}, {})".format(scheme_netloc, filename, content_length, last_modified))
+                    print("        {} ({:d}, {})".format(file_set.uri(filename), content_length, last_modified))
                 else:
-                    print("        {}{}".format(scheme_netloc, filename))
+                    print("        {}".format(file_set.uri(filename)))
     if total_length > 0:
         print("Total size in bytes: {:d} ({})".format(total_length, approx_pretty_size(total_length)))
