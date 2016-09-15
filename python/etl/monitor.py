@@ -203,6 +203,7 @@ class MonitorPayload:
         self.etl_id = monitor.etl_id
         self.target = monitor.target
         self.step = monitor.step
+        self.monitor_id = monitor.monitor_id
         self.event = event
         self.timestamp = timestamp
         # Premium info (when available)

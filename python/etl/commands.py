@@ -490,7 +490,7 @@ class ExtractLoadTransformCommand(SubCommand):
         with etl.pg.log_error():
             file_sets = etl.file_sets.find_files("s3", config.bucket_name, args.prefix, schemas, selector)
             etl.dump.dump_to_s3_with_sqoop(schemas, config.bucket_name, args.prefix, file_sets, args.max_partitions,
-                                           keep_going=args.keep_going, dry_run=args.dry_run)
+                                           dry_run=args.dry_run)
             # Need to rerun find files since the dump step has added files (data and manifests)
             file_sets = etl.file_sets.find_files("s3", config.bucket_name, args.prefix, schemas, selector)
             etl.load.load_or_update_redshift(config, config.bucket_name, file_sets,
