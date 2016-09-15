@@ -26,6 +26,7 @@ class DataWarehouseSchema:
     def __init__(self, schema_info, etl_group, etl_access):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
+        # Note the convention that the group of the owner always comes first.
         self.groups = [etl_group] + schema_info.get("groups", [])
         self.is_source_schema = "read_access" in schema_info
         self._dsn_env_var = schema_info.get("read_access", etl_access)
@@ -59,9 +60,11 @@ class DataWarehouseConfig:
         # Users and groups
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
         other_groups = {user.group for user in other_users} | {group for schema in self.schemas for group in schema.groups}
+        # That that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
         self.groups = [root.group] + sorted(other_groups)
-        self.default_group = [info["group"] for info in dw_settings["users"] if info["name"] == "default"]
+        # Surely You're Joking, Mr. Feynman?  Nope, pop works here.
+        self.default_group = [user["group"] for user in dw_settings["users"] if user["name"] == "default"].pop()
         # Data lake backing up our data warehouse and access from COPY command
         self.bucket_name = settings["s3"]["bucket_name"]
         self.iam_role = dw_settings["iam_role"]

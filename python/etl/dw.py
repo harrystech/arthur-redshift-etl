@@ -89,7 +89,8 @@ def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, 
                 etl.pg.grant_usage(conn, new_user, config.groups[0])
             if new_user != config.owner:
                 # Always lead with the user's schema (even if it doesn't exist) to deal with schema updates gracefully.
-                search_path = ["'$user'"] + list(reversed(schema.name for schema in config.schemas))
+                # FIXME If user is a "system user" only put their schema into the search path.
+                search_path = ["'$user'"] + list(reversed([schema.name for schema in config.schemas]))
                 logger.info("Setting search path to: %s", search_path)
                 etl.pg.alter_search_path(conn, new_user, search_path)
 
