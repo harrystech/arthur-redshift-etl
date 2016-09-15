@@ -291,8 +291,9 @@ def validate_dependency_ordering(table_descriptions):
     max_ok = len(execution_order)
     has_missing_deps = [description for description in execution_order if description.order > max_ok]
     if has_missing_deps:
+        sorted_missing_dep_identifiers = sorted([d.identifier for d in has_missing_deps])
         logger.warning("Relation(s) with missing dependencies: %s",
-                       ', '.join("'{}'".format(d.identifier) for d in sorted(has_missing_deps)))
+                       ', '.join(sorted_missing_dep_identifiers))
 
 
 def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
