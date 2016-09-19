@@ -115,41 +115,48 @@ def order_by_dependencies(table_descriptions):
 
     If a table (or view) depends on other tables, then its order is larger
     than any of its dependencies.
-    If a table (or view) depends on a table that is not actually part of our input,
-    then the order is forced to have a gap and start at N where N is the total number
-    of known tables. (This creates an imaginary table at the end of the list that that
-    table depends on. Of sorts.)
+    Provides warnings about:
+        * relations that directly depend on relations not in the input
+        * relations that are depended upon but are not in the input
     """
+    logger = logging.getLogger(__name__)
     known_tables = frozenset({description.identifier for description in table_descriptions})
     n = len(known_tables)
 
+    has_unknown_dependencies = set()
+    known_unknowns = set()
     queue = PriorityQueue()
     for i, description in enumerate(table_descriptions):
         unknown = description.dependencies.difference(known_tables)
         if unknown:
             description.dependencies = description.dependencies.difference(unknown)
-            queue.put((n + 1, i, description))
-        else:
-            queue.put((1, i, description))
-
+            known_unknowns |= unknown
+            has_unknown_dependencies.add(description.identifier)
+        queue.put((1, i, description))
+    if has_unknown_dependencies:
+        logger.warning('These relations have unknown dependencies: %s', sorted(has_unknown_dependencies))
+        logger.warning("These relations were unknown during dependency ordering: %s", sorted(known_unknowns))
     table_map = {description.identifier: description for description in table_descriptions}
     latest = 0
+
     while not queue.empty():
         minimum, tie_breaker, description = queue.get()
         if minimum > 2 * n:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
         others = [table_map[dep].order for dep in description.dependencies]
         if not others:
-            latest = description.order = max(latest + 1, minimum)
+            latest = description.order = latest + 1
         elif all(others):
-            latest = description.order = max(max(others) + 1, latest + 1, minimum)
+            latest = description.order = max(max(others), latest) + 1
         elif any(others):
             at_least = max(order for order in others if order is not None)
             queue.put((max(at_least, latest, minimum) + 1, tie_breaker, description))
         else:
             queue.put((max(latest, minimum) + 1, tie_breaker, description))
 
-    return sorted(table_descriptions, key=attrgetter("order"))
+    dependency_ordered_tables = sorted(table_descriptions, key=attrgetter("order"))
+
+    return dependency_ordered_tables
 
 
 def validate_table_as_view(conn, description):
@@ -281,21 +288,6 @@ def validate_design_file_semantics(descriptions, keep_going=False):
     return ok
 
 
-def validate_dependency_ordering(table_descriptions):
-    """
-    Try to build a dependency order and report whether graph is possible
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Validating dependency ordering")
-    execution_order = order_by_dependencies(table_descriptions)
-    max_ok = len(execution_order)
-    has_missing_deps = [description for description in execution_order if description.order > max_ok]
-    if has_missing_deps:
-        sorted_missing_dep_identifiers = sorted([d.identifier for d in has_missing_deps])
-        logger.warning("Relation(s) with missing dependencies: %s",
-                       ', '.join(sorted_missing_dep_identifiers))
-
-
 def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
     """
     Iterate over all relations (CTAS or VIEW) to test how table design and query match up.
@@ -322,7 +314,9 @@ def validate_designs(dsn, file_sets, netloc, keep_going=False, skip_deps=False):
     logger = logging.getLogger(__name__)
     descriptions = [RelationDescription(file_set, netloc) for file_set in file_sets]
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
-    validate_dependency_ordering(valid_descriptions)
+
+    logger.info("Validating dependency ordering")
+    order_by_dependencies(valid_descriptions)
 
     tables_to_validate_as_views = [description for description in valid_descriptions
                                    if description.is_ctas_relation or description.is_view_relation]
