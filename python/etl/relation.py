@@ -114,34 +114,38 @@ def order_by_dependencies(table_descriptions):
     Sort the relations such that any dependents surely are loaded afterwards.
 
     If a table (or view) depends on other tables, then its order is larger
-    than any of its dependencies.
+    than any of its dependencies. Ties are resolved based on the initial order
+    of the tables. (This motivates the use of a priority queue.)
+
     Provides warnings about:
         * relations that directly depend on relations not in the input
         * relations that are depended upon but are not in the input
     """
     logger = logging.getLogger(__name__)
     known_tables = frozenset({description.identifier for description in table_descriptions})
-    n = len(known_tables)
+    nr_tables = len(known_tables)
 
     has_unknown_dependencies = set()
     known_unknowns = set()
     queue = PriorityQueue()
-    for i, description in enumerate(table_descriptions):
+    for initial_order, description in enumerate(table_descriptions):
         unknown = description.dependencies.difference(known_tables)
         if unknown:
-            description.dependencies = description.dependencies.difference(unknown)
-            known_unknowns |= unknown
+            known_unknowns.update(unknown)
             has_unknown_dependencies.add(description.identifier)
-        queue.put((1, i, description))
+            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
+            description.dependencies = description.dependencies.difference(unknown)
+        queue.put((1, initial_order, description))
     if has_unknown_dependencies:
+        # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', sorted(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s", sorted(known_unknowns))
+
     table_map = {description.identifier: description for description in table_descriptions}
     latest = 0
-
     while not queue.empty():
         minimum, tie_breaker, description = queue.get()
-        if minimum > 2 * n:
+        if minimum > 2 * nr_tables:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
         others = [table_map[dep].order for dep in description.dependencies]
         if not others:
@@ -155,7 +159,6 @@ def order_by_dependencies(table_descriptions):
             queue.put((max(latest, minimum) + 1, tie_breaker, description))
 
     dependency_ordered_tables = sorted(table_descriptions, key=attrgetter("order"))
-
     return dependency_ordered_tables
 
 
