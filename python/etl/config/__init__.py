@@ -57,7 +57,7 @@ class DataWarehouseConfig:
         root = DataWarehouseUser(dw_settings["owner"])
         self.schemas = [DataWarehouseSchema(info, root.group, self._etl_access)
                         for info in dw_settings["schemas"] + sources_settings]
-        # Users and groups
+        # Users and groups -- users (instances) in the order from the config, groups (strings) sorted by name
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
         other_groups = {user.group for user in other_users} | {group for schema in self.schemas for group in schema.groups}
         # That that the "owner," which is our super-user of sorts, comes first.

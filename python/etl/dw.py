@@ -33,12 +33,13 @@ import etl.pg
 def initial_setup(config, skip_user_creation=False):
     """
     Initialize data warehouse with schemas and users
+
+    This is safe to re-run as long as you skip creating users and groups the second time around.
     """
     logger = logging.getLogger(__name__)
 
     with closing(etl.pg.connection(config.dsn_admin)) as conn:
         with conn:
-            # FIXME download the list of users and groups from the database, then create those that don't exist already
             if not skip_user_creation:
                 logger.info("Creating required groups: %s", join_with_quotes(config.groups))
                 for group in config.groups:
@@ -46,10 +47,6 @@ def initial_setup(config, skip_user_creation=False):
                 for user in config.users:
                     logger.info("Creating user '%s' in group '%s'", user.name, user.group)
                     etl.pg.create_user(conn, user.name, user.group)
-                # Note that 'public' in the search path is ignored when 'public' does not exist.
-                logger.info("Clearing search path for user '%s'", config.owner)
-                etl.pg.alter_search_path(conn, config.owner, ['public'])
-
         with conn:
             database_name = etl.pg.dbname(conn)
             logger.info("Changing database '%s' to belong to the ETL owner '%s'", database_name, config.owner)
@@ -64,35 +61,52 @@ def initial_setup(config, skip_user_creation=False):
                 for group in schema.groups[1:]:
                     etl.pg.grant_usage(conn, schema.name, group)
 
+            # Note that 'public' in the search path is ignored when 'public' does not exist.
+            logger.info("Clearing search path for users: %s", join_with_quotes(user.name for user in config.users))
+            for user in config.users:
+                etl.pg.alter_search_path(conn, user.name, ['public'])
+
 
 def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, skip_user_creation=False):
     """
     Add new user to database within default user group and with new password.
-    If so advised, creates a schema for the user.
-    If so advised, adds the user to the ETL group, giving R/W access.
+    If so advised, creates a schema for the user (with the schema name the same as the name of the user).
+    If so advised, adds the user to the ETL group, giving R/W access. Use wisely.
+
+    This is safe to re-run as long as you skip creating users and groups the second time around.
     """
     logger = logging.getLogger(__name__)
+
+    # Find user in the list of pre-defined users or create new user instance with default settings
+    for user in config.users:
+        if user.name == new_user:
+            break
+    else:
+        user = etl.config.DataWarehouseUser({"name": new_user,
+                                             "group": config.default_group,
+                                             "schema": new_user})
+    if user.name in ("default", config.owner):
+        raise ValueError("Illegal user name '%s'" % user.name)
 
     with closing(etl.pg.connection(config.dsn_admin)) as conn:
         with conn:
             if not skip_user_creation:
-                logger.info("Creating user '%s' in group '%s'", new_user, config.default_group)
-                etl.pg.create_user(conn, new_user, config.default_group)
+                logger.info("Creating user '%s' in group '%s'", user.name, user.group)
+                etl.pg.create_user(conn, user.name, user.group)
             if is_etl_user:
-                logger.info("Adding user '%s' to ETL group '%s'", new_user, config.groups[0])
-                etl.pg.alter_group_add_user(conn, config.groups[0], new_user)
+                logger.info("Adding user '%s' to ETL group '%s'", user.name, config.groups[0])
+                etl.pg.alter_group_add_user(conn, config.groups[0], user.name)
             if add_user_schema:
-                # FIXME Lookup schema in config?
-                logger.info("Creating schema '%s' with owner '%s'", new_user, new_user)
-                etl.pg.create_schema(conn, new_user, new_user)
-                etl.pg.grant_usage(conn, new_user, config.default_group)
-                etl.pg.grant_usage(conn, new_user, config.groups[0])
-            if new_user != config.owner:
-                # Always lead with the user's schema (even if it doesn't exist) to deal with schema updates gracefully.
-                # FIXME If user is a "system user" only put their schema into the search path.
-                search_path = ["'$user'"] + list(reversed([schema.name for schema in config.schemas]))
-                logger.info("Setting search path to: %s", search_path)
-                etl.pg.alter_search_path(conn, new_user, search_path)
+                logger.info("Creating schema '%s' with owner '%s'", user.schema, user.name)
+                etl.pg.create_schema(conn, user.schema, user.name)
+                etl.pg.grant_all_on_schema(conn, user.schema, config.groups[0])
+                etl.pg.grant_usage(conn, user.schema, user.group)
+            # Non-system users have "their" schema in the search path, others get nothing (meaning just public).
+            search_path = ["public"]
+            if user.schema == user.name:
+                search_path[:0] = ["'$user'"]  # needs to be quoted
+            logger.info("Setting search path for user '%s' to: %s", user.name, ", ".join(search_path))
+            etl.pg.alter_search_path(conn, user.name, search_path)
 
 
 def ping(dsn):

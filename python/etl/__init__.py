@@ -15,10 +15,21 @@ def package_version(package_name="redshift-etl"):
 
 def join_with_quotes(names):
     """
+    Individually wrap the names in quotes and return comma-separated names in a string.
+    If the input is a set of names, the names are sorted first.
+    If the input is a list of names, the order of the list is respected.
+    If the input is cheese, the order is for more red wine.
+
+
     >>> join_with_quotes(["foo", "bar"])
     "'foo', 'bar'"
+    >>> join_with_quotes({"foo", "bar"})
+    "'bar', 'foo'"
     """
-    return ', '.join("'{}'".format(name) for name in names)
+    if isinstance(names, (set, frozenset)):
+        return ', '.join("'{}'".format(name) for name in sorted(names))
+    else:
+        return ', '.join("'{}'".format(name) for name in names)
 
 
 class ETLException(Exception):
