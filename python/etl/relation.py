@@ -162,7 +162,7 @@ def order_by_dependencies(table_descriptions):
     return dependency_ordered_tables
 
 
-def validate_table_as_view(conn, description):
+def validate_table_as_view(conn, description, keep_going=False):
     """
     Test-run a relation (CTAS or VIEW) by creating a temporary view.
 
@@ -200,7 +200,10 @@ def validate_table_as_view(conn, description):
 
     comparison_output = _check_dependencies(dependencies, description.table_design)
     if comparison_output:
-        logger.warning(comparison_output)
+        if keep_going:
+            logger.warning(comparison_output)
+        else:
+            raise etl.design.TableDesignError(comparison_output)
     else:
         logger.info('Dependencies listing in design file matches SQL')
 
@@ -218,7 +221,10 @@ def validate_table_as_view(conn, description):
     actual_columns = [row['attname'] for row in etl.pg.query(conn, columns_stmt)]
     comparison_output = _check_columns(actual_columns, description.table_design)
     if comparison_output:
-        logger.warning(comparison_output)
+        if keep_going:
+            logger.warning(comparison_output)
+        else:
+            raise etl.design.TableDesignError(comparison_output)
     else:
         logger.info('Column listing in design file matches column listing in SQL')
 
@@ -299,7 +305,7 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
         for description in table_descriptions:
             try:
-                validate_table_as_view(conn, description)
+                validate_table_as_view(conn, description, keep_going=keep_going)
             except Exception:
                 if keep_going:
                     logger.exception("Failed to run '{}' as view:".format(description.target_table_name))
