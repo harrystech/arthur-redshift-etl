@@ -446,9 +446,10 @@ class LoadRedshiftCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+        unfiltered_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"))
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(config, file_sets, drop=self.use_force, skip_copy=args.skip_copy,
+            etl.load.load_or_update_redshift(config, unfiltered_file_sets, args.pattern,
+                                             drop=self.use_force, skip_copy=args.skip_copy,
                                              add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
 
@@ -478,12 +479,11 @@ class ExtractLoadTransformCommand(SubCommand):
         with etl.pg.log_error():
             file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
             # TODO why do we still need bucket_name and prefix here?
-            etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets, args.max_partitions,
-                                           dry_run=args.dry_run)
-            # Need to rerun files finder since the dump step has added files (data and manifests)
-            # TODO this should really be just a "refresh" of the file sets
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-            etl.load.load_or_update_redshift(config, file_sets, drop=args.force, dry_run=args.dry_run)
+            etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
+                                           args.max_partitions, dry_run=args.dry_run)
+            # Need to rerun files finder since the dump step has added files and we need to know about dependencies
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"))
+            etl.load.load_or_update_redshift(config, file_sets, args.pattern, drop=args.force, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):

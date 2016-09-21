@@ -304,12 +304,18 @@ def list_local_files(directory):
                 yield os.path.join(root, filename)
 
 
-def find_file_sets(uri_parts, selector, error_if_empty=True):
+def find_file_sets(uri_parts, selector=None, error_if_empty=True):
     """
     Generic method to collect files from either s3://bucket/prefix or file://localhost/directory
+    based on the tuple describing a parsed URI, which should be either
+    ("s3", "bucket", "prefix", ...) or ("file", "localhost", "directory", ...)
+
+    If the selector is used, it needs to be a TableNamePatterns instance to select matching files.
     """
     logger = logging.getLogger(__name__)
-    scheme, netloc, path = uri_parts
+    scheme, netloc, path = uri_parts[:3]
+    if selector is None:
+        selector = etl.TableNamePatterns.from_list([])
     if scheme == "s3":
         file_sets = _find_file_sets_from(list_files_in_folder(netloc, (path + '/data', path + '/schemas')), selector)
         if not file_sets:
