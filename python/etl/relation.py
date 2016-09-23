@@ -307,7 +307,7 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
             try:
                 with etl.pg.log_error():
                     validate_table_as_view(conn, description, keep_going=keep_going)
-            except (etl.ETLException, psycopg2.Error):
+            except (etl.ETLError, psycopg2.Error):
                 if keep_going:
                     logger.exception("Ignoring failure to create '%s' and proceeding as requested:",
                                      description.target_table_name)
