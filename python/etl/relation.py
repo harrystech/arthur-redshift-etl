@@ -31,17 +31,17 @@ import etl.pg
 import etl.file_sets
 
 
-class MissingQueryError(etl.ETLException):
+class MissingQueryError(etl.ETLError):
     pass
 
 
-class CyclicDependencyError(etl.ETLException):
+class CyclicDependencyError(etl.ETLError):
     pass
 
 
 class RelationDescription:
 
-    def __init__(self, discovered_files: etl.file_sets.TableFileSet, bucket_name=None):
+    def __init__(self, discovered_files: etl.file_sets.TableFileSet):
         # Basic properties to locate files describing the relation
         # TODO Make this pass-thru to TableFileSet
         self.source_path_name = discovered_files.source_path_name
@@ -50,8 +50,8 @@ class RelationDescription:
         self.design_file_name = discovered_files.design_file
         self.sql_file_name = discovered_files.sql_file
         self.manifest_file_name = discovered_files.manifest_file
-        # FIXME Move to file sets
-        self.bucket_name = bucket_name if bucket_name != "localhost" else None
+        # FIXME Move this distinction into file set
+        self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
         self._query_stmt = None
@@ -282,9 +282,8 @@ def validate_design_file_semantics(descriptions, keep_going=False):
     for description in descriptions:
         try:
             logger.info("Loading and validating file '%s'", description.design_file_name)
-            table_design = description.table_design
-            logger.debug("Validated table design for '%s'", table_design["name"])
-            ok.append(description)
+            if description.table_design:
+                ok.append(description)
         except etl.design.TableDesignError:
             if not keep_going:
                 raise
@@ -307,7 +306,7 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_designs(dsn, file_sets, netloc, keep_going=False, skip_deps=False):
+def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
     """
     Make sure that all table design files pass the validation checks.
 
@@ -315,7 +314,7 @@ def validate_designs(dsn, file_sets, netloc, keep_going=False, skip_deps=False):
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_set, netloc) for file_set in file_sets]
+    descriptions = [RelationDescription(file_set) for file_set in file_sets]
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
 
     logger.info("Validating dependency ordering")
@@ -331,7 +330,7 @@ def validate_designs(dsn, file_sets, netloc, keep_going=False, skip_deps=False):
         logger.info("Skipping validation against database (nothing to do)")
 
 
-def test_queries(dsn, file_sets, bucket_name=None):
+def test_queries(dsn, file_sets):
     """
     Test queries by running EXPLAIN with the query.
 
@@ -339,7 +338,7 @@ def test_queries(dsn, file_sets, bucket_name=None):
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_set, bucket_name) for file_set in file_sets]
+    descriptions = [RelationDescription(file_set) for file_set in file_sets]
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)

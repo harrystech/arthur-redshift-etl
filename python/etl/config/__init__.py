@@ -59,14 +59,13 @@ class DataWarehouseConfig:
                         for info in dw_settings["schemas"] + sources_settings]
         # Users and groups
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
-        other_groups = {user.group for user in other_users} | {group for schema in self.schemas for group in schema.groups}
+        other_groups = {u.group for u in other_users} | {group for schema in self.schemas for group in schema.groups}
         # That that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
         self.groups = [root.group] + sorted(other_groups)
         # Surely You're Joking, Mr. Feynman?  Nope, pop works here.
         self.default_group = [user["group"] for user in dw_settings["users"] if user["name"] == "default"].pop()
-        # Data lake backing up our data warehouse and access from COPY command
-        self.bucket_name = settings["s3"]["bucket_name"]
+        # Credentials used in COPY command that allow jumping into our data lake
         self.iam_role = dw_settings["iam_role"]
         # For creating table design files automatically
         self.type_maps = settings["type_maps"]

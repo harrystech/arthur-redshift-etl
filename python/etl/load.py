@@ -53,7 +53,7 @@ import etl.pg
 import etl.relation
 
 
-class MissingManifestError(etl.ETLException):
+class MissingManifestError(etl.ETLError):
     pass
 
 
@@ -440,10 +440,13 @@ def load_or_update_redshift_relation(conn, description, credentials, owner, grou
     return modified
 
 
-def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, skip_copy=False,
+def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, skip_copy=False,
                             add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
+
+    Tables are matched based on the selector but note that anything downstream is also refreshed
+    as long as the dependency is known.
 
     This is forceful if drop is True ... and replaces anything that might already exist.
 
@@ -454,10 +457,17 @@ def load_or_update_redshift(data_warehouse, bucket_name, file_sets, drop=False, 
     """
     logger = logging.getLogger(__name__)
     logger.info("Loading table designs and pondering evaluation order")
-    descriptions = [etl.relation.RelationDescription(file_set, bucket_name) for file_set in file_sets]
-    execution_order = etl.relation.order_by_dependencies(descriptions)
-    schema_lookup = {schema.name: schema for schema in data_warehouse.schemas}
+    descriptions = [etl.relation.RelationDescription(file_set) for file_set in file_sets]
 
+    complete_sequence = etl.relation.order_by_dependencies(descriptions)
+    dirty = set()
+    for description in complete_sequence:
+        if selector.match(description.target_table_name) or any(table in dirty for table in description.dependencies):
+            dirty.add(description.identifier)
+    logger.info("Decided on updating %d table(s)", len(dirty))
+    execution_order = [description for description in complete_sequence if description.identifier in dirty]
+
+    schema_lookup = {schema.name: schema for schema in data_warehouse.schemas}
     vacuumable = []
     with closing(etl.pg.connection(data_warehouse.dsn_etl)) as conn:
         for description in execution_order:

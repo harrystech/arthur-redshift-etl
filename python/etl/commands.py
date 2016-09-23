@@ -30,7 +30,7 @@ from etl.timer import Timer
 
 
 class InvalidArgumentsError(Exception):
-    """Exception thrown arguments are detected to be invalid by the command callack"""
+    """Exception thrown arguments are detected to be invalid by the command callback"""
     pass
 
 
@@ -55,6 +55,7 @@ def run_arg_as_command(my_name="arthur.py"):
     """
     Use the sub-command's callback to actually run the sub-command.
     Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
+    This function can be used as an entry point for a console script.
     """
     parser = build_full_parser(my_name)
     args = parser.parse_args()
@@ -70,16 +71,16 @@ def run_arg_as_command(my_name="arthur.py"):
                 settings = etl.config.load_settings(args.config)
                 if hasattr(args, "prefix"):
                     # Only commands which require an environment should require a monitor.
-                    etl_events = settings["etl_events"]
                     etl.monitor.set_environment(args.prefix,
-                                                dynamodb_settings=etl_events.get("dynamodb", {}),
-                                                postgresql_settings=etl_events.get("postgresql", {}))
+                                                dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
+                                                postgresql_settings=settings["etl_events"].get("postgresql", {}))
                 etl_config = etl.config.DataWarehouseConfig(settings)
+                setattr(args, "bucket_name", settings["s3"]["bucket_name"])
                 args.func(args, etl_config)
             except InvalidArgumentsError as exc:
                 logger.exception("ETL never got off the ground:")
                 croak(exc, 1)
-            except etl.ETLException as exc:
+            except etl.ETLError as exc:
                 logger.exception("Something bad happened in the ETL:")
                 logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
                 croak(exc, 1)
@@ -199,18 +200,19 @@ def add_standard_arguments(parser, options):
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
-        parser.add_argument("-p", "--prefix", default=getpass.getuser(),
-                            help="select prefix in S3 bucket (default is user name: '%(default)s')")
+        parser.add_argument("-p", "--prefix",
+                            help="select prefix in S3 bucket (default is user name: '%(default)s')",
+                            default=getpass.getuser())
     if "table-design-dir" in options:
         parser.add_argument("-t", "--table-design-dir",
                             help="set path to directory with table design files (default: '%(default)s')",
                             default="./schemas")
-    if "stay-local" in options:
+    if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-l", "--local-files", help="use files available on local filesystem",
-                           action="store_true", dest="stay_local", default=True)
+                           action="store_const", const="file", dest="scheme", default="file")
         group.add_argument("-r", "--remote-files", help="use files in S3",
-                           action="store_false", dest="stay_local")
+                           action="store_const", const="s3", dest="scheme")
     if "max-partitions" in options:
         parser.add_argument("-m", "--max-partitions", metavar="N",
                             help="set max number of partitions to write to N (default: %(default)s)", default=4)
@@ -221,9 +223,17 @@ def add_standard_arguments(parser, options):
     if "explain" in options:
         parser.add_argument("-x", "--add-explain-plan", help="add explain plan to log", action="store_true")
     if "pattern" in options:
-        parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)", nargs='*')
-    if "username" in options:
-        parser.add_argument("username", help="name for new user")
+        parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
+                            nargs='*', action=StorePattern)
+
+
+class StorePattern(argparse.Action):
+    """
+    Store the list of glob patterns (to pick tables) as a TableNamePatterns instance.
+    """
+    def __call__(self, parser, namespace, values, option_string=None):
+        selector = etl.TableNamePatterns.from_list(values)
+        setattr(namespace, "pattern", selector)
 
 
 class SubCommand:
@@ -256,42 +266,25 @@ class SubCommand:
         """Override this method for sub-classes"""
         pass
 
+    @staticmethod
+    def location(args, default_scheme=None):
+        """
+        Decide whether we should focus on local or remote files and return appropriate "location" information.
+
+        This expects args to be a Namespace instance from the argument parser with "table_design_dir",
+        "bucket_name", "prefix", and hopefully "scheme" as fields.
+        """
+        scheme = getattr(args, "scheme", default_scheme)
+        if scheme == "file":
+            return scheme, "localhost", args.table_design_dir
+        elif scheme == "s3":
+            return scheme, args.bucket_name, args.prefix
+        else:
+            raise ValueError("scheme invalid")
+
     def callback(self, args, config):
         """Override this method for sub-classes"""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
-
-    @staticmethod
-    def pick_schemas(schemas, patterns):
-        """
-        Create pattern-based selector and apply right away on the schemas.
-        Return selected schemas and the selector.
-        It is an error is there is a pattern but no match at the schemas level.
-        """
-        if len(patterns) == 1 and patterns[0] == "@sources":
-            selector = etl.TableNamePatterns.from_list([])
-            selected_schemas = [schema for schema in schemas if schema.is_source_schema]
-        else:
-            selector = etl.TableNamePatterns.from_list(patterns)
-            selected_schemas = selector.match_name(schemas)
-        if not selected_schemas:
-            raise InvalidArgumentsError("Found no match in settings for '{}'".format(selector.str_schemas()))
-        return selected_schemas, selector
-
-    @staticmethod
-    def pick_location(stay_local, table_design_dir, bucket_name, prefix):
-        if stay_local:
-            return "file", "localhost", table_design_dir
-        else:
-            return "s3", bucket_name, prefix
-
-    @staticmethod
-    def add_dsn_for_read_access(sources):
-        """
-        Lookup environment variables for read access to upstream sources and add the DSN
-        """
-        for source in sources:
-            if "read_access" in source:
-                source["dsn"] = etl.config.env_value(source["read_access"])
 
 
 class PingCommand(SubCommand):
@@ -338,7 +331,7 @@ class CreateUserCommand(SubCommand):
                          "Add new user and set group membership, optionally add a personal schema")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["username"])
+        parser.add_argument("username", help="name for new user")
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
         group.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
@@ -361,22 +354,20 @@ class DownloadSchemasCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
         parser.add_argument("-a", "--auto",
-                            help="run a new transformation as a view & autogenerate a design file from the view",
-                            default=False, action="store_true")
+                            help="auto-generate design file from any transformations found",
+                            action="store_true")
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
-        local_files = etl.file_sets.find_files("file", "localhost", args.table_design_dir, schemas, selector,
-                                               empty_is_ok=True, orphans=args.auto)
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, error_if_empty=False)
         if args.auto:
-            created = etl.design.bootstrap_views(local_files, schemas, dry_run=args.dry_run)
+            created = etl.design.bootstrap_views(local_files, config.schemas, dry_run=args.dry_run)
         else:
             created = []
         try:
-            etl.design.download_schemas(args.table_design_dir, local_files, schemas, selector, config.type_maps,
-                                        dry_run=args.dry_run)
+            etl.design.download_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
+                                        config.type_maps, dry_run=args.dry_run)
         finally:
-            etl.design.cleanup_views(created, schemas, dry_run=args.dry_run)
+            etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
 
 
 class CopyToS3Command(SubCommand):
@@ -393,11 +384,10 @@ class CopyToS3Command(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
         if args.force:
-            etl.design.delete_in_s3(config.bucket_name, args.prefix, schemas, selector, dry_run=args.dry_run)
-        local_files = etl.file_sets.find_files("file", "localhost", args.table_design_dir, schemas, selector)
-        etl.design.copy_to_s3(local_files, config.bucket_name, args.prefix, dry_run=args.dry_run)
+            etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
+        etl.design.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class DumpDataToS3Command(SubCommand):
@@ -419,17 +409,18 @@ class DumpDataToS3Command(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
-        file_sets = etl.file_sets.find_files("s3", config.bucket_name, args.prefix, schemas, selector)
         if args.dumper == "sqoop":
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
             with etl.pg.log_error():
-                etl.dump.dump_to_s3_with_sqoop(schemas, config.bucket_name, args.prefix, file_sets, args.max_partitions,
-                                               keep_going=args.keep_going, dry_run=args.dry_run)
+                etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
+                                               args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
         else:
             # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
             if "SPARK_ENV_LOADED" in os.environ:
+                file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
                 with etl.pg.log_error():
-                    etl.dump.dump_to_s3_with_spark(schemas, config.bucket_name, args.prefix, file_sets, dry_run=args.dry_run)
+                    etl.dump.dump_to_s3_with_spark(config.schemas, args.bucket_name, args.prefix, file_sets,
+                                                   dry_run=args.dry_run)
             else:
                 # Try the full path (in the EMR cluster), or try without path and hope for the best.
                 submit_arthur = "/tmp/redshift_etl/venv/bin/submit_arthur.sh"
@@ -455,10 +446,9 @@ class LoadRedshiftCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
-        file_sets = etl.file_sets.find_files("s3", config.bucket_name, args.prefix, schemas, selector)
+        unfiltered_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"))
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(config, config.bucket_name, file_sets,
+            etl.load.load_or_update_redshift(config, unfiltered_file_sets, args.pattern,
                                              drop=self.use_force, skip_copy=args.skip_copy,
                                              add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
@@ -486,15 +476,14 @@ class ExtractLoadTransformCommand(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
         with etl.pg.log_error():
-            file_sets = etl.file_sets.find_files("s3", config.bucket_name, args.prefix, schemas, selector)
-            etl.dump.dump_to_s3_with_sqoop(schemas, config.bucket_name, args.prefix, file_sets, args.max_partitions,
-                                           dry_run=args.dry_run)
-            # Need to rerun find files since the dump step has added files (data and manifests)
-            file_sets = etl.file_sets.find_files("s3", config.bucket_name, args.prefix, schemas, selector)
-            etl.load.load_or_update_redshift(config, config.bucket_name, file_sets,
-                                             drop=args.force, dry_run=args.dry_run)
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+            # TODO why do we still need bucket_name and prefix here?
+            etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
+                                           args.max_partitions, dry_run=args.dry_run)
+            # Need to rerun files finder since the dump step has added files and we need to know about dependencies
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"))
+            etl.load.load_or_update_redshift(config, file_sets, args.pattern, drop=args.force, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
@@ -505,7 +494,7 @@ class ValidateDesignsCommand(SubCommand):
                          "Validate table designs (use '-q' to only see errors/warnings)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "stay-local"])
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
         parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
         parser.add_argument("-n", "--skip-dependencies-check",
@@ -513,11 +502,8 @@ class ValidateDesignsCommand(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
-        # FIXME Look the other way ... no that other way
-        scheme, netloc, path = self.pick_location(args.stay_local, args.table_design_dir, config.bucket_name, args.prefix)
-        file_sets = etl.file_sets.find_files(scheme, netloc, path, schemas, selector)
-        etl.relation.validate_designs(config.dsn_etl, file_sets, netloc,
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
+        etl.relation.validate_designs(config.dsn_etl, file_sets,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
 
@@ -529,14 +515,11 @@ class ExplainQueryCommand(SubCommand):
                          "Run EXPLAIN on queries (for CTAS or VIEW) for files in local filesystem")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "stay-local"])
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
-        # TODO This will be much prettier once we move the bucket information fully into the file sets.
-        scheme, netloc, path = self.pick_location(args.stay_local, args.table_design_dir, config.bucket_name, args.prefix)
-        file_sets = etl.file_sets.find_files(scheme, netloc, path, schemas, selector)
-        etl.relation.test_queries(config.dsn_etl, file_sets, netloc)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
+        etl.relation.test_queries(config.dsn_etl, file_sets)
 
 
 class ListFilesCommand(SubCommand):
@@ -547,16 +530,13 @@ class ListFilesCommand(SubCommand):
                          "List files in the S3 bucket and starting with prefix by source, table, and type")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "stay-local"])
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
         parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
                             action="store_true")
 
     def callback(self, args, config):
-        # FIXME Please excuse the dust while we're renovating
-        schemas, selector = self.pick_schemas(config.schemas, args.pattern)
-        scheme, netloc, path = self.pick_location(args.stay_local, args.table_design_dir, config.bucket_name, args.prefix)
-        file_sets = etl.file_sets.find_files(scheme, netloc, path, schemas, selector)
-        etl.file_sets.list_files(file_sets, netloc, long_format=args.long_format)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
+        etl.file_sets.list_files(file_sets, long_format=args.long_format)
 
 
 class EventsQueryCommand(SubCommand):
