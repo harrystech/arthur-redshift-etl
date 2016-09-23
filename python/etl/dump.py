@@ -31,15 +31,15 @@ from etl.timer import Timer
 REDSHIFT_ETL_HOME = "/tmp/redshift_etl"
 
 
-class UnknownTableSizeError(etl.ETLException):
+class UnknownTableSizeError(etl.ETLError):
     pass
 
 
-class MissingCsvFilesError(etl.ETLException):
+class MissingCsvFilesError(etl.ETLError):
     pass
 
 
-class DataDumpError(etl.ETLException):
+class DataDumpError(etl.ETLError):
     pass
 
 

@@ -21,7 +21,7 @@ def join_with_quotes(names):
     return ', '.join("'{}'".format(name) for name in names)
 
 
-class ETLException(Exception):
+class ETLError(Exception):
     """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
     pass
 

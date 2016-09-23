@@ -80,7 +80,7 @@ def run_arg_as_command(my_name="arthur.py"):
             except InvalidArgumentsError as exc:
                 logger.exception("ETL never got off the ground:")
                 croak(exc, 1)
-            except etl.ETLException as exc:
+            except etl.ETLError as exc:
                 logger.exception("Something bad happened in the ETL:")
                 logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
                 croak(exc, 1)

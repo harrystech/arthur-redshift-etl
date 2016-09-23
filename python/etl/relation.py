@@ -31,11 +31,11 @@ import etl.pg
 import etl.file_sets
 
 
-class MissingQueryError(etl.ETLException):
+class MissingQueryError(etl.ETLError):
     pass
 
 
-class CyclicDependencyError(etl.ETLException):
+class CyclicDependencyError(etl.ETLError):
     pass
 
 

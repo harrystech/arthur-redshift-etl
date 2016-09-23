@@ -23,12 +23,12 @@ import etl.file_sets
 from etl.relation import RelationDescription
 
 
-class MissingMappingError(etl.ETLException):
+class MissingMappingError(etl.ETLError):
     """Exception when an attribute type's target type is unknown"""
     pass
 
 
-class TableDesignError(etl.ETLException):
+class TableDesignError(etl.ETLError):
     """Exception when a table design file is incorrect"""
     pass
 

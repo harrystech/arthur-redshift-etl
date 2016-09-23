@@ -37,11 +37,11 @@ import etl.config
 _resources_for_thread = threading.local()
 
 
-class BadSourceDefinitionError(etl.ETLException):
+class BadSourceDefinitionError(etl.ETLError):
     pass
 
 
-class S3ServiceError(etl.ETLException):
+class S3ServiceError(etl.ETLError):
     pass
 
 

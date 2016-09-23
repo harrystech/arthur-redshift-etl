@@ -53,7 +53,7 @@ import etl.pg
 import etl.relation
 
 
-class MissingManifestError(etl.ETLException):
+class MissingManifestError(etl.ETLError):
     pass
 
 
