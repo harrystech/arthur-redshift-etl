@@ -315,7 +315,7 @@ class InitializeSetupCommand(SubCommand):
                          "Create schemas for each source, users, and user groups for etl and analytics")
 
     def add_arguments(self, parser):
-        parser.add_argument("-r", "--skip-user-creation", help="skip user and groups; only create schemas",
+        parser.add_argument("-r", "--skip-user-creation", help="skip user and groups; only create (or update) schemas",
                             default=False, action="store_true")
 
     def callback(self, args, config):
