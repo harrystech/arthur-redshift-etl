@@ -112,6 +112,7 @@ aws emr create-cluster \
         --applications "$CLUSTER_APPLICATIONS" \
         --tags "$CLUSTER_TAGS" \
         --log-uri "$CLUSTER_LOGS" \
+        --enable-debugging \
         --region "$CLUSTER_REGION" \
         --instance-groups "file://$CLUSTER_CONFIG_SOURCE/instance_groups.json" \
         --use-default-roles \
