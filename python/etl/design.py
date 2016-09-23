@@ -516,6 +516,10 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
     logger = logging.getLogger(__name__)
 
     for file_set in local_files:
+        # Sometimes we find orphaned SQL files. Skip that stuff that doesn't have a table design.
+        if file_set.design_file is None:
+            logger.warning("Found file(s) without matching table design: %s", etl.join_with_quotes(file_set.files))
+            continue
         description = RelationDescription(file_set)
         files = [description.design_file_name]
         if description.is_ctas_relation or description.is_view_relation:
