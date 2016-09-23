@@ -21,6 +21,7 @@ import logging
 from operator import attrgetter
 from queue import PriorityQueue
 
+import psycopg2
 import simplejson as json
 
 import etl
@@ -305,10 +306,12 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
         for description in table_descriptions:
             try:
-                validate_table_as_view(conn, description, keep_going=keep_going)
-            except Exception:
+                with etl.pg.log_error():
+                    validate_table_as_view(conn, description, keep_going=keep_going)
+            except (etl.ETLException, psycopg2.Error):
                 if keep_going:
-                    logger.exception("Failed to run '{}' as view:".format(description.target_table_name))
+                    logger.exception("Ignoring failure to create '%s' and proceeding as requested:",
+                                     description.target_table_name)
                 else:
                     raise
 
