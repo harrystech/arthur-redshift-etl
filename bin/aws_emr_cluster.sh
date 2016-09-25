@@ -75,7 +75,8 @@ fi
 
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Failed to find $BOOTSTRAP -- did you initialize the folder \"$CLUSTER_ENVIRONMENT\"?"
+    echo "Failed to find \"$BOOTSTRAP\""
+    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist!"
     exit 2
 fi
 

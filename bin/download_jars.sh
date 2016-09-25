@@ -7,7 +7,7 @@ set -e -x
 \cd `dirname $0`/../jars
 echo "Downloading JAR files to `\pwd`"
 
-# For deployment
+# For deployment -- if you make changes here, also update copy_env.sh which "knows" these versions
 wget -v https://jdbc.postgresql.org/download/postgresql-9.4.1208.jar
 wget -v http://repo1.maven.org/maven2/com/databricks/spark-csv_2.10/1.4.0/spark-csv_2.10-1.4.0.jar
 wget -v http://central.maven.org/maven2/org/apache/commons/commons-csv/1.4/commons-csv-1.4.jar
