@@ -8,7 +8,32 @@
             "etl",
             "--prolix",
             "--prefix",
-            "#{etl_environment}"
+            "#{etl_environment}",
+            "--force",
+            "harryswww",
+            "mammut",
+            "thirdparty",
+            "hyppo",
+            "zoo_tables",
+            "historic"
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    },
+    {
+        "Name": "ETL (#{etl_environment})",
+        "Args": [
+            "/tmp/redshift_etl/venv/bin/arthur.py",
+            "--config",
+            "/tmp/redshift_etl/config/",
+            "etl",
+            "--prolix",
+            "--prefix",
+            "#{etl_environment}",
+            "--force",
+            "analytics_copy"
         ],
         "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",
