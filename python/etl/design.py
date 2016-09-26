@@ -515,6 +515,7 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
     """
     logger = logging.getLogger(__name__)
 
+    # FIXME Move this to relation.py so that relation.py doesn't have to be imported here!
     for file_set in local_files:
         # Sometimes we find orphaned SQL files. Skip that stuff that doesn't have a table design.
         if file_set.design_file is None:

@@ -323,7 +323,9 @@ def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_set) for file_set in file_sets]
+    # FIXME Add feedback to user that file is skipped
+    descriptions = [RelationDescription(file_set) for file_set in file_sets if file_set.design_file is not None]
+
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
 
     logger.info("Validating dependency ordering")
