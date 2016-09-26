@@ -19,6 +19,7 @@ import difflib
 from functools import partial
 import logging
 from operator import attrgetter
+import os.path
 from queue import PriorityQueue
 
 import psycopg2
@@ -30,6 +31,10 @@ import etl.design
 import etl.dump
 import etl.pg
 import etl.file_sets
+
+
+class MissingDesignError(etl.ETLError):
+    pass
 
 
 class MissingQueryError(etl.ETLError):
@@ -108,6 +113,27 @@ class RelationDescription:
     @dependencies.setter
     def dependencies(self, value):
         self._dependencies = value
+
+    @classmethod
+    def from_file_sets(cls, file_sets, error_on_missing_design=True):
+        """
+        Return a list of relation descriptions based on a list of file sets.
+
+        If there's a file set without a table design file, then there's a warning
+        and that file set is skipped.
+        """
+        logger = logging.getLogger(__name__)
+        descriptions = []
+        for file_set in file_sets:
+            if file_set.design_file is not None:
+                descriptions.append(cls(file_set))
+            else:
+                if error_on_missing_design:
+                    raise MissingDesignError("Missing table design file for %s" % etl.join_with_quotes(file_set.files))
+                else:
+                    logger.warning("Found file(s) without matching table design: %s",
+                                   etl.join_with_quotes(file_set.files))
+        return descriptions
 
 
 def order_by_dependencies(table_descriptions):
@@ -323,8 +349,7 @@ def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    # FIXME Add feedback to user that file is skipped
-    descriptions = [RelationDescription(file_set) for file_set in file_sets if file_set.design_file is not None]
+    descriptions = RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
 
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
 
@@ -349,7 +374,7 @@ def test_queries(dsn, file_sets):
     Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = [RelationDescription(file_set) for file_set in file_sets]
+    descriptions = RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
@@ -362,3 +387,30 @@ def test_queries(dsn, file_sets):
                 logger.info("Explain plan for query of '%s':\n | %s",
                             description.identifier,
                             "\n | ".join(row[0] for row in plan))
+
+
+def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
+    """
+    Copy (validated) table design and SQL files from local directory to S3 bucket.
+
+    Essentially "publishes" data-warehouse code.
+    """
+    logger = logging.getLogger(__name__)
+
+    descriptions = RelationDescription.from_file_sets(local_files, error_on_missing_design=False)
+    for description in descriptions:
+        files = [description.design_file_name]
+        if description.is_ctas_relation or description.is_view_relation:
+            if description.sql_file_name:
+                files.append(description.sql_file_name)
+            else:
+                raise MissingQueryError("Missing matching SQL file for '%s'" % description.design_file_name)
+
+        for local_filename in files:
+            # FIXME Move this logic into TableFileSet
+            object_key = "{}/schemas/{}/{}".format(prefix,
+                                                   description.target_table_name.schema,
+                                                   os.path.basename(local_filename))
+            etl.file_sets.upload_to_s3(local_filename, bucket_name, object_key, dry_run=dry_run)
+    if not dry_run:
+        logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)

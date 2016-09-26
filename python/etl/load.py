@@ -457,7 +457,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, ski
     """
     logger = logging.getLogger(__name__)
     logger.info("Loading table designs and pondering evaluation order")
-    descriptions = [etl.relation.RelationDescription(file_set) for file_set in file_sets]
+    descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
 
     complete_sequence = etl.relation.order_by_dependencies(descriptions)
     dirty = set()

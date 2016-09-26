@@ -387,7 +387,7 @@ class CopyToS3Command(SubCommand):
         if args.force:
             etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-        etl.design.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        etl.relation.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class DumpDataToS3Command(SubCommand):
