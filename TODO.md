@@ -1,5 +1,7 @@
 # TODO
 
+Primary todo: move these to Github issues or Jira stories!
+
 ## Features, bug fixes, nitpicks etc.
 
 Review all log messages: messages that can stop the ETL should be CRITICAL, others are ERROR or WARNING.

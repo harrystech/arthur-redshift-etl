@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 # Copy production setup to new env
+# This includes: bootstrap code, configuration files, support files (jars, Python dist)
+# This does not include: schemas or data (use 'arthur.py sync' for that)
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
     echo "Usage: `basename $0` <bucket_name> [<source_env>] <target_env>"
@@ -60,7 +62,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to s3"
     set -e -x
 
-    # Collect distribution information
+    # Collect release information
     TMP_FILE="/tmp/copy_env_release_${USER}_$$.txt"
     > "$TMP_FILE"
     trap "rm \"$TMP_FILE\"" EXIT
@@ -94,7 +96,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
 else
     set -e -x
-    for FOLDER in bootstrap config jars schemas; do
+    for FOLDER in bootstrap config jars; do
         aws s3 sync --delete --exclude "credentials*" \
             "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
             "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
