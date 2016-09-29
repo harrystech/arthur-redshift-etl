@@ -39,5 +39,53 @@
         "Type": "CUSTOM_JAR",
         "ActionOnFailure": "TERMINATE_CLUSTER",
         "Properties": ""
+    },
+    {
+        "Name": "ETL (#{etl_environment})",
+        "Args": [
+            "aws",
+            "s3",
+            "cp",
+            "--recursive",
+            "--exclude '*'",
+            "--include '*.manifest'",
+            "s3://harrys-data-warehouse/production/data/",
+            "s3://harrys-data-warehouse/development/data/"
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    },
+    {
+        "Name": "ETL (#{etl_environment})",
+        "Args": [
+            "aws",
+            "s3",
+            "cp",
+            "--recursive",
+            "s3://harrys-data-warehouse/development/config/",
+            "/tmp/redshift_etl/devconfig/",
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    },
+    {
+        "Name": "ETL (#{etl_environment})",
+        "Args": [
+            "/tmp/redshift_etl/venv/bin/arthur.py",
+            "--config",
+            "/tmp/redshift_etl/devconfig/",
+            "load",
+            "--prolix",
+            "--prefix",
+            "development",
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
     }
 ]
