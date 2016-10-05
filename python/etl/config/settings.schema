@@ -101,7 +101,8 @@
                     "type": "object",
                     "properties": {
                         "table_prefix": { "type": "string" },
-                        "capacity": { "type": "integer" }
+                        "capacity": { "type": "integer" },
+                        "region": { "type": "string" }
                     },
                     "additionalProperties": false
                 },

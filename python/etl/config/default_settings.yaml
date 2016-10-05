@@ -19,7 +19,8 @@
         # Send ETL events to DynamoDB table
         "dynamodb": {
             "table_prefix": "redshift-etl-events",
-            "capacity": 3
+            "capacity": 3,
+            "region": "us-east-1"
         # },
         # # Send ETL events to an RDS instance / PostgreSQL host
         # "postgresql": {

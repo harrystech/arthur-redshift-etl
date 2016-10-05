@@ -236,16 +236,17 @@ class DynamoDBStorage:
     Note the table is created if it doesn't already exist when class is instantiated.
     """
 
-    def __init__(self, table_name, capacity):
+    def __init__(self, table_name, capacity, region_name):
         self.table_name = table_name
         self.capacity = capacity
+        self.region_name = region_name
         # Avoid default sessions and have one table reference per thread
         self._thread_local_table = threading.local()
 
     def _get_table(self):
         """Fetch table or create it (within a new session)"""
         logger = logging.getLogger(__name__)
-        session = boto3.session.Session()
+        session = boto3.session.Session(region_name=self.region_name)
         dynamodb = session.resource('dynamodb')
         try:
             table = dynamodb.Table(self.table_name)
@@ -343,7 +344,8 @@ def set_environment(environment, dynamodb_settings, postgresql_settings):
     Monitor.environment = environment
     if dynamodb_settings:
         ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
-                              dynamodb_settings["capacity"])
+                              dynamodb_settings["capacity"],
+                              dynamodb_settings["region"])
         MonitorPayload.persister.append(ddb)
     if postgresql_settings:
         rel = RelationalStorage(postgresql_settings["table_prefix"] + '_' + environment,
