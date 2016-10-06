@@ -156,12 +156,15 @@ def order_by_dependencies(table_descriptions):
     known_unknowns = set()
     queue = PriorityQueue()
     for initial_order, description in enumerate(table_descriptions):
-        unknown = description.dependencies.difference(known_tables)
+        pg_internal_dependencies = set(d for d in description.dependencies if d.startswith('pg_'))
+        unknown = description.dependencies - known_tables - pg_internal_dependencies
         if unknown:
             known_unknowns.update(unknown)
             has_unknown_dependencies.add(description.identifier)
             # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
             description.dependencies = description.dependencies.difference(unknown)
+        if pg_internal_dependencies:
+            description.dependencies = description.dependencies.difference(pg_internal_dependencies)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.

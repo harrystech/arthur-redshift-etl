@@ -304,7 +304,7 @@ def list_local_files(directory):
                 yield os.path.join(root, filename)
 
 
-def find_file_sets(uri_parts, selector=None, error_if_empty=True):
+def find_file_sets(uri_parts, schemas, selector=None, error_if_empty=True):
     """
     Generic method to collect files from either s3://bucket/prefix or file://localhost/directory
     based on the tuple describing a parsed URI, which should be either
@@ -317,12 +317,13 @@ def find_file_sets(uri_parts, selector=None, error_if_empty=True):
     if selector is None:
         selector = etl.TableNamePatterns.from_list([])
     if scheme == "s3":
-        file_sets = _find_file_sets_from(list_files_in_folder(netloc, (path + '/data', path + '/schemas')), selector)
+        file_sets = _find_file_sets_from(list_files_in_folder(netloc, (path + '/data', path + '/schemas')),
+                                         schemas, selector)
         if not file_sets:
             raise FileNotFoundError("Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector))
     else:
         if os.path.exists(path):
-            file_sets = _find_file_sets_from(list_local_files(path), selector)
+            file_sets = _find_file_sets_from(list_local_files(path), schemas, selector)
             if not file_sets:
                 if error_if_empty:
                     raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
@@ -376,7 +377,7 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
             logging.getLogger(__name__).warning("Found file not matching expected format: '%s'", filename)
 
 
-def _find_file_sets_from(iterable, pattern):
+def _find_file_sets_from(iterable, schemas, pattern):
     """
     Return list of file sets ordered by source name, source_schema_name and source_table_name.
     """
@@ -400,7 +401,13 @@ def _find_file_sets_from(iterable, pattern):
             file_set.add_data_file(filename)
 
     # Always return files sorted by sources (in original order) and target name
-    file_sets = sorted(targets.values(), key=attrgetter("source_path_name"))
+    schema_names = [s.name for s in schemas]
+
+    def _sort_key(fileset):
+        target_table_name = fileset.target_table_name
+        return (schema_names.index(target_table_name.schema), target_table_name.table)
+
+    file_sets = sorted(targets.values(), key=_sort_key)
     logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
     return file_sets
 

@@ -50,7 +50,14 @@ EOF
 
 # Create virtual env for ETL
 test -d venv || mkdir venv
-virtualenv --python=python3 venv
+for VIRTUALENV in "virtualenv-3.4" "virtualenv"; do
+	if hash $VIRTUALENV 2> /dev/null; then
+		break
+	fi
+done
+
+$VIRTUALENV --python=python3 venv
+
 source venv/bin/activate
 pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
 
