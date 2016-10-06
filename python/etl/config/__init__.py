@@ -49,14 +49,14 @@ class DataWarehouseConfig:
     """
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
-        sources_settings = settings["sources"]
+
         # Environment variables with DSN
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
-        # Schemas (either with sources or transformations)
         root = DataWarehouseUser(dw_settings["owner"])
+        # Schemas (upstream sources followed by transformations)
         self.schemas = [DataWarehouseSchema(info, root.group, self._etl_access)
-                        for info in dw_settings["schemas"] + sources_settings]
+                        for info in settings["sources"] + dw_settings["schemas"]]
         # Users and groups -- users (instances) in the order from the config, groups (strings) sorted by name
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
         other_groups = {u.group for u in other_users} | {group for schema in self.schemas for group in schema.groups}
