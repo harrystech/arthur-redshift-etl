@@ -23,11 +23,13 @@ class DataWarehouseUser:
 class DataWarehouseSchema:
     # Although there is a (logical) distinction between "sources" and "schemas" in the settings file
     # those are really all the same ...
-    def __init__(self, schema_info, etl_group, etl_access):
+    def __init__(self, schema_info, owner_groups, etl_access):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
-        # Note the convention that the group of the owner always comes first.
-        self.groups = [etl_group] + schema_info.get("groups", [])
+        # Schemas list those who can read them
+        self.reader_groups = schema_info.get("groups", [])
+        # as well as those who have all privileges on them
+        self.owner_groups = owner_groups
         self.is_source_schema = "read_access" in schema_info
         self._dsn_env_var = schema_info.get("read_access", etl_access)
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
@@ -36,6 +38,10 @@ class DataWarehouseSchema:
     @property
     def dsn(self):
         return env_value(self._dsn_env_var)
+
+    @property
+    def groups(self):
+        return self.owner_groups + self.reader_groups
 
     def validate_access(self):
         # FIXME need to start checking env vars before running anything heavy
@@ -54,14 +60,23 @@ class DataWarehouseConfig:
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
         root = DataWarehouseUser(dw_settings["owner"])
-        # Schemas (upstream sources followed by transformations)
-        self.schemas = [DataWarehouseSchema(info, root.group, self._etl_access)
-                        for info in settings["sources"] + dw_settings["schemas"]]
-        # Users and groups -- users (instances) in the order from the config, groups (strings) sorted by name
+        # Users are in the order from the config
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
-        other_groups = {u.group for u in other_users} | {group for schema in self.schemas for group in schema.groups}
-        # That that the "owner," which is our super-user of sorts, comes first.
+
+        # Note that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
+        schema_owner_map = {u.schema: [u.group] for u in self.users if u.schema}
+
+        # Schemas (upstream sources followed by transformations)
+        self.schemas = [
+            DataWarehouseSchema(info, [root.group] + schema_owner_map.get(info['name'], []), self._etl_access)
+            for info in settings["sources"] + dw_settings["schemas"]
+        ]
+
+        # Schemas may grant access to groups that have no bootstrapped users, so create all mentioned user groups
+        other_groups = {u.group for u in other_users} | {g for schema in self.schemas for g in schema.reader_groups}
+
+        # Groups are in sorted order after the root group
         self.groups = [root.group] + sorted(other_groups)
         # Surely You're Joking, Mr. Feynman?  Nope, pop works here.
         self.default_group = [user["group"] for user in dw_settings["users"] if user["name"] == "default"].pop()
