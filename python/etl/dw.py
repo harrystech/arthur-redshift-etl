@@ -57,9 +57,10 @@ def initial_setup(config, skip_user_creation=False):
             for schema in config.schemas:
                 logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
                 etl.pg.create_schema(conn, schema.name, config.owner)
-                etl.pg.grant_all_on_schema(conn, schema.name, schema.groups[0])
-                for group in schema.groups[1:]:
-                    etl.pg.grant_usage(conn, schema.name, group)
+                for owner_group in schema.owner_groups:
+                    etl.pg.grant_all_on_schema(conn, schema.name, owner_group)
+                for reader_group in schema.reader_groups:
+                    etl.pg.grant_usage(conn, schema.name, reader_group)
 
             # Note that 'public' in the search path is ignored when 'public' does not exist.
             logger.info("Clearing search path for users: %s", join_with_quotes(user.name for user in config.users))

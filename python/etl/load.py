@@ -140,7 +140,7 @@ def assemble_table_ddl(table_design, table_name, use_identity=False, is_temp=Fal
                                                           "\n".join(s_attributes)).replace('\n', "\n    ")
 
 
-def create_table(conn, description, table_owner, drop_table=False, dry_run=False):
+def create_table(conn, description, drop_table=False, dry_run=False):
     """
     Run the CREATE TABLE statement before trying to copy data into table.
     Also assign ownership to make sure all tables are owned by same user.
@@ -161,10 +161,6 @@ def create_table(conn, description, table_owner, drop_table=False, dry_run=False
             etl.pg.execute(conn, "DROP TABLE IF EXISTS {} CASCADE".format(table_name))
         logger.info("Creating table '%s' (if not exists)", table_name.identifier)
         etl.pg.execute(conn, ddl_stmt)
-
-        # FIXME Do we still need this?
-        logger.info("Making user '%s' owner of table '%s'", table_owner, table_name.identifier)
-        etl.pg.alter_table_owner(conn, table_name.schema, table_name.table, table_owner)
 
 
 def create_view(conn, description, drop_view=False, dry_run=False):
@@ -358,22 +354,28 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_name))
 
 
-def grant_access(conn, table_name, groups, dry_run=False):
+def grant_access(conn, table_name, owner_groups, reader_groups, dry_run=False):
     """
     Grant all privileges to ETL (always the first group) and grant select permission to users' groups.
     """
     logger = logging.getLogger(__name__)
     if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", table_name.identifier, groups[0])
+        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'",
+                    table_name.identifier, etl.join_with_quotes(owner_groups))
     else:
-        logger.info("Granting all privileges on '%s' to '%s'", table_name.identifier, groups[0])
-        etl.pg.grant_all(conn, table_name.schema, table_name.table, groups[0])
-    for group in groups[1:]:
-        if dry_run:
-            logger.info("Dry-run: Skipping granting of select access on '%s' to '%s'", table_name.identifier, group)
-        else:
-            logger.info("Granting select access on '%s' to '%s'", table_name.identifier, group)
-            etl.pg.grant_select(conn, table_name.schema, table_name.table, group)
+        logger.info("Granting all privileges on '%s' to '%s'",
+                    table_name.identifier, etl.join_with_quotes(owner_groups))
+        for owner in owner_groups:
+            etl.pg.grant_all(conn, table_name.schema, table_name.table, owner)
+
+    if dry_run:
+        logger.info("Dry-run: Skipping granting of select access on '%s' to '%s'",
+                    table_name.identifier, etl.join_with_quotes(reader_groups))
+    else:
+        logger.info("Granting select access on '%s' to '%s'",
+                    table_name.identifier, etl.join_with_quotes(reader_groups))
+        for reader in reader_groups:
+            etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
 
 
 def analyze(conn, table_name, dry_run=False):
@@ -398,7 +400,7 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift_relation(conn, description, credentials, owner, groups,
+def load_or_update_redshift_relation(conn, description, credentials, owner_groups, reader_groups,
                                      drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
@@ -426,17 +428,17 @@ def load_or_update_redshift_relation(conn, description, credentials, owner, grou
             if description.is_view_relation:
                 create_view(conn, description, drop_view=drop, dry_run=dry_run)
             elif description.is_ctas_relation:
-                create_table(conn, description, owner, drop_table=drop, dry_run=dry_run)
+                create_table(conn, description, drop_table=drop, dry_run=dry_run)
                 create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
                                               dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
             else:
-                create_table(conn, description, owner, drop_table=drop, dry_run=dry_run)
+                create_table(conn, description, drop_table=drop, dry_run=dry_run)
                 copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
                 analyze(conn, table_name, dry_run=dry_run)
                 modified = True
-            grant_access(conn, table_name, groups, dry_run=dry_run)
+            grant_access(conn, table_name, owner_groups, reader_groups, dry_run=dry_run)
     return modified
 
 
@@ -471,9 +473,10 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, ski
     vacuumable = []
     with closing(etl.pg.connection(data_warehouse.dsn_etl)) as conn:
         for description in execution_order:
+            target_schema = schema_lookup[description.target_table_name.schema]
             modified = load_or_update_redshift_relation(conn, description,
-                                                        data_warehouse.iam_role, data_warehouse.owner,
-                                                        schema_lookup[description.target_table_name.schema].groups,
+                                                        data_warehouse.iam_role, target_schema.owner_groups,
+                                                        target_schema.groups,
                                                         drop=drop, skip_copy=skip_copy,
                                                         add_explain_plan=add_explain_plan, dry_run=dry_run)
             if modified:
