@@ -75,6 +75,8 @@ def run_arg_as_command(my_name="arthur.py"):
                                                 dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
                                                 postgresql_settings=settings["etl_events"].get("postgresql", {}))
                 etl_config = etl.config.DataWarehouseConfig(settings)
+                if hasattr(args, "pattern"):
+                    args.pattern.base_schemas = [s.name for s in etl_config.schemas]
                 setattr(args, "bucket_name", settings["s3"]["bucket_name"])
                 args.func(args, etl_config)
             except InvalidArgumentsError as exc:
@@ -229,10 +231,10 @@ def add_standard_arguments(parser, options):
 
 class StorePattern(argparse.Action):
     """
-    Store the list of glob patterns (to pick tables) as a TableNamePatterns instance.
+    Store the list of glob patterns (to pick tables) as a TableSelector instance.
     """
     def __call__(self, parser, namespace, values, option_string=None):
-        selector = etl.TableNamePatterns.from_list(values)
+        selector = etl.TableSelector(values)
         setattr(namespace, "pattern", selector)
 
 
@@ -358,8 +360,7 @@ class DownloadSchemasCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), config.schemas,
-                                                   args.pattern, error_if_empty=False)
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, error_if_empty=False)
         if args.auto:
             created = etl.design.bootstrap_views(local_files, config.schemas, dry_run=args.dry_run)
         else:
@@ -387,7 +388,7 @@ class CopyToS3Command(SubCommand):
     def callback(self, args, config):
         if args.force:
             etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), config.schemas, args.pattern)
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.relation.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
@@ -411,14 +412,14 @@ class DumpDataToS3Command(SubCommand):
 
     def callback(self, args, config):
         if args.dumper == "sqoop":
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), config.schemas, args.pattern)
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
             with etl.pg.log_error():
                 etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
                                                args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
         else:
             # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
             if "SPARK_ENV_LOADED" in os.environ:
-                file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), config.schemas, args.pattern)
+                file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
                 with etl.pg.log_error():
                     etl.dump.dump_to_s3_with_spark(config.schemas, args.bucket_name, args.prefix, file_sets,
                                                    dry_run=args.dry_run)
@@ -447,9 +448,10 @@ class LoadRedshiftCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        unfiltered_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), config.schemas)
+        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+        all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(config, unfiltered_file_sets, args.pattern,
+            etl.load.load_or_update_redshift(config, all_file_sets, args.pattern,
                                              drop=self.use_force, skip_copy=args.skip_copy,
                                              add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
 
@@ -478,12 +480,13 @@ class ExtractLoadTransformCommand(SubCommand):
 
     def callback(self, args, config):
         with etl.pg.log_error():
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), config.schemas, args.pattern)
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
             # TODO why do we still need bucket_name and prefix here?
             etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
                                            args.max_partitions, dry_run=args.dry_run)
             # Need to rerun files finder since the dump step has added files and we need to know about dependencies
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), config.schemas)
+            all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
             etl.load.load_or_update_redshift(config, file_sets, args.pattern, drop=args.force, dry_run=args.dry_run)
 
 
@@ -503,8 +506,8 @@ class ValidateDesignsCommand(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args), config.schemas,
-                                                 args.pattern, error_if_empty=False)
+        # FIXME This should pick up all files so that dependency ordering can be done correctly.
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
         etl.relation.validate_designs(config.dsn_etl, file_sets,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
@@ -520,7 +523,7 @@ class ExplainQueryCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args), config.schemas, args.pattern)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
         etl.relation.test_queries(config.dsn_etl, file_sets)
 
 
@@ -537,7 +540,7 @@ class ListFilesCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args), config.schemas, args.pattern, error_if_empty=False)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
         etl.file_sets.list_files(file_sets, long_format=args.long_format)
 
 
