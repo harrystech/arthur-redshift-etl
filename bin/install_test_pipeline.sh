@@ -21,8 +21,8 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 set -e -x
 
 aws datapipeline create-pipeline \
-    --name "ETL Loader Pipeline ($CLUSTER_ENVIRONMENT)" \
-    --unique-id redshift_load_pipeline \
+    --name "ETL Validation Pipeline ($CLUSTER_ENVIRONMENT)" \
+    --unique-id redshift_test_pipeline \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
