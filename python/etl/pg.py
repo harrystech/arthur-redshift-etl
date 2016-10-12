@@ -204,7 +204,7 @@ def create_user(cx, user, group):
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
     password = pgpasslib.getpass(user=user, **dsn_partial)
     if password is None:
-        raise RuntimeError("Password missing from PGPASSFILE")
+        raise RuntimeError("Password missing from PGPASSFILE for {}".format(user))
     execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
@@ -216,8 +216,11 @@ def alter_schema_rename(cx, old_name, new_name):
     execute(cx, """ALTER SCHEMA {} RENAME TO "{}" """.format(old_name, new_name))
 
 
-def create_schema(cx, schema, owner):
-    execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
+def create_schema(cx, schema, owner=None):
+    if owner:
+        execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
+    else:
+        execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" """.format(schema))
 
 
 def grant_usage(cx, schema, group):

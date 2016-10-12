@@ -294,7 +294,7 @@ class PingCommand(SubCommand):
     def __init__(self):
         super().__init__("ping",
                          "ping data warehouse",
-                         "Try to connect to the data warehouse to test connection settings")
+                         "Try to connect to the data warehouse to test connection settings.")
 
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
@@ -333,7 +333,7 @@ class CreateUserCommand(SubCommand):
     def __init__(self):
         super().__init__("create_user",
                          "add new user",
-                         "Add new user and set group membership, optionally add a personal schema")
+                         "Add new user and set group membership, optionally add a personal schema.")
 
     def add_arguments(self, parser):
         parser.add_argument("username", help="name for new user")
@@ -354,7 +354,7 @@ class DownloadSchemasCommand(SubCommand):
     def __init__(self):
         super().__init__("design",
                          "bootstrap schema information from sources",
-                         "Download schema information from upstream sources and compare against current table designs")
+                         "Download schema information from upstream sources and compare against current table designs.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
@@ -400,7 +400,7 @@ class DumpDataToS3Command(SubCommand):
     def __init__(self):
         super().__init__("dump",
                          "dump table data from sources",
-                         "Dump table contents to files in S3 along with a manifest file")
+                         "Dump table contents to files in S3 along with a manifest file.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
@@ -441,7 +441,7 @@ class LoadRedshiftCommand(SubCommand):
     def __init__(self):
         super().__init__("load",
                          "load data into Redshift from files in S3",
-                         "Load data into Redshift from files in S3 (as a forced reload)")
+                         "Load data into Redshift from files in S3 (as a forced reload).")
         self.use_force = True
 
     def add_arguments(self, parser):
@@ -449,14 +449,18 @@ class LoadRedshiftCommand(SubCommand):
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY command (for debugging)",
                             action="store_true")
+        parser.add_argument("--stop-after-first",
+                            help="stop after first relation, do not follow dependency fan-out (for debugging)",
+                            action="store_true")
 
     def callback(self, args, config):
         all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
         all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(config, all_file_sets, args.pattern,
-                                             drop=self.use_force, skip_copy=args.skip_copy,
-                                             add_explain_plan=args.add_explain_plan, dry_run=args.dry_run)
+                                             drop=self.use_force, stop_after_first=args.stop_after_first,
+                                             skip_copy=args.skip_copy, add_explain_plan=args.add_explain_plan,
+                                             dry_run=args.dry_run)
 
 
 class UpdateRedshiftCommand(LoadRedshiftCommand):
@@ -464,7 +468,8 @@ class UpdateRedshiftCommand(LoadRedshiftCommand):
     def __init__(self):
         SubCommand.__init__(self, "update",
                             "update data in Redshift",
-                            "Update data in Redshift from files in S3 (without schema modifications)")
+                            "Update data in Redshift from files in S3."
+                            " Tables and views are loaded given their existing schema.")
         self.use_force = True
 
 
@@ -473,7 +478,11 @@ class ExtractLoadTransformCommand(SubCommand):
     def __init__(self):
         super().__init__("etl",
                          "run complete ETL (or ELT)",
-                         "Validate designs, extract data, and load data, possibly with transforms")
+                         "Validate designs, extract data, and load data, possibly with transforms."
+                         " By default, this will update all selected  relations and all those in the"
+                         " dependency fan-out. Changes are only visible after data is refreshed."
+                         " But if you use the force option, then all schemas affected by the selection"
+                         " are loaded and progress is VISIBLE while refresh is under way.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
@@ -498,7 +507,7 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "validate table design files",
-                         "Validate table designs (use '-q' to only see errors/warnings)")
+                         "Validate table designs (use '-q' to only see errors/warnings).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
@@ -520,7 +529,7 @@ class ExplainQueryCommand(SubCommand):
     def __init__(self):
         super().__init__("explain",
                          "collect explain plans",
-                         "Run EXPLAIN on queries (for CTAS or VIEW) for files in local filesystem")
+                         "Run EXPLAIN on queries (for CTAS or VIEW) for files in local filesystem.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
@@ -535,7 +544,7 @@ class ListFilesCommand(SubCommand):
     def __init__(self):
         super().__init__("ls",
                          "list files in S3",
-                         "List files in the S3 bucket and starting with prefix by source, table, and type")
+                         "List files in the S3 bucket and starting with prefix by source, table, and type.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
@@ -552,7 +561,7 @@ class EventsQueryCommand(SubCommand):
     def __init__(self):
         super().__init__("query",
                          "query the events table for the ETL",
-                         "Query the table of events written during an ETL")
+                         "Query the table of events written during an ETL.")
 
     def add_arguments(self, parser):
         parser.add_argument("--etl-id", help="pick ETL id to look for")
