@@ -193,7 +193,7 @@ def build_full_parser(prog_name):
 
 def add_standard_arguments(parser, options):
     """
-    Provide "standard arguments in the sense that the name and description should be the
+    Provide "standard" arguments in the sense that the name and description should be the
     same when used by multiple sub-commands.
 
     :param parser: should be a sub-parser
@@ -313,16 +313,19 @@ class InitializeSetupCommand(SubCommand):
 
     def __init__(self):
         super().__init__("initialize",
-                         "create schemas, users, and groups",
-                         "Create schemas for each source, users, and user groups for etl and analytics")
+                         "create named database",
+                         "(Re)create named database, optionally creating users and groups (typically once per cluster)")
 
     def add_arguments(self, parser):
-        parser.add_argument("-r", "--skip-user-creation", help="skip user and groups; only create (or update) schemas",
+        add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument("database_name", help="name of database to initialize; first drops this database if exists",
+                            nargs='?')
+        parser.add_argument("-u", "--with-user-creation", help="create users and groups before (re)creating database",
                             default=False, action="store_true")
 
     def callback(self, args, config):
         with etl.pg.log_error():
-            etl.dw.initial_setup(config, skip_user_creation=args.skip_user_creation)
+            etl.dw.initial_setup(config, args.database_name, with_user_creation=args.with_user_creation)
 
 
 class CreateUserCommand(SubCommand):

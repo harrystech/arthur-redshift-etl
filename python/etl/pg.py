@@ -188,6 +188,13 @@ def ping(cx):
         return is_alive
 
 
+def drop_and_create_database(cx, database):
+    exists = query(cx, """SELECT 1 FROM pg_database WHERE datname = '{}'""".format(database))
+    if exists:
+        execute(cx, """DROP DATABASE {}""".format(database))
+    execute(cx, """CREATE DATABASE {}""".format(database))
+
+
 def create_group(cx, group):
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
