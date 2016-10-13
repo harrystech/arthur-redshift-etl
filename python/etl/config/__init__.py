@@ -43,6 +43,10 @@ class DataWarehouseSchema:
     def groups(self):
         return self.owner_groups + self.reader_groups
 
+    @property
+    def backup_name(self):
+        return '$'.join(("arthur_temp", self.name))
+
     def validate_access(self):
         # FIXME need to start checking env vars before running anything heavy
         if self._dsn_env_var is not None and self._dsn_env_var not in os.environ:

@@ -44,6 +44,22 @@ def create_schemas(conn, schemas, owner=None):
             etl.pg.grant_usage(conn, schema.name, reader_group)
 
 
+def backup_schemas(conn, schemas):
+    logger = logging.getLogger(__name__)
+
+    for schema in schemas:
+        logger.info("Renaming schema '%s' to backup %s", schema.name, schema.backup_name)
+        etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
+
+
+def restore_schemas(conn, schemas):
+    logger = logging.getLogger(__name__)
+
+    for schema in schemas:
+        logger.info("Renaming schema '%s' from backup %s", schema.name, schema.backup_name)
+        etl.pg.alter_schema_rename(conn, schema.backup_name, schema.name)
+
+
 def initial_setup(config, database_name, with_user_creation=False, dry_run=False):
     """
     Place named data warehouse database into initial state

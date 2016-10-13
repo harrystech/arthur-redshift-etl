@@ -212,6 +212,10 @@ def alter_group_add_user(cx, group, user):
     execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
 
 
+def alter_schema_rename(cx, old_name, new_name):
+    execute(cx, """ALTER SCHEMA {} RENAME TO "{}" """.format(old_name, new_name))
+
+
 def create_schema(cx, schema, owner):
     execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
 
