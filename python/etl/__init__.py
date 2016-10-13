@@ -261,15 +261,15 @@ class TableSelector:
         Match names of schema and table against known patterns, return true if any pattern matches
         and the schema is part of the base schemas (if defined).
 
-        >>> tnp = TableSelector(["www.orders", "www.prod*"])
+        >>> ts = TableSelector(["www.orders", "www.prod*"])
         >>> name = TableName("www", "products")
-        >>> tnp.match(name)
+        >>> ts.match(name)
         True
         >>> name = TableName("finance", "products")
-        >>> tnp.match(name)
+        >>> ts.match(name)
         False
         >>> name = TableName("www", "users")
-        >>> tnp.match(name)
+        >>> ts.match(name)
         False
         """
         schema = table_name.schema.lower()

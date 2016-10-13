@@ -47,6 +47,7 @@ import etl
 from etl import TableName
 import etl.config
 import etl.design
+import etl.dw
 import etl.file_sets
 import etl.monitor
 import etl.pg
@@ -215,7 +216,8 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
-            conn.commit()
+            # Only the paranoid survive...
+            # conn.commit()
             # FIXME Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
@@ -442,8 +444,55 @@ def load_or_update_redshift_relation(conn, description, credentials, owner_group
     return modified
 
 
-def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, skip_copy=False,
-                            add_explain_plan=False, dry_run=False):
+def evaluate_execution_order(descriptions, selector, only_first=False, whole_schemas=False):
+    """
+    Returns a tuple like ( list of relations to executed, set of schemas they're in )
+
+    Relation descriptions are ordered such that loading them in that order will succeed as
+    predicted by the `depends_on` fields.
+
+    If you select to use only the first, then the dependency fan-out is NOT followed.
+    It is an error if this option is attempted to be used with possibly more than one
+    table selected.
+
+    If you select to widen the update to entire schemas, then, well, entire schemas
+    are updated instead of surgically picking up tables.
+    """
+    logger = logging.getLogger(__name__)
+    complete_sequence = etl.relation.order_by_dependencies(descriptions)
+
+    dirty = set()
+    for description in complete_sequence:
+        if selector.match(description.target_table_name):
+            dirty.add(description.identifier)
+
+    if only_first:
+        if len(dirty) != 1:
+            raise ValueError("Bad selector, should result in single table being selected")
+        if whole_schemas:
+            raise ValueError("Cannot elect to pick both, entire schemas and only first relation")
+    else:
+        for description in complete_sequence:
+            if any(table in dirty for table in description.dependencies):
+                dirty.add(description.identifier)
+
+    dirty_schemas = {description.target_table_name.schema
+                     for description in complete_sequence if description.identifier in dirty}
+    for description in complete_sequence:
+        if description.target_table_name.schema in dirty_schemas:
+            dirty.add(description.identifier)
+
+    if len(dirty) == len(complete_sequence):
+        logger.info("Decided on updating ALL tables")
+    elif len(dirty) == 1:
+        logger.info("Decided on updating A SINGLE table: %s", list(dirty)[0])
+    else:
+        logger.info("Decided on updating %d of %d table(s)", len(dirty), len(complete_sequence))
+    return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
+
+
+def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, stop_after_first=False,
+                            skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -460,27 +509,40 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, ski
     logger = logging.getLogger(__name__)
     logger.info("Loading table designs and pondering evaluation order")
     descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
+    whole_schemas = drop and not stop_after_first
+    execution_order, involved_schema_names = evaluate_execution_order(
+        descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
 
-    complete_sequence = etl.relation.order_by_dependencies(descriptions)
-    dirty = set()
-    for description in complete_sequence:
-        if selector.match(description.target_table_name) or any(table in dirty for table in description.dependencies):
-            dirty.add(description.identifier)
-    logger.info("Decided on updating %d table(s)", len(dirty))
-    execution_order = [description for description in complete_sequence if description.identifier in dirty]
+    schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
 
-    schema_lookup = {schema.name: schema for schema in data_warehouse.schemas}
+    if whole_schemas:
+        with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)) as conn:
+            involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
+            if dry_run:
+                logger.info("Skipping backup of schemas and creation")
+            else:
+                etl.dw.backup_schemas(conn, involved_schemas)
+                etl.dw.create_schemas(conn, involved_schemas)
+
     vacuumable = []
-    with closing(etl.pg.connection(data_warehouse.dsn_etl)) as conn:
-        for description in execution_order:
-            target_schema = schema_lookup[description.target_table_name.schema]
-            modified = load_or_update_redshift_relation(conn, description,
-                                                        data_warehouse.iam_role, target_schema.owner_groups,
-                                                        target_schema.groups,
-                                                        drop=drop, skip_copy=skip_copy,
-                                                        add_explain_plan=add_explain_plan, dry_run=dry_run)
-            if modified:
-                vacuumable.append(description.target_table_name)
+    # TODO Add retry here in case we're doing a full reload.
+    with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)) as conn:
+        try:
+            for description in execution_order:
+                target_schema = schema_config_lookup[description.target_table_name.schema]
+                modified = load_or_update_redshift_relation(conn, description,
+                                                            data_warehouse.iam_role, target_schema.owner_groups,
+                                                            target_schema.groups,
+                                                            drop=drop, skip_copy=skip_copy,
+                                                            add_explain_plan=add_explain_plan, dry_run=dry_run)
+                if modified:
+                    vacuumable.append(description.target_table_name)
+        except Exception:
+            if whole_schemas:
+                if dry_run:
+                    logger.info("Skipping restoration of backup in exception handling")
+                etl.dw.restore_schemas(conn, involved_schemas)
+            raise
 
     # Reconnect to run vacuum outside transaction block
     if vacuumable and not drop:

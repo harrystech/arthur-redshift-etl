@@ -236,6 +236,20 @@ Update in place table or rewrite views:
 arthur.py update
 ```
 
+## Working with a staging environment
+
+```shell
+# The commands to setup the data warehouse users and groups or any database is by ADMIN (connected to `dev`)
+arthur.py initialize  # NOP
+arthur.py initialize staging --with-users  # Must create users and groups on first call
+arthur.py initialize staging
+arthur.py initialize staging --dry-run  # In case you want to see what happeens but not lose all schemas.
+
+# Commands to store data is by ETL user
+arthur.py load  # This will automatically create schemas as necessary
+arthur.py etl --force  # This will automatically create schemas as necessary
+```
+
 # Debugging and Contributing
 
 Pull requests are welcome!

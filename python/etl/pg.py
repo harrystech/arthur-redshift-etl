@@ -188,6 +188,13 @@ def ping(cx):
         return is_alive
 
 
+def drop_and_create_database(cx, database):
+    exists = query(cx, """SELECT 1 FROM pg_database WHERE datname = '{}'""".format(database))
+    if exists:
+        execute(cx, """DROP DATABASE {}""".format(database))
+    execute(cx, """CREATE DATABASE {}""".format(database))
+
+
 def create_group(cx, group):
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
@@ -197,7 +204,7 @@ def create_user(cx, user, group):
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
     password = pgpasslib.getpass(user=user, **dsn_partial)
     if password is None:
-        raise RuntimeError("Password missing from PGPASSFILE")
+        raise RuntimeError("Password missing from PGPASSFILE for {}".format(user))
     execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
@@ -205,8 +212,26 @@ def alter_group_add_user(cx, group, user):
     execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
 
 
-def create_schema(cx, schema, owner):
-    execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
+def schema_exists(cx, name):
+    return bool(query(cx, """SELECT 1 FROM pg_namespace WHERE nspname = %s""", (name,)))
+
+
+def alter_schema_rename(cx, old_name, new_name):
+    """
+    Renames old_name to new_name if schema old_name exists and new_name doesn't
+    """
+    if schema_exists(cx, new_name):
+        raise RuntimeError("There is already a schema at the target name {}".format(new_name))
+
+    if schema_exists(cx, old_name):
+        execute(cx, """ALTER SCHEMA {} RENAME TO "{}" """.format(old_name, new_name))
+
+
+def create_schema(cx, schema, owner=None):
+    if owner:
+        execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
+    else:
+        execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" """.format(schema))
 
 
 def grant_usage(cx, schema, group):

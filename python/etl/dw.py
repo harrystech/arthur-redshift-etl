@@ -30,42 +30,70 @@ import etl.config
 import etl.pg
 
 
-def initial_setup(config, skip_user_creation=False):
-    """
-    Initialize data warehouse with schemas and users
+def create_schemas(conn, schemas, owner=None):
+    logger = logging.getLogger(__name__)
+    logger.info("Dropping public schema")
+    etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
 
-    This is safe to re-run as long as you skip creating users and groups the second time around.
-    """
+    for schema in schemas:
+        logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
+        etl.pg.create_schema(conn, schema.name, owner)
+        for owner_group in schema.owner_groups:
+            etl.pg.grant_all_on_schema(conn, schema.name, owner_group)
+        for reader_group in schema.reader_groups:
+            etl.pg.grant_usage(conn, schema.name, reader_group)
+
+
+def backup_schemas(conn, schemas):
     logger = logging.getLogger(__name__)
 
-    with closing(etl.pg.connection(config.dsn_admin)) as conn:
-        with conn:
-            if not skip_user_creation:
-                logger.info("Creating required groups: %s", join_with_quotes(config.groups))
-                for group in config.groups:
-                    etl.pg.create_group(conn, group)
-                for user in config.users:
-                    logger.info("Creating user '%s' in group '%s'", user.name, user.group)
-                    etl.pg.create_user(conn, user.name, user.group)
-        with conn:
-            database_name = etl.pg.dbname(conn)
-            logger.info("Changing database '%s' to belong to the ETL owner '%s'", database_name, config.owner)
-            etl.pg.execute(conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, config.owner))
-            logger.info("Dropping public schema in database '%s'", database_name)
-            etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
+    for schema in schemas:
+        logger.info("Renaming schema '%s' to backup %s", schema.name, schema.backup_name)
+        etl.pg.execute(conn, """DROP SCHEMA IF EXISTS {} CASCADE""".format(schema.backup_name))
+        etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
 
-            for schema in config.schemas:
-                logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
-                etl.pg.create_schema(conn, schema.name, config.owner)
-                for owner_group in schema.owner_groups:
-                    etl.pg.grant_all_on_schema(conn, schema.name, owner_group)
-                for reader_group in schema.reader_groups:
-                    etl.pg.grant_usage(conn, schema.name, reader_group)
 
-            # Note that 'public' in the search path is ignored when 'public' does not exist.
-            logger.info("Clearing search path for users: %s", join_with_quotes(user.name for user in config.users))
-            for user in config.users:
-                etl.pg.alter_search_path(conn, user.name, ['public'])
+def restore_schemas(conn, schemas):
+    logger = logging.getLogger(__name__)
+
+    for schema in schemas:
+        logger.info("Renaming schema '%s' from backup %s", schema.name, schema.backup_name)
+        etl.pg.execute(conn, """DROP SCHEMA IF EXISTS {} CASCADE""".format(schema.name))
+        etl.pg.alter_schema_rename(conn, schema.backup_name, schema.name)
+
+
+def initial_setup(config, database_name, with_user_creation=False, dry_run=False):
+    """
+    Place named data warehouse database into initial state
+        This destroys the contents of the targeted database.
+        Optionally add with_users flag to create users and groups.
+    """
+    logger = logging.getLogger(__name__)
+    if dry_run:
+        logger.info("Dry run: skipping creation of required groups: %s", join_with_quotes(config.groups))
+        logger.info("Dry run: skipping creation of required users: %s", join_with_quotes(config.users))
+    else:
+        with closing(etl.pg.connection(config.dsn_admin)) as conn:
+            if with_user_creation:
+                with conn:
+                    logger.info("Creating required groups: %s", join_with_quotes(config.groups))
+                    for group in config.groups:
+                        etl.pg.create_group(conn, group)
+                    for user in config.users:
+                        logger.info("Creating user '%s' in group '%s' with empty search path", user.name, user.group)
+                        etl.pg.create_user(conn, user.name, user.group)
+                        etl.pg.alter_search_path(conn, user.name, ['public'])
+    if not database_name:
+        logger.info("No database specified to initialize")
+        return
+    if dry_run:
+        logger.info("Dry run: Skipping drop & recreate of database '%s'", database_name)
+    else:
+        logger.info("Dropping and recreating database '%s'", database_name)
+        autocommit_conn = etl.pg.connection(config.dsn_admin, autocommit=True)
+        etl.pg.drop_and_create_database(autocommit_conn, database_name)
+        logger.info("Dry run: skipping change of ownership over %s to ETL owner %s", database_name, config.owner)
+        etl.pg.execute(autocommit_conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, config.owner))
 
 
 def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, skip_user_creation=False):
