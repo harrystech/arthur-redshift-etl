@@ -59,7 +59,7 @@ class ColumnDefinition(namedtuple("_ColumnDefinition",
     __slots__ = ()
 
 
-def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
+def fetch_tables(cx, source, selector):
     """
     Retrieve all tables that match the given list of tables (which look like
     schema.name or schema.*) and return them as a list of TableName instances.
@@ -80,22 +80,23 @@ def fetch_tables(cx, table_whitelist, table_blacklist, pattern):
                                   ORDER BY nsp.nspname, cls.relname""")
     found = []
     for row in result:
-        table_name = etl.TableName(row['schema'], row['table'])
-        for reject_pattern in table_blacklist:
-            if table_name.match(reject_pattern):
-                logger.debug("Table '%s' matches blacklist", table_name.identifier)
+        source_table_name = etl.TableName(row['schema'], row['table'])
+        target_table_name = etl.TableName(source.name, row['table'])
+        for reject_pattern in source.exclude_tables:
+            if source_table_name.match_pattern(reject_pattern):
+                logger.debug("Table '%s' matches blacklist", source_table_name.identifier)
                 break
         else:
-            for accept_pattern in table_whitelist:
-                if table_name.match(accept_pattern):
-                    if pattern.match_table(table_name.table):
-                        found.append(table_name)
-                        logger.debug("Table '%s' is included in result set", table_name.identifier)
+            for accept_pattern in source.include_tables:
+                if source_table_name.match_pattern(accept_pattern):
+                    if selector.match(target_table_name):
+                        found.append(source_table_name)
+                        logger.debug("Table '%s' is included in result set", source_table_name.identifier)
                         break
                     else:
-                        logger.debug("Table '%s' matches whitelist but is not selected", table_name.identifier)
+                        logger.debug("Table '%s' matches whitelist but is not selected", source_table_name.identifier)
     logging.getLogger(__name__).info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
-                                     len(found), table_whitelist, table_blacklist, pattern)
+                                     len(found), source.include_tables, source.exclude_tables, selector)
     return found
 
 
@@ -142,10 +143,10 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
         for re_att_type, generic_type in as_is_att_type.items():
             if re.match('^' + re_att_type + '$', attribute_type):
                 # Keep the type, use no expression, and pick generic type from map.
-                mapping_sql_type, mapping_expression, mapping_generic_type = attribute_type, None, generic_type
+                mapping_sql_type, mapping_expression, mapping_type = attribute_type, None, generic_type
                 break
         else:
-            for re_att_type, (mapping_sql_type, mapping_expression, mapping_generic_type) in cast_needed_att_type.items():
+            for re_att_type, (mapping_sql_type, mapping_expression, mapping_type) in cast_needed_att_type.items():
                 if re.match(re_att_type, attribute_type):
                     # Found tuple with new SQL type, expression and generic type.  Rejoice.
                     break
@@ -161,19 +162,19 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
                                             # Replace %s in the column expression by the column name.
                                             expression=(mapping_expression % delimited_name
                                                         if mapping_expression else None),
-                                            type=mapping_generic_type,
+                                            type=mapping_type,
                                             not_null=column["not_null_constraint"],
                                             references=None))
     return new_columns
 
 
-def create_table_design(source_name, source_table_name, table_name, columns):
+def create_table_design(source_table_name, target_table_name, columns):
     """
     Create (and return) new table design from column definitions.
     """
     table_design = {
-        "name": "%s" % table_name.identifier,
-        "source_name": "%s.%s" % (source_name, source_table_name.identifier),
+        "name": "%s" % target_table_name.identifier,
+        "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),
         "columns": [column._asdict() for column in columns]
     }
     # FIXME Extract actual primary keys from pg_catalog, add unique constraints
@@ -190,7 +191,7 @@ def create_table_design(source_name, source_table_name, table_name, columns):
         if not column["references"]:
             del column["references"]
     # Make sure schema and code to create table design files is in sync.
-    return validate_table_design(table_design, table_name)
+    return validate_table_design(table_design, target_table_name)
 
 
 def validate_table_design_from_file(local_filename, table_name):
@@ -376,7 +377,7 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
     return name
 
 
-def create_or_update_table_designs_from_source(source, selection, local_dir, local_files, type_maps, dry_run=False):
+def create_or_update_table_designs_from_source(source, selector, local_dir, local_files, type_maps, dry_run=False):
     """
     Dump schemas (table design files) for tables from a single source to local directory
 
@@ -388,7 +389,7 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
     try:
         logger.info("Connecting to database '%s' to look for tables", source.name)
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
-            source_tables = fetch_tables(conn, source.include_tables, source.exclude_tables, selection)
+            source_tables = fetch_tables(conn, source, selector)
             for source_table_name in sorted(source_tables):
                 source_columns = fetch_columns(conn, source_table_name)
                 target_columns = map_types_in_ddl(source_table_name,
@@ -396,7 +397,7 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
                                                   type_maps["as_is_att_type"],
                                                   type_maps["cast_needed_att_type"])
                 target_table_name = etl.TableName(source.name, source_table_name.table)
-                table_design = create_table_design(source.name, source_table_name, target_table_name, target_columns)
+                table_design = create_table_design(source_table_name, target_table_name, target_columns)
 
                 source_file_set = source_files.get(source_table_name)
                 if source_file_set and source_file_set.design_file:
@@ -408,7 +409,7 @@ def create_or_update_table_designs_from_source(source, selection, local_dir, loc
                     # TODO In case there's a local SQL file, that name should be used as basis for new table design
                     save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
     except Exception:
-        logger.critical("Error while processing source '%s':", source.name)
+        logger.critical("Error while processing source '%s'", source.name)
         raise
     logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
 
@@ -499,8 +500,8 @@ def download_schemas(sources, selector, table_design_dir, local_files, type_maps
     for source in sources:
         if selector.match_schema(source.name):
             normalize_and_create(os.path.join(table_design_dir, source.name), dry_run=dry_run)
-            total = create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
-                                                               type_maps, dry_run=dry_run)
+            total += create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
+                                                                type_maps, dry_run=dry_run)
     if not local_files:
         logger.warning("Found no matching files in '%s' for '%s'", table_design_dir, selector)
     if not total:

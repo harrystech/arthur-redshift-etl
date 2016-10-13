@@ -3,7 +3,7 @@ Utilities and classes to support the ETL in general
 """
 
 from collections import namedtuple
-from fnmatch import fnmatch
+import fnmatch
 
 import pkg_resources
 
@@ -39,176 +39,229 @@ class ETLError(Exception):
 
 class TableName(namedtuple("_TableName", ["schema", "table"])):
     """
-    Class to automatically create delimited identifiers for table.
+    Class to automatically create delimited identifiers for tables.
 
     Given a table s.t, then the cautious identifier for SQL code is: "s"."t"
     But the more readable name is still: s.t
+
+    Another, more curious use is to store shell patterns for the schema name
+    and table name so that we can match against other instances.
     """
 
     __slots__ = ()
 
     @property
     def identifier(self):
+        """
+        Return simple identifier, like one would use on the command line.
+
+        >>> tn = TableName("hello", "world")
+        >>> tn.identifier
+        'hello.world'
+        """
         return "{0}.{1}".format(self.schema, self.table)
 
+    @classmethod
+    def from_identifier(cls, identifier):
+        """
+        Split identifier into schema and table before creating a new TableName instance
+
+        >>> identifier = "ford.mustang"
+        >>> tn = TableName.from_identifier(identifier)
+        >>> identifier == tn.identifier
+        True
+        """
+        schema, table = identifier.split('.', 1)
+        return cls(schema, table)
+
     def __str__(self):
+        """
+        Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
+
+        >>> tn = TableName("hello", "world")
+        >>> str(tn)
+        '"hello"."world"'
+        """
         return '"{0}"."{1}"'.format(self.schema, self.table)
 
-    def match(self, glob):
-        return fnmatch(self.identifier, glob)
+    def match(self, other):
+        """
+        Treat yo'self as a tuple of patterns and match against the other table.
+
+        We assume here that you lower-cased patterns before storing them.
+
+        >>> tp = TableName("w*", "o*")
+        >>> tn = TableName("www", "orders")
+        >>> tp.match(tn)
+        True
+        >>> tn = TableName("worldwide", "octopus")
+        >>> tp.match(tn)
+        True
+        >>> tn = TableName("sales", "orders")
+        >>> tp.match(tn)
+        False
+        """
+        other_schema = other.schema.lower()
+        other_table = other.table.lower()
+        return fnmatch.fnmatch(other_schema, self.schema) and fnmatch.fnmatch(other_table, self.table)
+
+    def match_pattern(self, pattern):
+        """
+        Test whether this table matches the given pattern
+
+        >>> tn = TableName("www", "orders")
+        >>> tn.match_pattern("w*.o*")
+        True
+        >>> tn.match_pattern("o*.w*")
+        False
+        """
+        return fnmatch.fnmatch(self.identifier, pattern)
 
     @staticmethod
     def join_with_quotes(table_names):
+        """
+        Prettify a list of table names, usually for log statements.
+
+        >>> my_tables = [TableName("www", "orders"), TableName("www", "users")]
+        >>> TableName.join_with_quotes(my_tables)
+        "'www.orders', 'www.users'"
+        """
         return join_with_quotes(sorted(table.identifier for table in table_names))
 
 
-class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patterns"])):
+class TableSelector:
     """
-    Class to hold patterns to filter schemas and tables.
+    Class to hold patterns to filter table names.
+
+    Patterns that are supported are based on "glob" matches, which use *, ?, and [] -- just
+    like the shell does. But note that all matching is done case-insensitive.
+
+    There is a concept of "base schemas."  This list should be based on the configuration and defines
+    the set of usable schemas.  ("Schemas" here refers to either upstream sources or schemas storing
+    transformations.) So when base schemas are defined then there is an implied additional
+    match against them before a table name is tried to be matched against stored patterns.
+    If no base schemas are set, then we default simply to a list of schemas from the patterns.
     """
 
-    __slots__ = ()
+    __slots__ = ["_patterns", "_base_schemas"]
 
-    @classmethod
-    def from_list(cls, patterns):
+    def __init__(self, patterns=None, base_schemas=None):
         """
-        Split pattern into (list of) schemas and (list of) table patterns.
+        Build pattern instance from list of glob patterns.
 
-        (1) If pattern list is empty ([]), then schemas is [] and table_patterns
-        is [].  This will match anything.
-        (2) If any pattern has a '.', then the left hand side is the schema (and
-        must be the same for all patterns) and the right hand side is a pattern.
-        This will match any table that matches any of the patterns in the
-        selected schema.
-        (3) If pattern list is list of single identifiers (no patterns, no '.'),
-        then schemas is set to that list and table_patterns is [].  This allows
-        to select multiple upstream sources and matches every table within the
-        corresponding schemas.
-        (4) Everything else is an error.
-
-        NB. The two lists, schemas and table_patterns, will never both have more
-        than one element.
-
-        You should use the convenience methods (match_schema, match_table) in
-        order not to have to know these nuances.  Just feed it the argument
-        list from a command line option with nargs='*' or nargs='+'.
+        The list may be empty (or omitted).  This is equivalent to a list of ["*.*"].
+        Note that each pattern is split on the first '.' to separate out
+        matches against schema names and table names.
         To facilitate case-insensitive matching, patterns are stored in their
         lower-case form.
 
-        >>> tnp = TableNamePatterns.from_list([])
-        >>> str(tnp)
+        >>> ts = TableSelector()
+        >>> str(ts)
         '*.*'
-        >>> tnp.schemas, tnp.table_patterns
-        ([], [])
-        >>> tnp = TableNamePatterns.from_list(["www"])
-        >>> str(tnp)
-        'www.*'
-        >>> tnp.schemas, tnp.table_patterns
-        (['www'], [])
-        >>> tnp = TableNamePatterns.from_list(["www.orders*"])
-        >>> str(tnp)
-        'www.orders*'
-        >>> tnp.schemas, tnp.table_patterns
-        (['www'], ['orders*'])
-        >>> tnp = TableNamePatterns.from_list(["www.Users", "www.Products"])
-        >>> str(tnp)
-        'www.[users,products]'
-        >>> tnp.schemas, tnp.table_patterns
-        (['www'], ['users', 'products'])
-        >>> tnp = TableNamePatterns.from_list(["www", "finance"])
-        >>> str(tnp)
+        >>> ts = TableSelector(["www", "finance"])
+        >>> str(ts)
         '[www.*,finance.*]'
-        >>> tnp.schemas, tnp.table_patterns
-        (['www', 'finance'], [])
-        >>> tnp = TableNamePatterns.from_list(["w?w"])
-        Traceback (most recent call last):
-        ValueError: Schema must be a literal, not pattern
-        >>> tnp = TableNamePatterns.from_list(["w*.orders"])
-        Traceback (most recent call last):
-        ValueError: Schema must be a literal, not pattern
-        >>> tnp = TableNamePatterns.from_list(["www.orders", "finance.budget"])
-        Traceback (most recent call last):
-        ValueError: Schema must be same
-        >>> tnp = TableNamePatterns.from_list(["www.orders", "www"])
-        Traceback (most recent call last):
-        ValueError: Cannot mix schema and table selection
-        >>> tnp = TableNamePatterns.from_list("www.orders")
+        >>> ts = TableSelector(["www.orders*"])
+        >>> str(ts)
+        'www.orders*'
+        >>> ts = TableSelector(["www.Users", "www.Products"])
+        >>> str(ts)
+        '[www.users,www.products]'
+        >>> ts = TableSelector(["*.orders", "finance.budget"])
+        >>> str(ts)
+        '[*.orders,finance.budget]'
+        >>> ts = TableSelector("www.orders")
         Traceback (most recent call last):
         ValueError: Patterns must be a list
+
+        >>> ts = TableSelector(["www.*", "finance"], ["www", "finance", "operations"])
+        >>> ts.base_schemas
+        ['www', 'finance', 'operations']
+        >>> ts.base_schemas = ["www", "marketing"]
+        Traceback (most recent call last):
+        ValueError: Bad pattern (no match against base schemas): finance.*
+        >>> ts.base_schemas = ["www", "finance", "marketing"]
+
+        >>> ts = TableSelector(base_schemas=["www"])
+        >>> ts.match(TableName.from_identifier("www.orders"))
+        True
+        >>> ts.match(TableName.from_identifier("operations.shipments"))
+        False
         """
+        if patterns is None:
+            patterns = []  # avoid having a modifiable parameter but still have a for loop
         if not isinstance(patterns, list):
             raise ValueError("Patterns must be a list")
-        elif len(patterns) == 0:
-            return cls([], [])
-        elif all('.' in pattern for pattern in patterns):
-            selected_schema = None
-            table_patterns = []
-            for schema, table in [pattern.lower().split('.', 1) for pattern in patterns]:
-                if '*' in schema or '?' in schema:
-                    raise ValueError("Schema must be a literal, not pattern")
-                if selected_schema is None:
-                    selected_schema = schema
-                elif selected_schema != schema:
-                    raise ValueError("Schema must be same")
-                table_patterns.append(table)
-            return cls([selected_schema], table_patterns)
-        elif any('.' in pattern for pattern in patterns):
-            raise ValueError("Cannot mix schema and table selection")
-        else:
-            if any('*' in schema or '?' in schema for schema in patterns):
-                raise ValueError("Schema must be a literal, not pattern")
-            return cls([schema.lower() for schema in patterns], [])
+
+        self._patterns = []
+        for pattern in [p.lower() for p in patterns]:
+            if '.' in pattern:
+                schema, table = pattern.split('.', 1)
+                self._patterns.append(TableName(schema, table))
+            else:
+                self._patterns.append(TableName(pattern, '*'))
+        self._base_schemas = []
+        if base_schemas is not None:
+            self.base_schemas = base_schemas
+
+    @property
+    def base_schemas(self):
+        return self._base_schemas
+
+    @base_schemas.setter
+    def base_schemas(self, schemas):
+        """
+        Add base schemas (names, not patterns) to match against.
+        It is an error to have a pattern that does not match against the base schemas.
+        """
+        # Fun fact: you can't have doctests in docstrings for properties
+        self._base_schemas = list(schemas)
+
+        # Make sure that each pattern matches against at least one base schema
+        for pattern in self._patterns:
+            found = fnmatch.filter(self._base_schemas, pattern.schema)
+            if not found:
+                raise ValueError("Bad pattern (no match against base schemas): {}".format(pattern.identifier))
 
     def __str__(self):
-        if len(self.schemas) == 0:
+        # See __init__ for tests
+        if len(self._patterns) == 0:
             return '*.*'
-        elif len(self.schemas) > 1:
-            return '[{}]'.format(','.join('{}.*'.format(schema) for schema in self.schemas))
-        elif len(self.table_patterns) == 0:
-            return "{}.*".format(self.schemas[0])
-        elif len(self.table_patterns) == 1:
-            return "{}.{}".format(self.schemas[0], self.table_patterns[0])
+        patterns = ["{0.schema}.{0.table}".format(pattern) for pattern in self._patterns]
+        if len(patterns) == 1:
+            return patterns[0]
         else:
-            return "{}.[{}]".format(self.schemas[0], ','.join(self.table_patterns))
-
-    def str_schemas(self):
-        if len(self.schemas) == 0:
-            return '*'
-        elif len(self.schemas) == 1:
-            return str(self.schemas[0])
-        else:
-            return str(self.schemas)
+            return "[{}]".format(','.join(patterns))
 
     def match_schema(self, schema):
         """
-        Match against schema name.
+        Match against schema name, return true if any pattern matches the schema name
+        and the schema is part of the base schemas (if defined).
 
-        >>> tnp = TableNamePatterns.from_list(["www.orders", "www.products"])
+        >>> tnp = TableSelector(["www.orders", "factory.products"])
         >>> tnp.match_schema("www")
         True
         >>> tnp.match_schema("finance")
         False
         """
-        return not self.schemas or schema.lower() in self.schemas
-
-    def match_table(self, table):
-        """
-        Pattern match against table name.
-
-        >>> tnp = TableNamePatterns.from_list(["www.order?", "www.products"])
-        >>> tnp.match_table("orders")
-        True
-        >>> tnp.match_schema("users")
-        False
-        """
-        name = table.lower()
-        return not self.table_patterns or any(fnmatch(name, pattern) for pattern in self.table_patterns)
+        name = schema.lower()
+        if not self._patterns:
+            if not self._base_schemas:
+                return True
+            else:
+                return name in self._base_schemas
+        else:
+            for pattern in self._patterns:
+                if fnmatch.fnmatch(name, pattern.schema):
+                    return True
+            return False
 
     def match(self, table_name):
         """
-        Match against schema and pattern match against table.
+        Match names of schema and table against known patterns, return true if any pattern matches
+        and the schema is part of the base schemas (if defined).
 
-        >>> tnp = TableNamePatterns.from_list(["www.orders", "www.prod*"])
+        >>> tnp = TableSelector(["www.orders", "www.prod*"])
         >>> name = TableName("www", "products")
         >>> tnp.match(name)
         True
@@ -219,10 +272,12 @@ class TableNamePatterns(namedtuple("_TableNamePattern", ["schemas", "table_patte
         >>> tnp.match(name)
         False
         """
-        return self.match_schema(table_name.schema) and self.match_table(table_name.table)
-
-    def match_name(self, los):
-        """
-        Match in the list of objects those that have a matching "name" attribute value.
-        """
-        return [s for s in los if self.match_schema(s.name)]
+        schema = table_name.schema.lower()
+        if self._base_schemas and schema not in self._base_schemas:
+            return False
+        if not self._patterns:
+            return True
+        for pattern in self._patterns:
+            if pattern.match(table_name):
+                return True
+        return False
