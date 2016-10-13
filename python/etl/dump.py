@@ -578,7 +578,6 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
-    logger.info("Dumping from these sources: %s", etl.join_with_quotes(source_lookup))
 
     # TODO This will run all sources in parallel ... should this be a command line arg?
     max_workers = len(source_lookup)
@@ -587,6 +586,7 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
         futures = []
         for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
             if source_name in source_lookup:
+                logger.info("Dumping from source '%s'", source_name)
                 f = executor.submit(dump_source_to_s3_with_sqoop,
                                     source_lookup[source_name], list(file_group),
                                     bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)

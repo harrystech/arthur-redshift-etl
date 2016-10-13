@@ -169,7 +169,8 @@ def order_by_dependencies(table_descriptions):
     if has_unknown_dependencies:
         # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', etl.join_with_quotes(has_unknown_dependencies))
-        logger.warning("These relations were unknown during dependency ordering: %s", etl.join_with_quotes(known_unknowns))
+        logger.warning("These relations were unknown during dependency ordering: %s",
+                       etl.join_with_quotes(known_unknowns))
 
     table_map = {description.identifier: description for description in table_descriptions}
     latest = 0
