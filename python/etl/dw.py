@@ -49,6 +49,7 @@ def backup_schemas(conn, schemas):
 
     for schema in schemas:
         logger.info("Renaming schema '%s' to backup %s", schema.name, schema.backup_name)
+        etl.pg.execute(conn, """DROP SCHEMA IF EXISTS {} CASCADE""".format(schema.backup_name))
         etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
@@ -57,6 +58,7 @@ def restore_schemas(conn, schemas):
 
     for schema in schemas:
         logger.info("Renaming schema '%s' from backup %s", schema.name, schema.backup_name)
+        etl.pg.execute(conn, """DROP SCHEMA IF EXISTS {} CASCADE""".format(schema.name))
         etl.pg.alter_schema_rename(conn, schema.backup_name, schema.name)
 
 

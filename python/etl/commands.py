@@ -470,7 +470,7 @@ class UpdateRedshiftCommand(LoadRedshiftCommand):
                             "update data in Redshift",
                             "Update data in Redshift from files in S3."
                             " Tables and views are loaded given their existing schema.")
-        self.use_force = True
+        self.use_force = False
 
 
 class ExtractLoadTransformCommand(SubCommand):
