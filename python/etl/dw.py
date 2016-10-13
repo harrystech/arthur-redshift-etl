@@ -30,6 +30,17 @@ import etl.config
 import etl.pg
 
 
+def create_schemas(conn, schemas, owner=None):
+    logger = logging.getLogger(__name__)
+    for schema in schemas:
+        logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
+        etl.pg.create_schema(conn, schema.name, owner)
+        for owner_group in schema.owner_groups:
+            etl.pg.grant_all_on_schema(conn, schema.name, owner_group)
+        for reader_group in schema.reader_groups:
+            etl.pg.grant_usage(conn, schema.name, reader_group)
+
+
 def initial_setup(config, skip_user_creation=False):
     """
     Initialize data warehouse with schemas and users
@@ -39,8 +50,8 @@ def initial_setup(config, skip_user_creation=False):
     logger = logging.getLogger(__name__)
 
     with closing(etl.pg.connection(config.dsn_admin)) as conn:
-        with conn:
-            if not skip_user_creation:
+        if not skip_user_creation:
+            with conn:
                 logger.info("Creating required groups: %s", join_with_quotes(config.groups))
                 for group in config.groups:
                     etl.pg.create_group(conn, group)
@@ -54,18 +65,12 @@ def initial_setup(config, skip_user_creation=False):
             logger.info("Dropping public schema in database '%s'", database_name)
             etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
 
-            for schema in config.schemas:
-                logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
-                etl.pg.create_schema(conn, schema.name, config.owner)
-                for owner_group in schema.owner_groups:
-                    etl.pg.grant_all_on_schema(conn, schema.name, owner_group)
-                for reader_group in schema.reader_groups:
-                    etl.pg.grant_usage(conn, schema.name, reader_group)
-
             # Note that 'public' in the search path is ignored when 'public' does not exist.
             logger.info("Clearing search path for users: %s", join_with_quotes(user.name for user in config.users))
             for user in config.users:
                 etl.pg.alter_search_path(conn, user.name, ['public'])
+
+            create_schemas(conn, config.schemas, config.owner)
 
 
 def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, skip_user_creation=False):
