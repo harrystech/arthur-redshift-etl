@@ -24,7 +24,7 @@ set -e -x
 umask 0027
 
 # PostgreSQL headers are needed to build psycopg2
-sudo yum install -y postgresql94-devel
+sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc
 
 # Send all files to temp directory
 test -d "$REDSHIFT_ETL_HOME" || mkdir -p "$REDSHIFT_ETL_HOME"
