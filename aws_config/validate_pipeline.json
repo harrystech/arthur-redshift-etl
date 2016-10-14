@@ -39,12 +39,6 @@
           "terminateAfter": "2 Hours"
         },
         {
-          "id" : "InstallDeps",
-          "runsOn": {"ref": "ArthurDriverEC2Resource"},
-          "type" : "ShellCommandActivity",
-          "command": "sudo yum install -y python34 python34-pip python34-virtualenv aws-cli gcc"
-        },
-        {
           "id" : "CopyBootstrap",
           "runsOn": {"ref": "ArthurDriverEC2Resource"},
           "type" : "ShellCommandActivity",
@@ -98,7 +92,7 @@
           "id" : "StagingLoad",
           "runsOn": {"ref": "ArthurDriverEC2Resource"},
           "type" : "ShellCommandActivity",
-          "command" : "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/staging_config/ load --prefix #{myEtlEnvironment} -y",
+          "command" : "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/staging_config/ load --prefix #{myEtlEnvironment} --skip-copy",
           "dependsOn": {"ref": "StagingInitialize"},
           "maximumRetries": "0"
         },
