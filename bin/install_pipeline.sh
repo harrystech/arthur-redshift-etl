@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
+if [[ $# -lt 1 || $# -gt 3 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> [<environment>] [<loader_environment>]"
     echo "The environment defaults to 'production'. The loader environment defaults to 'development'"
     exit 0
