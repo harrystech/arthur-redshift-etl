@@ -28,7 +28,7 @@ aws datapipeline create-pipeline \
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/validate_pipeline.json \
+    --pipeline-definition file://./aws_config/oneshot_validation_pipeline.json \
     --parameter-values myS3Bucket="$CLUSTER_BUCKET" myEtlEnvironment="$CLUSTER_ENVIRONMENT" \
     --pipeline-id "$PIPELINE_ID"
 

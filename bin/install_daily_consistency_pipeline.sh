@@ -22,13 +22,13 @@ set -e -x
 
 aws datapipeline create-pipeline \
     --name "ETL Validation Pipeline ($CLUSTER_ENVIRONMENT)" \
-    --unique-id redshift_test_pipeline \
+    --unique-id daily_consistency_pipeline \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/ec2_data_pipeline.json \
+    --pipeline-definition file://./aws_config/daily_consistency_pipeline.json \
     --parameter-values myS3Bucket="$CLUSTER_BUCKET" myEtlEnvironment="$CLUSTER_ENVIRONMENT" \
     --pipeline-id "$PIPELINE_ID"
 
