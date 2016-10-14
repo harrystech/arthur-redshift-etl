@@ -77,7 +77,7 @@
           "id" : "CopyStagingConf",
           "runsOn": {"ref": "ArthurDriverEC2Resource"},
           "type" : "ShellCommandActivity",
-          "command": "/usr/bin/aws s3 cp s3://#{myS3Bucket}/validation/config/ /tmp/redshift_etl/staging_config/",
+          "command": "/usr/bin/aws s3 sync s3://#{myS3Bucket}/validation/config/ /tmp/redshift_etl/staging_config/",
           "dependsOn": {"ref": "ArthurDesign"}
         },
         {
