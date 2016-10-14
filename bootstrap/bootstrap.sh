@@ -23,8 +23,8 @@ set -e -x
 # Set creation mask to: u=rwx,g=rx,o=
 umask 0027
 
-# PostgreSQL headers are needed to build psycopg2
-sudo yum install -y postgresql94-devel
+# Install dependencies for Psycopg2, Arthur, and AWS shell commands we may run via datapipeline
+sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc
 
 # Send all files to temp directory
 test -d "$REDSHIFT_ETL_HOME" || mkdir -p "$REDSHIFT_ETL_HOME"

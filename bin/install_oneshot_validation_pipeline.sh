@@ -21,14 +21,14 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 set -e -x
 
 aws datapipeline create-pipeline \
-    --name "ETL Validation Pipeline ($CLUSTER_ENVIRONMENT)" \
-    --unique-id redshift_test_pipeline \
+    --name "One-shot Validation Pipeline ($CLUSTER_ENVIRONMENT)" \
+    --unique-id oneshot_validation_pipeline \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/ec2_data_pipeline.json \
+    --pipeline-definition file://./aws_config/oneshot_validation_pipeline.json \
     --parameter-values myS3Bucket="$CLUSTER_BUCKET" myEtlEnvironment="$CLUSTER_ENVIRONMENT" \
     --pipeline-id "$PIPELINE_ID"
 

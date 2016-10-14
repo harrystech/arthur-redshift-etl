@@ -62,7 +62,7 @@ def unparse_connection(dsn: dict) -> str:
         return "host={host} dbname={database} user={user} password=***".format(**dsn)
 
 
-def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False, readonly=False):
+def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
     Open a connection to the database described by dsn_string which needs to
     be of the format "postgresql://user:password@host:port/database"
@@ -70,7 +70,7 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
     By default, this turns on autocommit on the connection.
     """
     logger = logging.getLogger(__name__)
-    dsn_values = parse_connection_string(dsn_string)
+    dsn_values = dict(dsn_dict)  # so as to not mutate the argument
     dsn_values["application_name"] = application_name
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
     cx = psycopg2.connect(cursor_factory=psycopg2.extras.DictCursor, **dsn_values)
@@ -80,7 +80,7 @@ def connection(dsn_string, application_name=psycopg2.__name__, autocommit=False,
     return cx
 
 
-def extract_dsn(dsn_string):
+def extract_dsn(dsn_dict):
     """
     Break the connection string into a JDBC URL and connection properties.
 
@@ -88,7 +88,7 @@ def extract_dsn(dsn_string):
     to successfully connect, e.g. username, password.  These properties must
     be passed in separately.
     """
-    dsn_properties = parse_connection_string(dsn_string)
+    dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
     dsn_properties.update({
         "ApplicationName": __name__,
         "readOnly": "true",

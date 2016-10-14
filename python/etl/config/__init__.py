@@ -10,6 +10,7 @@ import jsonschema
 import simplejson as json
 import yaml
 
+import etl
 from etl import package_version
 
 
@@ -37,7 +38,7 @@ class DataWarehouseSchema:
 
     @property
     def dsn(self):
-        return env_value(self._dsn_env_var)
+        return etl.pg.parse_connection_string(env_value(self._dsn_env_var))
 
     @property
     def groups(self):
@@ -95,11 +96,11 @@ class DataWarehouseConfig:
 
     @property
     def dsn_admin(self):
-        return env_value(self._admin_access)
+        return etl.pg.parse_connection_string(env_value(self._admin_access))
 
     @property
     def dsn_etl(self):
-        return env_value(self._etl_access)
+        return etl.pg.parse_connection_string(env_value(self._etl_access))
 
 
 def configure_logging(full_format: bool=False, log_level: str=None,) -> None:

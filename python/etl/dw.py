@@ -32,8 +32,6 @@ import etl.pg
 
 def create_schemas(conn, schemas, owner=None):
     logger = logging.getLogger(__name__)
-    logger.info("Dropping public schema")
-    etl.pg.execute(conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
 
     for schema in schemas:
         logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
@@ -88,12 +86,18 @@ def initial_setup(config, database_name, with_user_creation=False, dry_run=False
         return
     if dry_run:
         logger.info("Dry run: Skipping drop & recreate of database '%s'", database_name)
+        logger.info("Dry run: skipping change of ownership over %s to ETL owner %s", database_name, config.owner)
+        logger.info("Dry run: skipping drop of public schema in %s", database_name)
     else:
         logger.info("Dropping and recreating database '%s'", database_name)
         autocommit_conn = etl.pg.connection(config.dsn_admin, autocommit=True)
         etl.pg.drop_and_create_database(autocommit_conn, database_name)
-        logger.info("Dry run: skipping change of ownership over %s to ETL owner %s", database_name, config.owner)
+        logger.info("Changing ownership over %s to ETL owner %s", database_name, config.owner)
         etl.pg.execute(autocommit_conn, """ALTER DATABASE "{}" OWNER TO "{}" """.format(database_name, config.owner))
+        # Connect as admin to new database just to drop `public`
+        target_db_autocommit_conn = etl.pg.connection(dict(config.dsn_admin, database=database_name), autocommit=True)
+        logger.info("Dropping public schema")
+        etl.pg.execute(target_db_autocommit_conn, """DROP SCHEMA IF EXISTS PUBLIC CASCADE""")
 
 
 def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, skip_user_creation=False):
