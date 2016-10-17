@@ -216,8 +216,6 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
-            # Only the paranoid survive...
-            # conn.commit()
             # FIXME Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
@@ -426,22 +424,21 @@ def load_or_update_redshift_relation(conn, description, credentials, owner_group
                              destination={'name': etl.pg.dbname(conn),
                                           'schema': table_name.schema,
                                           'table': table_name.table}):
-        with conn:
-            if description.is_view_relation:
-                create_view(conn, description, drop_view=drop, dry_run=dry_run)
-            elif description.is_ctas_relation:
-                create_table(conn, description, drop_table=drop, dry_run=dry_run)
-                create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
-                                              dry_run=dry_run)
-                analyze(conn, table_name, dry_run=dry_run)
-                modified = True
-            else:
-                create_table(conn, description, drop_table=drop, dry_run=dry_run)
-                copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
-                analyze(conn, table_name, dry_run=dry_run)
-                modified = True
-            grant_access(conn, table_name, owner_groups, reader_groups, dry_run=dry_run)
-    return modified
+        if description.is_view_relation:
+            create_view(conn, description, drop_view=drop, dry_run=dry_run)
+        elif description.is_ctas_relation:
+            create_table(conn, description, drop_table=drop, dry_run=dry_run)
+            create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
+                                          dry_run=dry_run)
+            analyze(conn, table_name, dry_run=dry_run)
+            modified = True
+        else:
+            create_table(conn, description, drop_table=drop, dry_run=dry_run)
+            copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
+            analyze(conn, table_name, dry_run=dry_run)
+            modified = True
+        grant_access(conn, table_name, owner_groups, reader_groups, dry_run=dry_run)
+        return modified
 
 
 def evaluate_execution_order(descriptions, selector, only_first=False, whole_schemas=False):
@@ -478,9 +475,10 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
 
     dirty_schemas = {description.target_table_name.schema
                      for description in complete_sequence if description.identifier in dirty}
-    for description in complete_sequence:
-        if description.target_table_name.schema in dirty_schemas:
-            dirty.add(description.identifier)
+    if whole_schemas:
+        for description in complete_sequence:
+            if description.target_table_name.schema in dirty_schemas:
+                dirty.add(description.identifier)
 
     if len(dirty) == len(complete_sequence):
         logger.info("Decided on updating ALL tables")
@@ -523,7 +521,6 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             else:
                 etl.dw.backup_schemas(conn, involved_schemas)
                 etl.dw.create_schemas(conn, involved_schemas)
-
     vacuumable = []
     # TODO Add retry here in case we're doing a full reload.
     with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)) as conn:
