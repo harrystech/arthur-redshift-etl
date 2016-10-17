@@ -1,0 +1,28 @@
+[
+    {
+        "Name": "Copy prod data references",
+        "Args": [
+            "s3://harrys-data-warehouse/bensontucker/jars/development_cp.sh"
+        ],
+        "Jar": "s3://elasticmapreduce/libs/script-runner/script-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    },
+    {
+        "Name": "ETL (#{etl_environment})",
+        "Args": [
+            "/tmp/redshift_etl/venv/bin/arthur.py",
+            "--config",
+            "/tmp/redshift_etl/devconfig/",
+            "load",
+            "--prolix",
+            "--prefix",
+            "development"
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    }
+]

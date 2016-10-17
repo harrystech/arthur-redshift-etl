@@ -337,12 +337,11 @@ class CreateUserCommand(SubCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("username", help="name for new user")
-        group = parser.add_mutually_exclusive_group()
-        group.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
-        group.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
-                           action="store_true")
-        group.add_argument("-r", "--skip-user-creation", help="skip new user; only change search path of existing user",
-                           action="store_true")
+        parser.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
+        parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
+                            action="store_true")
+        parser.add_argument("-r", "--skip-user-creation",
+                            help="skip new user; only change search path of existing user", action="store_true")
 
     def callback(self, args, config):
         with etl.pg.log_error():

@@ -478,9 +478,10 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
 
     dirty_schemas = {description.target_table_name.schema
                      for description in complete_sequence if description.identifier in dirty}
-    for description in complete_sequence:
-        if description.target_table_name.schema in dirty_schemas:
-            dirty.add(description.identifier)
+    if whole_schemas:
+        for description in complete_sequence:
+            if description.target_table_name.schema in dirty_schemas:
+                dirty.add(description.identifier)
 
     if len(dirty) == len(complete_sequence):
         logger.info("Decided on updating ALL tables")
