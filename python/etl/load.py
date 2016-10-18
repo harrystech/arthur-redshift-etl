@@ -523,7 +523,8 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                 etl.dw.create_schemas(conn, involved_schemas)
     vacuumable = []
     # TODO Add retry here in case we're doing a full reload.
-    with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)) as conn:
+    conn = etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)
+    with closing(conn) as conn, conn as conn:
         try:
             for description in execution_order:
                 target_schema = schema_config_lookup[description.target_table_name.schema]
@@ -534,6 +535,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                                                             add_explain_plan=add_explain_plan, dry_run=dry_run)
                 if modified:
                     vacuumable.append(description.target_table_name)
+
         except Exception:
             if whole_schemas:
                 if dry_run:
