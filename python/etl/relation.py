@@ -45,6 +45,22 @@ class CyclicDependencyError(etl.ETLError):
     pass
 
 
+class UniqueConstraintError(etl.ETLError):
+    def __init__(self, relation, constraint, keys, examples):
+        self.relation = relation
+        self.constraint = constraint
+        self.keys = keys
+        self.example_string = ', '.join(map(str, examples))
+
+    def __repr__(self):
+        return ("Relation {r} violates {c} constraint: "
+                "Example duplicate values of {k} are: {e}".format(
+                    r=self.relation, c=self.constraint,
+                    k=self.keys,
+                    e=self.example_string)
+                )
+
+
 class RelationDescription:
 
     def __init__(self, discovered_files: etl.file_sets.TableFileSet):
@@ -261,6 +277,39 @@ def validate_table_as_view(conn, description, keep_going=False):
 
     logger.info("Dropping view '%s'", tmp_view_name.identifier)
     etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
+
+
+def validate_constraints(conn, description, dry_run=False):
+    """
+    Raises a UniqueConstraintError if :description's target table doesn't obey unique constraints declared in its design
+    Returns None
+    """
+    logger = logging.getLogger(__name__)
+    design = description.table_design
+    if 'constraints' not in design:
+        logger.info('No constraints discovered for %s', description.target_table_name.identifier)
+        return
+
+    statement_template = """
+    SELECT {cols}
+    FROM {table}
+    GROUP BY {cols}
+    HAVING COUNT(*) > 1
+    LIMIT 5
+    """
+
+    constraints = design['constraints']
+    for constraint in ["primary_key", "natural_key", "surrogate_key", "unique"]:
+        if constraint in constraints:
+            logger.info('Checking %s constraint on %s', constraint, description.target_table_name.identifier)
+            keys = constraints[constraint]
+            statement = statement_template.format(cols=','.join(keys), table=description.identifier)
+            if dry_run:
+                logger.info('Dry run: Skipping duplicate row query')
+                continue
+            results = etl.pg.query(conn, statement)
+            if results:
+                raise UniqueConstraintError(description, constraint, keys, results)
 
 
 def _check_dependencies(observed, table_design):

@@ -431,11 +431,13 @@ def load_or_update_redshift_relation(conn, description, credentials, owner_group
             create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
                                           dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
             modified = True
         else:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
             copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
             modified = True
         grant_access(conn, table_name, owner_groups, reader_groups, dry_run=dry_run)
         return modified
