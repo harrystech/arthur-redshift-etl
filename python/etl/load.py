@@ -401,7 +401,8 @@ def vacuum(conn, table_name, dry_run=False):
 
 
 def load_or_update_redshift_relation(conn, description, credentials, owner_groups, reader_groups,
-                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
+                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False,
+                                     constraints_as_warning=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
@@ -431,13 +432,13 @@ def load_or_update_redshift_relation(conn, description, credentials, owner_group
             create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
                                           dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
             modified = True
         else:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
             copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
             modified = True
         grant_access(conn, table_name, owner_groups, reader_groups, dry_run=dry_run)
         return modified
@@ -513,6 +514,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
 
+    warning_selector = data_warehouse.constraints_as_warnings_selector
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
 
     if whole_schemas:
@@ -530,11 +532,10 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
         try:
             for description in execution_order:
                 target_schema = schema_config_lookup[description.target_table_name.schema]
-                modified = load_or_update_redshift_relation(conn, description,
-                                                            data_warehouse.iam_role, target_schema.owner_groups,
-                                                            target_schema.groups,
-                                                            drop=drop, skip_copy=skip_copy,
-                                                            add_explain_plan=add_explain_plan, dry_run=dry_run)
+                modified = load_or_update_redshift_relation(
+                    conn, description, data_warehouse.iam_role, target_schema.owner_groups, target_schema.groups,
+                    drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run,
+                    constraints_as_warning=warning_selector.match(description.target_table_name))
                 if modified:
                     vacuumable.append(description.target_table_name)
 
