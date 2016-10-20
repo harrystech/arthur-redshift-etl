@@ -52,7 +52,7 @@ class UniqueConstraintError(etl.ETLError):
         self.keys = keys
         self.example_string = ', '.join(map(str, examples))
 
-    def __repr__(self):
+    def __str__(self):
         return ("Relation {r} violates {c} constraint: "
                 "Example duplicate values of {k} are: {e}".format(
                     r=self.relation, c=self.constraint,
@@ -279,7 +279,7 @@ def validate_table_as_view(conn, description, keep_going=False):
     etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
 
 
-def validate_constraints(conn, description, dry_run=False):
+def validate_constraints(conn, description, dry_run=False, only_warn=False):
     """
     Raises a UniqueConstraintError if :description's target table doesn't obey unique constraints declared in its design
     Returns None
@@ -309,7 +309,11 @@ def validate_constraints(conn, description, dry_run=False):
                 continue
             results = etl.pg.query(conn, statement)
             if results:
-                raise UniqueConstraintError(description, constraint, keys, results)
+                error = UniqueConstraintError(description, constraint, keys, results)
+                if only_warn:
+                    logger.warning(error)
+                else:
+                    raise error
 
 
 def _check_dependencies(observed, table_design):

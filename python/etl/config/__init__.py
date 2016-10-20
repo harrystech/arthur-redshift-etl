@@ -89,6 +89,8 @@ class DataWarehouseConfig:
         self.iam_role = dw_settings["iam_role"]
         # For creating table design files automatically
         self.type_maps = settings["type_maps"]
+        # Relation glob patterns downgrading unique constraints to warnings
+        self.constraints_as_warnings_selector = etl.TableSelector(settings.get("constraints_as_warnings") or ['noop'])
 
     @property
     def owner(self):
