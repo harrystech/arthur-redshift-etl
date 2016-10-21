@@ -58,6 +58,17 @@ class MissingManifestError(etl.ETLError):
     pass
 
 
+class RequiredRelationFailed(etl.ETLError):
+    def __init__(self, failed_description, illegal_failures, required_selector):
+        self.failed_description = failed_description
+        self.illegal_failures = illegal_failures
+        self.required_selector = required_selector
+
+    def __str__(self):
+        return "Failure of {d} implies failures of {f}, which are required by selector {r}".format(
+            d=self.failed_description.identifier, f=', '.join(self.illegal_failures), r=self.required_selector)
+
+
 def format_column_list(columns):
     """
     Return string with comma-separated, delimited column names
@@ -459,6 +470,7 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     are updated instead of surgically picking up tables.
     """
     logger = logging.getLogger(__name__)
+
     complete_sequence = etl.relation.order_by_dependencies(descriptions)
 
     dirty = set()
@@ -515,6 +527,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
 
     warning_selector = data_warehouse.constraints_as_warnings_selector
+    required_selector = data_warehouse.required_in_full_load_selector
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
 
     if whole_schemas:
@@ -525,19 +538,37 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             else:
                 etl.dw.backup_schemas(conn, involved_schemas)
                 etl.dw.create_schemas(conn, involved_schemas)
+
     vacuumable = []
+    failed = set()
+
     # TODO Add retry here in case we're doing a full reload.
     conn = etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)
     with closing(conn) as conn, conn as conn:
         try:
             for description in execution_order:
+                if description.identifier in failed:
+                    logger.info("Skipping load for relation %s due to failed dependencies", description.identifier)
+                    continue
                 target_schema = schema_config_lookup[description.target_table_name.schema]
-                modified = load_or_update_redshift_relation(
-                    conn, description, data_warehouse.iam_role, target_schema.owner_groups, target_schema.groups,
-                    drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run,
-                    constraints_as_warning=warning_selector.match(description.target_table_name))
-                if modified:
-                    vacuumable.append(description.target_table_name)
+                try:
+                    modified = load_or_update_redshift_relation(
+                        conn, description, data_warehouse.iam_role, target_schema.owner_groups, target_schema.groups,
+                        drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run,
+                        constraints_as_warning=warning_selector.match(description.target_table_name))
+                    if modified:
+                        vacuumable.append(description.target_table_name)
+                except Exception as e:
+                    if whole_schemas:
+                        subtree = _get_failed_subtree(failed, description, execution_order, required_selector)
+                        failed.update(subtree)
+                        logger.warning("Load failure for %s does not harm any relations required by selector %s;"
+                                       " continuing load omitting these dependent relations: %s"
+                                       ". Failure error was: %s",
+                                       description.identifier, required_selector,
+                                       subtree.difference({description.identifier}), e)
+                    else:
+                        raise
 
         except Exception:
             if whole_schemas:
@@ -551,3 +582,22 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
         with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=True)) as conn:
             for table_name in vacuumable:
                 vacuum(conn, table_name, dry_run=dry_run)
+
+
+def _get_failed_subtree(failed, failed_description, execution_order, required_selector):
+    """
+    After an exception in loading :description, add its dependency subtree to :failed
+    and if any element matches :required_selector, raise a RequiredRelationFailed exception
+    """
+    subtree = {failed_description.identifier}
+    for description in execution_order:
+        if any(table in subtree for table in description.dependencies):
+            subtree.add(description.identifier)
+
+    illegal_failures = [d.identifier for d in execution_order
+                        if d.identifier in subtree and required_selector.match(d.target_table_name)]
+
+    if illegal_failures:
+        raise RequiredRelationFailed(failed_description, illegal_failures, required_selector)
+    else:
+        return subtree
