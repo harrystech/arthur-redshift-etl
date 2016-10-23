@@ -574,7 +574,9 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             if whole_schemas:
                 if dry_run:
                     logger.info("Skipping restoration of backup in exception handling")
-                etl.dw.restore_schemas(conn, involved_schemas)
+                # Defensively create a new connection to rollback
+                etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
+                                       involved_schemas)
             raise
 
     # Reconnect to run vacuum outside transaction block
