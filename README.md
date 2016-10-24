@@ -288,3 +288,10 @@ Re-install the ETL code after pulling a new version. (Especially changes in scri
 pip3 install -r requirements.txt
 python3 setup.py develop
 ```
+
+## Using command completion in the shell
+
+For the bash shell, there is a file to add command completion that allows to tab-complete schemas and table names.
+```shell
+source etc/schemas_completion.sh
+```
