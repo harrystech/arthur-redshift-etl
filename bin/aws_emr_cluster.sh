@@ -73,7 +73,7 @@ fi
 
 # === Validate bucket and environment information (sanity check on args) ===
 
-BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/bootstrap.sh"
+BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     echo "Failed to find \"$BOOTSTRAP\""
     echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist!"

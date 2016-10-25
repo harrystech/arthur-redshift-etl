@@ -79,7 +79,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars/"
     done
 
-    aws s3 sync --delete bootstrap "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bootstrap"
+    aws s3 sync --delete bin "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bin"
     aws s3 sync --delete \
         --include "*.yaml" \
         --include "*.sh" \
@@ -96,7 +96,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
         jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
 else
     set -e -x
-    for FOLDER in bootstrap config jars; do
+    for FOLDER in bin config jars; do
         aws s3 sync --delete --exclude "credentials*" \
             "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
             "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"

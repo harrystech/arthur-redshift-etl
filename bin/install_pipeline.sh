@@ -11,9 +11,9 @@ CLUSTER_ENVIRONMENT="${2-production}"
 LOADER_ENVIRONMENT="${3-development}"
 
 # Verify that this bucket/environment pair is set up on s3
-BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bootstrap/bootstrap.sh"
+BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Invalid parameters!"
+    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist!"
     exit 1
 fi
 
