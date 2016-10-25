@@ -81,6 +81,7 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
 
     aws s3 sync --delete bin "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bin"
     aws s3 sync --delete \
+        --exclude "*" \
         --include "*.yaml" \
         --include "*.sh" \
         --include "*.hosts" \
