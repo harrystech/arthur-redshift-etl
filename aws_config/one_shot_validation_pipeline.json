@@ -42,7 +42,7 @@
           "id" : "CopyBootstrap",
           "runsOn": {"ref": "ArthurDriverEC2Resource"},
           "type" : "ShellCommandActivity",
-          "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp s3://#{myS3Bucket}/#{myEtlEnvironment}/bootstrap/bootstrap.sh /tmp/bootstrap.sh"
+          "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp s3://#{myS3Bucket}/#{myEtlEnvironment}/bin/bootstrap.sh /tmp/bootstrap.sh"
         },
         {
           "id" : "Bootstrap",
