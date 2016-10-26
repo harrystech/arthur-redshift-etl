@@ -62,5 +62,11 @@ $VIRTUALENV --python=python3 venv
 source venv/bin/activate
 pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
 
-LATEST_TAR_FILE=`ls -1t ./jars/redshift-etl*tar.gz | head -1`
+# This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
+# so that the sort command can split correctly on '.' with the -t option.
+LATEST_TAR_FILE=`ls -1 ./jars/redshift-etl*tar.gz |
+    sed 's,redshift-etl-,redshift-etl.,' |
+    sort -t. -n -k 2,2 -k 3,3 -k 4,4 -s -r |
+    sed 's,redshift-etl\.,redshift-etl-,' |
+    head -1`
 pip3 install --upgrade "$LATEST_TAR_FILE" --disable-pip-version-check
