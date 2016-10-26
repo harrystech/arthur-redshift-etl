@@ -24,6 +24,7 @@ set -e -x
 aws datapipeline create-pipeline \
     --name "ETL Pipeline ($CLUSTER_ENVIRONMENT & $LOADER_ENVIRONMENT)" \
     --unique-id redshift_etl_pipeline \
+    --tags key=HarrysDataWarehouse,value=Production \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
