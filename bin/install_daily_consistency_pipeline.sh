@@ -23,6 +23,7 @@ set -e -x
 aws datapipeline create-pipeline \
     --name "ETL Validation Pipeline ($CLUSTER_ENVIRONMENT)" \
     --unique-id daily_consistency_pipeline \
+    --tags key=HarrysDataWarehouse,value=Production \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`

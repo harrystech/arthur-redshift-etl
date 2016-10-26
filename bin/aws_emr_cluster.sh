@@ -15,6 +15,7 @@ set -e
 show_usage_and_exit() {
     set +x
     echo "Usage: $0 [-i] <bucket_name> [<environment>]"
+    echo "The environment defaults to the user name ($USER)."
     exit ${1-0}
 }
 
