@@ -87,7 +87,7 @@ def initial_setup(config, database_name, with_user_creation=False, dry_run=False
     if dry_run:
         logger.info("Dry run: Skipping drop & recreate of database '%s'", database_name)
         logger.info("Dry run: skipping change of ownership over %s to ETL owner %s", database_name, config.owner)
-        logger.info("Dry run: skipping drop of public schema in %s", database_name)
+        logger.info("Dry run: skipping drop of PUBLIC schema in %s", database_name)
     else:
         logger.info("Dropping and recreating database '%s'", database_name)
         autocommit_conn = etl.pg.connection(config.dsn_admin, autocommit=True)
