@@ -12,9 +12,12 @@
 ```
 
 This README outlines how to get started.
+
 You are probably looking for the [Wiki](https://github.com/harrystech/harrys-redshift-etl/wiki) pages,
 which include a lot more information about the ETL and what it does (and why it does what it does).
 And if something appears amiss, check out the [issues page](https://github.com/harrystech/harrys-redshift-etl/issues).
+
+And if you're looking for changes, check out the [NEWS](./NEWS.md).
 
 # Running the ETL
 
