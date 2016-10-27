@@ -177,24 +177,25 @@ def create_table(conn, description, drop_table=False, dry_run=False):
 
 def create_view(conn, description, drop_view=False, dry_run=False):
     """
-    Run the CREATE VIEW statement.
-
-    Optionally drop the view first.  This is necessary if the name or type of columns changes.
+    Run the CREATE VIEW statement after dropping (potentially) an existing one.
+    NOTE that this a no-op if drop_view is False.
     """
     logger = logging.getLogger(__name__)
     view_name = description.target_table_name
     s_columns = format_column_list(column["name"] for column in description.table_design["columns"])
-    ddl_stmt = """CREATE OR REPLACE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
-    if dry_run:
-        logger.info("Dry-run: Skipping creation of view '%s'", view_name.identifier)
-        logger.debug("Skipped DDL:\n%s", ddl_stmt)
-    else:
-        if drop_view:
-            logger.info("Dropping view '%s'", view_name.identifier)
+    ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
+    if drop_view:
+        if dry_run:
+            logger.info("Dry-run: Skipping (re-)creation of view '%s'", view_name.identifier)
+            logger.debug("Skipped DDL:\n%s", ddl_stmt)
+        else:
+            logger.info("Dropping view (if exists) '%s'", view_name.identifier)
             etl.pg.execute(conn, "DROP VIEW IF EXISTS {} CASCADE".format(view_name))
-        # TODO Make sure ownership is ETL owner!
-        logger.info("Creating view '%s'", view_name.identifier)
-        etl.pg.execute(conn, ddl_stmt)
+            logger.info("Creating view '%s'", view_name.identifier)
+            etl.pg.execute(conn, ddl_stmt)
+    else:
+        logger.info("Skipping update of view '%s'", view_name.identifier)
+        logger.debug("Skipped DDL:\n%s", ddl_stmt)
 
 
 def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
@@ -529,10 +530,10 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
     warning_selector = data_warehouse.constraints_as_warnings_selector
     required_selector = data_warehouse.required_in_full_load_selector
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
+    involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
 
     if whole_schemas:
         with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)) as conn:
-            involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
             if dry_run:
                 logger.info("Skipping backup of schemas and creation")
             else:
@@ -574,9 +575,10 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             if whole_schemas:
                 if dry_run:
                     logger.info("Skipping restoration of backup in exception handling")
-                # Defensively create a new connection to rollback
-                etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
-                                       involved_schemas)
+                else:
+                    # Defensively create a new connection to rollback
+                    etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
+                                           involved_schemas)
             raise
 
     # Reconnect to run vacuum outside transaction block

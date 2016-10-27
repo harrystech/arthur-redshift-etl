@@ -107,7 +107,7 @@ class DataWarehouseConfig:
         return etl.pg.parse_connection_string(env_value(self._etl_access))
 
 
-def configure_logging(full_format: bool=False, log_level: str=None,) -> None:
+def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     """
     Setup logging to go to console and application log file
 
