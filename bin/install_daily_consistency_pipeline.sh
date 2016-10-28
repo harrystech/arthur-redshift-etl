@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> [<environment>]"
-    echo "The environment defaults to 'development'."
+if [[ $# -ne 2 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <bucket_name> <environment>"
     exit 0
 fi
 
-CLUSTER_BUCKET="${1?'Missing bucket name'}"
-CLUSTER_ENVIRONMENT="${2-development}"
+CLUSTER_BUCKET="$1"
+CLUSTER_ENVIRONMENT="$2"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
