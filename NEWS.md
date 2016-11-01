@@ -1,6 +1,6 @@
 # NEWS
 
-This file contains user-visible changes by version in reverse chronolical sequence.
+This file contains user-visible changes by version in reverse chronological sequence.
 
 ## v0.13.0 (2016-10-27)
 

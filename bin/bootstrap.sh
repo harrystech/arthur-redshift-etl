@@ -1,21 +1,43 @@
 #!/usr/bin/env bash
 
 if [[ ${1-"-h"} = "-h" ]]; then
-    echo "Usage: $0 <bucket_name> <environment>"
+    echo "Usage: $0 <bucket_name> <environment> [--local]"
     echo
     echo "Download files from the S3 bucket into the <environment>/jars folder"
     echo "and install the Python code in a virtual environment."
+    echo "Unless the option --local is used, this also runs yum and updates hosts file."
     exit 0
 fi
 
-if [[ $# -ne 2 ]]; then
+if [[ $# -lt 2 || $# -gt 3 ]]; then
     echo "Missing arguments!  See $0 -h"
     exit 1
 fi
 
 BUCKET_NAME="$1"
 ETL_ENVIRONMENT="$2"
+RUNNING_LOCAL=${3-"--ec2"}
 REDSHIFT_ETL_HOME="/tmp/redshift_etl"
+
+case ${3-"--ec2"} in
+    --local)
+        RUNNING_LOCAL="yes"
+        ;;
+
+    --ec2)
+        RUNNING_LOCAL="no"
+        ;;
+    *)
+        echo "Bad option ([--local|--ec2]): $3"
+        exit 1
+        ;;
+esac
+
+log () {
+    echo "`date '+%Y-%m-%d %H:%M:%S %Z'`: $*"
+}
+
+log "Starting \"$0 $BUCKET_NAME $ETL_ENVIRONMENT\""
 
 # Fail if any install step fails
 set -e -x
@@ -24,7 +46,9 @@ set -e -x
 umask 0027
 
 # Install dependencies for Psycopg2, Arthur, and AWS shell commands we may run via datapipeline
-sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc
+if [[ "$RUNNING_LOCAL" = "no" ]]; then
+    sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc
+fi
 
 # Send all files to temp directory
 test -d "$REDSHIFT_ETL_HOME" || mkdir -p "$REDSHIFT_ETL_HOME"
@@ -34,12 +58,18 @@ cd "$REDSHIFT_ETL_HOME"
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
 
 # Download configuration and credentials
-aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
+if [[ "$RUNNING_LOCAL" = "no" ]]; then
+    aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
+else
+    aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/ --exclude credentials.sh
+fi
 
 # Add custom hosts to EMR
-if ls ./config/*.hosts >/dev/null; then
-    cat /etc/hosts ./config/*.hosts > /tmp/etc_hosts
-    sudo cp /tmp/etc_hosts /etc/hosts
+if [[ "$RUNNING_LOCAL" = "no" ]]; then
+    if ls ./config/*.hosts >/dev/null; then
+        cat /etc/hosts ./config/*.hosts > /tmp/etc_hosts
+        sudo cp /tmp/etc_hosts /etc/hosts
+    fi
 fi
 
 # Write file for Sqoop to be able to connect using SSL to upstream sources
@@ -52,9 +82,9 @@ EOF
 # Create virtual env for ETL
 test -d venv || mkdir venv
 for VIRTUALENV in "virtualenv-3.4" "virtualenv"; do
-	if hash $VIRTUALENV 2> /dev/null; then
-		break
-	fi
+    if hash $VIRTUALENV 2> /dev/null; then
+        break
+    fi
 done
 
 $VIRTUALENV --python=python3 venv
@@ -70,3 +100,6 @@ LATEST_TAR_FILE=`ls -1 ./jars/redshift-etl*tar.gz |
     sed 's,redshift-etl\.,redshift-etl-,' |
     head -1`
 pip3 install --upgrade "$LATEST_TAR_FILE" --disable-pip-version-check
+
+set +x
+log "Finished \"$0 $BUCKET_NAME $ETL_ENVIRONMENT\""
