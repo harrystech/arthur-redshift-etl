@@ -31,7 +31,7 @@ set -e -x
 aws datapipeline create-pipeline \
     --name "ETL Midday Pipeline ($CLUSTER_ENVIRONMENT @ $START_TIME)" \
     --unique-id redshift_etl_pipeline \
-    --tags key=HarrysDataWarehouse,value=Production \
+    --tags key=DataWarehouseEnvironment,value=Production \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`

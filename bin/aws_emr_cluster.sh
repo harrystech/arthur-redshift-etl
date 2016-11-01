@@ -67,15 +67,16 @@ else
 fi
 
 if [ "$CLUSTER_ENVIRONMENT" = "production" ]; then
-    CLUSTER_TAGS="HarrysDataWarehouse=Production"
+    CLUSTER_TAGS="DataWarehouseEnvironment=Production"
 else
-    CLUSTER_TAGS="HarrysDataWarehouse=Development"
+    CLUSTER_TAGS="DataWarehouseEnvironment=Development"
 fi
 
 # === Validate bucket and environment information (sanity check on args) ===
 
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
+    set +x
     echo "Failed to find \"$BOOTSTRAP\""
     echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist!"
     exit 2
