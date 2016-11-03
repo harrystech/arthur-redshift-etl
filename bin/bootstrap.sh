@@ -14,6 +14,9 @@ if [[ $# -lt 2 || $# -gt 3 ]]; then
     exit 1
 fi
 
+# Fail if any install step fails
+set -e
+
 BUCKET_NAME="$1"
 ETL_ENVIRONMENT="$2"
 RUNNING_LOCAL=${3-"--ec2"}
@@ -38,9 +41,7 @@ log () {
 }
 
 log "Starting \"$0 $BUCKET_NAME $ETL_ENVIRONMENT\""
-
-# Fail if any install step fails
-set -e -x
+set -x
 
 # Set creation mask to: u=rwx,g=rx,o=
 umask 0027
@@ -54,8 +55,9 @@ fi
 test -d "$REDSHIFT_ETL_HOME" || mkdir -p "$REDSHIFT_ETL_HOME"
 cd "$REDSHIFT_ETL_HOME"
 
-# Download code to all nodes, this includes Python code and requirements.txt
+# Download code to all nodes, this includes Python code and its requirements.txt
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
+aws s3 cp --exclude '*' --include ping_cronut.sh --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/bin/" ./bin/
 
 # Download configuration and credentials
 if [[ "$RUNNING_LOCAL" = "no" ]]; then
