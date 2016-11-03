@@ -22,6 +22,7 @@ fi
 
 set -e
 
+source /tmp/redshift_etl/config/credentials.sh
 source /tmp/redshift_etl/config/cronut_env.sh
 
 NAME="CRONUT_$1"
