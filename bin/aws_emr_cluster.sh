@@ -56,6 +56,8 @@ CLUSTER_LOGS="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($CLUSTER_ENVIRONMENT) `date +'%Y-%m-%d %H:%M'`"
 CLUSTER_RELEASE_LABEL="emr-5.0.0"
 CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
+
+# TODO This should come out of the user's configuration
 CLUSTER_REGION="us-east-1"
 
 if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
