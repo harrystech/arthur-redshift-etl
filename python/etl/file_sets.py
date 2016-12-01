@@ -198,7 +198,7 @@ def delete_in_s3(bucket_name: str, object_keys: list, dry_run: bool=False, retry
                 raise S3ServiceError("Failed to delete %d files" % len(failed))
 
 
-def get_last_modified(bucket_name, object_key):
+def get_last_modified(bucket_name, object_key, wait=True):
     """
     Return last_modified timestamp from the object.  Returns None if object does not exist.
 
@@ -209,18 +209,26 @@ def get_last_modified(bucket_name, object_key):
     bucket = _get_bucket(bucket_name)
     try:
         s3_object = bucket.Object(object_key)
-        s3_object.wait_until_exists()
+        if wait:
+            s3_object.wait_until_exists()
+        else:
+            s3_object.get()
         timestamp = s3_object.last_modified
         logger.debug("Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp)
     except botocore.exceptions.WaiterError:
         logger.debug("Waiting for object in 's3://%s/%s' failed", bucket_name, object_key)
         timestamp = None
     except botocore.exceptions.ClientError as e:
-        error_code = int(e.response['Error']['Code'])
-        if error_code == 404:
+        error_code = e.response['Error']['Code']
+        if error_code == "404" or error_code == "NoSuchKey":
             logger.debug("Object 's3://%s/%s' does not exist", bucket_name, object_key)
             timestamp = None
+        elif error_code == "AccessDenied":
+            logger.warning("Access Denied for Object 's3://%s/%s'", bucket_name, object_key)
+            timestamp = None
         else:
+            print("THIS IS THE ERROR CODE!!!!")
+            print(error_code)
             raise
     return timestamp
 

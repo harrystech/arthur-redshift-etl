@@ -22,6 +22,40 @@
             },
             "required": [ "name", "group" ],
             "additionalProperties": false
+        },
+        "upstream_database": {
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/definitions/identifier" },
+                "description": { "type": "string" },
+                "read_access": { "$ref": "#/definitions/identifier" },
+                "include_tables": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                "exclude_tables": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "groups": { "$ref": "#/definitions/identifier_list" }
+            },
+            "required": [ "name", "include_tables", "read_access" ],
+            "additionalProperties": false
+        },
+        "upstream_static": {
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/definitions/identifier" },
+                "description": { "type": "string" },
+                "s3_bucket": { "$ref": "#/definitions/identifier" },
+                "s3_path_template": { "$ref": "#/definitions/identifier" },
+                "groups": { "$ref": "#/definitions/identifier_list" }
+            },
+            "required": [ "name", "s3_bucket", "s3_path_template" ],
+            "additionalProperties": false
         }
     },
     "type": "object",
@@ -70,26 +104,10 @@
         "sources": {
             "type": "array",
             "items": {
-                "type": "object",
-                "properties": {
-                    "name": { "$ref": "#/definitions/identifier" },
-                    "description": { "type": "string" },
-                    "read_access": { "$ref": "#/definitions/identifier" },
-                    "include_tables": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "minItems": 1,
-                        "uniqueItems": true
-                    },
-                    "exclude_tables": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "uniqueItems": true
-                    },
-                    "groups": { "$ref": "#/definitions/identifier_list" }
-                },
-                "required": [ "name", "include_tables", "read_access" ],
-                "additionalProperties": false
+                "oneOf": [
+                   { "$ref": "#/definitions/upstream_database" },
+                   { "$ref": "#/definitions/upstream_static" }
+                ]
             },
             "minItems": 1,
             "uniqueItems": true

@@ -31,14 +31,18 @@ class DataWarehouseSchema:
         self.reader_groups = schema_info.get("groups", [])
         # as well as those who have all privileges on them
         self.owner_groups = owner_groups
-        self.is_source_schema = "read_access" in schema_info
-        self._dsn_env_var = schema_info.get("read_access", etl_access)
+        self.is_database_source = "read_access" in schema_info
+        self.is_static_source = "s3_bucket" in schema_info
+        self._dsn_env_var = schema_info.get("read_access", None if self.is_static_source else etl_access)
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
+        self.s3_bucket = schema_info.get("s3_bucket")
+        self.s3_path_template = schema_info.get("s3_path_template")
 
     @property
     def dsn(self):
-        return etl.pg.parse_connection_string(env_value(self._dsn_env_var))
+        if self.is_database_source:
+            return etl.pg.parse_connection_string(env_value(self._dsn_env_var))
 
     @property
     def groups(self):
@@ -47,6 +51,10 @@ class DataWarehouseSchema:
     @property
     def backup_name(self):
         return '$'.join(("arthur_temp", self.name))
+
+    @property
+    def is_upstream_source(self):
+        return self.is_database_source or self.is_static_source
 
     def validate_access(self):
         # FIXME need to start checking env vars before running anything heavy
