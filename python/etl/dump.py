@@ -8,7 +8,6 @@ from contextlib import closing
 from itertools import groupby
 import logging
 from operator import attrgetter
-import sys
 import os
 import os.path
 import shlex
@@ -315,45 +314,42 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     """
     logger = logging.getLogger(__name__)
 
-    if not dry_run:
-        if static_source:
-            csv_path = os.path.join(static_source.s3_path_template, "data", source_path_name, "csv")
-            last_success = etl.file_sets.get_last_modified(static_source.s3_bucket, csv_path + "/_SUCCESS", wait=False)
-            if last_success is None:
-                raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
-
-            csv_files = sorted(etl.file_sets.list_files_in_folder(static_source.s3_bucket, csv_path + "/part-"))
-
-            if len(csv_files) == 0:
-                raise MissingCsvFilesError("Found no CSV files")
-
-            remote_files = ["s3://{}/{}".format(static_source.s3_bucket, filename) for filename in csv_files]
-        else:
-            csv_path = os.path.join(prefix, "data", source_path_name, "csv")
-            last_success = etl.file_sets.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
-
-            if last_success is None:
-                raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
-
-            csv_files = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-"))
-
-            if len(csv_files) == 0:
-                raise MissingCsvFilesError("Found no CSV files")
-
-            remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
-
-        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
-
     if dry_run:
         logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s'", bucket_name, manifest_filename)
+        return
+
+    if static_source:
+        # TODO: Render the s3_path_template (for given date, etc)
+        csv_path = os.path.join(static_source.s3_path_template, "data", source_path_name, "csv")
+        source_data_bucket = static_source.s3_bucket
     else:
-        with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
-            logger.debug("Writing manifest file locally to '%s'", local_file.name)
-            json.dump(manifest, local_file, indent="    ", sort_keys=True)
-            local_file.write('\n')
-            local_file.flush()
-            logger.debug("Done writing '%s'", local_file.name)
-            etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
+        csv_path = os.path.join(prefix, "data", source_path_name, "csv")
+        # We are dumping the data right now, so we will find the data in the bucket we're using
+        source_data_bucket = bucket_name
+
+    # For non-static sources, wait for data & success file to potentially finish being written
+    last_success = etl.file_sets.get_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
+                                                   wait=(static_source is None))
+
+    if last_success is None:
+        raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
+
+    csv_files = sorted(etl.file_sets.list_files_in_folder(source_data_bucket, csv_path + "/part-"))
+
+    if len(csv_files) == 0:
+        raise MissingCsvFilesError("Found no CSV files")
+
+    remote_files = ["s3://{}/{}".format(source_data_bucket, filename) for filename in csv_files]
+
+    manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+
+    with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
+        logger.debug("Writing manifest file locally to '%s'", local_file.name)
+        json.dump(manifest, local_file, indent="    ", sort_keys=True)
+        local_file.write('\n')
+        local_file.flush()
+        logger.debug("Done writing '%s'", local_file.name)
+        etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
 
 
 def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_sets, dry_run=False):
