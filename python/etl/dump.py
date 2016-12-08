@@ -302,7 +302,7 @@ def create_dir_unless_exists(name, dry_run=False):
         os.makedirs(name, mode=0o750, exist_ok=True)
 
 
-def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, dry_run=False, static_source=None):
+def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, static_source=None, dry_run=False):
     """
     Create manifest file to load all the CSV files from the given folder.
     The manifest file will be created in the folder ABOVE the CSV files.
@@ -717,9 +717,7 @@ def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, 
     This is the entry point, and which technology will be used will be determined
     by the args here. Additionally, we don't care yet if any of the sources are static.
     """
-    with etl.pg.log_error():
-        dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going,
-                            dry_run=dry_run)
+    dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going, dry_run=dry_run)
 
     if dumper == "sqoop":
         with etl.pg.log_error():

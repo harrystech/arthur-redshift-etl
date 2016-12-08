@@ -211,8 +211,6 @@ def get_last_modified(bucket_name, object_key, wait=True):
         s3_object = bucket.Object(object_key)
         if wait:
             s3_object.wait_until_exists()
-        else:
-            s3_object.get()
         timestamp = s3_object.last_modified
         logger.debug("Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp)
     except botocore.exceptions.WaiterError:
@@ -227,8 +225,7 @@ def get_last_modified(bucket_name, object_key, wait=True):
             logger.warning("Access Denied for Object 's3://%s/%s'", bucket_name, object_key)
             timestamp = None
         else:
-            print("THIS IS THE ERROR CODE!!!!")
-            print(error_code)
+            logger.warning("THIS IS THE ERROR CODE: %s", error_code)
             raise
     return timestamp
 
