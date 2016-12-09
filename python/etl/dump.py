@@ -302,7 +302,7 @@ def create_dir_unless_exists(name, dry_run=False):
         os.makedirs(name, mode=0o750, exist_ok=True)
 
 
-def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, dry_run=False):
+def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename, static_source=None, dry_run=False):
     """
     Create manifest file to load all the CSV files from the given folder.
     The manifest file will be created in the folder ABOVE the CSV files.
@@ -313,31 +313,43 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     This will also test for the presence of the _SUCCESS file (added by map reduce jobs).
     """
     logger = logging.getLogger(__name__)
-    csv_path = os.path.join(prefix, "data", source_path_name, "csv")
-
-    if dry_run:
-        csv_files = []
-    else:
-        last_success = etl.file_sets.get_last_modified(bucket_name, csv_path + "/_SUCCESS")
-        if last_success is None:
-            raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
-        csv_files = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path + "/part-"))
-        if len(csv_files) == 0:
-            raise MissingCsvFilesError("Found no CSV files")
-
-    remote_files = ["s3://{}/{}".format(bucket_name, filename) for filename in csv_files]
-    manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
     if dry_run:
         logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s'", bucket_name, manifest_filename)
+        return
+
+    if static_source:
+        # TODO: Render the s3_path_template (for given date, etc)
+        csv_path = os.path.join(static_source.s3_path_template, "data", source_path_name, "csv")
+        source_data_bucket = static_source.s3_bucket
     else:
-        with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
-            logger.debug("Writing manifest file locally to '%s'", local_file.name)
-            json.dump(manifest, local_file, indent="    ", sort_keys=True)
-            local_file.write('\n')
-            local_file.flush()
-            logger.debug("Done writing '%s'", local_file.name)
-            etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
+        csv_path = os.path.join(prefix, "data", source_path_name, "csv")
+        # We are dumping the data right now, so we will find the data in the bucket we're using
+        source_data_bucket = bucket_name
+
+    # For non-static sources, wait for data & success file to potentially finish being written
+    last_success = etl.file_sets.get_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
+                                                   wait=(static_source is None))
+
+    if last_success is None:
+        raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
+
+    csv_files = sorted(etl.file_sets.list_files_in_folder(source_data_bucket, csv_path + "/part-"))
+
+    if len(csv_files) == 0:
+        raise MissingCsvFilesError("Found no CSV files")
+
+    remote_files = ["s3://{}/{}".format(source_data_bucket, filename) for filename in csv_files]
+
+    manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+
+    with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
+        logger.debug("Writing manifest file locally to '%s'", local_file.name)
+        json.dump(manifest, local_file, indent="    ", sort_keys=True)
+        local_file.write('\n')
+        local_file.flush()
+        logger.debug("Done writing '%s'", local_file.name)
+        etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
 
 
 def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_sets, dry_run=False):
@@ -374,7 +386,7 @@ def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False
     """
     logger = logging.getLogger(__name__)
     # FIXME this is shared between spark and sqoop ... move to callback of dump command
-    source_lookup = {source.name: source for source in sources if source.is_source_schema}
+    source_lookup = {source.name: source for source in sources if source.is_database_source}
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
@@ -574,7 +586,7 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
     those will be ignored.
     """
     logger = logging.getLogger(__name__)
-    source_lookup = {source.name: source for source in sources if source.is_source_schema}
+    source_lookup = {source.name: source for source in sources if source.is_database_source}
     if not source_lookup:
         logger.warning("Nothing to do here since list of upstream sources is empty")
         return
@@ -607,3 +619,110 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
 
     if not_done:
         raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))
+
+
+def dump_static_table(source, source_file_set, bucket_name, prefix, dry_run=False):
+    """
+    Prepare to write manifest file for data files associated with the static data source
+    """
+    logger = logging.getLogger(__name__)
+    manifest_filename = os.path.join(prefix, "data", source_file_set.source_path_name + ".manifest")
+    logger.info("Writing manifest file %s for static source %s", manifest_filename, source.name)
+    write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename,
+                        dry_run=dry_run, static_source=source)
+
+
+def dump_static_source_to_s3(source, file_sets, bucket_name, prefix, keep_going=False, dry_run=False):
+    """
+    Dump all (selected) tables from a single upstream source.  Return list of tables for which dump failed.
+    """
+    logger = logging.getLogger(__name__)
+
+    dumped = 0
+    failed = []
+
+    with Timer() as timer:
+        for file_set in file_sets:
+            target_table_name = file_set.target_table_name
+            source_table_name = file_set.source_table_name
+            # FIXME Refactor into relation description ... calculated multiple times
+            manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
+            try:
+                # FIXME The monitor should contain the number of rows that were dumped.
+                with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
+                                         options=["static"],
+                                         source={'name': source.name,
+                                                 'schema': source_table_name.schema,
+                                                 'table': source_table_name.table},
+                                         destination={'bucket_name': bucket_name,
+                                                      'object_key': manifest_filename}):
+                    dump_static_table(source, file_set, bucket_name, prefix, dry_run=dry_run)
+            except DataDumpError:
+                if keep_going:
+                    logger.exception("Ignoring this exception and proceeding as requested:")
+                    failed.append(target_table_name)
+                else:
+                    raise
+            else:
+                dumped += 1
+        if failed:
+            logger.warning("Finished with %d table(s) from source '%s', %d failed (%s)",
+                           dumped, source.name, len(failed), timer)
+        else:
+            logger.info("Finished with %d table(s) from source '%s' (%s)", dumped, source.name, timer)
+        return failed
+
+
+def dump_static_sources(sources, bucket_name, prefix, file_sets, keep_going=False, dry_run=False):
+    logger = logging.getLogger(__name__)
+
+    source_lookup = {source.name: source for source in sources if source.is_static_source}
+    if not source_lookup:
+        logger.warning("Nothing to do here since list of upstream sources is empty")
+        return
+
+    max_workers = len(source_lookup)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
+
+            if source_name in source_lookup:
+                logger.info("Dumping from source '%s'", source_name)
+                f = executor.submit(dump_static_source_to_s3, source_lookup[source_name], list(file_group),
+                                    bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
+                futures.append(f)
+            else:
+                logger.info("Skipping schema '%s' which is not an upstream source", source_name)
+        if keep_going:
+            done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+        else:
+            done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
+
+    # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
+    missing_tables = []
+    for future in done:
+        missing_tables.extend(future.result())
+    for table_name in missing_tables:
+        logger.warning("Failed to dump: '%s'", table_name.identifier)
+
+    if not_done:
+        raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))
+
+
+def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, keep_going, dry_run):
+    """
+    Dump data from an upstream source to S3
+
+    This is the entry point, and which technology will be used will be determined
+    by the args here. Additionally, we don't care yet if any of the sources are static.
+    """
+    dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going, dry_run=dry_run)
+
+    if dumper == "sqoop":
+        with etl.pg.log_error():
+            dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets,
+                                  max_partitions, keep_going=keep_going, dry_run=dry_run)
+    else:
+        with etl.pg.log_error():
+            dump_to_s3_with_spark(schemas, bucket_name, prefix, file_sets, dry_run=dry_run)

@@ -413,26 +413,19 @@ class DumpDataToS3Command(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        if args.dumper == "sqoop":
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-            with etl.pg.log_error():
-                etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
-                                               args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
-        else:
-            # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
-            if "SPARK_ENV_LOADED" in os.environ:
-                file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-                with etl.pg.log_error():
-                    etl.dump.dump_to_s3_with_spark(config.schemas, args.bucket_name, args.prefix, file_sets,
-                                                   dry_run=args.dry_run)
-            else:
-                # Try the full path (in the EMR cluster), or try without path and hope for the best.
-                submit_arthur = "/tmp/redshift_etl/venv/bin/submit_arthur.sh"
-                if not os.path.exists(submit_arthur):
-                    submit_arthur = "submit_arthur.sh"
-                print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
-                os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
-                sys.exit(1)
+        # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
+        if args.dumper == "spark" and "SPARK_ENV_LOADED" not in os.environ:
+            # Try the full path (in the EMR cluster), or try without path and hope for the best.
+            submit_arthur = "/tmp/redshift_etl/venv/bin/submit_arthur.sh"
+            if not os.path.exists(submit_arthur):
+                submit_arthur = "submit_arthur.sh"
+            print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
+            os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
+            sys.exit(1)
+
+        file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, file_sets,
+                            args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 class LoadRedshiftCommand(SubCommand):
