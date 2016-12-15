@@ -23,6 +23,7 @@ import etl.dw
 import etl.file_sets
 import etl.json_encoder
 import etl.load
+import etl.unload
 import etl.monitor
 import etl.pg
 import etl.relation
@@ -183,6 +184,7 @@ def build_full_parser(prog_name):
             DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
             # ETL commands to extract, load/update or do both
             DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
+            UnloadDataToS3Command,
             # Helper commands
             ListFilesCommand, PingCommand, EventsQueryCommand]:
         cmd = klass()
@@ -422,7 +424,6 @@ class DumpDataToS3Command(SubCommand):
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
-
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
         etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, file_sets,
                             args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
@@ -565,3 +566,26 @@ class EventsQueryCommand(SubCommand):
 
 if __name__ == "__main__":
     run_arg_as_command()
+
+
+class UnloadDataToS3Command(SubCommand):
+
+    def __init__(self):
+        super().__init__("unload",
+                         "unload data from Redshift to files in S3",
+                         "Unload data from Redshift into files in S3 (as a forced reload).")
+        self.use_force = True
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "explain", "dry-run"])
+        parser.add_argument("-y", "--skip-copy",
+                            help="skip the COPY command (for debugging)",
+                            action="store_true")
+        parser.add_argument("--stop-after-first",
+                            help="stop after first relation, do not follow dependency fan-out (for debugging)",
+                            action="store_true")
+
+    def callback(self, args, config):
+        file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+        with etl.pg.log_error():
+            etl.unload.unload_to_s3(config, file_sets, args.pattern, dry_run=args.dry_run)
