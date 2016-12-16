@@ -72,22 +72,9 @@ def run_redshift_unload(conn: connection, select_statement: str, unload_path: st
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
 
-    try:
+    with etl.pg.log_error():
         etl.pg.execute(conn, unload_statement)
         logger.info("Unloaded data from '%s' into '%s'", identifier, unload_path)
-    except psycopg2.Error as exc:
-        conn.rollback()
-        if "stl_load_errors" in exc.pgerror:
-            logger.debug("Trying to get error message from stl_log_errors table")
-            info = etl.pg.query(conn, """SELECT query, starttime, filename, colname, type, col_length,
-                                                line_number, position, err_code, err_reason
-                                           FROM stl_load_errors
-                                          WHERE session = pg_backend_pid()
-                                          ORDER BY starttime DESC
-                                          LIMIT 1""")
-            values = "  \n".join(["{}: {}".format(k, row[k]) for row in info for k in row.keys()])
-            logger.info("Information from stl_load_errors:\n  %s", values)
-        raise
 
 
 def copy_design_file_to_unload_keyspace(design_file_path: str, unload_path: str, schema: str, table_name: str,
@@ -150,8 +137,8 @@ def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], pre
     logger = logging.getLogger(__name__)
     logger.info("Processing data to unload.")
     descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
-    conn = etl.pg.connection(config.dsn_etl)
-    with closing(conn) as conn, conn as conn:
+    conn = etl.pg.connection(config.dsn_etl, readonly=True)
+    with closing(conn) as conn:
         for description in descriptions:
             try:
                 unload_data(conn, description, config.iam_role, prefix, allow_overwrite=allow_overwrite,
