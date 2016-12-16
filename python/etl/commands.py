@@ -564,10 +564,6 @@ class EventsQueryCommand(SubCommand):
         etl.monitor.query_for(args.pattern, args.etl_id)
 
 
-if __name__ == "__main__":
-    run_arg_as_command()
-
-
 class UnloadDataToS3Command(SubCommand):
 
     def __init__(self):
@@ -586,3 +582,7 @@ class UnloadDataToS3Command(SubCommand):
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
         with etl.pg.log_error():
             etl.unload.unload_to_s3(config, file_sets, args.prefix, args.force, dry_run=args.dry_run)
+
+
+if __name__ == "__main__":
+    run_arg_as_command()
