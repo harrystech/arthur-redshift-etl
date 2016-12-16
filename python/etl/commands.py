@@ -578,11 +578,11 @@ class UnloadDataToS3Command(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "explain", "dry-run"])
-        parser.add_argument("-ow", "--overwrite",
+        parser.add_argument("-f", "--force",
                             help="overwrite existing data files in S3 unload keyspace for relation(s)",
                             action="store_true")
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
         with etl.pg.log_error():
-            etl.unload.unload_to_s3(config, file_sets, args.prefix, args.overwrite, dry_run=args.dry_run)
+            etl.unload.unload_to_s3(config, file_sets, args.prefix, args.force, dry_run=args.dry_run)
