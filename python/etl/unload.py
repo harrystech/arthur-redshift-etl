@@ -34,6 +34,7 @@ import botocore.exceptions
 from etl.file_sets import TableFileSet
 from etl.config import DataWarehouseConfig
 from etl.relation import RelationDescription
+from etl.thyme import Thyme
 import etl
 import etl.config
 import etl.design
@@ -129,15 +130,20 @@ def write_success_file(bucket_name: str, prefix: str) -> None:
             raise
 
 
+def build_key_prefix(user: str, schema_table_name: str, today=False) -> str:
+    t = Thyme.today()
+    return os.path.join(user, "data", "unload", schema_table_name, t.year, t.month, t.day, "csv")
+
+
 def unload_data(conn: connection, description: RelationDescription, aws_iam_role: str, prefix: str,
-                allow_overwrite=False, dry_run=False) -> None:
+                allow_overwrite=False, today=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command.
     A manifest for the CSV files must be provided.
     """
     logger = logging.getLogger(__name__)
-    s3_key_prefix = os.path.join(prefix, 'data', description.source_table_name.schema,
-                                 description.source_table_name.table, 'unload')
+    schema_table_key = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
+    s3_key_prefix = build_key_prefix(prefix, schema_table_key, today=today)
     unload_path = "s3://{}/{}/".format(description.bucket_name, s3_key_prefix)
     select_statement = generate_select_statement(description.bucket_name, description.design_file_name,
                                                  description.target_table_name)
