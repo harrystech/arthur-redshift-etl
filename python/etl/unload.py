@@ -24,6 +24,7 @@ from contextlib import closing
 from typing import List
 import logging
 import os
+import tempfile
 
 from psycopg2.extensions import connection
 import psycopg2
@@ -107,6 +108,27 @@ def copy_design_file_to_unload_keyspace(design_file_path: str, unload_path: str,
             raise
 
 
+def write_success_file(bucket_name: str, prefix: str) -> None:
+    logger = logging.getLogger(__name__)
+    logger.info("Writing _SUCCESS file to 's3://%s/%s/'", bucket_name, prefix)
+    obj_key = os.path.join(prefix, "_SUCCESS")
+    session = boto3.session.Session()
+    s3 = session.resource("s3")
+    bucket = s3.Bucket(bucket_name)
+    object = bucket.Object(obj_key)
+    try:
+        object.put()
+        logger.info("Successfully wrote _SUCCESS file to 's3://%s/%s/'", bucket_name, prefix)
+    except botocore.exceptions.ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == "AccessDenied":
+            logger.warning("Access Denied for Object 's3://%s/%s'", bucket_name, prefix)
+            raise
+        else:
+            logger.warning("THIS IS THE ERROR CODE: %s", error_code)
+            raise
+
+
 def unload_data(conn: connection, description: RelationDescription, aws_iam_role: str, prefix: str,
                 allow_overwrite=False, dry_run=False) -> None:
     """
@@ -130,6 +152,7 @@ def unload_data(conn: connection, description: RelationDescription, aws_iam_role
         copy_design_file_to_unload_keyspace(description.design_file_name, unload_path,
                                             description.target_table_name.schema, description.target_table_name.table,
                                             s3_key_prefix, description.bucket_name)
+        write_success_file(description.bucket_name, s3_key_prefix)
 
 
 def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], prefix: str, allow_overwrite: bool,
