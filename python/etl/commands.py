@@ -23,6 +23,7 @@ import etl.dw
 import etl.file_sets
 import etl.json_encoder
 import etl.load
+import etl.unload
 import etl.monitor
 import etl.pg
 import etl.relation
@@ -183,6 +184,7 @@ def build_full_parser(prog_name):
             DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
             # ETL commands to extract, load/update or do both
             DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
+            UnloadDataToS3Command,
             # Helper commands
             ListFilesCommand, PingCommand, EventsQueryCommand]:
         cmd = klass()
@@ -422,7 +424,6 @@ class DumpDataToS3Command(SubCommand):
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
-
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
         etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, file_sets,
                             args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
@@ -561,6 +562,26 @@ class EventsQueryCommand(SubCommand):
 
     def callback(self, args, config):
         etl.monitor.query_for(args.pattern, args.etl_id)
+
+
+class UnloadDataToS3Command(SubCommand):
+
+    def __init__(self):
+        super().__init__("unload",
+                         "unload data from Redshift to files in S3",
+                         "Unload data from Redshift into files in S3 (as a forced reload).")
+        self.use_force = True
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
+        parser.add_argument("-f", "--force",
+                            help="overwrite existing data files in S3 unload keyspace for relation(s)",
+                            action="store_true")
+
+    def callback(self, args, config):
+        file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+        with etl.pg.log_error():
+            etl.unload.unload_to_s3(config, file_sets, args.prefix, args.force, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

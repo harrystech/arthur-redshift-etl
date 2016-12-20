@@ -5,6 +5,7 @@ boto3~=1.4
 psycopg2~=2.6
 pep8>=1.7
 pgpasslib~=1.1
+mypy-lang~=0.4.6
 # pydot~=1.2
 # pyparsing~=2.1
 # q
