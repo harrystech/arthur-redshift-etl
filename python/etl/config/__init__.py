@@ -1,3 +1,10 @@
+"""
+Objects to deal with configuration of our data warehouse, like
+* data warehouse itself
+* its schemas
+* its users
+"""
+
 from collections import defaultdict
 from functools import lru_cache
 import logging
@@ -11,10 +18,17 @@ import simplejson as json
 import yaml
 
 import etl
+import etl.pg
 from etl import package_version
 
 
 class DataWarehouseUser:
+    """
+    Data warehouse users have always a name and group associated with them.
+    Users may have a schema "belong" to them which they then have write access to.
+    This is useful for system users, mostly, since end users should treat the
+    data warehouse as read-only.
+    """
     def __init__(self, user_info):
         self.name = user_info["name"]
         self.group = user_info["group"]
@@ -22,26 +36,49 @@ class DataWarehouseUser:
 
 
 class DataWarehouseSchema:
-    # Although there is a (logical) distinction between "sources" and "schemas" in the settings file
-    # those are really all the same ...
+    """
+    Schemas in the data warehouse fall into three buckets:
+    (1) Upstream source backed by a database.  Data will be dumped from there and
+    so we need to have a DSN with which we can connect.
+    (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
+    that the ETL will create a manifest file suitable for the COPY command.  No DSN
+    is needed here.
+    (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
+    (but maybe unload'ed).
+
+    Although there is a (logical) distinction between "sources" and "schemas" in the settings file
+    those are really all the same here ...
+    """
     def __init__(self, schema_info, owner_groups, etl_access):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
-        # Schemas list those who can read them
-        self.reader_groups = schema_info.get("groups", [])
-        # as well as those who have all privileges on them
+        # Schemas have read/write and read-only groups associated with them
         self.owner_groups = owner_groups
+        self.reader_groups = schema_info.get("groups", [])
+        # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
         self.is_static_source = "s3_bucket" in schema_info
-        self._dsn_env_var = schema_info.get("read_access", None if self.is_static_source else etl_access)
-        self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
-        self.exclude_tables = schema_info.get("exclude_tables", [])
+        self.is_upstream_source = self.is_database_source or self.is_static_source
+        # How to access the source of the schema (per DSN (of source or DW)? per S3?)
+        self._dsn_env_var = schema_info.get("read_access", etl_access) if not self.is_static_source else None
         self.s3_bucket = schema_info.get("s3_bucket")
         self.s3_path_template = schema_info.get("s3_path_template")
+        # When dealing with this schema of some upstream source, which tables should be used? skipped?
+        self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
+        self.exclude_tables = schema_info.get("exclude_tables", [])
 
     @property
     def dsn(self):
-        if self.is_database_source:
+        """
+        Return connection string suitable for the schema which is
+        - the value of the environment variable named in the read_access field for upstream sources
+        - the value of the environment variable named in the etl_access field of the data warehouse for schemas
+            that have CTAS or views
+        Evaluation of the DSN (and the environment variable) is deferred so that an environment variable
+        may be not set if it is actually not used.
+        """
+        # Note this returns None for a static source.
+        if not self.is_static_source:
             return etl.pg.parse_connection_string(env_value(self._dsn_env_var))
 
     @property
@@ -52,11 +89,10 @@ class DataWarehouseSchema:
     def backup_name(self):
         return '$'.join(("arthur_temp", self.name))
 
-    @property
-    def is_upstream_source(self):
-        return self.is_database_source or self.is_static_source
-
     def validate_access(self):
+        """
+        Raise exception if environment variable is not set ... only used for the side effect of test.
+        """
         # FIXME need to start checking env vars before running anything heavy
         if self._dsn_env_var is not None and self._dsn_env_var not in os.environ:
             raise KeyError("Environment variable to access '{0.name}' not set: {0._read_access}".format(self))

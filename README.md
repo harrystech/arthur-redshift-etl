@@ -77,7 +77,7 @@ These packages are listed (with their expected versions) in the `requirements.tx
 For running the ETL remotely (in EC2), the `bin/bootstrap.sh` script will take care of the creation
 of the virtual environment.
 
-**Note** this assumes you are in the **top-level** directrory of the Redshift ETL.
+**Note** this assumes you are in the **top-level** directory of the Redshift ETL.
 ```shell
 mkdir venv
 virtualenv --python=python3 venv
