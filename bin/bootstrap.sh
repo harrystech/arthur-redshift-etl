@@ -98,7 +98,7 @@ pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
 # so that the sort command can split correctly on '.' with the -t option.
 LATEST_TAR_FILE=`ls -1 ./jars/redshift-etl*tar.gz |
     sed 's,redshift-etl-,redshift-etl.,' |
-    sort -t. -n -k 2,2 -k 3,3 -k 4,4 -s -r |
+    sort -t. -k 3nr -k 4nr -k 5nr |
     sed 's,redshift-etl\.,redshift-etl-,' |
     head -1`
 pip3 install --upgrade "$LATEST_TAR_FILE" --disable-pip-version-check
