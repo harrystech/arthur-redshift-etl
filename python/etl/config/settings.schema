@@ -7,6 +7,10 @@
             "type": "string",
             "pattern": "^\\w"
         },
+        "path_template" : {
+            "type": "string",
+            "pattern": "^[(\\w+/)|(#{\\w+})]+$"
+        },
         "identifier_list": {
             "type": "array",
             "items": { "$ref": "#/definitions/identifier" },
@@ -51,11 +55,12 @@
                 "name": { "$ref": "#/definitions/identifier" },
                 "description": { "type": "string" },
                 "s3_bucket": { "$ref": "#/definitions/identifier" },
-                "s3_path_template": { "$ref": "#/definitions/identifier" },
+                "s3_path_template": { "$ref": "#/definitions/path_template" },
+                "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
                 "groups": { "$ref": "#/definitions/identifier_list" }
             },
             "required": [ "name", "s3_bucket", "s3_path_template" ],
-            "additionalProperties": false
+            "additionalProperties": true
         }
     },
     "type": "object",

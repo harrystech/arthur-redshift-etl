@@ -24,6 +24,7 @@ from contextlib import closing
 from typing import List
 import logging
 import os
+import re
 
 from psycopg2.extensions import connection
 import boto3
@@ -31,6 +32,7 @@ import botocore.exceptions
 
 from etl.file_sets import TableFileSet
 from etl.config import DataWarehouseConfig
+from etl.config import DataWarehouseSchema
 from etl.relation import RelationDescription
 from etl.thyme import Thyme
 import etl
@@ -128,21 +130,30 @@ def write_success_file(bucket_name: str, prefix: str) -> None:
             raise
 
 
-def build_key_prefix(user: str, schema_table_name: str, today=False) -> str:
+def build_s3_key(prefix: str, description: RelationDescription, schema: DataWarehouseSchema) -> str:
     t = Thyme.today()
-    return os.path.join(user, "unload",  t.year, t.month, t.day, schema_table_name, "csv")
+    schema_table_name = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
+    rendered_template = render_unload_template(schema.s3_unload_path_template, prefix)
+    return os.path.join(rendered_template, "data", schema.name, schema_table_name, "csv")
 
 
-def unload_data(conn: connection, description: RelationDescription, aws_iam_role: str, prefix: str,
-                allow_overwrite=False, today=False, dry_run=False) -> None:
+def render_unload_template(template: str, prefix) -> str:
+    t = Thyme.today()
+    clean_template = re.sub(r'[#\$]', "", template)
+    today = os.path.join(t.year, t.month, t.day)
+    data = {"prefix": prefix, "today": today}
+    return clean_template.format(**data)
+
+
+def unload_data(conn: connection, description: RelationDescription, schema: DataWarehouseSchema, aws_iam_role: str,
+                prefix: str, allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command.
     A manifest for the CSV files must be provided.
     """
     logger = logging.getLogger(__name__)
-    schema_table_key = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
-    s3_key_prefix = build_key_prefix(prefix, schema_table_key, today=today)
-    unload_path = "s3://{}/{}/".format(description.bucket_name, s3_key_prefix)
+    s3_key_prefix = build_s3_key(prefix, description, schema)
+    unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
     select_statement = generate_select_statement(description.bucket_name, description.design_file_name,
                                                  description.target_table_name)
 
@@ -164,14 +175,16 @@ def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], pre
     logger = logging.getLogger(__name__)
     logger.info("Processing data to unload.")
     descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
+    unloadable_relations = [d for d in descriptions if d.is_unloadable]
     conn = etl.pg.connection(config.dsn_etl, readonly=True)
     with closing(conn) as conn:
-        for description in descriptions:
+        for relation in unloadable_relations:
             try:
-                unload_data(conn, description, config.iam_role, prefix, allow_overwrite=allow_overwrite,
+                unload_schema = [schema for schema in config.schemas if schema.name == relation.unload_target]
+                unload_data(conn, relation, unload_schema[0], config.iam_role, prefix, allow_overwrite=allow_overwrite,
                             dry_run=dry_run)
             except Exception as e:
                 logger.warning("Unload failure for %s;"
                                " continuing to UNLOAD remaining tables"
                                "Failure error was: %s",
-                               description.identifier, e)
+                               relation.identifier, e)
