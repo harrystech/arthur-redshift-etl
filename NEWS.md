@@ -2,6 +2,14 @@
 
 This file contains user-visible changes by version in reverse chronological sequence.
 
+## v0.14.? (2017-01-05)
+
+* Add `show_dependencies` and `show_pipelines` commands
+
+## v0.14.0 (2016-12-20)
+
+* Add `unload` command to export tables into CSV files.
+
 ## v0.13.2 (2016-11-09)
 
 * Remove comparison dump from nightly data pipeline

@@ -320,6 +320,7 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
         if constraint in constraints:
             logger.info('Checking %s constraint on %s', constraint, description.target_table_name.identifier)
             keys = constraints[constraint]
+            # FIXME This doesn't quote columns or table names
             statement = statement_template.format(cols=','.join(keys), table=description.identifier)
             if dry_run:
                 logger.info('Dry run: Skipping duplicate row query')

@@ -504,6 +504,7 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
             if description.target_table_name.schema in dirty_schemas:
                 dirty.add(description.identifier)
 
+    # FIXME move this into load/upgrade/update to have verb correct?
     if len(dirty) == len(complete_sequence):
         logger.info("Decided on updating ALL tables")
     elif len(dirty) == 1:
@@ -511,6 +512,24 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     else:
         logger.info("Decided on updating %d of %d table(s)", len(dirty), len(complete_sequence))
     return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
+
+
+def show_dependencies(file_sets, selector):
+    """
+    List the execution order of loads or updates.
+    """
+    descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
+    execution_order, involved_schema_names = evaluate_execution_order(descriptions, selector)
+    max_len = max(len(description.identifier) for description in execution_order)
+    for i, description in enumerate(execution_order):
+        if description.is_ctas_relation:
+            reltype = "CTAS"
+        elif description.is_view_relation:
+            reltype = "VIEW"
+        else:
+            reltype = "TABLE"
+        print("{index:4d} {identifier:{width}s} ({reltype})".format(
+                index=i + 1, identifier=description.identifier, width=max_len, reltype=reltype))
 
 
 def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, stop_after_first=False, no_rollback=False,

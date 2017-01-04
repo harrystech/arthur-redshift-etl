@@ -277,7 +277,9 @@ ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 ```
 
 * Please have meaningful comments and git commit messages
-(See [Chris's blog](http://chris.beams.io/posts/git-commit/)!)
+(See [Chris's blog](http://chris.beams.io/posts/git-commit/))
+* And think about rebasing your commits into logical chunks
+(See [Thoughtbot's guidelines](https://github.com/thoughtbot/guides/blob/master/protocol/git/README.md))
 
 # Tips & Tricks
 
@@ -287,12 +289,12 @@ ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 
 For the bash shell, there is a file to add command completion that allows to tab-complete schemas and table names.
 ```shell
-source etc/schemas_completion.sh
+source etc/arthur_completion.sh
 ```
 
 If you are normally in the repo for your data warehouse configuration, then this might be better:
 ```shell
-source ../harrys-redshift-etl/etc/schemas_completion.sh
+source ../harrys-redshift-etl/etc/arthur_completion.sh
 ```
 
 And if you're using `virtualenv-wrapper`, then you should make this part of the activation sequence.
