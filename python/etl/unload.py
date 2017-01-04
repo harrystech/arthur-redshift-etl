@@ -24,10 +24,8 @@ from contextlib import closing
 from typing import List
 import logging
 import os
-import tempfile
 
 from psycopg2.extensions import connection
-import psycopg2
 import boto3
 import botocore.exceptions
 
@@ -132,7 +130,7 @@ def write_success_file(bucket_name: str, prefix: str) -> None:
 
 def build_key_prefix(user: str, schema_table_name: str, today=False) -> str:
     t = Thyme.today()
-    return os.path.join(user, "data", "unload", schema_table_name, t.year, t.month, t.day, "csv")
+    return os.path.join(user, "unload",  t.year, t.month, t.day, schema_table_name, "csv")
 
 
 def unload_data(conn: connection, description: RelationDescription, aws_iam_role: str, prefix: str,
