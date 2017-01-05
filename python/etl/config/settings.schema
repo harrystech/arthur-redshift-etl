@@ -60,7 +60,7 @@
                 "groups": { "$ref": "#/definitions/identifier_list" }
             },
             "required": [ "name", "s3_bucket", "s3_path_template" ],
-            "additionalProperties": true
+            "additionalProperties": false
         }
     },
     "type": "object",

@@ -25,7 +25,6 @@ from typing import List
 from string import Template
 import logging
 import os
-import re
 
 from psycopg2.extensions import connection
 import boto3

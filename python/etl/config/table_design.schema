@@ -173,5 +173,5 @@
         }        
     },
     "required": [ "name", "source_name", "columns" ],
-    "additionalProperties": true
+    "additionalProperties": false
 }

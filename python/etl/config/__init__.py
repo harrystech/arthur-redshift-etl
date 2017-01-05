@@ -249,7 +249,6 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
         raise RuntimeError("Failed to find enough configuration files")
 
     schema = load_json("settings.schema")
-    # import ipdb;ipdb.set_trace()
     jsonschema.validate(settings, schema)
     return settings
 
