@@ -22,6 +22,7 @@ schema or table from which the data was dumped to CSV.
 """
 from contextlib import closing
 from typing import List
+from string import Template
 import logging
 import os
 import re
@@ -79,36 +80,6 @@ def run_redshift_unload(conn: connection, select_statement: str, unload_path: st
         logger.info("Unloaded data from '%s' into '%s'", identifier, unload_path)
 
 
-def copy_design_file_to_unload_keyspace(design_file_path: str, unload_path: str, schema: str, table_name: str,
-                                        prefix: str, bucket_name: str) -> None:
-    """
-    As the final part of the UNLOAD command we need to copy the design YAML file from the schema location
-    into the unload keyspace in S3. This is so whatever process or application cares about this unloaded
-    data has the option to map out a list of columns and types of the data found in each GZipped CSV
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Copying design file from '%s' to '%s'", design_file_path, unload_path)
-    design_file_name = "{}-{}.yaml".format(schema, table_name)
-    copied_design_file_key = os.path.join(prefix, design_file_name)
-    session = boto3.session.Session()
-    s3 = session.resource("s3")
-    copy_source = {
-        'Bucket': bucket_name,
-        'Key': design_file_path
-    }
-    try:
-        s3.Object(bucket_name, copied_design_file_key).copy_from(CopySource=copy_source)
-        logger.info("Successfully copied design file from '%s' to '%s'", design_file_path, unload_path)
-    except botocore.exceptions.ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == "AccessDenied":
-            logger.warning("Access Denied for Object 's3://%s/%s'", bucket_name, design_file_path)
-            raise
-        else:
-            logger.warning("THIS IS THE ERROR CODE: %s", error_code)
-            raise
-
-
 def write_success_file(bucket_name: str, prefix: str) -> None:
     logger = logging.getLogger(__name__)
     logger.info("Writing _SUCCESS file to 's3://%s/%s/'", bucket_name, prefix)
@@ -139,10 +110,10 @@ def build_s3_key(prefix: str, description: RelationDescription, schema: DataWare
 
 def render_unload_template(template: str, prefix) -> str:
     t = Thyme.today()
-    clean_template = re.sub(r'[#\$]', "", template)
+    str_template = Template(template)
     today = os.path.join(t.year, t.month, t.day)
-    data = {"prefix": prefix, "today": today}
-    return clean_template.format(**data)
+    data = dict(prefix=prefix, today=today)
+    return str_template.substitute(data)
 
 
 def unload_data(conn: connection, description: RelationDescription, schema: DataWarehouseSchema, aws_iam_role: str,
@@ -163,11 +134,7 @@ def unload_data(conn: connection, description: RelationDescription, schema: Data
         logger.info("Unloading data from '%s' to '%s'", description.identifier, unload_path)
         run_redshift_unload(conn, select_statement, unload_path, aws_iam_role, description.identifier,
                             allow_overwrite=allow_overwrite)
-
-        copy_design_file_to_unload_keyspace(description.design_file_name, unload_path,
-                                            description.target_table_name.schema, description.target_table_name.table,
-                                            s3_key_prefix, description.bucket_name)
-        write_success_file(description.bucket_name, s3_key_prefix)
+        write_success_file(schema.s3_bucket, s3_key_prefix)
 
 
 def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], prefix: str, allow_overwrite: bool,
