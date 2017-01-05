@@ -146,8 +146,10 @@ def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], pre
     with closing(conn) as conn:
         for relation in unloadable_relations:
             try:
-                unload_schema = [schema for schema in config.schemas if schema.name == relation.unload_target]
-                unload_data(conn, relation, unload_schema[0], config.iam_role, prefix, allow_overwrite=allow_overwrite,
+                unload_schemas = [schema for schema in config.schemas if schema.name == relation.unload_target]
+                if len(unload_schemas) > 1:
+                    raise etl.ETLError("Too many schemas found for unload target: %s." % relation.unload_target)
+                unload_data(conn, relation, unload_schemas[0], config.iam_role, prefix, allow_overwrite=allow_overwrite,
                             dry_run=dry_run)
             except Exception as e:
                 logger.warning("Unload failure for %s;"

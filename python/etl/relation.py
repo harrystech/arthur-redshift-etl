@@ -109,14 +109,11 @@ class RelationDescription:
 
     @property
     def is_unloadable(self):
-        return "unload_target" in self.table_design.keys()
+        return "unload_target" in self.table_design
 
     @property
     def unload_target(self):
-        if self._unload_target is None:
-            if self.is_unloadable:
-                self._unload_target = self.table_design["unload_target"]
-        return self._unload_target
+        return self.table_design.get("unload_target")
 
     @property
     def query_stmt(self):
