@@ -2,7 +2,7 @@
 
 This file contains user-visible changes by version in reverse chronological sequence.
 
-## v0.14.? (2017-01-05)
+## Latest
 
 * Add `show_dependencies` and `show_pipelines` commands
 

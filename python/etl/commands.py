@@ -594,7 +594,7 @@ class ShowPipelinesCommand(SubCommand):
                          "Show additional information about currently installed pipelines.")
 
     def add_arguments(self, parser):
-        parser.add_argument("selection", help="pick what to show", nargs="?")
+        parser.add_argument("selection", help="pick pipelines to show", nargs="*")
 
     def callback(self, args, config):
         etl.pipeline.show_pipelines(args.selection)
@@ -610,7 +610,6 @@ class EventsQueryCommand(SubCommand):
     def add_arguments(self, parser):
         parser.add_argument("--etl-id", help="pick ETL id to look for")
         parser.add_argument("pattern", help="limit what to show", nargs='?')
-        # add_standard_arguments(parser, ["pattern"])
 
     def callback(self, args, config):
         etl.monitor.query_for(args.pattern, args.etl_id)
