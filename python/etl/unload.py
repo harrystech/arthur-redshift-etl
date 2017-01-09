@@ -75,7 +75,7 @@ def write_success_file(bucket_name: str, prefix: str) -> None:
     object = bucket.Object(obj_key)
     try:
         object.put()
-        logger.info("Successfully wrote _SUCCESS file to 's3://%s/%s/'", bucket_name, prefix)
+        logger.info("Successfully wrote file to 's3://%s/%s/_SUCCESS'", bucket_name, prefix)
     except botocore.exceptions.ClientError as e:
         error_code = e.response['Error']['Code']
         logger.error("Error code %s for Object 's3://%s/%s'", error_code, bucket_name, prefix)
