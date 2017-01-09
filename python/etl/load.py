@@ -563,7 +563,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                     if whole_schemas:
                         subtree = _get_failed_subtree(failed, description, execution_order, required_selector)
                         failed.update(subtree)
-                        logger.warning("Load failure for %s does not harm any relations required by selector %s;"
+                        logger.warning("Load failure for '%s' does not harm any relations required by selector '%s';"
                                        " continuing load omitting these dependent relations: %s"
                                        ". Failure error was: %s",
                                        description.identifier, required_selector,
