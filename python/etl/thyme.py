@@ -5,9 +5,6 @@ class Thyme:
 
     def __init__(self, date: datetime):
         self.date = date
-        self._day = None
-        self._month = None
-        self._year = None
 
     @property
     def day(self) -> str:

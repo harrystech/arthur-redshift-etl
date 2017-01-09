@@ -77,6 +77,7 @@ class RelationDescription:
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
         self._query_stmt = None
+        self._unload_target = None
         # Properties for ordering relations
         self.order = None
         self._dependencies = None
@@ -105,6 +106,14 @@ class RelationDescription:
     @property
     def is_view_relation(self):
         return self.table_design["source_name"] == "VIEW"
+
+    @property
+    def is_unloadable(self):
+        return "unload_target" in self.table_design
+
+    @property
+    def unload_target(self):
+        return self.table_design.get("unload_target")
 
     @property
     def query_stmt(self):

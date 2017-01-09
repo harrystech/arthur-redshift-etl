@@ -63,6 +63,7 @@ class DataWarehouseSchema:
         self._dsn_env_var = schema_info.get("read_access", etl_access) if not self.is_static_source else None
         self.s3_bucket = schema_info.get("s3_bucket")
         self.s3_path_template = schema_info.get("s3_path_template")
+        self.s3_unload_path_template = schema_info.get("s3_unload_path_template")
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
