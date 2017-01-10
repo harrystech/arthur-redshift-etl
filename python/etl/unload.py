@@ -55,7 +55,7 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
     unload_statement = """UNLOAD ('{}')
                           TO '{}'
                           CREDENTIALS '{}' MANIFEST
-                          DELIMITER ',' ESCAPE GZIP
+                          DELIMITER ',' ESCAPE ADDQUOTES GZIP
                        """.format(select_statement, unload_path, credentials)
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"

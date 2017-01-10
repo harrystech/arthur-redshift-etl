@@ -13,6 +13,7 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
+from string import Template
 
 # Note that we'll import pyspark modules only when starting a SQL context.
 import simplejson as json
@@ -25,6 +26,7 @@ import etl.pg
 import etl.file_sets
 import etl.relation
 from etl.timer import Timer
+from etl.thyme import Thyme
 
 
 # N.B. This must match value in deploy scripts in ./bin (and should be in a config file)
@@ -319,8 +321,12 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         return
 
     if static_source:
-        # TODO: Render the s3_path_template (for given date, etc)
-        csv_path = os.path.join(static_source.s3_path_template, "data", source_path_name, "csv")
+        t = Thyme.yesterday()
+        str_template = Template(static_source.s3_path_template)
+        yesterday = os.path.join(t.year, t.month, t.day)
+        data = dict(prefix=prefix, yesterday=yesterday)
+        rendered_template = str_template.substitute(data)
+        csv_path = os.path.join(rendered_template, "data", source_path_name, "csv")
         source_data_bucket = static_source.s3_bucket
     else:
         csv_path = os.path.join(prefix, "data", source_path_name, "csv")
@@ -330,11 +336,13 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
     # For non-static sources, wait for data & success file to potentially finish being written
     last_success = etl.file_sets.get_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
                                                    wait=(static_source is None))
-
     if last_success is None:
         raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-    csv_files = sorted(etl.file_sets.list_files_in_folder(source_data_bucket, csv_path + "/part-"))
+    csv_files = sorted([
+        f for f in etl.file_sets.list_files_in_folder(source_data_bucket, csv_path)
+        if "part" in f and f.endswith(".gz")
+    ])
 
     if len(csv_files) == 0:
         raise MissingCsvFilesError("Found no CSV files")
