@@ -321,11 +321,7 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         return
 
     if static_source:
-        t = Thyme.yesterday()
-        str_template = Template(static_source.s3_path_template)
-        yesterday = os.path.join(t.year, t.month, t.day)
-        data = dict(prefix=prefix, yesterday=yesterday)
-        rendered_template = str_template.substitute(data)
+        rendered_template = Thyme.render_template(prefix, static_source.s3_path_template)
         csv_path = os.path.join(rendered_template, "data", source_path_name, "csv")
         source_data_bucket = static_source.s3_bucket
     else:

@@ -84,16 +84,8 @@ def write_success_file(bucket_name: str, prefix: str) -> None:
 
 def build_s3_key(prefix: str, description: RelationDescription, schema: DataWarehouseSchema) -> str:
     schema_table_name = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
-    rendered_template = render_unload_template(schema.s3_unload_path_template, prefix)
+    rendered_template = Thyme.render_template(prefix, schema.s3_unload_path_template)
     return os.path.join(rendered_template, "data", schema.name, schema_table_name, "csv")
-
-
-def render_unload_template(template: str, prefix) -> str:
-    t = Thyme.today()
-    str_template = Template(template)
-    today = os.path.join(t.year, t.month, t.day)
-    data = dict(prefix=prefix, today=today)
-    return str_template.substitute(data)
 
 
 def unload_redshift_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
