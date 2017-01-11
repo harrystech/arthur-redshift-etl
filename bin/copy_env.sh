@@ -53,6 +53,10 @@ if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
     elif [[ ! -d "$DATA_WAREHOUSE_CONFIG" ]]; then
         echo "Expected DATA_WAREHOUSE_CONFIG to point to a directory"
         exit 2
+    elif [[ -d "$DATA_WAREHOUSE_CONFIG/config" ]]; then
+        echo "Expected DATA_WAREHOUSE_CONFIG to point to a config directory, not the root directory."
+        echo "(Found directory $DATA_WAREHOUSE_CONFIG/config which is unexpected.)"
+        exit 2
     fi
     if [[ ! -r setup.py ]]; then
         echo "Failed to find 'setup.py' file"
