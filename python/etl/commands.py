@@ -575,7 +575,7 @@ class UnloadDataToS3Command(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-f", "--force",
-                            help="overwrite existing data files in S3 unload keyspace for relation(s)",
+                            help="enable ALLOWOVERWRITE option to replace existing data files in S3",
                             action="store_true")
         parser.add_argument("-k", "--keep-going",
                             help="unload as much data as possible, ignoring errors along the way",

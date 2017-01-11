@@ -155,6 +155,25 @@ def _get_bucket(name):
     return s3.Bucket(name)
 
 
+def create_empty_object(bucket_name, object_key, dry_run=False):
+    """
+    Create an empty object in the S3 bucket
+    """
+    logger = logging.getLogger(__name__)
+    if dry_run:
+        logger.info("Dry-run: Skipping creation of 's3://%s/%s'", bucket_name, object_key)
+    else:
+        try:
+            logger.info("Creating 's3://%s/%s'", bucket_name, object_key)
+            bucket = _get_bucket(bucket_name)
+            obj = bucket.Object(object_key)
+            obj.put()
+        except botocore.exceptions.ClientError as exc:
+            error_code = exc.response['Error']['Code']
+            logger.error("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
+            raise
+
+
 def upload_to_s3(filename, bucket_name, object_key, dry_run=False):
     """
     Upload a local file to S3 bucket with the given object key.
@@ -200,14 +219,16 @@ def delete_in_s3(bucket_name: str, object_keys: list, dry_run: bool=False, retry
 
 def get_last_modified(bucket_name, object_key, wait=True):
     """
-    Return last_modified timestamp from the object.  Returns None if object does not exist.
+    Return last_modified timestamp from the object.
+    Returns None if object does not exist.
+    Raises an exception if S3 fails for some other reason, like access denied.
 
     Assuming that you're actually expecting this file to exist, this method helpfully waits first
-    for the object to exist.
+    for the object to exist (unless instructed otherwise with the 'wait' argument being false-y).
     """
     logger = logging.getLogger(__name__)
-    bucket = _get_bucket(bucket_name)
     try:
+        bucket = _get_bucket(bucket_name)
         s3_object = bucket.Object(object_key)
         if wait:
             s3_object.wait_until_exists()
@@ -216,16 +237,14 @@ def get_last_modified(bucket_name, object_key, wait=True):
     except botocore.exceptions.WaiterError:
         logger.debug("Waiting for object in 's3://%s/%s' failed", bucket_name, object_key)
         timestamp = None
-    except botocore.exceptions.ClientError as e:
-        error_code = e.response['Error']['Code']
+    except botocore.exceptions.ClientError as exc:
+        error_code = exc.response['Error']['Code']
+        # FIXME We're mixing codes and statuses here
         if error_code == "404" or error_code == "NoSuchKey":
             logger.debug("Object 's3://%s/%s' does not exist", bucket_name, object_key)
             timestamp = None
-        elif error_code == "AccessDenied":
-            logger.warning("Access Denied for Object 's3://%s/%s'", bucket_name, object_key)
-            timestamp = None
         else:
-            logger.warning("THIS IS THE ERROR CODE: %s", error_code)
+            logger.warning("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
             raise
     return timestamp
 
