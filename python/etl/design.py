@@ -194,15 +194,6 @@ def create_table_design(source_table_name, target_table_name, columns):
     return validate_table_design(table_design, target_table_name)
 
 
-# Adding methods to interact with table designs ... until there is a class TableDesign
-
-def get_columns(table_design):
-    """
-    Return delimited column names.
-    """
-    return ['"{}"'.format(column["name"]) for column in table_design["columns"] if not column.get("skipped")]
-
-
 def validate_table_design_from_file(local_filename, table_name):
     logger = logging.getLogger(__name__)
     logger.debug("Loading local table design from '%s'", local_filename)

@@ -13,6 +13,7 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
+from string import Template
 
 # Note that we'll import pyspark modules only when starting a SQL context.
 import simplejson as json
@@ -25,6 +26,7 @@ import etl.pg
 import etl.file_sets
 import etl.relation
 from etl.timer import Timer
+from etl.thyme import Thyme
 
 
 # N.B. This must match value in deploy scripts in ./bin (and should be in a config file)
@@ -319,22 +321,26 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         return
 
     if static_source:
-        # TODO: Render the s3_path_template (for given date, etc)
-        csv_path = os.path.join(static_source.s3_path_template, "data", source_path_name, "csv")
+        rendered_template = Thyme.render_template(prefix, static_source.s3_path_template)
+        csv_path = os.path.join(rendered_template, "data", source_path_name, "csv")
         source_data_bucket = static_source.s3_bucket
     else:
         csv_path = os.path.join(prefix, "data", source_path_name, "csv")
         # We are dumping the data right now, so we will find the data in the bucket we're using
         source_data_bucket = bucket_name
+    logger.info("Writing manifest file 's3://%s/%s' for data in 's3://%s/%s'",
+                bucket_name, manifest_filename, source_data_bucket, csv_path)
 
     # For non-static sources, wait for data & success file to potentially finish being written
     last_success = etl.file_sets.get_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
                                                    wait=(static_source is None))
-
     if last_success is None:
         raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-    csv_files = sorted(etl.file_sets.list_files_in_folder(source_data_bucket, csv_path + "/part-"))
+    csv_files = sorted([
+        f for f in etl.file_sets.list_files_in_folder(source_data_bucket, csv_path)
+        if "part" in f and f.endswith(".gz")
+    ])
 
     if len(csv_files) == 0:
         raise MissingCsvFilesError("Found no CSV files")
@@ -393,7 +399,6 @@ def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False
     logger.info("Dumping from these sources: %s", etl.join_with_quotes(source_lookup))
 
     sql_context = create_sql_context()
-    create_dir_unless_exists(REDSHIFT_ETL_HOME)
     for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
         dump_source_to_s3_with_spark(sql_context, source_lookup[source_name], bucket_name, prefix, file_group,
                                      dry_run=dry_run)
@@ -627,7 +632,6 @@ def dump_static_table(source, source_file_set, bucket_name, prefix, dry_run=Fals
     """
     logger = logging.getLogger(__name__)
     manifest_filename = os.path.join(prefix, "data", source_file_set.source_path_name + ".manifest")
-    logger.info("Writing manifest file %s for static source %s", manifest_filename, source.name)
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename,
                         dry_run=dry_run, static_source=source)
 
@@ -717,6 +721,10 @@ def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, 
     This is the entry point, and which technology will be used will be determined
     by the args here. Additionally, we don't care yet if any of the sources are static.
     """
+    # Make sure our temp directory exists (where manifest files are temporarily stashed)
+    # TODO If this is a temp dir, should we use TempDir?
+    create_dir_unless_exists(REDSHIFT_ETL_HOME)
+
     dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going, dry_run=dry_run)
 
     if dumper == "sqoop":

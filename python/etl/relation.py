@@ -26,9 +26,7 @@ import psycopg2
 import simplejson as json
 
 import etl
-import etl.config
 import etl.design
-import etl.dump
 import etl.pg
 import etl.file_sets
 
@@ -82,12 +80,15 @@ class RelationDescription:
         self.order = None
         self._dependencies = None
 
+    # TODO Make __str__ behave same way as TableName, and use __repr__ for the fancy details
     def __str__(self):
         return "{}({}:{},#{})".format(self.__class__.__name__, self.identifier, self.source_path_name, self.order)
 
     @property
     def identifier(self):
         return self.target_table_name.identifier
+
+    # TODO Need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
 
     @property
     def table_design(self):
@@ -138,6 +139,13 @@ class RelationDescription:
     @dependencies.setter
     def dependencies(self, value):
         self._dependencies = value
+
+    @property
+    def columns(self):
+        """
+        List of delimited column names of this relation
+        """
+        return ['"{}"'.format(column["name"]) for column in self.table_design["columns"] if not column.get("skipped")]
 
     @classmethod
     def from_file_sets(cls, file_sets, error_on_missing_design=True):
@@ -300,11 +308,11 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
         return
 
     statement_template = """
-    SELECT {cols}
-    FROM {table}
-    GROUP BY {cols}
-    HAVING COUNT(*) > 1
-    LIMIT 5
+        SELECT {cols}
+        FROM {table}
+        GROUP BY {cols}
+        HAVING COUNT(*) > 1
+        LIMIT 5
     """
 
     constraints = design['constraints']
