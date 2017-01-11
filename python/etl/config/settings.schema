@@ -57,6 +57,12 @@
                 "s3_bucket": { "$ref": "#/definitions/identifier" },
                 "s3_path_template": { "$ref": "#/definitions/path_template" },
                 "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
+                "include_tables": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
                 "groups": { "$ref": "#/definitions/identifier_list" }
             },
             "required": [ "name", "s3_bucket", "s3_path_template" ],
