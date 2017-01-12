@@ -445,13 +445,16 @@ class LoadRedshiftCommand(SubCommand):
         parser.add_argument("--stop-after-first",
                             help="stop after first relation, do not follow dependency fan-out (for debugging)",
                             action="store_true")
+        parser.add_argument("--no-rollback",
+                            help="in case of error, leave warehouse in partially completed state (for debugging)",
+                            action="store_true")
 
     def callback(self, args, config):
         all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
         all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(config, all_file_sets, args.pattern,
-                                             drop=self.use_force, stop_after_first=args.stop_after_first,
+                                             drop=self.use_force, stop_after_first=args.stop_after_first, no_rollback=args.no_rollback,
                                              skip_copy=args.skip_copy, add_explain_plan=args.add_explain_plan,
                                              dry_run=args.dry_run)
 

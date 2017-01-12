@@ -505,7 +505,7 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
 
 
-def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, stop_after_first=False,
+def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, stop_after_first=False, no_rollback=False,
                             skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
@@ -575,7 +575,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             if whole_schemas:
                 if dry_run:
                     logger.info("Skipping restoration of backup in exception handling")
-                else:
+                elif not no_rollback:
                     # Defensively create a new connection to rollback
                     etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
                                            involved_schemas)
