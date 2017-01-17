@@ -238,6 +238,10 @@ def grant_usage(cx, schema, group):
     execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
 
+def revoke_usage(cx, schema, group):
+    execute(cx, """REVOKE USAGE ON SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
+
+
 def grant_all_on_schema(cx, schema, group):
     execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
