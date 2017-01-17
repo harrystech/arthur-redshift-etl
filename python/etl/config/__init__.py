@@ -49,12 +49,14 @@ class DataWarehouseSchema:
     Although there is a (logical) distinction between "sources" and "schemas" in the settings file
     those are really all the same here ...
     """
-    def __init__(self, schema_info, owner_groups, etl_access):
+    def __init__(self, schema_info, etl_access):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
-        # Schemas have read/write and read-only groups associated with them
-        self.owner_groups = owner_groups
-        self.reader_groups = schema_info.get("groups", [])
+        # Schemas have an 'owner' user (with ALL privileges)
+        # and lists of 'reader' and 'writer' groups with corresponding permissions
+        self.owner = schema_info["owner"]
+        self.reader_groups = schema_info.get("readers", [])
+        self.writer_groups = schema_info.get("writers", [])
         # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
         self.is_static_source = "s3_bucket" in schema_info
@@ -84,7 +86,7 @@ class DataWarehouseSchema:
 
     @property
     def groups(self):
-        return self.owner_groups + self.reader_groups
+        return self.reader_groups + self.writer_groups
 
     @property
     def backup_name(self):
@@ -115,11 +117,13 @@ class DataWarehouseConfig:
 
         # Note that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
-        schema_owner_map = {u.schema: [u.group] for u in self.users if u.schema}
+        schema_owner_map = {u.schema: u.name for u in self.users if u.schema}
 
         # Schemas (upstream sources followed by transformations)
         self.schemas = [
-            DataWarehouseSchema(info, [root.group] + schema_owner_map.get(info['name'], []), self._etl_access)
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info['name'], root.name)),
+                self._etl_access)
             for info in settings["sources"] + dw_settings["schemas"]
         ]
 

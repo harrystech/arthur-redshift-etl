@@ -36,10 +36,10 @@ def create_schemas(conn, schemas, owner=None):
     for schema in schemas:
         logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
         etl.pg.create_schema(conn, schema.name, owner)
-        for owner_group in schema.owner_groups:
-            etl.pg.grant_all_on_schema(conn, schema.name, owner_group)
-        for reader_group in schema.reader_groups:
-            etl.pg.grant_usage(conn, schema.name, reader_group)
+        etl.pg.grant_all_on_schema_to_user(conn, schema.name, schema.owner)
+        for group in schema.reader_groups + schema.writer_groups:
+            # Readers/writers are differentiated in TABLE permissions, not schema permissions
+            etl.pg.grant_usage(conn, schema.name, group)
 
 
 def backup_schemas(conn, schemas):
@@ -132,7 +132,7 @@ def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, 
             if add_user_schema:
                 logger.info("Creating schema '%s' with owner '%s'", user.schema, user.name)
                 etl.pg.create_schema(conn, user.schema, user.name)
-                etl.pg.grant_all_on_schema(conn, user.schema, config.groups[0])
+                etl.pg.grant_all_on_schema_to_user(conn, user.schema, config.owner)
                 etl.pg.grant_usage(conn, user.schema, user.group)
             # Non-system users have "their" schema in the search path, others get nothing (meaning just public).
             search_path = ["public"]

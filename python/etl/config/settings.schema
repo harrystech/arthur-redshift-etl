@@ -44,7 +44,8 @@
                     "items": { "type": "string" },
                     "uniqueItems": true
                 },
-                "groups": { "$ref": "#/definitions/identifier_list" }
+                "readers": { "$ref": "#/definitions/identifier_list" },
+                "writers": { "$ref": "#/definitions/identifier_list" }
             },
             "required": [ "name", "include_tables", "read_access" ],
             "additionalProperties": false
