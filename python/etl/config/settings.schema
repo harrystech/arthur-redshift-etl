@@ -80,6 +80,7 @@
             "properties": {
                 "admin_access": { "$ref": "#/definitions/identifier" },
                 "etl_access": { "$ref": "#/definitions/identifier" },
+                "reference_warehouse_access": { "$ref": "#/definitions/identifier" },
                 "owner": { "$ref": "#/definitions/user_info" },
                 "users": {
                     "type": "array",
