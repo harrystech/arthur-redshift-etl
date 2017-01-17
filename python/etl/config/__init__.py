@@ -216,6 +216,21 @@ def read_release_file(filename: str) -> None:
     logger.info("Release information: %s", ', '.join(lines))
 
 
+def yield_config_files(config_files: list, default_file: str="default_settings.yaml"):
+    """
+    Generate filenames from the list of files or directories in :config_files and :default_file
+    """
+    default_file = pkg_resources.resource_filename(__name__, default_file)
+
+    for name in [default_file] + config_files:
+        if os.path.isdir(name):
+            files = sorted(os.path.join(name, n) for n in os.listdir(name))
+        else:
+            files = [name]
+        for filename in files:
+            yield filename
+
+
 def load_settings(config_files: list, default_file: str="default_settings.yaml"):
     """
     Load settings (and environment) from defaults and config files.
@@ -225,24 +240,18 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
     """
     logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
-    default_file = pkg_resources.resource_filename(__name__, default_file)
-
     count_settings = 0
-    for name in [default_file] + config_files:
-        if os.path.isdir(name):
-            files = sorted(os.path.join(name, n) for n in os.listdir(name))
+    config_file_generator = yield_config_files(config_files, default_file)
+    for file in config_file_generator:
+        if filename.endswith(".sh"):
+            load_environ_file(filename)
+        elif filename.endswith((".yaml", ".yml")):
+            load_settings_file(filename, settings)
+            count_settings += 1
+        elif filename.endswith("release.txt"):
+            read_release_file(filename)
         else:
-            files = [name]
-        for filename in files:
-            if filename.endswith(".sh"):
-                load_environ_file(filename)
-            elif filename.endswith((".yaml", ".yml")):
-                load_settings_file(filename, settings)
-                count_settings += 1
-            elif filename.endswith("release.txt"):
-                read_release_file(filename)
-            else:
-                logger.info("Skipping config file '%s'", filename)
+            logger.info("Skipping config file '%s'", filename)
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:

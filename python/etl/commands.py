@@ -382,16 +382,26 @@ class CopyToS3Command(SubCommand):
         super().__init__("sync",
                          "copy table design files to S3",
                          "Copy table design files from local directory to S3."
-                         " If using the '--force' option, this will delete schema and *data* files.")
+                         " If using the '--force' option, this will delete schema and *data* files."
+                         " If using the '--deploy' option, this will also upload warehouse settings .yamls.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "dry-run"])
         parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
                             default=False, action="store_true")
+        parser.add_argument("-d", "--deploy", help="sync local warehouse settings YAML files to prefix's config dir",
+                            default=False, action="store_true")
 
     def callback(self, args, config):
         if args.force:
             etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
+
+        if args.deploy:
+            for fn in etl.config.yield_config_files(args.config):
+                if fn.endswith('yaml') or fn.endswith('yml'):
+                    object_key = os.path.join(args.prefix, 'config', fn)
+                    etl.file_sets.upload_to_s3(fn, args.bucket_name, object_key, dry_run=args.dry_run)
+
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.relation.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
@@ -454,7 +464,8 @@ class LoadRedshiftCommand(SubCommand):
         all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(config, all_file_sets, args.pattern,
-                                             drop=self.use_force, stop_after_first=args.stop_after_first, no_rollback=args.no_rollback,
+                                             drop=self.use_force, stop_after_first=args.stop_after_first,
+                                             no_rollback=args.no_rollback,
                                              skip_copy=args.skip_copy, add_explain_plan=args.add_explain_plan,
                                              dry_run=args.dry_run)
 
