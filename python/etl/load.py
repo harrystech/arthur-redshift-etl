@@ -545,7 +545,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             if dry_run:
                 logger.info("Skipping backup of schemas and creation")
             else:
-                etl.dw.backup_schemas(conn, involved_schemas)
+                etl.dw.backup_schemas(conn, involved_schemas, execution_order)
                 etl.dw.create_schemas(conn, involved_schemas)
 
     vacuumable = []
@@ -586,7 +586,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                 elif not no_rollback:
                     # Defensively create a new connection to rollback
                     etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
-                                           involved_schemas)
+                                           involved_schemas, execution_order)
             raise
 
     # Reconnect to run vacuum outside transaction block
