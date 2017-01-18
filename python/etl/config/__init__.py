@@ -55,7 +55,7 @@ class DataWarehouseSchema:
         # Schemas have an 'owner' user (with ALL privileges)
         # and lists of 'reader' and 'writer' groups with corresponding permissions
         self.owner = schema_info["owner"]
-        self.reader_groups = schema_info.get("readers", [])
+        self.reader_groups = schema_info.get("readers", schema_info.get("groups", []))
         self.writer_groups = schema_info.get("writers", [])
         # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
