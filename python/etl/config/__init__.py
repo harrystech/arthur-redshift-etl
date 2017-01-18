@@ -197,7 +197,8 @@ def load_settings_file(filename: str, settings: dict) -> None:
     Load new settings from config file or a directory of config files
     and UPDATE settings (old settings merged with new).
     """
-    logging.getLogger(__name__).info("Loading settings from '%s'", filename)
+    logger = logging.getLogger(__name__)
+    logger.info("Loading settings from '%s'", filename)
     with open(filename) as f:
         new_settings = yaml.safe_load(f)
         for key in new_settings:
@@ -206,6 +207,16 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 settings[key].update(new_settings[key])
             else:
                 settings[key] = new_settings[key]
+        for source in new_settings.get('sources', []):
+            if 'groups' in source:
+                logger.warning(
+                    'Settings file %s uses a deprecated permissioning API for source "%s":'
+                    ' Specifying permissions with "groups" for upstream sources is deprecated.'
+                    ' Please migrate to "readers" and "writers". Interpreting "groups" as "readers"',
+                    filename, source.get('name', 'unnamed'))
+                if 'readers' in source:
+                    raise etl.ETLError('Settings file %s illegally used both "groups" and "readers" keys for source "%s"',
+                                        filename, source.get('name', 'unnamed'))
 
 
 def read_release_file(filename: str) -> None:

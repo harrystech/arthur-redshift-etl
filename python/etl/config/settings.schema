@@ -44,6 +44,7 @@
                     "items": { "type": "string" },
                     "uniqueItems": true
                 },
+                "groups": { "$ref": "#/definitions/identifier_list" },
                 "readers": { "$ref": "#/definitions/identifier_list" },
                 "writers": { "$ref": "#/definitions/identifier_list" }
             },
@@ -64,7 +65,9 @@
                     "minItems": 1,
                     "uniqueItems": true
                 },
-                "groups": { "$ref": "#/definitions/identifier_list" }
+                "groups": { "$ref": "#/definitions/identifier_list" },
+                "readers": { "$ref": "#/definitions/identifier_list" },
+                "writers": { "$ref": "#/definitions/identifier_list" }
             },
             "required": [ "name", "s3_bucket", "s3_path_template" ],
             "additionalProperties": false
