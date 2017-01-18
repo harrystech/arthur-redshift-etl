@@ -166,7 +166,7 @@ class DataWarehouseConfig:
 
     @property
     def dsn_reference(self):
-        return dict(etl.pg.parse_connection_string(env_value(self._reference_warehouse_access)), readonly=True)
+        return etl.pg.parse_connection_string(env_value(self._reference_warehouse_access))
 
 
 def configure_logging(full_format: bool=False, log_level: str=None) -> None:
