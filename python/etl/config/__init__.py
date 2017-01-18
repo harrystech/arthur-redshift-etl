@@ -3,6 +3,8 @@ Objects to deal with configuration of our data warehouse, like
 * data warehouse itself
 * its schemas
 * its users
+
+Also code to load the configuration.
 """
 
 from collections import defaultdict
@@ -18,8 +20,8 @@ import simplejson as json
 import yaml
 
 import etl
+import etl.file_sets
 import etl.pg
-from etl import package_version
 
 
 class DataWarehouseUser:
@@ -168,7 +170,7 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
         config["handlers"]["console"]["level"] = log_level
     logging.config.dictConfig(config)
     logging.captureWarnings(True)
-    logging.getLogger(__name__).info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
+    logging.getLogger(__name__).info('Starting log for "%s" (%s)', ' '.join(sys.argv), etl.package_version())
 
 
 def load_environ_file(filename: str) -> None:
@@ -216,17 +218,19 @@ def read_release_file(filename: str) -> None:
     logger.info("Release information: %s", ', '.join(lines))
 
 
-def yield_config_files(config_files: list, default_file: str="default_settings.yaml"):
+def yield_config_files(config_files: list, default_file: str=None):
     """
     Generate filenames from the list of files or directories in :config_files and :default_file
+
+    If the default_file is not None, then it is always prepended to the list of files.
+    (It is an error (sadly, at runtime) if the default file is not a file that's part of the package.)
+
+    Note that files in directories are always sorted by their name.
     """
     if default_file:
-        default_file = pkg_resources.resource_filename(__name__, default_file)
-        config_sources = [default_file] + config_files
-    else:
-        config_sources = config_files
+        yield pkg_resources.resource_filename(__name__, default_file)
 
-    for name in config_sources:
+    for name in config_files:
         if os.path.isdir(name):
             files = sorted(os.path.join(name, n) for n in os.listdir(name))
         else:
@@ -237,7 +241,7 @@ def yield_config_files(config_files: list, default_file: str="default_settings.y
 
 def load_settings(config_files: list, default_file: str="default_settings.yaml"):
     """
-    Load settings (and environment) from defaults and config files.
+    Load settings and environment from config files (starting with the default if provided).
 
     If the config "file" is actually a directory, (try to) read all the
     files in that directory.
@@ -245,8 +249,7 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
     logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
     count_settings = 0
-    config_file_generator = yield_config_files(config_files, default_file)
-    for filename in config_file_generator:
+    for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
             load_environ_file(filename)
         elif filename.endswith((".yaml", ".yml")):
@@ -259,7 +262,7 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
-        raise RuntimeError("Failed to find enough configuration files")
+        raise RuntimeError("Failed to find enough configuration files (need at least default and local config)")
 
     schema = load_json("settings.schema")
     jsonschema.validate(settings, schema)
@@ -268,19 +271,28 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
 
 def upload_settings(config_files, bucket_name, prefix, dry_run=False):
     """
-    Upload warehouse configuration .yaml files to target bucket/prefix's "config" dir
+    Upload warehouse configuration files (*.yaml) to target bucket/prefix's "config" dir
+
     Don't upload the default file, as that comes along within the package's deployment
+
+    It is an error to try to upload files with the same name (coming from different config
+    directories).
     """
-    warehouse_yamls = set()
-    for fn in etl.config.yield_config_files(config_files, default_file=None):
-        if fn.endswith('yaml') or fn.endswith('yml'):
-            filename = os.path.basename(fn)
-            if filename not in warehouse_yamls:
-                warehouse_yamls.add(filename)
+    settings_found = set()
+    objects_to_upload = []
+
+    for fullname in yield_config_files(config_files):
+        if fullname.endswith(('.yaml', '.yml')):
+            filename = os.path.basename(fullname)
+            if filename not in settings_found:
+                settings_found.add(filename)
             else:
-                raise KeyError("Tried to upload multiple warehouse configuration yaml files with the same name")
+                raise KeyError("Found configuration file in multiple locations: '%s'" % filename)
             object_key = os.path.join(prefix, 'config', filename)
-            etl.file_sets.upload_to_s3(fn, bucket_name, object_key, dry_run=dry_run)
+            objects_to_upload.append((fullname, object_key))
+    for fullname, object_key in objects_to_upload:
+        etl.file_sets.upload_to_s3(fullname, bucket_name, object_key, dry_run=dry_run)
+
 
 def env_value(name: str) -> str:
     """
