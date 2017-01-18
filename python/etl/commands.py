@@ -327,7 +327,8 @@ class InitializeSetupCommand(SubCommand):
 
     def callback(self, args, config):
         with etl.pg.log_error():
-            etl.dw.initial_setup(config, args.database_name, with_user_creation=args.with_user_creation)
+            etl.dw.initial_setup(config, args.database_name, with_user_creation=args.with_user_creation,
+                                 dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
@@ -454,8 +455,11 @@ class LoadRedshiftCommand(SubCommand):
         all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(config, all_file_sets, args.pattern,
-                                             drop=self.use_force, stop_after_first=args.stop_after_first, no_rollback=args.no_rollback,
-                                             skip_copy=args.skip_copy, add_explain_plan=args.add_explain_plan,
+                                             drop=self.use_force,
+                                             stop_after_first=args.stop_after_first,
+                                             no_rollback=args.no_rollback,
+                                             skip_copy=args.skip_copy,
+                                             add_explain_plan=args.add_explain_plan,
                                              dry_run=args.dry_run)
 
 
