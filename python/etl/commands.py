@@ -397,10 +397,7 @@ class CopyToS3Command(SubCommand):
             etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
 
         if args.deploy:
-            for fn in etl.config.yield_config_files(args.config):
-                if fn.endswith('yaml') or fn.endswith('yml'):
-                    object_key = os.path.join(args.prefix, 'config', fn)
-                    etl.file_sets.upload_to_s3(fn, args.bucket_name, object_key, dry_run=args.dry_run)
+            etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.relation.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)

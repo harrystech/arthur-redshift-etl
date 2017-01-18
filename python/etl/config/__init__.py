@@ -220,9 +220,13 @@ def yield_config_files(config_files: list, default_file: str="default_settings.y
     """
     Generate filenames from the list of files or directories in :config_files and :default_file
     """
-    default_file = pkg_resources.resource_filename(__name__, default_file)
+    if default_file:
+        default_file = pkg_resources.resource_filename(__name__, default_file)
+        config_sources = [default_file] + config_files
+    else:
+        config_sources = config_files
 
-    for name in [default_file] + config_files:
+    for name in config_sources:
         if os.path.isdir(name):
             files = sorted(os.path.join(name, n) for n in os.listdir(name))
         else:
@@ -242,7 +246,7 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
     settings = defaultdict(dict)
     count_settings = 0
     config_file_generator = yield_config_files(config_files, default_file)
-    for file in config_file_generator:
+    for filename in config_file_generator:
         if filename.endswith(".sh"):
             load_environ_file(filename)
         elif filename.endswith((".yaml", ".yml")):
@@ -261,6 +265,22 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
     jsonschema.validate(settings, schema)
     return settings
 
+
+def upload_settings(config_files, bucket_name, prefix, dry_run=False):
+    """
+    Upload warehouse configuration .yaml files to target bucket/prefix's "config" dir
+    Don't upload the default file, as that comes along within the package's deployment
+    """
+    warehouse_yamls = set()
+    for fn in etl.config.yield_config_files(config_files, default_file=None):
+        if fn.endswith('yaml') or fn.endswith('yml'):
+            filename = os.path.basename(fn)
+            if filename not in warehouse_yamls:
+                warehouse_yamls.add(filename)
+            else:
+                raise KeyError("Tried to upload multiple warehouse configuration yaml files with the same name")
+            object_key = os.path.join(prefix, 'config', filename)
+            etl.file_sets.upload_to_s3(fn, bucket_name, object_key, dry_run=dry_run)
 
 def env_value(name: str) -> str:
     """
