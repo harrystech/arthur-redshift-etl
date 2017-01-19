@@ -339,7 +339,9 @@ class CreateUserCommand(SubCommand):
                          "Add new user and set group membership, optionally add a personal schema.")
 
     def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("username", help="name for new user")
+        # TODO We should switch out the "-e" argument for a "-g"/"--group" argument that allows specifying the group
         parser.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
         parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
                             action="store_true")
@@ -348,7 +350,9 @@ class CreateUserCommand(SubCommand):
 
     def callback(self, args, config):
         with etl.pg.log_error():
-            etl.dw.create_new_user(config, args.username, args.etl_user, args.add_user_schema, args.skip_user_creation)
+            etl.dw.create_new_user(config, args.username,
+                                   is_etl_user=args.etl_user, add_user_schema=args.add_user_schema,
+                                   skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
 class DownloadSchemasCommand(SubCommand):

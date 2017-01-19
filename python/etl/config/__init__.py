@@ -39,7 +39,7 @@ class DataWarehouseUser:
 
 class DataWarehouseSchema:
     """
-    Schemas in the data warehouse fall into three buckets:
+    Schemas in the data warehouse fall into one of four buckets:
     (1) Upstream source backed by a database.  Data will be dumped from there and
     so we need to have a DSN with which we can connect.
     (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
@@ -47,11 +47,12 @@ class DataWarehouseSchema:
     is needed here.
     (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
     (but maybe unload'ed).
+    (4) Schemas reserved for users (where user could be a BI tool)
 
     Although there is a (logical) distinction between "sources" and "schemas" in the settings file
     those are really all the same here ...
     """
-    def __init__(self, schema_info, etl_access):
+    def __init__(self, schema_info, etl_access=None):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
         # Schemas have an 'owner' user (with ALL privileges)
