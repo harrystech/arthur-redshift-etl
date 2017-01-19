@@ -79,14 +79,12 @@ def show_pipelines(selection):
         print("*** No pipelines found ***")
     elif not selection:
         logger.info("Currently active pipelines: %s", join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
-        print("*** Data Pipelines ****")
         for pipeline in pipelines:
-            print("{:24s} {:s}".format(pipeline.pipeline_id, pipeline.name))
+            print('{:24s} "{:s}"'.format(pipeline.pipeline_id, pipeline.name))
     else:
         logger.info("Currently active and selected pipelines: %s",
                     join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
-        print("*** Data Pipelines ****")
         for pipeline in pipelines:
-            print("{:24s} {:s}".format(pipeline.pipeline_id, pipeline.name))
+            print('{:24s} "{:s}"'.format(pipeline.pipeline_id, pipeline.name))
             for key in sorted(pipeline.fields):
                 print("    {}: {}".format(key, pipeline.fields[key]))
