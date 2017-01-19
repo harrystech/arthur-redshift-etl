@@ -114,7 +114,7 @@ def initial_setup(config, database_name, with_user_creation=False, dry_run=False
             etl.pg.execute(admin_target_db_conn, """DROP SCHEMA IF EXISTS "PUBLIC" CASCADE""")
 
 
-def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, skip_user_creation=False,
+def create_new_user(config, new_user, group='', add_user_schema=False, skip_user_creation=False,
                     dry_run=False):
     """
     Add new user to database within default user group and with new password.
@@ -146,12 +146,14 @@ def create_new_user(config, new_user, is_etl_user=False, add_user_schema=False, 
                 else:
                     logger.info("Creating user '%s' in group '%s'", user.name, user.group)
                     etl.pg.create_user(conn, user.name, user.group)
-            if is_etl_user:
+            if group:
+                if group not in config.groups:
+                    raise ValueError("Specified group ('%s') not present in DataWarehouseConfig", group)
                 if dry_run:
-                    logger.info("Dry-run: Skipping adding user '%s' to ETL group '%s'", user.name, config.groups[0])
+                    logger.info("Dry-run: Skipping adding user '%s' to group '%s'", user.name, group)
                 else:
-                    logger.info("Adding user '%s' to ETL group '%s'", user.name, config.groups[0])
-                    etl.pg.alter_group_add_user(conn, config.groups[0], user.name)
+                    logger.info("Adding user '%s' to group '%s'", user.name, group)
+                    etl.pg.alter_group_add_user(conn, group, user.name)
             if add_user_schema:
                 user_schema = etl.config.DataWarehouseSchema({"name": user.schema,
                                                               "owner": user.name,

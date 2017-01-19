@@ -341,8 +341,7 @@ class CreateUserCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("username", help="name for new user")
-        # TODO We should switch out the "-e" argument for a "-g"/"--group" argument that allows specifying the group
-        parser.add_argument("-e", "--etl-user", help="add user also to ETL group", action="store_true")
+        parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
                             action="store_true")
         parser.add_argument("-r", "--skip-user-creation",
@@ -351,7 +350,7 @@ class CreateUserCommand(SubCommand):
     def callback(self, args, config):
         with etl.pg.log_error():
             etl.dw.create_new_user(config, args.username,
-                                   is_etl_user=args.etl_user, add_user_schema=args.add_user_schema,
+                                   group=args.group, add_user_schema=args.add_user_schema,
                                    skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
