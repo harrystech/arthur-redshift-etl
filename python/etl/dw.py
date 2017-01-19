@@ -39,23 +39,20 @@ def create_schemas(conn, schemas, owner=None):
             etl.pg.grant_usage(conn, schema.name, group)
 
 
-def backup_schemas(conn, schemas, relations):
+def backup_schemas(conn, schemas):
     logger = logging.getLogger(__name__)
 
     for schema in schemas:
         logger.info("Revoking read access to schema '%s' before backup", schema.name)
         for reader_group in schema.reader_groups:
             etl.pg.revoke_usage(conn, schema.name, reader_group)
-        for relation in relations:
-            if relation.target_table_name.schema == schema.name:
-                for reader_group in schema.reader_groups:
-                    etl.pg.revoke_select(conn, schema.name, relation.target_table_name.table, reader_group)
+            etl.pg.revoke_select_in_schema(conn, schema.name, reader_group)
         logger.info("Renaming schema '%s' to backup '%s'", schema.name, schema.backup_name)
         etl.pg.execute(conn, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(schema.backup_name))
         etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
-def restore_schemas(conn, schemas, relations):
+def restore_schemas(conn, schemas):
     logger = logging.getLogger(__name__)
 
     for schema in schemas:
@@ -65,10 +62,7 @@ def restore_schemas(conn, schemas, relations):
         logger.info("Granting reader access to schema '%s' after backup", schema.name)
         for reader_group in schema.reader_groups:
             etl.pg.grant_usage(conn, schema.name, reader_group)
-        for relation in relations:
-            if relation.target_table_name.schema == schema.name:
-                for reader_group in schema.reader_groups:
-                    etl.pg.grant_select(conn, schema.name, relation.target_table_name.table, reader_group)
+            etl.pg.grant_select_in_schema(conn, schema.name, reader_group)
 
 
 def initial_setup(config, database_name, with_user_creation=False, dry_run=False):
