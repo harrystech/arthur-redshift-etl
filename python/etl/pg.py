@@ -250,8 +250,12 @@ def grant_select(cx, schema, table, group):
     execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
 
 
-def revoke_select(cx, schema, table, group):
-    execute(cx, """REVOKE SELECT ON "{}"."{}" FROM GROUP "{}" """.format(schema, table, group))
+def grant_select_in_schema(cx, schema, group):
+    execute(cx, """GRANT SELECT ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
+
+
+def revoke_select_in_schema(cx, schema, group):
+    execute(cx, """REVOKE SELECT ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
 
 
 def grant_all(cx, schema, table, group):
