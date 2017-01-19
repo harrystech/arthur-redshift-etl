@@ -366,19 +366,18 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_name))
 
 
-def grant_access(conn, table_name, owner_groups, reader_groups, dry_run=False):
+def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=False):
     """
     Grant all privileges to ETL (always the first group) and grant select permission to users' groups.
     """
     logger = logging.getLogger(__name__)
     if dry_run:
         logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(owner_groups))
+                    table_name.identifier, owner)
     else:
         logger.info("Granting all privileges on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(owner_groups))
-        for owner in owner_groups:
-            etl.pg.grant_all(conn, table_name.schema, table_name.table, owner)
+                    table_name.identifier, owner)
+        etl.pg.grant_all_to_user(conn, table_name.schema, table_name.table, owner)
 
     if dry_run:
         logger.info("Dry-run: Skipping granting of select access on '%s' to '%s'",
@@ -388,6 +387,15 @@ def grant_access(conn, table_name, owner_groups, reader_groups, dry_run=False):
                     table_name.identifier, etl.join_with_quotes(reader_groups))
         for reader in reader_groups:
             etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
+
+    if dry_run:
+        logger.info("Dry-run: Skipping granting of writer access on '%s' to '%s'",
+                    table_name.identifier, etl.join_with_quotes(writer_groups))
+    else:
+        logger.info("Granting writer access on '%s' to '%s'",
+                    table_name.identifier, etl.join_with_quotes(writer_groups))
+        for writer in writer_groups:
+            etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
 
 
 def analyze(conn, table_name, dry_run=False):
@@ -412,14 +420,14 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift_relation(conn, description, credentials, owner_groups, reader_groups,
+def load_or_update_redshift_relation(conn, description, credentials, schema,
                                      drop=False, skip_copy=False, add_explain_plan=False, dry_run=False,
                                      constraints_as_warning=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
     table_name = description.target_table_name
-
+    owner, reader_groups, writer_groups = schema.owner, schema.reader_groups, schema.writer_groups
     if description.is_ctas_relation or description.is_view_relation:
         object_key = description.sql_file_name
     else:
@@ -452,7 +460,7 @@ def load_or_update_redshift_relation(conn, description, credentials, owner_group
             analyze(conn, table_name, dry_run=dry_run)
             etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
             modified = True
-        grant_access(conn, table_name, owner_groups, reader_groups, dry_run=dry_run)
+        grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         return modified
 
 
@@ -537,7 +545,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
             if dry_run:
                 logger.info("Skipping backup of schemas and creation")
             else:
-                etl.dw.backup_schemas(conn, involved_schemas, execution_order)
+                etl.dw.backup_schemas(conn, involved_schemas)
                 etl.dw.create_schemas(conn, involved_schemas)
 
     vacuumable = []
@@ -554,7 +562,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                 target_schema = schema_config_lookup[description.target_table_name.schema]
                 try:
                     modified = load_or_update_redshift_relation(
-                        conn, description, data_warehouse.iam_role, target_schema.owner_groups, target_schema.groups,
+                        conn, description, data_warehouse.iam_role, target_schema,
                         drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run,
                         constraints_as_warning=warning_selector.match(description.target_table_name))
                     if modified:
@@ -578,7 +586,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                 elif not no_rollback:
                     # Defensively create a new connection to rollback
                     etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
-                                           involved_schemas, execution_order)
+                                           involved_schemas)
             raise
 
     # Reconnect to run vacuum outside transaction block
