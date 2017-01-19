@@ -214,7 +214,7 @@ def add_standard_arguments(parser, options):
                             default="./schemas")
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-l", "--local-files", help="use files available on local filesystem",
+        group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",
                            action="store_const", const="file", dest="scheme", default="file")
         group.add_argument("-r", "--remote-files", help="use files in S3",
                            action="store_const", const="s3", dest="scheme")
