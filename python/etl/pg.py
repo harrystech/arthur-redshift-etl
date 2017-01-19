@@ -238,24 +238,28 @@ def grant_usage(cx, schema, group):
     execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
 
+def grant_all_on_schema_to_user(cx, schema, user):
+    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO "{}" """.format(schema, user))
+
+
 def revoke_usage(cx, schema, group):
     execute(cx, """REVOKE USAGE ON SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
-
-
-def grant_all_on_schema(cx, schema, group):
-    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
 
 def grant_select(cx, schema, table, group):
     execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
 
 
+def grant_select_and_write(cx, schema, table, group):
+    execute(cx, """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
+
+
+def grant_all_to_user(cx, schema, table, user):
+    execute(cx, """GRANT ALL PRIVILEGES ON "{}"."{}" TO "{}" """.format(schema, table, user))
+
+
 def revoke_select(cx, schema, table, group):
     execute(cx, """REVOKE SELECT ON "{}"."{}" FROM GROUP "{}" """.format(schema, table, group))
-
-
-def grant_all(cx, schema, table, group):
-    execute(cx, """GRANT ALL PRIVILEGES ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
 
 
 def alter_table_owner(cx, schema, table, owner):
