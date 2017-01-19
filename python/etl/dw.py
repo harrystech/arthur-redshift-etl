@@ -138,7 +138,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
     if user.name in ("default", config.owner):
         raise ValueError("Illegal user name '%s'" % user.name)
 
-    with closing(etl.pg.connection(config.dsn_admin)) as conn:
+    with closing(etl.pg.connection(config.dsn_admin_on_etl_db)) as conn:
         with conn:
             if not skip_user_creation:
                 if dry_run:
@@ -148,7 +148,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                     etl.pg.create_user(conn, user.name, user.group)
             if group is not None:
                 if group not in config.groups:
-                    raise ValueError("Specified group ('%s') not present in DataWarehouseConfig", group)
+                    raise ValueError("Specified group ('%s') not present in DataWarehouseConfig" % group)
                 if dry_run:
                     logger.info("Dry-run: Skipping adding user '%s' to group '%s'", user.name, group)
                 else:
@@ -162,7 +162,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                     logger.info("Dry-run: Skipping creating schema '%s' with access for %s",
                                 user_schema.name, join_with_quotes(user_schema.groups))
                 else:
-                    create_schemas([user_schema], user.name)
+                    create_schemas(conn, [user_schema], owner=user.name)
             elif user.schema is not None:
                 logger.warning("User '%s' has schema '%s' configured but adding that was not requested",
                                user.name, user.schema)

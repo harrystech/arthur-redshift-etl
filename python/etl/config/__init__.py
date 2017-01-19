@@ -158,6 +158,11 @@ class DataWarehouseConfig:
     def dsn_etl(self):
         return etl.pg.parse_connection_string(env_value(self._etl_access))
 
+    @property
+    def dsn_admin_on_etl_db(self):
+        # To connect as a superuser, but on the database on which you would ETL
+        return dict(self.dsn_admin, database=self.dsn_etl['database'])
+
 
 def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     """
