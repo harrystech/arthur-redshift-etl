@@ -39,7 +39,7 @@ class DataWarehouseUser:
 
 class DataWarehouseSchema:
     """
-    Schemas in the data warehouse fall into three buckets:
+    Schemas in the data warehouse fall into one of four buckets:
     (1) Upstream source backed by a database.  Data will be dumped from there and
     so we need to have a DSN with which we can connect.
     (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
@@ -47,16 +47,19 @@ class DataWarehouseSchema:
     is needed here.
     (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
     (but maybe unload'ed).
+    (4) Schemas reserved for users (where user could be a BI tool)
 
     Although there is a (logical) distinction between "sources" and "schemas" in the settings file
     those are really all the same here ...
     """
-    def __init__(self, schema_info, owner_groups, etl_access):
+    def __init__(self, schema_info, etl_access=None):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
-        # Schemas have read/write and read-only groups associated with them
-        self.owner_groups = owner_groups
-        self.reader_groups = schema_info.get("groups", [])
+        # Schemas have an 'owner' user (with ALL privileges)
+        # and lists of 'reader' and 'writer' groups with corresponding permissions
+        self.owner = schema_info["owner"]
+        self.reader_groups = schema_info.get("readers", schema_info.get("groups", []))
+        self.writer_groups = schema_info.get("writers", [])
         # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
         self.is_static_source = "s3_bucket" in schema_info
@@ -86,7 +89,7 @@ class DataWarehouseSchema:
 
     @property
     def groups(self):
-        return self.owner_groups + self.reader_groups
+        return self.reader_groups + self.writer_groups
 
     @property
     def backup_name(self):
@@ -117,11 +120,13 @@ class DataWarehouseConfig:
 
         # Note that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
-        schema_owner_map = {u.schema: [u.group] for u in self.users if u.schema}
+        schema_owner_map = {u.schema: u.name for u in self.users if u.schema}
 
         # Schemas (upstream sources followed by transformations)
         self.schemas = [
-            DataWarehouseSchema(info, [root.group] + schema_owner_map.get(info['name'], []), self._etl_access)
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info['name'], root.name)),
+                self._etl_access)
             for info in settings["sources"] + dw_settings["schemas"]
         ]
 
@@ -195,7 +200,8 @@ def load_settings_file(filename: str, settings: dict) -> None:
     Load new settings from config file or a directory of config files
     and UPDATE settings (old settings merged with new).
     """
-    logging.getLogger(__name__).info("Loading settings from '%s'", filename)
+    logger = logging.getLogger(__name__)
+    logger.info("Loading settings from '%s'", filename)
     with open(filename) as f:
         new_settings = yaml.safe_load(f)
         for key in new_settings:
@@ -204,6 +210,15 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 settings[key].update(new_settings[key])
             else:
                 settings[key] = new_settings[key]
+        for source in new_settings.get('sources', []):
+            if 'groups' in source:
+                logger.warning(
+                    'Source "%s" uses a deprecated permissions API in the warehouse settings file:'
+                    ' Please migrate from "groups" to "readers". Will proceed interpreting "groups" as "readers"',
+                    source.get('name', 'unnamed'))
+                if 'readers' in source:
+                    raise etl.ETLError('Source %s illegally used both "groups" and "readers" keys',
+                                       source.get('name', 'unnamed'))
 
 
 def read_release_file(filename: str) -> None:
