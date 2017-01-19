@@ -43,6 +43,9 @@ def backup_schemas(conn, schemas):
     logger = logging.getLogger(__name__)
 
     for schema in schemas:
+        if not etl.pg.schema_exists(conn, schema.name):
+            logger.info("Skipping backup of '%s' as it does not exist", schema.name)
+            continue
         logger.info("Revoking read access to schema '%s' before backup", schema.name)
         for reader_group in schema.reader_groups:
             etl.pg.revoke_usage(conn, schema.name, reader_group)
@@ -56,6 +59,9 @@ def restore_schemas(conn, schemas):
     logger = logging.getLogger(__name__)
 
     for schema in schemas:
+        if not etl.pg.schema_exists(conn, schema.backup_name):
+            logger.warning("Could not restore backup of '%s' as the backup does not exist", schema.name)
+            continue
         logger.info("Renaming schema '%s' from backup '%s'", schema.name, schema.backup_name)
         etl.pg.execute(conn, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(schema.name))
         etl.pg.alter_schema_rename(conn, schema.backup_name, schema.name)
