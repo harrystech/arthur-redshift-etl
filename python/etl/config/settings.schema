@@ -106,7 +106,7 @@
                     "uniqueItems": true
                 }
             },
-            "required": [ "admin_access", "etl_access", "owner", "iam_role" ],
+            "required": [ "admin_access", "etl_access", "reference_warehouse_access", "owner", "iam_role" ],
             "additionalProperties": false
         },
         "s3": {
