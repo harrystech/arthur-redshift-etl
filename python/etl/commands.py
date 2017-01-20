@@ -26,6 +26,7 @@ import etl.load
 import etl.unload
 import etl.monitor
 import etl.pg
+import etl.pipeline
 import etl.relation
 from etl.timer import Timer
 
@@ -54,7 +55,7 @@ def croak(error, exit_code):
 
 def run_arg_as_command(my_name="arthur.py"):
     """
-    Use the sub-command's callback to actually run the sub-command.
+    Use the sub-command's callback in `func` to actually run the sub-command.
     Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
     This function can be used as an entry point for a console script.
     """
@@ -186,7 +187,7 @@ def build_full_parser(prog_name):
             DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
             UnloadDataToS3Command,
             # Helper commands
-            ListFilesCommand, PingCommand, EventsQueryCommand]:
+            ListFilesCommand, PingCommand, ShowDependenciesCommand, ShowPipelinesCommand, EventsQueryCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -213,7 +214,7 @@ def add_standard_arguments(parser, options):
                             default="./schemas")
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-l", "--local-files", help="use files available on local filesystem",
+        group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",
                            action="store_const", const="file", dest="scheme", default="file")
         group.add_argument("-r", "--remote-files", help="use files in S3",
                            action="store_const", const="s3", dest="scheme")
@@ -254,6 +255,7 @@ class SubCommand:
         parser.set_defaults(func=self.callback)
 
         # Log level and prolix setting need to be always known since `run_arg_as_command` depends on them.
+        # TODO move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
         group.add_argument("-v", "--verbose", help="increase verbosity",
@@ -289,26 +291,6 @@ class SubCommand:
     def callback(self, args, config):
         """Override this method for sub-classes"""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
-
-
-class PingCommand(SubCommand):
-
-    def __init__(self):
-        super().__init__("ping",
-                         "ping data warehouse",
-                         "Try to connect to the data warehouse to test connection settings.")
-
-    def add_arguments(self, parser):
-        group = parser.add_mutually_exclusive_group()
-        group.add_argument("-a", "--as-admin-user", help="try to connect as admin user",
-                           action="store_true", dest="use_admin")
-        group.add_argument("-e", "--as-etl-user", help="try to connect as ETL user (default)",
-                           action="store_false", dest="use_admin")
-
-    def callback(self, args, config):
-        dsn = config.dsn_admin if args.use_admin else config.dsn_etl
-        with etl.pg.log_error():
-            etl.dw.ping(dsn)
 
 
 class InitializeSetupCommand(SubCommand):
@@ -556,7 +538,7 @@ class ListFilesCommand(SubCommand):
     def __init__(self):
         super().__init__("ls",
                          "list files in S3",
-                         "List files in the S3 bucket and starting with prefix by source, table, and type.")
+                         "List files in the S3 bucket and starting with prefix by source, table, and file type.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
@@ -568,6 +550,56 @@ class ListFilesCommand(SubCommand):
         etl.file_sets.list_files(file_sets, long_format=args.long_format)
 
 
+class PingCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("ping",
+                         "ping data warehouse",
+                         "Try to connect to the data warehouse to test connection settings.")
+
+    def add_arguments(self, parser):
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("-a", "--as-admin-user", help="try to connect as admin user",
+                           action="store_true", dest="use_admin")
+        group.add_argument("-e", "--as-etl-user", help="try to connect as ETL user (default)",
+                           action="store_false", dest="use_admin")
+
+    def callback(self, args, config):
+        dsn = config.dsn_admin if args.use_admin else config.dsn_etl
+        with etl.pg.log_error():
+            etl.dw.ping(dsn)
+
+
+class ShowDependenciesCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("show_dependencies",
+                         "show dependent relations",
+                         "Show relations in execution order (includes selected and all dependent relations).")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+
+    def callback(self, args, config):
+        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), all_selector, error_if_empty=False)
+        etl.load.show_dependencies(file_sets, args.pattern)
+
+
+class ShowPipelinesCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("show_pipelines",
+                         "show installed pipelines",
+                         "Show additional information about currently installed pipelines.")
+
+    def add_arguments(self, parser):
+        parser.add_argument("selection", help="pick pipelines to show", nargs="*")
+
+    def callback(self, args, config):
+        etl.pipeline.show_pipelines(args.selection)
+
+
 class EventsQueryCommand(SubCommand):
 
     def __init__(self):
@@ -577,7 +609,7 @@ class EventsQueryCommand(SubCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--etl-id", help="pick ETL id to look for")
-        add_standard_arguments(parser, ["pattern"])
+        parser.add_argument("pattern", help="limit what to show", nargs='?')
 
     def callback(self, args, config):
         etl.monitor.query_for(args.pattern, args.etl_id)
