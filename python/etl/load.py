@@ -514,7 +514,7 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
 
 
-def show_dependencies(file_sets, selector):
+def show_dependents(file_sets, selector):
     """
     List the execution order of loads or updates.
 

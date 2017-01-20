@@ -9,7 +9,7 @@ _arthur_completion()
 
     # All sub-commands
     cmds="initialize create_user design sync dump load update unload etl validate explain ls ping"
-    cmds="$cmds show_dependencies show_pipelines"
+    cmds="$cmds show_dependents show_pipelines"
 
     if [ "$prev" = "arthur.py" ]; then
         COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )

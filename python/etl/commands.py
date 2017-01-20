@@ -187,7 +187,7 @@ def build_full_parser(prog_name):
             DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
             UnloadDataToS3Command,
             # Helper commands
-            ListFilesCommand, PingCommand, ShowDependenciesCommand, ShowPipelinesCommand, EventsQueryCommand]:
+            ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand, EventsQueryCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -570,10 +570,10 @@ class PingCommand(SubCommand):
             etl.dw.ping(dsn)
 
 
-class ShowDependenciesCommand(SubCommand):
+class ShowDependentsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("show_dependencies",
+        super().__init__("show_dependents",
                          "show dependent relations",
                          "Show relations in execution order (includes selected and all dependent relations).")
 
@@ -583,7 +583,7 @@ class ShowDependenciesCommand(SubCommand):
     def callback(self, args, config):
         all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
         file_sets = etl.file_sets.find_file_sets(self.location(args), all_selector, error_if_empty=False)
-        etl.load.show_dependencies(file_sets, args.pattern)
+        etl.load.show_dependents(file_sets, args.pattern)
 
 
 class ShowPipelinesCommand(SubCommand):
