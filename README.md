@@ -30,6 +30,10 @@ making changes to the ETL code.
 
 Let's go through your setup steps in order to run the CLI, `arthur.py`, assuming that you will not work on the code base.
 
+### Clone this project
+
+Should be obvious ... but you need to `git clone` this repo using the handy link in Github.
+
 ### AWS CLI
 
 You will need to interact with AWS via the CLI to start a cluster or an instance in EC2:
@@ -46,6 +50,10 @@ aws configure
 ```
 * If you have to work with multiple access keys, check out the support of profiles in the CLI.
 * It is important to setup a **default region** since the start scripts do not specify one.
+* To test, try to list the contents of your company's data lake
+```shell
+aws s3 ls 's3://<your s3 bucket>'
+```
 
 We also use a tool called [jq](https://stedolan.github.io/jq/manual/v1.5/) to help parse responses
 from AWS CLI commands.
@@ -152,7 +160,7 @@ EOF
 
 ## Configuring the ETL (and upstream sources)
 
-The best approach is probably to have a separate repo that contains the configuration file
+The best approach is to have a separate repo for your data warehouse that contains the configuration files
 and all the table design files and transformations.  The documentation will in many places assume
 that you have a "*sibling*" repo so that when within the repo for your local data warehouse (with
 configuration, credentials, and table designs), you can simply use `../harrys-redshift-etl/` to find
@@ -194,10 +202,27 @@ run the ETL in an EMR cluster instead, then you need to create a file with the
 credentials that the cluster will need (a list of environment variables), then copy files needed in
 the cluster and launch the cluster.
 
+#### Creating a credentials file
+
+The minimal credentials file contains the login information for the ETL user that Arthur will use
+to execute in Redshift.  Make sure this file exists in your data warehouse repo as `config/credentials.sh`:
+```
+DATA_WAREHOUSE_ETL=postgres://etl:<password>@<host>:<port>/<dbname>?sslmode=require
+```
+
+#### Copying code into the S3 bucket
+
+Copy the ETL code (including bootstrap scripts and configuration):
 ```shell
 export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentials>"
 # export DATA_WAREHOUSE_CONFIG="\cd ./config && \pwd`
 bin/copy_env.sh "<your S3 bucket>" local $USER
+```
+
+#### Starting a cluster and submitting commands
+
+Start a cluster (which needs to know about your S3 bucket where the bootstrap code lives):
+```shell
 bin/aws_emr_cluster.sh -i "<your S3 bucket>"
 ```
 
