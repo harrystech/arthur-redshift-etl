@@ -13,7 +13,6 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
-from string import Template
 
 # Note that we'll import pyspark modules only when starting a SQL context.
 import simplejson as json
@@ -73,27 +72,6 @@ def create_sql_context():
     # TODO Add spark.jars here? spark.submit.pyFiles?
     sc = SparkContext(conf=conf)
     return SQLContext(sc)
-
-
-def find_files_for_sources(bucket_name, prefix, sources, selector):
-    """
-    Return file information for selected upstream sources, along with the selected upstream sources.
-    (Or returns an empty dictionary and empty list in case no matching table description was found.)
-
-    Mostly a convenience function for shared code between "dump with Spark" and "dump with Sqoop".
-    """
-    logger = logging.getLogger(__name__)
-
-    schema_names = [source.name for source in sources]
-    tables_in_s3 = etl.file_sets.find_files_in_s3(bucket_name, prefix, schema_names, selector)
-
-    useful_sources = OrderedDict()
-    for source, schema_name in zip(sources, schema_names):
-        if schema_name in tables_in_s3:
-            useful_sources[schema_name] = source
-        else:
-            logger.warning("No matches found in 's3://%s/%s/schemas/%s/'", bucket_name, prefix, schema_name)
-    return useful_sources, tables_in_s3
 
 
 def suggest_best_partition_number(table_size):
@@ -630,7 +608,6 @@ def dump_static_table(source, source_file_set, bucket_name, prefix, dry_run=Fals
     """
     Prepare to write manifest file for data files associated with the static data source
     """
-    logger = logging.getLogger(__name__)
     manifest_filename = os.path.join(prefix, "data", source_file_set.source_path_name + ".manifest")
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename,
                         dry_run=dry_run, static_source=source)

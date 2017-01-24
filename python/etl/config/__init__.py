@@ -114,6 +114,7 @@ class DataWarehouseConfig:
         # Environment variables with DSN
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
+        self._reference_warehouse_access = dw_settings["reference_warehouse_access"]
         root = DataWarehouseUser(dw_settings["owner"])
         # Users are in the order from the config
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
@@ -162,6 +163,10 @@ class DataWarehouseConfig:
     def dsn_admin_on_etl_db(self):
         # To connect as a superuser, but on the database on which you would ETL
         return dict(self.dsn_admin, database=self.dsn_etl['database'])
+
+    @property
+    def dsn_reference(self):
+        return etl.pg.parse_connection_string(env_value(self._reference_warehouse_access))
 
 
 def configure_logging(full_format: bool=False, log_level: str=None) -> None:

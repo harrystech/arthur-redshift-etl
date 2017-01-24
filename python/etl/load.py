@@ -504,6 +504,7 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
             if description.target_table_name.schema in dirty_schemas:
                 dirty.add(description.identifier)
 
+    # FIXME move this into load/upgrade/update to have verb correct?
     if len(dirty) == len(complete_sequence):
         logger.info("Decided on updating ALL tables")
     elif len(dirty) == 1:
@@ -511,6 +512,49 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     else:
         logger.info("Decided on updating %d of %d table(s)", len(dirty), len(complete_sequence))
     return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
+
+
+def show_dependents(file_sets, selector):
+    """
+    List the execution order of loads or updates.
+
+    Relations are marked based on whether they were directly selected or selected as
+    part of the fan-out of an update.
+    """
+    logger = logging.getLogger(__name__)
+
+    descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
+    execution_order, involved_schema_names = evaluate_execution_order(descriptions, selector)
+    if len(execution_order) == 0:
+        logger.warning("Found no matching relations for: %s", selector)
+        return
+
+    selected = frozenset(description.identifier for description in descriptions
+                         if selector.match(description.target_table_name))
+    immediate = set(selected)
+    for description in execution_order:
+        if description.is_view_relation and any(name in immediate for name in description.dependencies):
+            immediate.add(description.identifier)
+    immediate = frozenset(immediate - selected)
+    logger.info("Execution order includes %d selected, %d immediate, %d fanout relation(s)",
+                len(selected), len(immediate), len(execution_order) - len(selected) - len(immediate))
+
+    max_len = max(len(description.identifier) for description in execution_order)
+    for i, description in enumerate(execution_order):
+        if description.is_ctas_relation:
+            reltype = "CTAS"
+        elif description.is_view_relation:
+            reltype = "VIEW"
+        else:
+            reltype = "TABLE"
+        if description.identifier in selected:
+            flag = "selected"
+        elif description.identifier in immediate:
+            flag = "immediate"
+        else:
+            flag = "fanout"
+        print("{index:4d} {identifier:{width}s} ({reltype}) ({flag})".format(
+                index=i + 1, identifier=description.identifier, width=max_len, reltype=reltype, flag=flag))
 
 
 def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, stop_after_first=False, no_rollback=False,
