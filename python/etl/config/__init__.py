@@ -80,6 +80,7 @@ class DataWarehouseSchema:
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
+        self.required_relation_identifiers = {}
 
     @property
     def dsn(self):
@@ -110,6 +111,13 @@ class DataWarehouseSchema:
         # FIXME need to start checking env vars before running anything heavy
         if self._dsn_env_var is not None and self._dsn_env_var not in os.environ:
             raise KeyError("Environment variable to access '{0.name}' not set: {0._read_access}".format(self))
+
+    def set_required_relations(self, selector, execution_order):
+        required_relations = [d.dependencies for d in execution_order if selector.match(d.target_table_name)]
+        for description in execution_order[::-1]:
+            if any(description.identifer in req.dependencies for req in required_relations):
+                required_relations.append(description)
+        self.required_relation_identifiers = set([r.identifier for r in required_relations])
 
 
 class DataWarehouseConfig:

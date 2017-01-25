@@ -635,7 +635,7 @@ def dump_static_source_to_s3(source, file_sets, bucket_name, prefix, keep_going=
                 if keep_going:
                     logger.exception("Ignoring this exception and proceeding as requested:")
                     failed.append(target_table_name)
-                else:
+                elif target_table_name.identifier in source.required_relation_identifiers:
                     raise
             else:
                 dumped += 1
