@@ -303,6 +303,7 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False):
     It is an error to try to upload files with the same name (coming from different config
     directories).
     """
+    logger = logging.getLogger(__name__)
     settings_found = set()
     objects_to_upload = []
 
@@ -316,7 +317,10 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False):
             object_key = os.path.join(prefix, 'config', filename)
             objects_to_upload.append((fullname, object_key))
     for fullname, object_key in objects_to_upload:
-        etl.file_sets.upload_to_s3(fullname, bucket_name, object_key, dry_run=dry_run)
+        if dry_run:
+            logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", fullname, bucket_name, object_key)
+        else:
+            etl.s3.upload_to_s3(fullname, bucket_name, object_key)
 
 
 def env_value(name: str) -> str:

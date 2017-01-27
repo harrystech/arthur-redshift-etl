@@ -20,6 +20,7 @@ import etl
 import etl.config
 import etl.pg
 import etl.file_sets
+import etl.s3
 from etl.relation import RelationDescription
 
 
@@ -333,7 +334,7 @@ def download_table_design(bucket_name, design_file, table_name):
     """
     Download table design from file in S3.
     """
-    with closing(etl.file_sets.get_file_content(bucket_name, design_file)) as content:
+    with closing(etl.s3.get_s3_object_content(bucket_name, design_file)) as content:
         table_design = load_table_design(content, table_name)
     return table_design
 

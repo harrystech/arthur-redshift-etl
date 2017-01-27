@@ -28,6 +28,7 @@ import etl.monitor
 import etl.pg
 import etl.pipeline
 import etl.relation
+import etl.s3
 from etl.timer import Timer
 
 
@@ -382,7 +383,7 @@ class CopyToS3Command(SubCommand):
 
     def callback(self, args, config):
         if args.force:
-            etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
+            etl.s3.delete_objects_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
 
         if args.deploy_config:
             etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)

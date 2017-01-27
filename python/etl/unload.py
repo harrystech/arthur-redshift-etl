@@ -19,6 +19,9 @@ from contextlib import closing
 from typing import List
 import logging
 import os
+import tempfile
+import json
+import boto3
 
 from psycopg2.extensions import connection  # For type annotation
 
@@ -30,6 +33,11 @@ import etl
 import etl.file_sets
 import etl.monitor
 import etl.pg
+import etl.s3
+
+
+# N.B. This must match value in deploy scripts in ./bin (and should be in a config file)
+REDSHIFT_ETL_HOME = "/tmp/redshift_etl"
 
 
 class DataUnloadError(etl.ETLError):
@@ -62,13 +70,35 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
         etl.pg.execute(conn, unload_statement)
 
 
+def write_columns_yaml(bucket_name: str, prefix: str, description: RelationDescription) -> None:
+    """
+    Write out a YAML file into the same folder as the CSV files to document the columns of the relation
+    """
+    logger = logging.getLogger(__name__)
+    object_key = os.path.join(prefix, "columns.yaml")
+    columns = [col[1:-1] for col in description.columns]
+    data = {"columns": columns}
+
+    with tempfile.NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="tmp_") as local_file:
+        logger.debug("Writing manifest file locally to '%s'", local_file.name)
+        json.dump(data, local_file, indent="    ", sort_keys=True)
+        local_file.write('\n')
+        local_file.flush()
+        logger.debug("Done writing '%s'", local_file.name)
+        etl.s3.upload_to_s3(local_file.name, bucket_name, object_key)
+
+
 def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> None:
     """
     Write out a "_SUCCESS" file into the same folder as the CSV files to mark
     the unload as complete.  The dump insists on this file before writing a manifest for load.
     """
+    logger = logging.getLogger(__name__)
     object_key = os.path.join(prefix, "_SUCCESS")
-    etl.file_sets.create_empty_object(bucket_name, object_key, dry_run=dry_run)
+    if dry_run:
+        logger.info("Dry-run: Skipping creation of 's3://%s/%s'", bucket_name, object_key)
+    else:
+        etl.s3.create_empty_object(bucket_name, object_key)
 
 
 def unload_redshift_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
@@ -99,6 +129,7 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
                 run_redshift_unload(conn, description, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
         except Exception as exc:
             raise DataUnloadError(exc) from exc
+    write_columns_yaml(schema.s3_bucket, s3_key_prefix, description)
     write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 

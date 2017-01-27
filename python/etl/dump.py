@@ -24,6 +24,7 @@ import etl.monitor
 import etl.pg
 import etl.file_sets
 import etl.relation
+import etl.s3
 from etl.timer import Timer
 from etl.thyme import Thyme
 
@@ -310,13 +311,13 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
                 bucket_name, manifest_filename, source_data_bucket, csv_path)
 
     # For non-static sources, wait for data & success file to potentially finish being written
-    last_success = etl.file_sets.get_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
-                                                   wait=(static_source is None))
+    last_success = etl.s3.get_s3_object_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
+                                                      wait=(static_source is None))
     if last_success is None:
         raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
     csv_files = sorted([
-        f for f in etl.file_sets.list_files_in_folder(source_data_bucket, csv_path)
+        f for f in etl.s3.list_objects_for_prefix(source_data_bucket, csv_path)
         if "part" in f and f.endswith(".gz")
     ])
 
@@ -333,7 +334,7 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         local_file.write('\n')
         local_file.flush()
         logger.debug("Done writing '%s'", local_file.name)
-        etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
+        etl.s3.upload_to_s3(local_file.name, bucket_name, manifest_filename)
 
 
 def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_sets, dry_run=False):
@@ -510,8 +511,8 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set
     options_file = write_options_file(args, dry_run=dry_run)
 
     # Need to first delete directory since sqoop won't overwrite (and can't delete)
-    deletable = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path))
-    etl.file_sets.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+    deletable = sorted(etl.s3.list_objects_for_prefix(bucket_name, csv_path))
+    etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
 
     run_sqoop(options_file, dry_run=dry_run)
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename, dry_run=dry_run)
