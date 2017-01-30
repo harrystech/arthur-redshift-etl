@@ -80,6 +80,7 @@ class RelationDescription:
         # Properties for ordering relations
         self.order = None
         self._dependencies = None
+        self.required = True
 
     # TODO Make __str__ behave same way as TableName, and use __repr__ for the fancy details
     def __str__(self):
@@ -155,8 +156,16 @@ class RelationDescription:
         """
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
+    @property
+    def source_name(self):
+        return self.target_table_name.schema
+
+    def manifest_filename(self, prefix):
+        return os.path.join(prefix, "data", self.source_path_name + ".manifest")
+
     @classmethod
-    def from_file_sets(cls, file_sets, error_on_missing_design=True):
+    def from_file_sets(cls, file_sets, error_on_missing_design=True,
+                       dependency_order=False, required_relation_selector=None):
         """
         Return a list of relation descriptions based on a list of file sets.
 
@@ -174,6 +183,13 @@ class RelationDescription:
                 else:
                     logger.warning("Found file(s) without matching table design: %s",
                                    etl.join_with_quotes(file_set.files))
+
+        if dependency_order or required_relation_selector:
+            ordered_descriptions = order_by_dependencies(descriptions)
+            if required_relation_selector is not None:
+                set_required_relations(ordered_descriptions, required_relation_selector)
+            descriptions = ordered_descriptions
+
         return descriptions
 
 
@@ -232,6 +248,18 @@ def order_by_dependencies(table_descriptions):
 
     dependency_ordered_tables = sorted(table_descriptions, key=attrgetter("order"))
     return dependency_ordered_tables
+
+
+def set_required_relations(ordered_descriptions, required_selector):
+    required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
+    # Walk through descriptions in reverse dependency order, expanding required set based on dependency fanout
+    for description in ordered_descriptions[::-1]:
+        if any([description.identifier in req.dependencies for req in required_relations]):
+            required_relations.append(description)
+    for relation in ordered_descriptions:
+        relation.required = False
+    for relation in required_relations:
+        relation.required = True
 
 
 def validate_table_as_view(conn, description, keep_going=False):

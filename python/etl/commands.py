@@ -419,13 +419,14 @@ class DumpDataToS3Command(SubCommand):
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
-        # file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-        all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), '*')
-        execution_order = get_execution_order(all_file_sets)
-        for schema in config.schemas:
-            schema.set_required_relations(config.required_in_full_load_selector, execution_order)
-        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, file_sets,
-                            args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
+
+        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+        all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
+        descriptions = etl.relation.RelationDescription.from_file_sets(
+            all_file_sets, required_relation_selector=config.required_in_full_load_selector)
+        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix,
+                            descriptions=[d for d in descriptions if args.pattern.match(d.target_table_name)],
+                            max_partitions=args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 class LoadRedshiftCommand(SubCommand):
