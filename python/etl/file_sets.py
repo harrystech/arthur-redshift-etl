@@ -33,9 +33,6 @@ import etl.config
 import etl.s3
 
 
-_resources_for_thread = threading.local()
-
-
 class BadSourceDefinitionError(etl.ETLError):
     pass
 

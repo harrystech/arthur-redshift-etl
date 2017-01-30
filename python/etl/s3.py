@@ -20,7 +20,7 @@ class S3ServiceError(etl.ETLError):
     pass
 
 
-def _get_s3_bucket(bucket_name: str) -> boto3.resources.factory.s3.Bucket:
+def _get_s3_bucket(bucket_name: str):
     """
     Return new Bucket object for a bucket that does exist (waits until it does)
     """

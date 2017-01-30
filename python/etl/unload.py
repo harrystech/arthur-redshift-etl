@@ -98,7 +98,7 @@ def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> No
     if dry_run:
         logger.info("Dry-run: Skipping creation of 's3://%s/%s'", bucket_name, object_key)
     else:
-        etl.s3.create_empty_object(bucket_name, object_key)
+        etl.s3.upload_empty_object(bucket_name, object_key)
 
 
 def unload_redshift_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
