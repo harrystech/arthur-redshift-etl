@@ -62,10 +62,17 @@ class DataWarehouseSchema:
         self.writer_groups = schema_info.get("writers", [])
         # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
-        self.is_static_source = "s3_bucket" in schema_info
-        self.is_upstream_source = self.is_database_source or self.is_static_source
+        self.is_static_source = "s3_bucket" in schema_info and "s3_path_template" in schema_info
+        self.is_an_unload_target = "s3_bucket" in schema_info and "s3_unload_path_template" in schema_info
         # How to access the source of the schema (per DSN (of source or DW)? per S3?)
-        self._dsn_env_var = schema_info.get("read_access", etl_access) if not self.is_static_source else None
+        if self.is_database_source:
+            self._dsn_env_var = schema_info["read_access"]
+        elif self.is_static_source or self.is_an_unload_target:
+            self._dsn_env_var = None
+        else:
+            self._dsn_env_var = etl_access
+        self.has_dsn = self._dsn_env_var is not None
+
         self.s3_bucket = schema_info.get("s3_bucket")
         self.s3_path_template = schema_info.get("s3_path_template")
         self.s3_unload_path_template = schema_info.get("s3_unload_path_template")
@@ -84,7 +91,7 @@ class DataWarehouseSchema:
         may be not set if it is actually not used.
         """
         # Note this returns None for a static source.
-        if not self.is_static_source:
+        if self._dsn_env_var:
             return etl.pg.parse_connection_string(env_value(self._dsn_env_var))
 
     @property

@@ -44,6 +44,10 @@ class DataUnloadError(etl.ETLError):
     pass
 
 
+class UnloadTargetNotFoundError(DataUnloadError):
+    pass
+
+
 def run_redshift_unload(conn: connection, description: RelationDescription, unload_path: str, aws_iam_role: str,
                         allow_overwrite=False) -> None:
     """
@@ -151,7 +155,12 @@ def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], pre
         for relation in unloadable_relations:
             try:
                 # Find matching schema to this relation's unload target ... there should be exactly one match
-                [unload_schema] = [schema for schema in config.schemas if schema.name == relation.unload_target]
+                maybe = [schema for schema in config.schemas
+                         if schema.is_an_unload_target and schema.name == relation.unload_target]
+                if not maybe:
+                    raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
+                                                    relation.unload_target)
+                [unload_schema] = maybe
                 unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:

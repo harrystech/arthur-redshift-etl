@@ -69,7 +69,10 @@
                 "readers": { "$ref": "#/definitions/identifier_list" },
                 "writers": { "$ref": "#/definitions/identifier_list" }
             },
-            "required": [ "name", "s3_bucket", "s3_path_template" ],
+            "anyOf": [
+                { "required": [ "name", "s3_bucket", "s3_path_template", "include_tables" ] },
+                { "required": [ "name", "s3_bucket", "s3_unload_path_template" ] }
+            ],
             "additionalProperties": false
         }
     },
