@@ -7,10 +7,6 @@
             "type": "string",
             "pattern": "^\\w"
         },
-        "path_template" : {
-            "type": "string",
-            "pattern": "^[(\\w+/)|(\\${\\w+})]+$"
-        },
         "identifier_list": {
             "type": "array",
             "items": { "$ref": "#/definitions/identifier" },
@@ -27,28 +23,23 @@
             "required": [ "name", "group" ],
             "additionalProperties": false
         },
+        "path_template" : {
+            "type": "string",
+            "pattern": "^[(\\w+/)|(\\${\\w+})]+$"
+        },
         "upstream_database": {
             "type": "object",
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
                 "description": { "type": "string" },
                 "read_access": { "$ref": "#/definitions/identifier" },
-                "include_tables": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "minItems": 1,
-                    "uniqueItems": true
-                },
-                "exclude_tables": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "uniqueItems": true
-                },
+                "include_tables": { "$ref": "#/definitions/identifier_list" },
+                "exclude_tables": { "$ref": "#/definitions/identifier_list" },
                 "groups": { "$ref": "#/definitions/identifier_list" },
                 "readers": { "$ref": "#/definitions/identifier_list" },
                 "writers": { "$ref": "#/definitions/identifier_list" }
             },
-            "required": [ "name", "include_tables", "read_access" ],
+            "required": [ "name", "read_access", "include_tables" ],
             "additionalProperties": false
         },
         "upstream_static": {
@@ -59,20 +50,18 @@
                 "s3_bucket": { "$ref": "#/definitions/identifier" },
                 "s3_path_template": { "$ref": "#/definitions/path_template" },
                 "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
-                "include_tables": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "minItems": 1,
-                    "uniqueItems": true
-                },
+                "include_tables": { "$ref": "#/definitions/identifier_list" },
                 "groups": { "$ref": "#/definitions/identifier_list" },
                 "readers": { "$ref": "#/definitions/identifier_list" },
                 "writers": { "$ref": "#/definitions/identifier_list" }
             },
             "anyOf": [
-                { "required": [ "name", "s3_bucket", "s3_path_template", "include_tables" ] },
+                { "required": [ "name", "s3_bucket", "s3_path_template"  ] },
                 { "required": [ "name", "s3_bucket", "s3_unload_path_template" ] }
             ],
+            "dependencies": {
+                "include_tables": [ "s3_path_template" ]
+            },
             "additionalProperties": false
         }
     },

@@ -45,6 +45,7 @@ class DataWarehouseSchema:
     (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
     that the ETL will create a manifest file suitable for the COPY command.  No DSN
     is needed here.
+    (2.5) Target in S3 for "unload" command, which may also be an upstream source.
     (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
     (but maybe unload'ed).
     (4) Schemas reserved for users (where user could be a BI tool)
@@ -232,10 +233,9 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 logger.warning(
                     'Source "%s" uses a deprecated permissions API in the warehouse settings file:'
                     ' Please migrate from "groups" to "readers". Will proceed interpreting "groups" as "readers"',
-                    source.get('name', 'unnamed'))
+                    source['name'])
                 if 'readers' in source:
-                    raise etl.ETLError('Source %s illegally used both "groups" and "readers" keys',
-                                       source.get('name', 'unnamed'))
+                    raise etl.ETLError('Source %s illegally used both "groups" and "readers" keys', source['name'])
 
 
 def read_release_file(filename: str) -> None:
