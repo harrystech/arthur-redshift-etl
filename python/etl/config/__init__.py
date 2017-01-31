@@ -20,8 +20,8 @@ import simplejson as json
 import yaml
 
 import etl
-import etl.file_sets
 import etl.pg
+import etl.s3
 
 
 class DataWarehouseUser:
@@ -271,12 +271,14 @@ def yield_config_files(config_files: list, default_file: str=None):
             yield filename
 
 
-def load_settings(config_files: list, default_file: str="default_settings.yaml"):
+def load_settings(config_files: list, default_file: str="default_settings.yaml") -> dict:
     """
     Load settings and environment from config files (starting with the default if provided).
 
     If the config "file" is actually a directory, (try to) read all the
     files in that directory.
+
+    The settings are validating against their schema before being returned.
     """
     logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
@@ -298,7 +300,7 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
 
     schema = load_json("settings.schema")
     jsonschema.validate(settings, schema)
-    return settings
+    return dict(settings)
 
 
 def upload_settings(config_files, bucket_name, prefix, dry_run=False):

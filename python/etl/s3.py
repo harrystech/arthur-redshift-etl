@@ -4,13 +4,14 @@ Common code around interacting with AWS S3
 
 import boto3
 import botocore.exceptions
+import botocore.response
 import logging
 import threading
-import etl.config
-import etl.file_sets
 
-from typing import List, Union, Tuple
+from typing import Iterator, List, Union, Tuple
 from datetime import datetime
+
+import etl
 
 
 _resources_for_thread = threading.local()
@@ -23,6 +24,8 @@ class S3ServiceError(etl.ETLError):
 def _get_s3_bucket(bucket_name: str):
     """
     Return new Bucket object for a bucket that does exist (waits until it does)
+
+    This bucket is a tied to a per-thread session with S3.
     """
     s3 = getattr(_resources_for_thread, 's3', None)
     if s3 is None:
@@ -52,10 +55,10 @@ def upload_empty_object(bucket_name: str, object_key: str) -> None:
     """
     Create a key in an S3 bucket with no content
     """
-    bucket = _get_s3_bucket(bucket_name)
     logger = logging.getLogger(__name__)
     try:
-        logger.debug("Creating 's3://%s/%s'", bucket.name, object_key)
+        logger.debug("Creating empty 's3://%s/%s'", bucket_name, object_key)
+        bucket = _get_s3_bucket(bucket_name)
         obj = bucket.Object(object_key)
         obj.put()
     except botocore.exceptions.ClientError as exc:
@@ -64,50 +67,30 @@ def upload_empty_object(bucket_name: str, object_key: str) -> None:
         raise
 
 
-def delete_in_s3(bucket_name: str, object_keys: List[str], dry_run: bool=False, retry: bool=True) -> None:
+def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
     """
-    For each object key in object_keys, attempt to delete the key and it's content from
-    an S3 bucket
-    """
-    logger = logging.getLogger(__name__)
-    if dry_run:
-        for key in object_keys:
-            logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
-    else:
-        bucket = _get_s3_bucket(bucket_name)
-        keys = [{'Key': key} for key in object_keys]
-        failed = []
-        chunk_size = 1000
-        while len(keys) > 0:
-            result = bucket.delete_objects(Delete={'Objects': keys[:chunk_size]})
-            del keys[:chunk_size]
-            for deleted in result.get('Deleted', {}):
-                logger.info("Deleted 's3://%s/%s'", bucket_name, deleted['Key'])
-            for error in result.get('Errors', {}):
-                logger.error("Failed to delete 's3://%s/%s' with %s: %s", bucket_name, error['Key'],
-                             error['Code'], error['Message'])
-                failed.append(error['Key'])
-        if failed:
-            if retry:
-                logger.warning("Failed to delete %d objects, trying one more time", len(failed))
-                delete_in_s3(bucket_name, failed, dry_run=dry_run, retry=False)
-            else:
-                raise S3ServiceError("Failed to delete %d files" % len(failed))
-
-
-def delete_objects_in_bucket(bucket_name: str, prefix: str, selector: str, dry_run: bool=False) -> None:
-    """
-    Delete all files that might be relevant given the choice of schemas and the target selection.
+    For each object key in object_keys, attempt to delete the key and it's content from an S3 bucket
     """
     logger = logging.getLogger(__name__)
-    iterable = list_objects_for_prefix(bucket_name, prefix + '/data', prefix + '/schemas')
-    deletable = [filename for filename, v in etl.file_sets.find_matching_files_from(iterable, selector,
-                                                                                    return_success_file=True)]
-    if dry_run:
-        for key in deletable:
-            logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
-    else:
-        delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+    bucket = _get_s3_bucket(bucket_name)
+    keys = [{'Key': key} for key in object_keys]
+    failed = []
+    chunk_size = 1000
+    while len(keys) > 0:
+        result = bucket.delete_objects(Delete={'Objects': keys[:chunk_size]})
+        del keys[:chunk_size]
+        for deleted in sorted(obj['Key'] for obj in result.get('Deleted', [])):
+            logger.info("Deleted 's3://%s/%s'", bucket_name, deleted)
+        for error in result.get('Errors', []):
+            logger.error("Failed to delete 's3://%s/%s' with %s: %s", bucket_name, error['Key'],
+                         error['Code'], error['Message'])
+            failed.append(error['Key'])
+    if failed:
+        if _retry:
+            logger.warning("Failed to delete %d objects, trying one more time", len(failed))
+            delete_objects(bucket_name, failed, _retry=False)
+        else:
+            raise S3ServiceError("Failed to delete %d files" % len(failed))
 
 
 def get_s3_object_last_modified(bucket_name: str, object_key: str, wait: bool=True) -> Union[datetime, None]:
@@ -169,7 +152,7 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
         raise
 
 
-def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> str:
+def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> Iterator[str]:
     """
     List all the files in "s3://{bucket_name}/{prefix}" for each given prefix
     (where prefix is probably a path and not an object key).

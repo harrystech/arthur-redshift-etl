@@ -26,8 +26,6 @@ import os
 import os.path
 import re
 
-import boto3
-
 from etl import TableName
 import etl.config
 import etl.s3
@@ -196,10 +194,6 @@ def find_file_sets(uri_parts, selector, error_if_empty=True):
     return file_sets
 
 
-def find_matching_files_from(iterable, pattern, return_success_file=False):
-    _find_matching_files_from(iterable, pattern, return_success_file=return_success_file)
-
-
 def _find_matching_files_from(iterable, pattern, return_success_file=False):
     """
     Match file names against the target pattern and expected path format,
@@ -273,7 +267,21 @@ def _find_file_sets_from(iterable, selector):
     return file_sets
 
 
-def approx_pretty_size(total_bytes):
+def delete_files_in_bucket(bucket_name: str, prefix: str, selector: str, dry_run: bool=False) -> None:
+    """
+    Delete all files that might be relevant given the choice of schemas and the target selection.
+    """
+    logger = logging.getLogger(__name__)
+    iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + '/data', prefix + '/schemas')
+    deletable = [filename for filename, v in _find_matching_files_from(iterable, selector, return_success_file=True)]
+    if dry_run:
+        for key in deletable:
+            logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
+    else:
+        etl.s3.delete_objects(bucket_name, deletable)
+
+
+def approx_pretty_size(total_bytes) -> str:
     """
     Return a humane and pretty size approximation.
 
@@ -308,7 +316,7 @@ def approx_pretty_size(total_bytes):
     return "{:d}{}".format(div, unit)
 
 
-def list_files(file_sets, long_format=False):
+def list_files(file_sets, long_format=False) -> None:
     """
     List files in the given S3 bucket or from current directory.
 

@@ -512,7 +512,11 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set
 
     # Need to first delete directory since sqoop won't overwrite (and can't delete)
     deletable = sorted(etl.s3.list_objects_for_prefix(bucket_name, csv_path))
-    etl.s3.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+    if dry_run:
+        if deletable:
+            logger.info("Dry-run: Skipping deletion of existing CSV files 's3://%s/%s'", bucket_name, csv_path)
+    else:
+        etl.s3.delete_objects(bucket_name, deletable)
 
     run_sqoop(options_file, dry_run=dry_run)
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename, dry_run=dry_run)

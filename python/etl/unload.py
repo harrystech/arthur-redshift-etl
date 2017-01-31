@@ -21,12 +21,11 @@ import logging
 import os
 import tempfile
 import json
-import boto3
 
 from psycopg2.extensions import connection  # For type annotation
 
-from etl.file_sets import TableFileSet
 from etl.config import DataWarehouseConfig, DataWarehouseSchema
+from etl.file_sets import TableFileSet
 from etl.relation import RelationDescription
 from etl.thyme import Thyme
 import etl
