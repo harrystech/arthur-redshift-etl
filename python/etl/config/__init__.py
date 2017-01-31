@@ -20,8 +20,8 @@ import simplejson as json
 import yaml
 
 import etl
-import etl.file_sets
 import etl.pg
+import etl.s3
 
 
 class DataWarehouseUser:
@@ -45,6 +45,7 @@ class DataWarehouseSchema:
     (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
     that the ETL will create a manifest file suitable for the COPY command.  No DSN
     is needed here.
+    (2.5) Target in S3 for "unload" command, which may also be an upstream source.
     (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
     (but maybe unload'ed).
     (4) Schemas reserved for users (where user could be a BI tool)
@@ -62,10 +63,17 @@ class DataWarehouseSchema:
         self.writer_groups = schema_info.get("writers", [])
         # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
-        self.is_static_source = "s3_bucket" in schema_info
-        self.is_upstream_source = self.is_database_source or self.is_static_source
+        self.is_static_source = "s3_bucket" in schema_info and "s3_path_template" in schema_info
+        self.is_an_unload_target = "s3_bucket" in schema_info and "s3_unload_path_template" in schema_info
         # How to access the source of the schema (per DSN (of source or DW)? per S3?)
-        self._dsn_env_var = schema_info.get("read_access", etl_access) if not self.is_static_source else None
+        if self.is_database_source:
+            self._dsn_env_var = schema_info["read_access"]
+        elif self.is_static_source or self.is_an_unload_target:
+            self._dsn_env_var = None
+        else:
+            self._dsn_env_var = etl_access
+        self.has_dsn = self._dsn_env_var is not None
+
         self.s3_bucket = schema_info.get("s3_bucket")
         self.s3_path_template = schema_info.get("s3_path_template")
         self.s3_unload_path_template = schema_info.get("s3_unload_path_template")
@@ -84,7 +92,7 @@ class DataWarehouseSchema:
         may be not set if it is actually not used.
         """
         # Note this returns None for a static source.
-        if not self.is_static_source:
+        if self._dsn_env_var:
             return etl.pg.parse_connection_string(env_value(self._dsn_env_var))
 
     @property
@@ -225,10 +233,9 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 logger.warning(
                     'Source "%s" uses a deprecated permissions API in the warehouse settings file:'
                     ' Please migrate from "groups" to "readers". Will proceed interpreting "groups" as "readers"',
-                    source.get('name', 'unnamed'))
+                    source['name'])
                 if 'readers' in source:
-                    raise etl.ETLError('Source %s illegally used both "groups" and "readers" keys',
-                                       source.get('name', 'unnamed'))
+                    raise etl.ETLError('Source %s illegally used both "groups" and "readers" keys', source['name'])
 
 
 def read_release_file(filename: str) -> None:
@@ -264,12 +271,14 @@ def yield_config_files(config_files: list, default_file: str=None):
             yield filename
 
 
-def load_settings(config_files: list, default_file: str="default_settings.yaml"):
+def load_settings(config_files: list, default_file: str="default_settings.yaml") -> dict:
     """
     Load settings and environment from config files (starting with the default if provided).
 
     If the config "file" is actually a directory, (try to) read all the
     files in that directory.
+
+    The settings are validating against their schema before being returned.
     """
     logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
@@ -291,7 +300,7 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
 
     schema = load_json("settings.schema")
     jsonschema.validate(settings, schema)
-    return settings
+    return dict(settings)
 
 
 def upload_settings(config_files, bucket_name, prefix, dry_run=False):
@@ -303,6 +312,7 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False):
     It is an error to try to upload files with the same name (coming from different config
     directories).
     """
+    logger = logging.getLogger(__name__)
     settings_found = set()
     objects_to_upload = []
 
@@ -316,7 +326,10 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False):
             object_key = os.path.join(prefix, 'config', filename)
             objects_to_upload.append((fullname, object_key))
     for fullname, object_key in objects_to_upload:
-        etl.file_sets.upload_to_s3(fullname, bucket_name, object_key, dry_run=dry_run)
+        if dry_run:
+            logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", fullname, bucket_name, object_key)
+        else:
+            etl.s3.upload_to_s3(fullname, bucket_name, object_key)
 
 
 def env_value(name: str) -> str:
