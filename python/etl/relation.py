@@ -29,6 +29,7 @@ import etl
 import etl.design
 import etl.pg
 import etl.file_sets
+import etl.s3
 
 
 class MissingDesignError(etl.ETLError):
@@ -122,7 +123,7 @@ class RelationDescription:
             if self.sql_file_name is None:
                 raise MissingQueryError("Missing SQL file for '{}'".format(self.identifier))
             if self.bucket_name:
-                with closing(etl.file_sets.get_file_content(self.bucket_name, self.sql_file_name)) as content:
+                with closing(etl.s3.get_s3_object_content(self.bucket_name, self.sql_file_name)) as content:
                     query_stmt = content.read().decode()
             else:
                 with open(self.sql_file_name) as f:
@@ -141,11 +142,18 @@ class RelationDescription:
         self._dependencies = value
 
     @property
+    def unquoted_columns(self):
+        """
+        List of the column names of this relation
+        """
+        return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
+
+    @property
     def columns(self):
         """
         List of delimited column names of this relation
         """
-        return ['"{}"'.format(column["name"]) for column in self.table_design["columns"] if not column.get("skipped")]
+        return ['"{}"'.format(column) for column in self.unquoted_columns]
 
     @classmethod
     def from_file_sets(cls, file_sets, error_on_missing_design=True):
@@ -486,6 +494,9 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
             object_key = "{}/schemas/{}/{}".format(prefix,
                                                    description.target_table_name.schema,
                                                    os.path.basename(local_filename))
-            etl.file_sets.upload_to_s3(local_filename, bucket_name, object_key, dry_run=dry_run)
+            if dry_run:
+                logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", local_filename, bucket_name, object_key)
+            else:
+                etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
     if not dry_run:
         logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)

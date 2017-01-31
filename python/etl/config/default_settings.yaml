@@ -50,14 +50,15 @@
         # Map of known PostgreSQL attribute types to usable types in Redshift.  Missing types will cause an exception
         # The first element in the list is the new type, the second element is the necessary cast expression,
         # the third element is the serialization format in Avro files.
-        # Note that in any expression, %s is replaced by the column name within quotes.
+        # Note that in every expression, %s is replaced by the column name within quotes.
         "cast_needed_att_type": {
             "int4range": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "bigint\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            # NOTE varchar counts characters but Redshift is byte limitations
-            "character varying": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            "text": ["varchar(65535)", "%s::varchar(65535)", "string"],
+            # NOTE varchar counts characters but Redshift is byte limitations.
+            # We are setting the max here to 10k ... need to evaluate on live table what that limit should be.
+            "character varying": ["varchar(10000)", "%s::varchar(10000)", "string"],
+            "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
             # CAVEAT EMPTOR This only works if your database is running in UTC.
             "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],

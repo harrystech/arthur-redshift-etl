@@ -23,11 +23,11 @@ import etl.dw
 import etl.file_sets
 import etl.json_encoder
 import etl.load
-import etl.unload
 import etl.monitor
 import etl.pg
 import etl.pipeline
 import etl.relation
+import etl.unload
 from etl.timer import Timer
 
 
@@ -377,7 +377,7 @@ class CopyToS3Command(SubCommand):
         parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
                             default=False, action="store_true")
         parser.add_argument("-d", "--deploy-config",
-                            help="sync local warehouse settings YAML files to prefix's config dir",
+                            help="sync local settings files (*.yaml) to <prefix>/config folder",
                             default=False, action="store_true")
 
     def callback(self, args, config):

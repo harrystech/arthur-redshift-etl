@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 import os.path
-from string import Template
+import string
 
 
 class Thyme:
@@ -26,27 +26,25 @@ class Thyme:
 
     @staticmethod
     def yesterday() -> "Thyme":
-        y = datetime.utcnow() - timedelta(days=1)
-        return Thyme(y)
+        return Thyme(datetime.utcnow() - timedelta(days=1))
 
     def as_path(self) -> str:
         return os.path.join(self.year, self.month, self.day)
 
     @staticmethod
-    def render_template(prefix: str, template_string: str) -> str:
+    def render_template(template_string: str, values: dict) -> str:
         """
-        Render the template adding the prefix, yesterday and today.
+        Render the template using the given values and also "yesterday" and "today".
 
-        Note that you should pass in a string and we'll take care of
+        Note that you should pass in a string as "template" and we'll take care of
         the templating.
 
-        >>> Thyme.render_template("foo", "${prefix}")
-        'foo'
+        >>> Thyme.render_template("Hello ${name}", {"name": "world!"})
+        'Hello world!'
+        >>> today = Thyme.render_template("${prefix}/${today}", {"prefix": "breakfast"})
+        >>> today.startswith('breakfast')
+        True
         """
-        data = {
-            "prefix": prefix,
-            "yesterday": Thyme.yesterday().as_path(),
-            "today": Thyme.today().as_path()
-        }
-        template = Template(template_string)
+        data = dict(values, yesterday=Thyme.yesterday().as_path(), today=Thyme.today().as_path())
+        template = string.Template(template_string)
         return template.substitute(data)

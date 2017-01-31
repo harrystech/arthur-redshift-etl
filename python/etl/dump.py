@@ -2,7 +2,6 @@
 Functions to deal with dumping data from PostgreSQL databases to CSV.
 """
 
-from collections import OrderedDict
 import concurrent.futures
 from contextlib import closing
 from itertools import groupby
@@ -14,9 +13,6 @@ import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
 
-# Note that we'll import pyspark modules only when starting a SQL context.
-import simplejson as json
-
 import etl
 import etl.config
 import etl.design
@@ -24,6 +20,7 @@ import etl.monitor
 import etl.pg
 import etl.file_sets
 import etl.relation
+import etl.s3
 from etl.timer import Timer
 from etl.thyme import Thyme
 
@@ -299,41 +296,33 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         return
 
     if static_source:
-        rendered_template = Thyme.render_template(prefix, static_source.s3_path_template)
+        rendered_template = Thyme.render_template(static_source.s3_path_template, {"prefix": prefix})
         csv_path = os.path.join(rendered_template, "data", source_path_name, "csv")
         source_data_bucket = static_source.s3_bucket
     else:
         csv_path = os.path.join(prefix, "data", source_path_name, "csv")
         # We are dumping the data right now, so we will find the data in the bucket we're using
         source_data_bucket = bucket_name
-    logger.info("Writing manifest file 's3://%s/%s' for data in 's3://%s/%s'",
-                bucket_name, manifest_filename, source_data_bucket, csv_path)
+    logger.info("Preparing manifest file for data in 's3://%s/%s'", source_data_bucket, csv_path)
 
     # For non-static sources, wait for data & success file to potentially finish being written
-    last_success = etl.file_sets.get_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
-                                                   wait=(static_source is None))
+    last_success = etl.s3.get_s3_object_last_modified(source_data_bucket, csv_path + "/_SUCCESS",
+                                                      wait=(static_source is None))
     if last_success is None:
         raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
     csv_files = sorted([
-        f for f in etl.file_sets.list_files_in_folder(source_data_bucket, csv_path)
+        f for f in etl.s3.list_objects_for_prefix(source_data_bucket, csv_path)
         if "part" in f and f.endswith(".gz")
     ])
-
     if len(csv_files) == 0:
         raise MissingCsvFilesError("Found no CSV files")
 
     remote_files = ["s3://{}/{}".format(source_data_bucket, filename) for filename in csv_files]
-
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
-    with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
-        logger.debug("Writing manifest file locally to '%s'", local_file.name)
-        json.dump(manifest, local_file, indent="    ", sort_keys=True)
-        local_file.write('\n')
-        local_file.flush()
-        logger.debug("Done writing '%s'", local_file.name)
-        etl.file_sets.upload_to_s3(local_file.name, bucket_name, manifest_filename)
+    logger.info("Writing manifest file to 's3://%s/%s'", bucket_name, manifest_filename)
+    etl.s3.upload_data_to_s3(manifest, bucket_name, manifest_filename)
 
 
 def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_sets, dry_run=False):
@@ -510,8 +499,12 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set
     options_file = write_options_file(args, dry_run=dry_run)
 
     # Need to first delete directory since sqoop won't overwrite (and can't delete)
-    deletable = sorted(etl.file_sets.list_files_in_folder(bucket_name, csv_path))
-    etl.file_sets.delete_in_s3(bucket_name, deletable, dry_run=dry_run)
+    deletable = sorted(etl.s3.list_objects_for_prefix(bucket_name, csv_path))
+    if dry_run:
+        if deletable:
+            logger.info("Dry-run: Skipping deletion of existing CSV files 's3://%s/%s'", bucket_name, csv_path)
+    else:
+        etl.s3.delete_objects(bucket_name, deletable)
 
     run_sqoop(options_file, dry_run=dry_run)
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename, dry_run=dry_run)
@@ -704,10 +697,9 @@ def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, 
 
     dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going, dry_run=dry_run)
 
-    if dumper == "sqoop":
-        with etl.pg.log_error():
+    with etl.pg.log_error():
+        if dumper == "spark":
+            dump_to_s3_with_spark(schemas, bucket_name, prefix, file_sets, dry_run=dry_run)
+        else:
             dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets,
                                   max_partitions, keep_going=keep_going, dry_run=dry_run)
-    else:
-        with etl.pg.log_error():
-            dump_to_s3_with_spark(schemas, bucket_name, prefix, file_sets, dry_run=dry_run)

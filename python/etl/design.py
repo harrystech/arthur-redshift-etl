@@ -20,6 +20,7 @@ import etl
 import etl.config
 import etl.pg
 import etl.file_sets
+import etl.s3
 from etl.relation import RelationDescription
 
 
@@ -333,7 +334,7 @@ def download_table_design(bucket_name, design_file, table_name):
     """
     Download table design from file in S3.
     """
-    with closing(etl.file_sets.get_file_content(bucket_name, design_file)) as content:
+    with closing(etl.s3.get_s3_object_content(bucket_name, design_file)) as content:
         table_design = load_table_design(content, table_name)
     return table_design
 
@@ -498,7 +499,7 @@ def download_schemas(sources, selector, table_design_dir, local_files, type_maps
     logger = logging.getLogger(__name__)
     total = 0
     for source in sources:
-        if source.is_static_source:
+        if not source.has_dsn:
             logger.info("Skipping non-database source in S3: '%s'", source.name)
         elif selector.match_schema(source.name):
             normalize_and_create(os.path.join(table_design_dir, source.name), dry_run=dry_run)
