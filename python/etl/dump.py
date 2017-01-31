@@ -296,15 +296,14 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         return
 
     if static_source:
-        rendered_template = Thyme.render_template(prefix, static_source.s3_path_template)
+        rendered_template = Thyme.render_template(static_source.s3_path_template, {"prefix": prefix})
         csv_path = os.path.join(rendered_template, "data", source_path_name, "csv")
         source_data_bucket = static_source.s3_bucket
     else:
         csv_path = os.path.join(prefix, "data", source_path_name, "csv")
         # We are dumping the data right now, so we will find the data in the bucket we're using
         source_data_bucket = bucket_name
-    logger.info("Writing manifest file 's3://%s/%s' for data in 's3://%s/%s'",
-                bucket_name, manifest_filename, source_data_bucket, csv_path)
+    logger.info("Preparing manifest file for data in 's3://%s/%s'", source_data_bucket, csv_path)
 
     # For non-static sources, wait for data & success file to potentially finish being written
     last_success = etl.s3.get_s3_object_last_modified(source_data_bucket, csv_path + "/_SUCCESS",

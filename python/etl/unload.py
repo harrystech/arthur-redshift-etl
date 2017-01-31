@@ -104,7 +104,7 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
 
     # TODO Move the "{}-{}" logic into the RelationDescription? Or all of this for "csv_folder()"?
     schema_table_name = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
-    rendered_template = Thyme.render_template(prefix, schema.s3_unload_path_template)
+    rendered_template = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
     s3_key_prefix = os.path.join(rendered_template, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
 
