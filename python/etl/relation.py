@@ -142,11 +142,18 @@ class RelationDescription:
         self._dependencies = value
 
     @property
+    def unquoted_columns(self):
+        """
+        List of the column names of this relation
+        """
+        return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
+
+    @property
     def columns(self):
         """
         List of delimited column names of this relation
         """
-        return ['"{}"'.format(column["name"]) for column in self.table_design["columns"] if not column.get("skipped")]
+        return ['"{}"'.format(column) for column in self.unquoted_columns]
 
     @classmethod
     def from_file_sets(cls, file_sets, error_on_missing_design=True):

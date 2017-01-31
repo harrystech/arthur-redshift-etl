@@ -320,21 +320,14 @@ def write_manifest_file(bucket_name, prefix, source_path_name, manifest_filename
         f for f in etl.s3.list_objects_for_prefix(source_data_bucket, csv_path)
         if "part" in f and f.endswith(".gz")
     ])
-
     if len(csv_files) == 0:
         raise MissingCsvFilesError("Found no CSV files")
 
     remote_files = ["s3://{}/{}".format(source_data_bucket, filename) for filename in csv_files]
-
     manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
-    with NamedTemporaryFile(mode="w+", dir=REDSHIFT_ETL_HOME, prefix="mf_") as local_file:
-        logger.debug("Writing manifest file locally to '%s'", local_file.name)
-        json.dump(manifest, local_file, indent="    ", sort_keys=True)
-        local_file.write('\n')
-        local_file.flush()
-        logger.debug("Done writing '%s'", local_file.name)
-        etl.s3.upload_to_s3(local_file.name, bucket_name, manifest_filename)
+    logger.info("Writing manifest file to 's3://%s/%s'", bucket_name, manifest_filename)
+    etl.s3.upload_data_to_s3(manifest, bucket_name, manifest_filename)
 
 
 def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_sets, dry_run=False):

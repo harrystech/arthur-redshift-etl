@@ -6,12 +6,15 @@ import boto3
 import botocore.exceptions
 import botocore.response
 import logging
+import simplejson as json
+import tempfile
 import threading
 
 from typing import Iterator, List, Union, Tuple
 from datetime import datetime
 
 import etl
+from etl.json_encoder import FancyJsonEncoder
 
 
 _resources_for_thread = threading.local()
@@ -65,6 +68,17 @@ def upload_empty_object(bucket_name: str, object_key: str) -> None:
         error_code = exc.response['Error']['Code']
         logger.error("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
         raise
+
+
+def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
+    """
+    Write data object (formatted as JSON, readable as YAML) into an S3 object.
+    """
+    with tempfile.NamedTemporaryFile(mode="w+") as local_file:
+        json.dump(data, local_file, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
+        local_file.write('\n')
+        local_file.flush()
+        upload_to_s3(local_file.name, bucket_name, object_key)
 
 
 def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
