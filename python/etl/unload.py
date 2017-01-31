@@ -91,6 +91,7 @@ def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> No
     if dry_run:
         logger.info("Dry-run: Skipping creation of 's3://%s/%s'", bucket_name, object_key)
     else:
+        logger.info("Creating 's3://%s/%s'", bucket_name, object_key)
         etl.s3.upload_empty_object(bucket_name, object_key)
 
 
@@ -132,24 +133,25 @@ def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], pre
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
     logger = logging.getLogger(__name__)
-    logger.info("Collecting all table information before unload")
+    logger.info("Collecting all table information (from S3) before unload")
     descriptions = RelationDescription.from_file_sets(file_sets)
     unloadable_relations = [d for d in descriptions if d.is_unloadable]
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")
         return
 
+    target_lookup = {schema.name: schema for schema in config.schemas if schema.is_an_unload_target}
+    relation_target_tuples = []
+    for relation in unloadable_relations:
+        if relation.unload_target not in target_lookup:
+            raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
+                                            relation.unload_target)
+        relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
+
     conn = etl.pg.connection(config.dsn_etl, readonly=True)
     with closing(conn) as conn:
-        for relation in unloadable_relations:
+        for relation, unload_schema in relation_target_tuples:
             try:
-                # Find matching schema to this relation's unload target ... there should be exactly one match
-                maybe = [schema for schema in config.schemas
-                         if schema.is_an_unload_target and schema.name == relation.unload_target]
-                if not maybe:
-                    raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
-                                                    relation.unload_target)
-                [unload_schema] = maybe
                 unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:

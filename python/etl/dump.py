@@ -2,7 +2,6 @@
 Functions to deal with dumping data from PostgreSQL databases to CSV.
 """
 
-from collections import OrderedDict
 import concurrent.futures
 from contextlib import closing
 from itertools import groupby
@@ -13,9 +12,6 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
-
-# Note that we'll import pyspark modules only when starting a SQL context.
-import simplejson as json
 
 import etl
 import etl.config
@@ -702,10 +698,9 @@ def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, 
 
     dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going, dry_run=dry_run)
 
-    if dumper == "sqoop":
-        with etl.pg.log_error():
+    with etl.pg.log_error():
+        if dumper == "spark":
+            dump_to_s3_with_spark(schemas, bucket_name, prefix, file_sets, dry_run=dry_run)
+        else:
             dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets,
                                   max_partitions, keep_going=keep_going, dry_run=dry_run)
-    else:
-        with etl.pg.log_error():
-            dump_to_s3_with_spark(schemas, bucket_name, prefix, file_sets, dry_run=dry_run)
