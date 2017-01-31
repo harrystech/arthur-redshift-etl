@@ -344,7 +344,8 @@ def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_
                                      destination={'bucket_name': bucket_name,
                                                   'object_key': manifest_filename}):
                 # TODO move this logic to use relation description
-                table_design = etl.design.download_table_design(bucket_name, file_set.design_file, target_table_name)
+                table_design = etl.design.download_table_design(
+                    bucket_name, file_set.design_file_name, target_table_name)
                 df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
                 write_dataframe_as_csv(df, file_set.source_path_name, bucket_name, prefix, dry_run=dry_run)
                 write_manifest_file(bucket_name, prefix, file_set.source_path_name, manifest_filename,
@@ -486,7 +487,7 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, description, bu
     source_table_name = description.source_table_name
     csv_path = os.path.join(prefix, "data", source_name,
                             "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
-    manifest_filename = description.manifest_filename(prefix)
+    manifest_filename = description.manifest_file_name
 
     sqoop_files = os.path.join(REDSHIFT_ETL_HOME, 'sqoop')
     create_dir_unless_exists(sqoop_files)
@@ -525,7 +526,7 @@ def dump_source_to_s3_with_sqoop(source, descriptions, bucket_name, prefix, max_
             target_table_name = description.target_table_name
             source_table_name = description.source_table_name
             # FIXME Refactor into relation description ... calculated multiple times
-            manifest_filename = description.manifest_filename(prefix)
+            manifest_filename = description.manifest_file_name
             try:
                 # FIXME The monitor should contain the number of rows that were dumped.
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
@@ -621,7 +622,7 @@ def dump_static_source_to_s3(source, descriptions, bucket_name, prefix, keep_goi
             target_table_name = description.target_table_name
             source_table_name = description.source_table_name
             # FIXME Refactor into relation description ... calculated multiple times
-            manifest_filename = description.manifest_filename(prefix)
+            manifest_filename = description.manifest_file_name
             try:
                 # FIXME The monitor should contain the number of rows that were dumped.
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,

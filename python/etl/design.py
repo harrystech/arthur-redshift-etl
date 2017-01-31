@@ -401,9 +401,9 @@ def create_or_update_table_designs_from_source(source, selector, local_dir, loca
                 table_design = create_table_design(source_table_name, target_table_name, target_columns)
 
                 source_file_set = source_files.get(source_table_name)
-                if source_file_set and source_file_set.design_file:
+                if source_file_set and source_file_set.design_file_name:
                     # Replace bootstrapped table design with one from file but check whether set of columns changed.
-                    design_file = source_file_set.design_file
+                    design_file = source_file_set.design_file_name
                     existing_table_design = validate_table_design_from_file(design_file, target_table_name)
                     compare_columns(table_design, existing_table_design)
                 else:
@@ -434,7 +434,7 @@ def bootstrap_views(local_files, schemas, dry_run=False):
     created = []
     for schema in schemas:
         for file in local_files:
-            if file.source_name != schema.name or file.design_file:
+            if file.source_name != schema.name or file.design_file_name:
                 continue
             # TODO Pull out the connection so that we don't open it per table but per schema
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
