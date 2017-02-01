@@ -262,8 +262,6 @@ class SubCommand:
                            action="store_const", const="DEBUG", dest="log_level")
         group.add_argument("-q", "--quiet", help="decrease verbosity",
                            action="store_const", const="WARNING", dest="log_level")
-        group.add_argument("-s", "--silent", help="DEPRECATED use --quiet instead",
-                           action="store_const", const="WARNING", dest="log_level")
 
         self.add_arguments(parser)
         return parser
@@ -420,12 +418,14 @@ class DumpDataToS3Command(SubCommand):
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
 
+        # In order to be able to determine the graph of required relations, we first need to
+        # pull in all descriptions before we can focus on those actually selected on the command line
         all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
         all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
-        descriptions = etl.relation.RelationDescription.from_file_sets(
+        all_descriptions = etl.relation.RelationDescription.from_file_sets(
             all_file_sets, required_relation_selector=config.required_in_full_load_selector)
-        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix,
-                            descriptions=[d for d in descriptions if args.pattern.match(d.target_table_name)],
+        descriptions = [d for d in all_descriptions if args.pattern.match(d.target_table_name)]
+        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, descriptions=descriptions,
                             max_partitions=args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
 
 
@@ -639,8 +639,8 @@ class UnloadDataToS3Command(SubCommand):
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
         with etl.pg.log_error():
-            etl.unload.unload_to_s3(config, file_sets, args.prefix, args.force, keep_going=args.keep_going,
-                                    dry_run=args.dry_run)
+            etl.unload.unload_to_s3(config, file_sets, args.prefix, allow_overwrite=args.force,
+                                    keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

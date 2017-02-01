@@ -178,12 +178,14 @@ class RelationDescription:
         Return a list of relation descriptions based on a list of file sets.
 
         If there's a file set without a table design file, then there's a warning
-        and that file set is skipped.
+        and that file set is skipped.  (This comes in handy when creating the design
+        file for a CTAS or VIEW programmatically.)
 
-        When dependency_order is True, relation descriptions are returned in such that relations appear
-        after all their dependencies. Otherwise, descriptions are returned in schema-sorted order.
+        When dependency_order is True, relation descriptions are returned in such order that relations appear
+        after all of their dependencies. Otherwise, descriptions are returned in schema-sorted order.
 
-        If provided, the required_relation_selector will be used to mark dependencies of high-priotiy relations
+        If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
+        to dump or load in these relations will end the ETL run.
         """
         logger = logging.getLogger(__name__)
         descriptions = []
