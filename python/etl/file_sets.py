@@ -43,6 +43,9 @@ class TableFileSet:
     """
     Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
 
+    TableFileSets have a :natural_order based on their schema's position in the DataWarehouseConfig's
+    schema list and their :source_table_name.
+
     Note that all tables are addressed using their "target name" within the data warehouse, where
     the schema name is equal to the source name and the table name is the same as in the upstream
     source. To allow for sorting, the original schema name (in the source
@@ -51,25 +54,26 @@ class TableFileSet:
     portion may be omitted.
     """
 
-    def __init__(self, source_table_name, target_table_name):
+    def __init__(self, source_table_name, target_table_name, natural_order):
         self.source_table_name = source_table_name
         self.target_table_name = target_table_name
-        self.design_file = None
-        self.sql_file = None
-        self.manifest_file = None
+        self.design_file_name = None
+        self.sql_file_name = None
+        self.manifest_file_name = None
         self._data_files = []
         # Used when binding the files to either local filesystem or S3
         self.scheme = None
         self.netloc = None
         self.path = None
+        self.natural_order = natural_order
 
     def __str__(self):
         extensions = []
-        if self.design_file:
+        if self.design_file_name:
             extensions.append(".yaml")
-        if self.sql_file:
+        if self.sql_file_name:
             extensions.append(".sql")
-        if self.manifest_file:
+        if self.manifest_file_name:
             extensions.append(".manifest")
         if self._data_files:
             extensions.append("/csv/part-*")
@@ -122,12 +126,12 @@ class TableFileSet:
     @property
     def files(self):
         _files = []
-        if self.design_file:
-            _files.append(self.design_file)
-        if self.sql_file:
-            _files.append(self.sql_file)
-        if self.manifest_file:
-            _files.append(self.manifest_file)
+        if self.design_file_name:
+            _files.append(self.design_file_name)
+        if self.sql_file_name:
+            _files.append(self.sql_file_name)
+        if self.manifest_file_name:
+            _files.append(self.manifest_file_name)
         if self._data_files:
             _files.extend(self._data_files)
         return _files
@@ -239,30 +243,29 @@ def _find_file_sets_from(iterable, selector):
     """
     logger = logging.getLogger(__name__)
     target_map = {}
-    for filename, values in _find_matching_files_from(iterable, selector):
-        source_table_name = etl.TableName(values["schema_name"], values["table_name"])
-        target_table_name = etl.TableName(values["source_name"], values["table_name"])
-        if target_table_name not in target_map:
-            target_map[target_table_name] = TableFileSet(source_table_name, target_table_name)
-        file_set = target_map[target_table_name]
-
-        file_type = values['file_type']
-        if file_type == 'yaml':
-            file_set.design_file = filename
-        elif file_type == 'sql':
-            file_set.sql_file = filename
-        elif file_type == 'manifest':
-            file_set.manifest_file = filename
-        elif file_type == 'data':
-            file_set.add_data_file(filename)
 
     # Always return files sorted by sources (in original order) and target name
     schema_index = {name: index for index, name in enumerate(selector.base_schemas)}
 
-    def _sort_key(fileset):
-        return schema_index.get(fileset.source_name), fileset.source_path_name
+    for filename, values in _find_matching_files_from(iterable, selector):
+        source_table_name = etl.TableName(values["schema_name"], values["table_name"])
+        target_table_name = etl.TableName(values["source_name"], values["table_name"])
+        if target_table_name not in target_map:
+            natural_order = schema_index.get(values["source_name"]), source_table_name.identifier
+            target_map[target_table_name] = TableFileSet(source_table_name, target_table_name, natural_order)
+        file_set = target_map[target_table_name]
 
-    file_sets = sorted(target_map.values(), key=_sort_key)
+        file_type = values['file_type']
+        if file_type == 'yaml':
+            file_set.design_file_name = filename
+        elif file_type == 'sql':
+            file_set.sql_file_name = filename
+        elif file_type == 'manifest':
+            file_set.manifest_file_name = filename
+        elif file_type == 'data':
+            file_set.add_data_file(filename)
+
+    file_sets = sorted(target_map.values(), key=attrgetter('natural_order'))
     logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
     return file_sets
 
@@ -326,7 +329,7 @@ def list_files(file_sets, long_format=False) -> None:
     for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
         print("Schema: '{}'".format(schema_name))
         for file_set in file_group:
-            if file_set.manifest_file is None:
+            if file_set.manifest_file_name is None:
                 print("    Table: '{}'".format(file_set.target_table_name.table))
             else:
                 print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.table,

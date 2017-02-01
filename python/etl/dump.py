@@ -33,15 +33,15 @@ class UnknownTableSizeError(etl.ETLError):
     pass
 
 
-class MissingCsvFilesError(etl.ETLError):
-    pass
-
-
 class DataDumpError(etl.ETLError):
     pass
 
 
 class SqoopExecutionError(DataDumpError):
+    pass
+
+
+class MissingCsvFilesError(DataDumpError):
     pass
 
 
@@ -344,7 +344,8 @@ def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_
                                      destination={'bucket_name': bucket_name,
                                                   'object_key': manifest_filename}):
                 # TODO move this logic to use relation description
-                table_design = etl.design.download_table_design(bucket_name, file_set.design_file, target_table_name)
+                table_design = etl.design.download_table_design(
+                    bucket_name, file_set.design_file_name, target_table_name)
                 df = read_table_as_dataframe(sql_context, source, source_table_name, table_design)
                 write_dataframe_as_csv(df, file_set.source_path_name, bucket_name, prefix, dry_run=dry_run)
                 write_manifest_file(bucket_name, prefix, file_set.source_path_name, manifest_filename,
@@ -353,7 +354,7 @@ def dump_source_to_s3_with_spark(sql_context, source, bucket_name, prefix, file_
     logger.info("Finished with %d table(s) from source '%s' (%s)", len(copied), source.name, timer)
 
 
-def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False):
+def dump_to_s3_with_spark(sources, bucket_name, prefix, descriptions, dry_run=False):
     """
     Dump data from multiple upstream sources to S3 with Spark Dataframes
     """
@@ -366,12 +367,12 @@ def dump_to_s3_with_spark(sources, bucket_name, prefix, file_sets, dry_run=False
     logger.info("Dumping from these sources: %s", etl.join_with_quotes(source_lookup))
 
     sql_context = create_sql_context()
-    for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
-        dump_source_to_s3_with_spark(sql_context, source_lookup[source_name], bucket_name, prefix, file_group,
+    for source_name, description_group in groupby(descriptions, attrgetter("source_name")):
+        dump_source_to_s3_with_spark(sql_context, source_lookup[source_name], bucket_name, prefix, description_group,
                                      dry_run=dry_run)
 
 
-def build_sqoop_options(bucket_name, csv_path, jdbc_url, username, password_file, source_table_files,
+def build_sqoop_options(bucket_name, csv_path, jdbc_url, username, password_file, relation_description,
                         max_mappers=4):
     """
     Create set of Sqoop options.
@@ -379,9 +380,8 @@ def build_sqoop_options(bucket_name, csv_path, jdbc_url, username, password_file
     Starts with the command (import), then continues with generic options,
     tool specific options, and child-process options.
     """
-    source_table_name = source_table_files.source_table_name
-    table_design = etl.design.download_table_design(bucket_name, source_table_files.design_file,
-                                                    source_table_files.target_table_name)
+    source_table_name = relation_description.source_table_name
+    table_design = relation_description.table_design
     columns = assemble_selected_columns(table_design)
     select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
     primary_key = find_primary_key(table_design)
@@ -477,24 +477,24 @@ def run_sqoop(options_file, dry_run=False):
             raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 
-def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set, bucket_name, prefix,
+def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, description, bucket_name, prefix,
                           max_partitions, dry_run=False):
     """
     Run Sqoop for one table, creates the sub-process and all the pretty args for Sqoop.
     """
     logger = logging.getLogger(__name__)
 
-    source_table_name = source_file_set.source_table_name
+    source_table_name = description.source_table_name
     csv_path = os.path.join(prefix, "data", source_name,
                             "{}-{}".format(source_table_name.schema, source_table_name.table), "csv")
-    manifest_filename = os.path.join(prefix, "data", source_file_set.source_path_name + ".manifest")
+    manifest_filename = description.manifest_file_name
 
     sqoop_files = os.path.join(REDSHIFT_ETL_HOME, 'sqoop')
     create_dir_unless_exists(sqoop_files)
 
     password_file = write_password_file(dsn_properties["password"], dry_run=dry_run)
     args = build_sqoop_options(bucket_name, csv_path, jdbc_url, dsn_properties["user"], password_file,
-                               source_file_set, max_mappers=max_partitions)
+                               description, max_mappers=max_partitions)
     logger.info("Sqoop options are:\n%s", " ".join(args))
     options_file = write_options_file(args, dry_run=dry_run)
 
@@ -507,10 +507,10 @@ def dump_table_with_sqoop(jdbc_url, dsn_properties, source_name, source_file_set
         etl.s3.delete_objects(bucket_name, deletable)
 
     run_sqoop(options_file, dry_run=dry_run)
-    write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename, dry_run=dry_run)
+    write_manifest_file(bucket_name, prefix, description.source_path_name, manifest_filename, dry_run=dry_run)
 
 
-def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_partitions,
+def dump_source_to_s3_with_sqoop(source, descriptions, bucket_name, prefix, max_partitions,
                                  keep_going=False, dry_run=False):
     """
     Dump all (selected) tables from a single upstream source.  Return list of tables for which dump failed.
@@ -522,11 +522,11 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
     failed = []
 
     with Timer() as timer:
-        for file_set in file_sets:
-            target_table_name = file_set.target_table_name
-            source_table_name = file_set.source_table_name
+        for description in descriptions:
+            target_table_name = description.target_table_name
+            source_table_name = description.source_table_name
             # FIXME Refactor into relation description ... calculated multiple times
-            manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
+            manifest_filename = description.manifest_file_name
             try:
                 # FIXME The monitor should contain the number of rows that were dumped.
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
@@ -536,11 +536,14 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
                                                  'table': source_table_name.table},
                                          destination={'bucket_name': bucket_name,
                                                       'object_key': manifest_filename}):
-                    dump_table_with_sqoop(jdbc_url, dsn_properties, source.name, file_set,
+                    dump_table_with_sqoop(jdbc_url, dsn_properties, source.name, description,
                                           bucket_name, prefix, max_partitions, dry_run=dry_run)
             except DataDumpError:
-                if keep_going:
-                    logger.exception("Ignoring this exception and proceeding as requested:")
+                if not description.required:
+                    logger.exception("Dump failed for non-required relation %s:", target_table_name)
+                    failed.append(target_table_name)
+                elif keep_going:
+                    logger.exception("Ignoring failure of required relation and proceeding as requested:")
                     failed.append(target_table_name)
                 else:
                     raise
@@ -554,7 +557,7 @@ def dump_source_to_s3_with_sqoop(source, file_sets, bucket_name, prefix, max_par
     return failed
 
 
-def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partitions, keep_going=False, dry_run=False):
+def dump_to_s3_with_sqoop(sources, bucket_name, prefix, descriptions, max_partitions, keep_going=False, dry_run=False):
     """
     Dump data from upstream sources to S3 with calls to Sqoop
 
@@ -572,11 +575,11 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
-        for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
+        for source_name, description_group in groupby(descriptions, attrgetter("source_name")):
             if source_name in source_lookup:
                 logger.info("Dumping from source '%s'", source_name)
                 f = executor.submit(dump_source_to_s3_with_sqoop,
-                                    source_lookup[source_name], list(file_group),
+                                    source_lookup[source_name], list(description_group),
                                     bucket_name, prefix, max_partitions, keep_going=keep_going, dry_run=dry_run)
                 futures.append(f)
             else:
@@ -587,26 +590,25 @@ def dump_to_s3_with_sqoop(sources, bucket_name, prefix, file_sets, max_partition
             done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
 
     # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
-    missing_tables = []
+    failed_tables = []
     for future in done:
-        missing_tables.extend(future.result())
-    for table_name in missing_tables:
+        failed_tables.extend(future.result())
+    for table_name in failed_tables:
         logger.warning("Failed to dump: '%s'", table_name.identifier)
 
     if not_done:
         raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))
 
 
-def dump_static_table(source, source_file_set, bucket_name, prefix, dry_run=False):
+def dump_static_table(source, source_file_set, bucket_name, manifest_filename, prefix, dry_run=False):
     """
     Prepare to write manifest file for data files associated with the static data source
     """
-    manifest_filename = os.path.join(prefix, "data", source_file_set.source_path_name + ".manifest")
     write_manifest_file(bucket_name, prefix, source_file_set.source_path_name, manifest_filename,
-                        dry_run=dry_run, static_source=source)
+                        static_source=source, dry_run=dry_run)
 
 
-def dump_static_source_to_s3(source, file_sets, bucket_name, prefix, keep_going=False, dry_run=False):
+def dump_static_source_to_s3(source, descriptions, bucket_name, prefix, keep_going=False, dry_run=False):
     """
     Dump all (selected) tables from a single upstream source.  Return list of tables for which dump failed.
     """
@@ -616,11 +618,11 @@ def dump_static_source_to_s3(source, file_sets, bucket_name, prefix, keep_going=
     failed = []
 
     with Timer() as timer:
-        for file_set in file_sets:
-            target_table_name = file_set.target_table_name
-            source_table_name = file_set.source_table_name
+        for description in descriptions:
+            target_table_name = description.target_table_name
+            source_table_name = description.source_table_name
             # FIXME Refactor into relation description ... calculated multiple times
-            manifest_filename = os.path.join(prefix, "data", file_set.source_path_name + ".manifest")
+            manifest_filename = description.manifest_file_name
             try:
                 # FIXME The monitor should contain the number of rows that were dumped.
                 with etl.monitor.Monitor(target_table_name.identifier, 'dump', dry_run=dry_run,
@@ -630,10 +632,13 @@ def dump_static_source_to_s3(source, file_sets, bucket_name, prefix, keep_going=
                                                  'table': source_table_name.table},
                                          destination={'bucket_name': bucket_name,
                                                       'object_key': manifest_filename}):
-                    dump_static_table(source, file_set, bucket_name, prefix, dry_run=dry_run)
+                    dump_static_table(source, description, bucket_name, manifest_filename, prefix, dry_run=dry_run)
             except DataDumpError:
-                if keep_going:
-                    logger.exception("Ignoring this exception and proceeding as requested:")
+                if not description.required:
+                    logger.exception("Dump failed for non-required relation %s:", target_table_name)
+                    failed.append(target_table_name)
+                elif keep_going:
+                    logger.exception("Ignoring failure of required relation and proceeding as requested:")
                     failed.append(target_table_name)
                 else:
                     raise
@@ -647,7 +652,7 @@ def dump_static_source_to_s3(source, file_sets, bucket_name, prefix, keep_going=
         return failed
 
 
-def dump_static_sources(sources, bucket_name, prefix, file_sets, keep_going=False, dry_run=False):
+def dump_static_sources(sources, bucket_name, prefix, descriptions, keep_going=False, dry_run=False):
     logger = logging.getLogger(__name__)
 
     source_lookup = {source.name: source for source in sources if source.is_static_source}
@@ -659,11 +664,11 @@ def dump_static_sources(sources, bucket_name, prefix, file_sets, keep_going=Fals
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
-        for source_name, file_group in groupby(file_sets, attrgetter("source_name")):
+        for source_name, description_group in groupby(descriptions, attrgetter("source_name")):
 
             if source_name in source_lookup:
                 logger.info("Dumping from source '%s'", source_name)
-                f = executor.submit(dump_static_source_to_s3, source_lookup[source_name], list(file_group),
+                f = executor.submit(dump_static_source_to_s3, source_lookup[source_name], list(description_group),
                                     bucket_name, prefix, keep_going=keep_going, dry_run=dry_run)
                 futures.append(f)
             else:
@@ -684,7 +689,7 @@ def dump_static_sources(sources, bucket_name, prefix, file_sets, keep_going=Fals
         raise DataDumpError("Dump failed to complete for {:d} source(s)".format(len(not_done)))
 
 
-def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, keep_going, dry_run):
+def dump_to_s3(dumper, schemas, bucket_name, prefix, descriptions, max_partitions, keep_going, dry_run):
     """
     Dump data from an upstream source to S3
 
@@ -695,11 +700,11 @@ def dump_to_s3(dumper, schemas, bucket_name, prefix, file_sets, max_partitions, 
     # TODO If this is a temp dir, should we use TempDir?
     create_dir_unless_exists(REDSHIFT_ETL_HOME)
 
-    dump_static_sources(schemas, bucket_name, prefix, file_sets, keep_going=keep_going, dry_run=dry_run)
+    dump_static_sources(schemas, bucket_name, prefix, descriptions, keep_going=keep_going, dry_run=dry_run)
 
     with etl.pg.log_error():
         if dumper == "spark":
-            dump_to_s3_with_spark(schemas, bucket_name, prefix, file_sets, dry_run=dry_run)
+            dump_to_s3_with_spark(schemas, bucket_name, prefix, descriptions, dry_run=dry_run)
         else:
-            dump_to_s3_with_sqoop(schemas, bucket_name, prefix, file_sets,
+            dump_to_s3_with_sqoop(schemas, bucket_name, prefix, descriptions,
                                   max_partitions, keep_going=keep_going, dry_run=dry_run)

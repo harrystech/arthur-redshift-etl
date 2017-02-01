@@ -432,9 +432,9 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
         object_key = description.sql_file_name
     else:
         # FIXME Need to differentiate expected manifest filename and presence of the file
-        object_key = description.manifest_file_name
-        if object_key is None and not (skip_copy or dry_run):
+        if not (description.has_manifest or skip_copy or dry_run):
             raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
+        object_key = description.manifest_file_name
 
     # FIXME The monitor should contain the number of rows that were loaded.
     modified = False

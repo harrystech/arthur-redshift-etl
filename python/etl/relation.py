@@ -61,16 +61,27 @@ class UniqueConstraintError(etl.ETLError):
 
 
 class RelationDescription:
+    """
+    Handy object for working with relations (tables or views) created with Arthur
+    Created from a collection of files that pertain to the same table
+    Offers helpful properties for lazily loading contents of relation files
+    Modified by other functions in relations module to set attributes related to dependency graph
+    """
+
+    def __getattr__(self, attr):
+        """
+        Pass-through access to file set
+        """
+        if hasattr(self._fileset, attr):
+            return getattr(self._fileset, attr)
+        raise AttributeError('Neither %s nor %s has attribute %s' % (self.__class__, self._fileset.__class__, attr))
 
     def __init__(self, discovered_files: etl.file_sets.TableFileSet):
         # Basic properties to locate files describing the relation
-        # TODO Make this pass-thru to TableFileSet
-        self.source_path_name = discovered_files.source_path_name
-        self.source_table_name = discovered_files.source_table_name
-        self.target_table_name = discovered_files.target_table_name
-        self.design_file_name = discovered_files.design_file
-        self.sql_file_name = discovered_files.sql_file
-        self.manifest_file_name = discovered_files.manifest_file
+        self._fileset = discovered_files
+        self.prefix = discovered_files.path
+        self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
+        self.has_manifest = discovered_files.manifest_file_name is not None
         # FIXME Move this distinction into file set
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         # Lazy-loading of table design, query statement, etc.
@@ -80,6 +91,7 @@ class RelationDescription:
         # Properties for ordering relations
         self.order = None
         self._dependencies = None
+        self.required = True
 
     # TODO Make __str__ behave same way as TableName, and use __repr__ for the fancy details
     def __str__(self):
@@ -155,18 +167,28 @@ class RelationDescription:
         """
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
+    @property
+    def source_name(self):
+        return self.target_table_name.schema
+
     @classmethod
-    def from_file_sets(cls, file_sets, error_on_missing_design=True):
+    def from_file_sets(cls, file_sets, error_on_missing_design=True,
+                       dependency_order=False, required_relation_selector=None):
         """
         Return a list of relation descriptions based on a list of file sets.
 
         If there's a file set without a table design file, then there's a warning
         and that file set is skipped.
+
+        When dependency_order is True, relation descriptions are returned in such that relations appear
+        after all their dependencies. Otherwise, descriptions are returned in schema-sorted order.
+
+        If provided, the required_relation_selector will be used to mark dependencies of high-priotiy relations
         """
         logger = logging.getLogger(__name__)
         descriptions = []
         for file_set in file_sets:
-            if file_set.design_file is not None:
+            if file_set.design_file_name is not None:
                 descriptions.append(cls(file_set))
             else:
                 if error_on_missing_design:
@@ -174,6 +196,16 @@ class RelationDescription:
                 else:
                     logger.warning("Found file(s) without matching table design: %s",
                                    etl.join_with_quotes(file_set.files))
+
+        if dependency_order or required_relation_selector:
+            ordered_descriptions = order_by_dependencies(descriptions)
+            if required_relation_selector is not None:
+                set_required_relations(ordered_descriptions, required_relation_selector)
+            if dependency_order is True:
+                descriptions = ordered_descriptions
+            else:
+                descriptions = sorted(ordered_descriptions, key=attrgetter('natural_order'))
+
         return descriptions
 
 
@@ -232,6 +264,18 @@ def order_by_dependencies(table_descriptions):
 
     dependency_ordered_tables = sorted(table_descriptions, key=attrgetter("order"))
     return dependency_ordered_tables
+
+
+def set_required_relations(ordered_descriptions, required_selector):
+    required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
+    # Walk through descriptions in reverse dependency order, expanding required set based on dependency fanout
+    for description in ordered_descriptions[::-1]:
+        if any([description.identifier in req.dependencies for req in required_relations]):
+            required_relations.append(description)
+    for relation in ordered_descriptions:
+        relation.required = False
+    for relation in required_relations:
+        relation.required = True
 
 
 def validate_table_as_view(conn, description, keep_going=False):
