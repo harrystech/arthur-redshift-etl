@@ -379,23 +379,25 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
                     table_name.identifier, owner)
         etl.pg.grant_all_to_user(conn, table_name.schema, table_name.table, owner)
 
-    if dry_run:
-        logger.info("Dry-run: Skipping granting of select access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(reader_groups))
-    else:
-        logger.info("Granting select access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(reader_groups))
-        for reader in reader_groups:
-            etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
+    if reader_groups:
+        if dry_run:
+            logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(reader_groups))
+        else:
+            logger.info("Granting select access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(reader_groups))
+            for reader in reader_groups:
+                etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
 
-    if dry_run:
-        logger.info("Dry-run: Skipping granting of writer access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(writer_groups))
-    else:
-        logger.info("Granting writer access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(writer_groups))
-        for writer in writer_groups:
-            etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
+    if writer_groups:
+        if dry_run:
+            logger.info("Dry-run: Skipping granting of writer access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(writer_groups))
+        else:
+            logger.info("Granting writer access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(writer_groups))
+            for writer in writer_groups:
+                etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
 
 
 def analyze(conn, table_name, dry_run=False):
@@ -614,6 +616,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                     if whole_schemas:
                         subtree = _get_failed_subtree(failed, description, execution_order, required_selector)
                         failed.update(subtree)
+                        # FIXME This is difficult to read in the log, especially when the subtree is empty.
                         logger.warning("Load failure for '%s' does not harm any relations required by selector '%s';"
                                        " continuing load omitting these dependent relations: %s"
                                        ". Failure error was: %s",
