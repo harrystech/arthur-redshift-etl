@@ -183,7 +183,7 @@ def build_full_parser(prog_name):
             InitializeSetupCommand, CreateUserCommand,
             # Commands to help with table designs and uploading them
             DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
-            # ETL commands to extract, load/update or do both
+            # ETL commands to extract, load (or update), or transform
             DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
             UnloadDataToS3Command,
             # Helper commands
@@ -476,8 +476,8 @@ class ExtractLoadTransformCommand(SubCommand):
 
     def __init__(self):
         super().__init__("etl",
-                         "run complete ETL (or ELT)",
-                         "Validate designs, extract data, and load data, possibly with transforms."
+                         "DEPRECATED run complete ETL (or ELT)",
+                         "DEPRECATED Validate designs, extract data, and load data, possibly with transforms."
                          " By default, this will update all selected  relations and all those in the"
                          " dependency fan-out. Changes are only visible after data is refreshed."
                          " But if you use the force option, then all schemas affected by the selection"
@@ -492,7 +492,6 @@ class ExtractLoadTransformCommand(SubCommand):
     def callback(self, args, config):
         with etl.pg.log_error():
             file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-            # TODO why do we still need bucket_name and prefix here?
             etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
                                            args.max_partitions, dry_run=args.dry_run)
             # Need to rerun files finder since the dump step has added files and we need to know about dependencies
