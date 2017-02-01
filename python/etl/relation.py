@@ -384,16 +384,17 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
     constraints = design['constraints']
     for constraint in ["primary_key", "natural_key", "surrogate_key", "unique"]:
         if constraint in constraints:
-            logger.info('Checking %s constraint on %s', constraint, description.target_table_name.identifier)
-            keys = constraints[constraint]
-            # FIXME This doesn't quote columns or table names
-            statement = statement_template.format(cols=','.join(keys), table=description.identifier)
+            logger.info("Checking %s constraint on '%s'", constraint, description.identifier)
+            columns = constraints[constraint]
+            quoted_columns = ", ".join('"{}"'.format(name) for name in columns)
+            statement = statement_template.format(cols=quoted_columns, table=description.target_table_name)
             if dry_run:
-                logger.info('Dry run: Skipping duplicate row query')
+                logger.info('Dry-run: Skipping duplicate row query, checking explain plan instead')
+                etl.pg.execute(conn, "EXPLAIN\n" + statement)
                 continue
             results = etl.pg.query(conn, statement)
             if results:
-                error = UniqueConstraintError(description, constraint, keys, results)
+                error = UniqueConstraintError(description, constraint, columns, results)
                 if only_warn:
                     logger.warning(error)
                 else:
