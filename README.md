@@ -265,12 +265,11 @@ arthur.py sync "<schema>.<table>"  # This will upload local files for just one t
 | ---- | ---- |
 | `dump`  | Get data from upstream sources |
 | `load`, `update` | Move data from upstream sources and let it percolate |
-| `etl` | Combine dump and update steps (use `-f` to run a load after dump) |
 | `unload` | Take data from a relation in the data warehouse and dump as CSVs into S3 |
 
 ```shell
+arthur.py dump
 arthur.py load  # This will automatically create schemas as necessary
-arthur.py etl --force  # This will automatically create schemas as necessary
 ```
 
 ## Working with a staging environment
