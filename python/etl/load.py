@@ -217,7 +217,7 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     else:
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
-            # FIXME Given that we're always running as the owner now, could we truncate?
+            # FIXME Given that we're always running as the owner now, could we truncate now?
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
@@ -228,7 +228,7 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
-            # FIXME Retrieve list of files that were actually loaded
+            # TODO Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
         except psycopg2.Error as exc:
@@ -379,23 +379,25 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
                     table_name.identifier, owner)
         etl.pg.grant_all_to_user(conn, table_name.schema, table_name.table, owner)
 
-    if dry_run:
-        logger.info("Dry-run: Skipping granting of select access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(reader_groups))
-    else:
-        logger.info("Granting select access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(reader_groups))
-        for reader in reader_groups:
-            etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
+    if reader_groups:
+        if dry_run:
+            logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(reader_groups))
+        else:
+            logger.info("Granting select access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(reader_groups))
+            for reader in reader_groups:
+                etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
 
-    if dry_run:
-        logger.info("Dry-run: Skipping granting of writer access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(writer_groups))
-    else:
-        logger.info("Granting writer access on '%s' to '%s'",
-                    table_name.identifier, etl.join_with_quotes(writer_groups))
-        for writer in writer_groups:
-            etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
+    if writer_groups:
+        if dry_run:
+            logger.info("Dry-run: Skipping granting of writer access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(writer_groups))
+        else:
+            logger.info("Granting writer access on '%s' to %s",
+                        table_name.identifier, etl.join_with_quotes(writer_groups))
+            for writer in writer_groups:
+                etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
 
 
 def analyze(conn, table_name, dry_run=False):
@@ -431,12 +433,11 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
     if description.is_ctas_relation or description.is_view_relation:
         object_key = description.sql_file_name
     else:
-        # FIXME Need to differentiate expected manifest filename and presence of the file
-        object_key = description.manifest_file_name
-        if object_key is None and not (skip_copy or dry_run):
+        if not (description.has_manifest or skip_copy or dry_run):
             raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
+        object_key = description.manifest_file_name
 
-    # FIXME The monitor should contain the number of rows that were loaded.
+    # TODO The monitor should contain the number of rows that were loaded.
     modified = False
     with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
                              options=["skip_copy"] if skip_copy else [],
@@ -615,6 +616,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                     if whole_schemas:
                         subtree = _get_failed_subtree(failed, description, execution_order, required_selector)
                         failed.update(subtree)
+                        # FIXME This is difficult to read in the log, especially when the subtree is empty.
                         logger.warning("Load failure for '%s' does not harm any relations required by selector '%s';"
                                        " continuing load omitting these dependent relations: %s"
                                        ". Failure error was: %s",

@@ -83,7 +83,7 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
 
 def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
     """
-    For each object key in object_keys, attempt to delete the key and it's content from an S3 bucket
+    For each object key in object_keys, attempt to delete the key and its content from an S3 bucket
     """
     logger = logging.getLogger(__name__)
     bucket = _get_s3_bucket(bucket_name)

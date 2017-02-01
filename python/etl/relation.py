@@ -21,6 +21,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
+from typing import List
 
 import psycopg2
 import simplejson as json
@@ -61,17 +62,27 @@ class UniqueConstraintError(etl.ETLError):
 
 
 class RelationDescription:
+    """
+    Handy object for working with relations (tables or views) created with Arthur
+    Created from a collection of files that pertain to the same table
+    Offers helpful properties for lazily loading contents of relation files
+    Modified by other functions in relations module to set attributes related to dependency graph
+    """
+
+    def __getattr__(self, attr):
+        """
+        Pass-through access to file set
+        """
+        if hasattr(self._fileset, attr):
+            return getattr(self._fileset, attr)
+        raise AttributeError('Neither %s nor %s has attribute %s' % (self.__class__, self._fileset.__class__, attr))
 
     def __init__(self, discovered_files: etl.file_sets.TableFileSet):
         # Basic properties to locate files describing the relation
-        # TODO Make this pass-thru to TableFileSet
-        self.source_path_name = discovered_files.source_path_name
-        self.source_table_name = discovered_files.source_table_name
-        self.target_table_name = discovered_files.target_table_name
-        self.design_file_name = discovered_files.design_file
-        self.sql_file_name = discovered_files.sql_file
-        self.manifest_file_name = discovered_files.manifest_file
-        # FIXME Move this distinction into file set
+        self._fileset = discovered_files
+        self.prefix = discovered_files.path
+        self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
+        self.has_manifest = discovered_files.manifest_file_name is not None
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
@@ -80,6 +91,7 @@ class RelationDescription:
         # Properties for ordering relations
         self.order = None
         self._dependencies = None
+        self.required = True
 
     # TODO Make __str__ behave same way as TableName, and use __repr__ for the fancy details
     def __str__(self):
@@ -89,7 +101,19 @@ class RelationDescription:
     def identifier(self):
         return self.target_table_name.identifier
 
-    # TODO Need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
+    def norm_path(self, filename: str) -> str:
+        """
+        Return "normalized" path based on filename of design file or SQL file.
+
+        Assumption: If the filename ends with .yaml or .sql, then the file belongs under "schemas".
+        Else the file belongs under "data".
+        """
+        if filename.endswith((".yaml", ".yml", ".sql")):
+            return "schemas/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
+        else:
+            return "data/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
+
+    # TODO Also need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
 
     @property
     def table_design(self):
@@ -155,18 +179,30 @@ class RelationDescription:
         """
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
+    @property
+    def source_name(self):
+        return self.target_table_name.schema
+
     @classmethod
-    def from_file_sets(cls, file_sets, error_on_missing_design=True):
+    def from_file_sets(cls, file_sets, error_on_missing_design=True,
+                       dependency_order=False, required_relation_selector=None):
         """
         Return a list of relation descriptions based on a list of file sets.
 
         If there's a file set without a table design file, then there's a warning
-        and that file set is skipped.
+        and that file set is skipped.  (This comes in handy when creating the design
+        file for a CTAS or VIEW programmatically.)
+
+        When dependency_order is True, relation descriptions are returned in such order that relations appear
+        after all of their dependencies. Otherwise, descriptions are returned in schema-sorted order.
+
+        If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
+        to dump or load in these relations will end the ETL run.
         """
         logger = logging.getLogger(__name__)
         descriptions = []
         for file_set in file_sets:
-            if file_set.design_file is not None:
+            if file_set.design_file_name is not None:
                 descriptions.append(cls(file_set))
             else:
                 if error_on_missing_design:
@@ -174,6 +210,16 @@ class RelationDescription:
                 else:
                     logger.warning("Found file(s) without matching table design: %s",
                                    etl.join_with_quotes(file_set.files))
+
+        if dependency_order or required_relation_selector:
+            ordered_descriptions = order_by_dependencies(descriptions)
+            if required_relation_selector is not None:
+                set_required_relations(ordered_descriptions, required_relation_selector)
+            if dependency_order is True:
+                descriptions = ordered_descriptions
+            else:
+                descriptions = sorted(ordered_descriptions, key=attrgetter('natural_order'))
+
         return descriptions
 
 
@@ -232,6 +278,18 @@ def order_by_dependencies(table_descriptions):
 
     dependency_ordered_tables = sorted(table_descriptions, key=attrgetter("order"))
     return dependency_ordered_tables
+
+
+def set_required_relations(ordered_descriptions, required_selector):
+    required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
+    # Walk through descriptions in reverse dependency order, expanding required set based on dependency fanout
+    for description in ordered_descriptions[::-1]:
+        if any([description.identifier in req.dependencies for req in required_relations]):
+            required_relations.append(description)
+    for relation in ordered_descriptions:
+        relation.required = False
+    for relation in required_relations:
+        relation.required = True
 
 
 def validate_table_as_view(conn, description, keep_going=False):
@@ -312,7 +370,7 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
     logger = logging.getLogger(__name__)
     design = description.table_design
     if 'constraints' not in design:
-        logger.info('No constraints discovered for %s', description.target_table_name.identifier)
+        logger.info("No constraints discovered for '%s'", description.identifier)
         return
 
     statement_template = """
@@ -326,16 +384,17 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
     constraints = design['constraints']
     for constraint in ["primary_key", "natural_key", "surrogate_key", "unique"]:
         if constraint in constraints:
-            logger.info('Checking %s constraint on %s', constraint, description.target_table_name.identifier)
-            keys = constraints[constraint]
-            # FIXME This doesn't quote columns or table names
-            statement = statement_template.format(cols=','.join(keys), table=description.identifier)
+            logger.info("Checking %s constraint on '%s'", constraint, description.identifier)
+            columns = constraints[constraint]
+            quoted_columns = ", ".join('"{}"'.format(name) for name in columns)
+            statement = statement_template.format(cols=quoted_columns, table=description.target_table_name)
             if dry_run:
-                logger.info('Dry run: Skipping duplicate row query')
+                logger.info('Dry-run: Skipping duplicate row query, checking explain plan instead')
+                etl.pg.execute(conn, "EXPLAIN\n" + statement)
                 continue
             results = etl.pg.query(conn, statement)
             if results:
-                error = UniqueConstraintError(description, constraint, keys, results)
+                error = UniqueConstraintError(description, constraint, columns, results)
                 if only_warn:
                     logger.warning(error)
                 else:
@@ -424,15 +483,11 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
+def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_going=False, skip_deps=False) -> None:
     """
     Make sure that all table design files pass the validation checks.
-
-    If a bucket name is given, assume files are objects in that bucket.
-    Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
 
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
 
@@ -449,15 +504,11 @@ def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
         logger.info("Skipping validation against database (nothing to do)")
 
 
-def test_queries(dsn, file_sets):
+def test_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     """
     Test queries by running EXPLAIN with the query.
-
-    If a bucket name is given, assume files are objects in that bucket.
-    Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
@@ -465,14 +516,14 @@ def test_queries(dsn, file_sets):
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
         for description in descriptions:
             if description.is_ctas_relation or description.is_view_relation:
-                logger.debug("Testing query for %s", description.identifier)
+                logger.debug("Testing query for '%s'", description.identifier)
                 plan = etl.pg.query(conn, "EXPLAIN\n" + description.query_stmt)
                 logger.info("Explain plan for query of '%s':\n | %s",
                             description.identifier,
                             "\n | ".join(row[0] for row in plan))
 
 
-def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
+def copy_to_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
     """
     Copy (validated) table design and SQL files from local directory to S3 bucket.
 
@@ -480,7 +531,6 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
     """
     logger = logging.getLogger(__name__)
 
-    descriptions = RelationDescription.from_file_sets(local_files, error_on_missing_design=False)
     for description in descriptions:
         files = [description.design_file_name]
         if description.is_ctas_relation or description.is_view_relation:
@@ -490,13 +540,10 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
                 raise MissingQueryError("Missing matching SQL file for '%s'" % description.design_file_name)
 
         for local_filename in files:
-            # FIXME Move this logic into TableFileSet
-            object_key = "{}/schemas/{}/{}".format(prefix,
-                                                   description.target_table_name.schema,
-                                                   os.path.basename(local_filename))
+            object_key = os.path.join(prefix, description.norm_path(local_filename))
             if dry_run:
                 logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", local_filename, bucket_name, object_key)
             else:
                 etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
     if not dry_run:
-        logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
+        logger.info("Uploaded %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)

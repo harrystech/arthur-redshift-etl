@@ -183,7 +183,7 @@ def build_full_parser(prog_name):
             InitializeSetupCommand, CreateUserCommand,
             # Commands to help with table designs and uploading them
             DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
-            # ETL commands to extract, load/update or do both
+            # ETL commands to extract, load (or update), or transform
             DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
             UnloadDataToS3Command,
             # Helper commands
@@ -226,13 +226,15 @@ def add_standard_arguments(parser, options):
                             help="first drop table or view to force update of definition", default=False,
                             action="store_true")
     if "explain" in options:
-        parser.add_argument("-x", "--add-explain-plan", help="add explain plan to log", action="store_true")
+        parser.add_argument("-x", "--add-explain-plan",
+                            help="DEPRECATED add explain plan to log (use the 'explain' command directly)",
+                            action="store_true")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
-                            nargs='*', action=StorePattern)
+                            nargs='*', action=StorePatternAsSelector)
 
 
-class StorePattern(argparse.Action):
+class StorePatternAsSelector(argparse.Action):
     """
     Store the list of glob patterns (to pick tables) as a TableSelector instance.
     """
@@ -261,8 +263,6 @@ class SubCommand:
         group.add_argument("-v", "--verbose", help="increase verbosity",
                            action="store_const", const="DEBUG", dest="log_level")
         group.add_argument("-q", "--quiet", help="decrease verbosity",
-                           action="store_const", const="WARNING", dest="log_level")
-        group.add_argument("-s", "--silent", help="DEPRECATED use --quiet instead",
                            action="store_const", const="WARNING", dest="log_level")
 
         self.add_arguments(parser)
@@ -388,7 +388,8 @@ class CopyToS3Command(SubCommand):
             etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-        etl.relation.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        descriptions = etl.relation.RelationDescription.from_file_sets(local_files, error_on_missing_design=False)
+        etl.relation.copy_to_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class DumpDataToS3Command(SubCommand):
@@ -419,9 +420,16 @@ class DumpDataToS3Command(SubCommand):
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
-        file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, file_sets,
-                            args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
+
+        # In order to be able to determine the graph of required relations, we first need to
+        # pull in all descriptions before we can focus on those actually selected on the command line
+        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+        all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
+        all_descriptions = etl.relation.RelationDescription.from_file_sets(
+            all_file_sets, required_relation_selector=config.required_in_full_load_selector)
+        descriptions = [d for d in all_descriptions if args.pattern.match(d.target_table_name)]
+        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, descriptions=descriptions,
+                            max_partitions=args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 class LoadRedshiftCommand(SubCommand):
@@ -471,8 +479,8 @@ class ExtractLoadTransformCommand(SubCommand):
 
     def __init__(self):
         super().__init__("etl",
-                         "run complete ETL (or ELT)",
-                         "Validate designs, extract data, and load data, possibly with transforms."
+                         "DEPRECATED run complete ETL (or ELT)",
+                         "DEPRECATED Validate designs, extract data, and load data, possibly with transforms."
                          " By default, this will update all selected  relations and all those in the"
                          " dependency fan-out. Changes are only visible after data is refreshed."
                          " But if you use the force option, then all schemas affected by the selection"
@@ -487,7 +495,6 @@ class ExtractLoadTransformCommand(SubCommand):
     def callback(self, args, config):
         with etl.pg.log_error():
             file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-            # TODO why do we still need bucket_name and prefix here?
             etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
                                            args.max_partitions, dry_run=args.dry_run)
             # Need to rerun files finder since the dump step has added files and we need to know about dependencies
@@ -514,7 +521,8 @@ class ValidateDesignsCommand(SubCommand):
     def callback(self, args, config):
         # FIXME This should pick up all files so that dependency ordering can be done correctly.
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
-        etl.relation.validate_designs(config.dsn_etl, file_sets,
+        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
+        etl.relation.validate_designs(config.dsn_etl, descriptions,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
 
@@ -530,7 +538,8 @@ class ExplainQueryCommand(SubCommand):
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
-        etl.relation.test_queries(config.dsn_etl, file_sets)
+        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
+        etl.relation.test_queries(config.dsn_etl, descriptions)
 
 
 class ListFilesCommand(SubCommand):
@@ -634,9 +643,10 @@ class UnloadDataToS3Command(SubCommand):
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
         with etl.pg.log_error():
-            etl.unload.unload_to_s3(config, file_sets, args.prefix, args.force, keep_going=args.keep_going,
-                                    dry_run=args.dry_run)
+            etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
+                                    keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

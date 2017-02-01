@@ -105,7 +105,7 @@ def fetch_columns(cx, table_name):
     """
     Retrieve table definition (column names and types).
     """
-    # FIXME Multiple indices lead to multiple rows per attribute when using join with pg_index
+    # TODO Multiple indices lead to multiple rows per attribute when using join with pg_index
     ddl = etl.pg.query(cx, """SELECT a.attname AS attribute
                                    , pg_catalog.format_type(t.oid, a.atttypmod) AS attribute_type
                                    , a.attnotnull AS not_null_constraint
@@ -345,7 +345,7 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
     """
     logger = logging.getLogger(__name__)
     table = table_design["name"]
-    # FIXME Move this logic into file sets
+    # FIXME Move this logic into file sets (note that "source_name" is in table_design)
     filename = os.path.join(local_dir, source_name, "{}-{}.yaml".format(source_table_name.schema,
                                                                         source_table_name.table))
     if dry_run:
@@ -358,7 +358,7 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
             # JSON pretty printing is prettier than YAML printing.
             json.dump(table_design, o, indent="    ", sort_keys=True)
             o.write('\n')
-        logger.info("Completed writing '%s'", filename)
+        logger.debug("Completed writing '%s'", filename)
 
 
 def normalize_and_create(directory: str, dry_run=False) -> str:
@@ -401,9 +401,9 @@ def create_or_update_table_designs_from_source(source, selector, local_dir, loca
                 table_design = create_table_design(source_table_name, target_table_name, target_columns)
 
                 source_file_set = source_files.get(source_table_name)
-                if source_file_set and source_file_set.design_file:
+                if source_file_set and source_file_set.design_file_name:
                     # Replace bootstrapped table design with one from file but check whether set of columns changed.
-                    design_file = source_file_set.design_file
+                    design_file = source_file_set.design_file_name
                     existing_table_design = validate_table_design_from_file(design_file, target_table_name)
                     compare_columns(table_design, existing_table_design)
                 else:
@@ -434,7 +434,7 @@ def bootstrap_views(local_files, schemas, dry_run=False):
     created = []
     for schema in schemas:
         for file in local_files:
-            if file.source_name != schema.name or file.design_file:
+            if file.source_name != schema.name or file.design_file_name:
                 continue
             # TODO Pull out the connection so that we don't open it per table but per schema
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
