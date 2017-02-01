@@ -50,7 +50,7 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
     select_statement = """
         SELECT {}
         FROM {}
-        """.format(", ".join(description.columns), description.table_design["name"])
+        """.format(", ".join(description.columns), description.target_table_name)
     credentials = "aws_iam_role={}".format(aws_iam_role)
     unload_statement = """
         UNLOAD ('{}')
@@ -127,14 +127,13 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
     write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
-def unload_to_s3(config: DataWarehouseConfig, file_sets: List[TableFileSet], prefix: str, allow_overwrite: bool,
-                 keep_going: bool, dry_run: bool) -> None:
+def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescription], prefix: str,
+                 allow_overwrite: bool, keep_going: bool, dry_run: bool) -> None:
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
     logger = logging.getLogger(__name__)
     logger.info("Collecting all table information (from S3) before unload")
-    descriptions = RelationDescription.from_file_sets(file_sets)
     unloadable_relations = [d for d in descriptions if d.is_unloadable]
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")

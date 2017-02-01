@@ -643,8 +643,9 @@ class UnloadDataToS3Command(SubCommand):
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
+        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
         with etl.pg.log_error():
-            etl.unload.unload_to_s3(config, file_sets, args.prefix, allow_overwrite=args.force,
+            etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
                                     keep_going=args.keep_going, dry_run=args.dry_run)
 
 
