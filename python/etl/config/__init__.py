@@ -151,6 +151,8 @@ class DataWarehouseConfig:
         # For creating table design files automatically
         self.type_maps = settings["type_maps"]
         # Relation glob patterns downgrading unique constraints to warnings; matches nothing if unset
+        if "constraints_as_warnings" in settings:
+            logging.warning("The use of 'constraints_as_warnings' is DEPRECATED.  Use 'required_in_full_load' instead.")
         self.constraints_as_warnings_selector = etl.TableSelector(settings.get("constraints_as_warnings") or ['noop'])
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset
         self.required_in_full_load_selector = etl.TableSelector(settings.get("required_in_full_load", []))

@@ -48,8 +48,8 @@ class TableFileSet:
 
     Note that all tables are addressed using their "target name" within the data warehouse, where
     the schema name is equal to the source name and the table name is the same as in the upstream
-    source. To allow for sorting, the original schema name (in the source
-    database) is kept.  For CTAS and VIEWs, the "target name" consists of the schema name within
+    source. To allow for sorting, the original schema name (in the source database) is kept.
+    For CTAS and VIEWs, the "target name" consists of the schema name within
     the data warehouse and the table or view name assigned.  Since there is no source schema, that
     portion may be omitted.
     """
@@ -57,6 +57,7 @@ class TableFileSet:
     def __init__(self, source_table_name, target_table_name, natural_order):
         self.source_table_name = source_table_name
         self.target_table_name = target_table_name
+        # Note that a value other than None implies that the file exists (see setters)
         self.design_file_name = None
         self.sql_file_name = None
         self.manifest_file_name = None
@@ -65,6 +66,7 @@ class TableFileSet:
         self.scheme = None
         self.netloc = None
         self.path = None
+        # Used to order relations (should be opaque to users)
         self.natural_order = natural_order
 
     def __str__(self):
