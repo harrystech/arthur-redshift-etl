@@ -105,7 +105,7 @@ def fetch_columns(cx, table_name):
     """
     Retrieve table definition (column names and types).
     """
-    # FIXME Multiple indices lead to multiple rows per attribute when using join with pg_index
+    # TODO Multiple indices lead to multiple rows per attribute when using join with pg_index
     ddl = etl.pg.query(cx, """SELECT a.attname AS attribute
                                    , pg_catalog.format_type(t.oid, a.atttypmod) AS attribute_type
                                    , a.attnotnull AS not_null_constraint
@@ -345,7 +345,7 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
     """
     logger = logging.getLogger(__name__)
     table = table_design["name"]
-    # FIXME Move this logic into file sets
+    # FIXME Move this logic into file sets (note that "source_name" is in table_design)
     filename = os.path.join(local_dir, source_name, "{}-{}.yaml".format(source_table_name.schema,
                                                                         source_table_name.table))
     if dry_run:
@@ -358,7 +358,7 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
             # JSON pretty printing is prettier than YAML printing.
             json.dump(table_design, o, indent="    ", sort_keys=True)
             o.write('\n')
-        logger.info("Completed writing '%s'", filename)
+        logger.debug("Completed writing '%s'", filename)
 
 
 def normalize_and_create(directory: str, dry_run=False) -> str:

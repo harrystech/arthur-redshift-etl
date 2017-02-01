@@ -229,10 +229,10 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-x", "--add-explain-plan", help="add explain plan to log", action="store_true")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
-                            nargs='*', action=StorePattern)
+                            nargs='*', action=StorePatternAsSelector)
 
 
-class StorePattern(argparse.Action):
+class StorePatternAsSelector(argparse.Action):
     """
     Store the list of glob patterns (to pick tables) as a TableSelector instance.
     """
@@ -386,7 +386,8 @@ class CopyToS3Command(SubCommand):
             etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-        etl.relation.copy_to_s3(local_files, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        descriptions = etl.relation.RelationDescription.from_file_sets(local_files, error_on_missing_design=False)
+        etl.relation.copy_to_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class DumpDataToS3Command(SubCommand):
@@ -518,7 +519,8 @@ class ValidateDesignsCommand(SubCommand):
     def callback(self, args, config):
         # FIXME This should pick up all files so that dependency ordering can be done correctly.
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
-        etl.relation.validate_designs(config.dsn_etl, file_sets,
+        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
+        etl.relation.validate_designs(config.dsn_etl, descriptions,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
 
@@ -534,7 +536,8 @@ class ExplainQueryCommand(SubCommand):
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
-        etl.relation.test_queries(config.dsn_etl, file_sets)
+        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
+        etl.relation.test_queries(config.dsn_etl, descriptions)
 
 
 class ListFilesCommand(SubCommand):

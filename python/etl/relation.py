@@ -21,6 +21,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
+from typing import List
 
 import psycopg2
 import simplejson as json
@@ -82,7 +83,6 @@ class RelationDescription:
         self.prefix = discovered_files.path
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
-        # FIXME Move this distinction into file set
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
@@ -101,7 +101,19 @@ class RelationDescription:
     def identifier(self):
         return self.target_table_name.identifier
 
-    # TODO Need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
+    def norm_path(self, filename: str) -> str:
+        """
+        Return "normalized" path based on filename of design file or SQL file.
+
+        Assumption: If the filename ends with .yaml or .sql, then the file belongs under "schemas".
+        Else the file belongs under "data".
+        """
+        if filename.endswith((".yaml", ".yml", ".sql")):
+            return "schemas/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
+        else:
+            return "data/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
+
+    # TODO Also need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
 
     @property
     def table_design(self):
@@ -358,7 +370,7 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
     logger = logging.getLogger(__name__)
     design = description.table_design
     if 'constraints' not in design:
-        logger.info('No constraints discovered for %s', description.target_table_name.identifier)
+        logger.info("No constraints discovered for '%s'", description.identifier)
         return
 
     statement_template = """
@@ -470,15 +482,11 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
+def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_going=False, skip_deps=False) -> None:
     """
     Make sure that all table design files pass the validation checks.
-
-    If a bucket name is given, assume files are objects in that bucket.
-    Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
 
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
 
@@ -495,15 +503,11 @@ def validate_designs(dsn, file_sets, keep_going=False, skip_deps=False):
         logger.info("Skipping validation against database (nothing to do)")
 
 
-def test_queries(dsn, file_sets):
+def test_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     """
     Test queries by running EXPLAIN with the query.
-
-    If a bucket name is given, assume files are objects in that bucket.
-    Otherwise they better be in the local filesystem.
     """
     logger = logging.getLogger(__name__)
-    descriptions = RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
@@ -511,14 +515,14 @@ def test_queries(dsn, file_sets):
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
         for description in descriptions:
             if description.is_ctas_relation or description.is_view_relation:
-                logger.debug("Testing query for %s", description.identifier)
+                logger.debug("Testing query for '%s'", description.identifier)
                 plan = etl.pg.query(conn, "EXPLAIN\n" + description.query_stmt)
                 logger.info("Explain plan for query of '%s':\n | %s",
                             description.identifier,
                             "\n | ".join(row[0] for row in plan))
 
 
-def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
+def copy_to_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
     """
     Copy (validated) table design and SQL files from local directory to S3 bucket.
 
@@ -526,7 +530,6 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
     """
     logger = logging.getLogger(__name__)
 
-    descriptions = RelationDescription.from_file_sets(local_files, error_on_missing_design=False)
     for description in descriptions:
         files = [description.design_file_name]
         if description.is_ctas_relation or description.is_view_relation:
@@ -536,13 +539,10 @@ def copy_to_s3(local_files, bucket_name, prefix, dry_run=False):
                 raise MissingQueryError("Missing matching SQL file for '%s'" % description.design_file_name)
 
         for local_filename in files:
-            # FIXME Move this logic into TableFileSet
-            object_key = "{}/schemas/{}/{}".format(prefix,
-                                                   description.target_table_name.schema,
-                                                   os.path.basename(local_filename))
+            object_key = os.path.join(prefix, description.norm_path(local_filename))
             if dry_run:
                 logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", local_filename, bucket_name, object_key)
             else:
                 etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
     if not dry_run:
-        logger.info("Uploaded all files to 's3://%s/%s/'", bucket_name, prefix)
+        logger.info("Uploaded %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)

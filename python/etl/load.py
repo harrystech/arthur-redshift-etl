@@ -217,7 +217,7 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     else:
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
-            # FIXME Given that we're always running as the owner now, could we truncate?
+            # FIXME Given that we're always running as the owner now, could we truncate now?
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
@@ -228,7 +228,7 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
                                     TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
                                     TRUNCATECOLUMNS
                                  """.format(table_name), (s3_path, credentials))
-            # FIXME Retrieve list of files that were actually loaded
+            # TODO Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
         except psycopg2.Error as exc:
@@ -431,12 +431,11 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
     if description.is_ctas_relation or description.is_view_relation:
         object_key = description.sql_file_name
     else:
-        # FIXME Need to differentiate expected manifest filename and presence of the file
         if not (description.has_manifest or skip_copy or dry_run):
             raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
         object_key = description.manifest_file_name
 
-    # FIXME The monitor should contain the number of rows that were loaded.
+    # TODO The monitor should contain the number of rows that were loaded.
     modified = False
     with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
                              options=["skip_copy"] if skip_copy else [],
