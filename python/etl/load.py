@@ -515,30 +515,36 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
 
 
-def show_dependents(file_sets, selector):
+def show_dependents(descriptions, selector):
     """
     List the execution order of loads or updates.
 
     Relations are marked based on whether they were directly selected or selected as
     part of the fan-out of an update.
+    They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
     logger = logging.getLogger(__name__)
 
-    descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
     execution_order, involved_schema_names = evaluate_execution_order(descriptions, selector)
     if len(execution_order) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
+    logger.info("Involved schemas: %s", etl.join_with_quotes(involved_schema_names))
 
-    selected = frozenset(description.identifier for description in descriptions
+    selected = frozenset(description.identifier for description in execution_order
                          if selector.match(description.target_table_name))
+
     immediate = set(selected)
     for description in execution_order:
         if description.is_view_relation and any(name in immediate for name in description.dependencies):
             immediate.add(description.identifier)
     immediate = frozenset(immediate - selected)
-    logger.info("Execution order includes %d selected, %d immediate, %d fanout relation(s)",
+
+    logger.info("Execution order includes %d selected, %d immediate, and %d fan-out relation(s)",
                 len(selected), len(immediate), len(execution_order) - len(selected) - len(immediate))
+
+    required = [description for description in execution_order if description.is_required]
+    logger.info("Execution order includes %d required relation(s)", len(required))
 
     max_len = max(len(description.identifier) for description in execution_order)
     for i, description in enumerate(execution_order):
@@ -547,19 +553,21 @@ def show_dependents(file_sets, selector):
         elif description.is_view_relation:
             reltype = "VIEW"
         else:
-            reltype = "TABLE"
+            reltype = "DATA"
         if description.identifier in selected:
             flag = "selected"
         elif description.identifier in immediate:
             flag = "immediate"
         else:
-            flag = "fanout"
+            flag = "fan-out"
+        if description.is_required:
+            flag += ", required"
         print("{index:4d} {identifier:{width}s} ({reltype}) ({flag})".format(
                 index=i + 1, identifier=description.identifier, width=max_len, reltype=reltype, flag=flag))
 
 
-def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, stop_after_first=False, no_rollback=False,
-                            skip_copy=False, add_explain_plan=False, dry_run=False):
+def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, stop_after_first=False,
+                            no_rollback=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -575,7 +583,6 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
     """
     logger = logging.getLogger(__name__)
     logger.info("Loading table designs and pondering evaluation order")
-    descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
@@ -614,7 +621,7 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                         vacuumable.append(description.target_table_name)
                 except Exception as e:
                     if whole_schemas:
-                        subtree = _get_failed_subtree(failed, description, execution_order, required_selector)
+                        subtree = _get_failed_subtree(description, execution_order, required_selector)
                         failed.update(subtree)
                         # FIXME This is difficult to read in the log, especially when the subtree is empty.
                         logger.warning("Load failure for '%s' does not harm any relations required by selector '%s';"
@@ -642,9 +649,9 @@ def load_or_update_redshift(data_warehouse, file_sets, selector, drop=False, sto
                 vacuum(conn, table_name, dry_run=dry_run)
 
 
-def _get_failed_subtree(failed, failed_description, execution_order, required_selector):
+def _get_failed_subtree(failed_description, execution_order, required_selector):
     """
-    After an exception in loading :description, add its dependency subtree to :failed
+    After an exception in loading :description, add its dependency subtree using :execution_order,
     and if any element matches :required_selector, raise a RequiredRelationFailed exception
     """
     subtree = {failed_description.identifier}

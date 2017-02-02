@@ -76,11 +76,11 @@ def run_arg_as_command(my_name="arthur.py"):
                     etl.monitor.set_environment(args.prefix,
                                                 dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
                                                 postgresql_settings=settings["etl_events"].get("postgresql", {}))
-                etl_config = etl.config.DataWarehouseConfig(settings)
+                dw_config = etl.config.DataWarehouseConfig(settings)
                 if hasattr(args, "pattern"):
-                    args.pattern.base_schemas = [s.name for s in etl_config.schemas]
+                    args.pattern.base_schemas = [s.name for s in dw_config.schemas]
                 setattr(args, "bucket_name", settings["s3"]["bucket_name"])
-                args.func(args, etl_config)
+                args.func(args, dw_config)
             except InvalidArgumentsError as exc:
                 logger.exception("ETL never got off the ground:")
                 croak(exc, 1)
@@ -288,6 +288,33 @@ class SubCommand:
         else:
             raise ValueError("scheme invalid")
 
+    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None,
+                                   return_all=False, error_if_empty=True, error_on_missing_design=True):
+        """
+        Most commands need to (1) collect file sets and (2) create relation descriptions around those.
+        Commands vary slightly as to what error handling they want to do and whether they need all
+        possible descriptions or a selected subset.
+
+        If a "required relation" selector is passed in, we first pick up ALL descriptions (to be able
+        to build a dependency tree), build the dependency order, then pick out the matching descriptions.
+        """
+        if return_all or required_relation_selector is not None:
+            selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+        else:
+            selector = args.pattern
+        file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector,
+                                                 error_if_empty=error_if_empty)
+
+        descriptions = etl.relation.RelationDescription.from_file_sets(
+            file_sets,
+            error_on_missing_design=error_on_missing_design,
+            required_relation_selector=required_relation_selector)
+
+        if not return_all and required_relation_selector is not None:
+            descriptions = [d for d in descriptions if args.pattern.match(d.target_table_name)]
+
+        return descriptions
+
     def callback(self, args, config):
         """Override this method for sub-classes"""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
@@ -387,8 +414,7 @@ class CopyToS3Command(SubCommand):
         if args.deploy_config:
             etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-        descriptions = etl.relation.RelationDescription.from_file_sets(local_files, error_on_missing_design=False)
+        descriptions = self.find_relation_descriptions(args, default_scheme="file", error_on_missing_design=False)
         etl.relation.copy_to_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
@@ -421,13 +447,8 @@ class DumpDataToS3Command(SubCommand):
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
 
-        # In order to be able to determine the graph of required relations, we first need to
-        # pull in all descriptions before we can focus on those actually selected on the command line
-        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
-        all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
-        all_descriptions = etl.relation.RelationDescription.from_file_sets(
-            all_file_sets, required_relation_selector=config.required_in_full_load_selector)
-        descriptions = [d for d in all_descriptions if args.pattern.match(d.target_table_name)]
+        descriptions = self.find_relation_descriptions(args, default_scheme="s3",
+                                                       required_relation_selector=config.required_in_full_load_selector)
         etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, descriptions=descriptions,
                             max_partitions=args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
 
@@ -453,10 +474,9 @@ class LoadRedshiftCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
-        all_file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
+        descriptions = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(config, all_file_sets, args.pattern,
+            etl.load.load_or_update_redshift(config, descriptions, args.pattern,
                                              drop=self.use_force,
                                              stop_after_first=args.stop_after_first,
                                              no_rollback=args.no_rollback,
@@ -473,6 +493,29 @@ class UpdateRedshiftCommand(LoadRedshiftCommand):
                             "Update data in Redshift from files in S3."
                             " Tables and views are loaded given their existing schema.")
         self.use_force = False
+
+
+class UnloadDataToS3Command(SubCommand):
+
+    def __init__(self):
+        super().__init__("unload",
+                         "unload data from Redshift to files in S3",
+                         "Unload data from Redshift into files in S3 (along with files of column names).")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
+        parser.add_argument("-f", "--force",
+                            help="enable ALLOWOVERWRITE option to replace existing data files in S3",
+                            action="store_true")
+        parser.add_argument("-k", "--keep-going",
+                            help="unload as much data as possible, ignoring errors along the way",
+                            default=False, action="store_true")
+
+    def callback(self, args, config):
+        descriptions = self.find_relation_descriptions(args, default_scheme="s3")
+        with etl.pg.log_error():
+            etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
+                                    keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
@@ -492,8 +535,7 @@ class ValidateDesignsCommand(SubCommand):
 
     def callback(self, args, config):
         # FIXME This should pick up all files so that dependency ordering can be done correctly.
-        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
-        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
+        descriptions = self.find_relation_descriptions(args, error_if_empty=False, error_on_missing_design=False)
         etl.relation.validate_designs(config.dsn_etl, descriptions,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
@@ -509,8 +551,7 @@ class ExplainQueryCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
-        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets, error_on_missing_design=False)
+        descriptions = self.find_relation_descriptions(args, error_on_missing_design=False)
         etl.relation.test_queries(config.dsn_etl, descriptions)
 
 
@@ -562,9 +603,12 @@ class ShowDependentsCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
-        file_sets = etl.file_sets.find_file_sets(self.location(args), all_selector, error_if_empty=False)
-        etl.load.show_dependents(file_sets, args.pattern)
+        descriptions = self.find_relation_descriptions(args,
+                                                       required_relation_selector=config.required_in_full_load_selector,
+                                                       return_all=True,
+                                                       error_if_empty=False,
+                                                       error_on_missing_design=False)
+        etl.load.show_dependents(descriptions, args.pattern)
 
 
 class ShowPipelinesCommand(SubCommand):
@@ -594,31 +638,6 @@ class EventsQueryCommand(SubCommand):
 
     def callback(self, args, config):
         etl.monitor.query_for(args.pattern, args.etl_id)
-
-
-class UnloadDataToS3Command(SubCommand):
-
-    def __init__(self):
-        super().__init__("unload",
-                         "unload data from Redshift to files in S3",
-                         "Unload data from Redshift into files in S3 (as a forced reload).")
-        self.use_force = True
-
-    def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
-        parser.add_argument("-f", "--force",
-                            help="enable ALLOWOVERWRITE option to replace existing data files in S3",
-                            action="store_true")
-        parser.add_argument("-k", "--keep-going",
-                            help="unload as much data as possible, ignoring errors along the way",
-                            default=False, action="store_true")
-
-    def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-        descriptions = etl.relation.RelationDescription.from_file_sets(file_sets)
-        with etl.pg.log_error():
-            etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
-                                    keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
