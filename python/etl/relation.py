@@ -84,6 +84,7 @@ class RelationDescription:
         self._fileset = discovered_files
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         self.prefix = discovered_files.path
+        # Note the subtle different to TableFileSet -- here the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design, query statement, etc.
@@ -103,20 +104,6 @@ class RelationDescription:
 
     def __repr__(self):
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
-
-    def norm_path(self, filename: str) -> str:
-        """
-        Return "normalized" path based on filename of design file or SQL file.
-
-        Assumption: If the filename ends with .yaml or .sql, then the file belongs under "schemas".
-        Else the file belongs under "data".
-        """
-        if filename.endswith((".yaml", ".yml", ".sql")):
-            return "schemas/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
-        else:
-            return "data/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
-
-    # TODO Also need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
 
     @property
     def table_design(self):

@@ -509,7 +509,7 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     if len(dirty) == len(complete_sequence):
         logger.info("Decided on updating ALL tables")
     elif len(dirty) == 1:
-        logger.info("Decided on updating A SINGLE table: %s", list(dirty)[0])
+        logger.info("Decided on updating a SINGLE table: %s", list(dirty)[0])
     else:
         logger.info("Decided on updating %d of %d table(s)", len(dirty), len(complete_sequence))
     return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas

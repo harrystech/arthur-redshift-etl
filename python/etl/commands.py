@@ -449,7 +449,7 @@ class DumpDataToS3Command(SubCommand):
 
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
                                                        required_relation_selector=config.required_in_full_load_selector)
-        etl.dump.dump_to_s3(args.dumper, config.schemas, args.bucket_name, args.prefix, descriptions=descriptions,
+        etl.dump.dump_to_s3(args.dumper, config.schemas, descriptions,
                             max_partitions=args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
 
 
