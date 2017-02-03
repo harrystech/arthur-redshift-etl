@@ -184,7 +184,7 @@ def build_full_parser(prog_name):
             # Commands to help with table designs and uploading them
             DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
             # ETL commands to extract, load (or update), or transform
-            DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand, ExtractLoadTransformCommand,
+            DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
             ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand, EventsQueryCommand]:
@@ -473,34 +473,6 @@ class UpdateRedshiftCommand(LoadRedshiftCommand):
                             "Update data in Redshift from files in S3."
                             " Tables and views are loaded given their existing schema.")
         self.use_force = False
-
-
-class ExtractLoadTransformCommand(SubCommand):
-
-    def __init__(self):
-        super().__init__("etl",
-                         "DEPRECATED run complete ETL (or ELT)",
-                         "DEPRECATED Validate designs, extract data, and load data, possibly with transforms."
-                         " By default, this will update all selected  relations and all those in the"
-                         " dependency fan-out. Changes are only visible after data is refreshed."
-                         " But if you use the force option, then all schemas affected by the selection"
-                         " are loaded and progress is VISIBLE while refresh is under way.")
-
-    def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
-        parser.add_argument("-f", "--force",
-                            help="force loading, run 'dump' then 'load' (instead of 'dump' then 'update')",
-                            default=False, action="store_true")
-
-    def callback(self, args, config):
-        with etl.pg.log_error():
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), args.pattern)
-            etl.dump.dump_to_s3_with_sqoop(config.schemas, args.bucket_name, args.prefix, file_sets,
-                                           args.max_partitions, dry_run=args.dry_run)
-            # Need to rerun files finder since the dump step has added files and we need to know about dependencies
-            all_selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
-            file_sets = etl.file_sets.find_file_sets(self.location(args, "s3"), all_selector)
-            etl.load.load_or_update_redshift(config, file_sets, args.pattern, drop=args.force, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
