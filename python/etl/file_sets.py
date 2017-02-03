@@ -5,7 +5,7 @@ The basic location of a file depends on the data source and can be one of:
 .../schemas/{source_or_schema_name}/{source_schema_name}-{table_name}.yaml -- for table design files
 .../schemas/{schema_name}/{source_schema_name}-{table_name}.sql -- for queries for CTAS or views
 .../data/{source_name}/{source_schema_name}-{table_name}.manifest -- for a manifest of data files
-.../data/{source_name}/{source_schema_name}-{table_name}/csv/part-* -- for the data files themselves.
+.../data/{source_name}/{source_schema_name}-{table_name}/csv/part-*.gz -- for the data files themselves.
 
 If the files are in S3, then the start of the path is always s3://{bucket_name}/{prefix}/...
 
@@ -69,7 +69,7 @@ class TableFileSet:
         # Used to order relations (should be opaque to users)
         self.natural_order = natural_order
 
-    def __str__(self):
+    def __repr_(self):
         extensions = []
         if self.design_file_name:
             extensions.append(".yaml")
@@ -78,7 +78,7 @@ class TableFileSet:
         if self.manifest_file_name:
             extensions.append(".manifest")
         if self._data_files:
-            extensions.append("/csv/part-*")
+            extensions.append("/csv/*")
         return "{}('{}{{{}}}')".format(self.__class__.__name__, self.source_path_name, ','.join(extensions))
 
     def bind_to_uri(self, scheme, netloc, path):
@@ -117,6 +117,26 @@ class TableFileSet:
         return "{}/{}-{}".format(self.target_table_name.schema,
                                  self.source_table_name.schema,
                                  self.source_table_name.table)
+
+    # @property
+    # def design_path_name(self):
+    #     return os.path.join("schemas", self.source_path_name)
+
+    @property
+    def csv_path_name(self):
+        return os.path.join("data", self.source_path_name, "csv")
+
+    def norm_path(self, filename: str) -> str:
+        """
+        Return "normalized" path based on filename of design file or SQL file.
+
+        Assumption: If the filename ends with .yaml or .sql, then the file belongs under "schemas".
+        Else the file belongs under "data".
+        """
+        if filename.endswith((".yaml", ".yml", ".sql")):
+            return "schemas/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
+        else:
+            return "data/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
 
     @property
     def data_files(self):

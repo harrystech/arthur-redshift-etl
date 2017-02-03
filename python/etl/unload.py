@@ -23,11 +23,9 @@ import os
 from psycopg2.extensions import connection  # For type annotation
 
 from etl.config import DataWarehouseConfig, DataWarehouseSchema
-from etl.file_sets import TableFileSet
 from etl.relation import RelationDescription
 from etl.thyme import Thyme
 import etl
-import etl.file_sets
 import etl.monitor
 import etl.pg
 import etl.s3
@@ -44,7 +42,7 @@ class UnloadTargetNotFoundError(DataUnloadError):
 def run_redshift_unload(conn: connection, description: RelationDescription, unload_path: str, aws_iam_role: str,
                         allow_overwrite=False) -> None:
     """
-    Execute the UNLOAD command for the given select statement.
+    Execute the UNLOAD command for  the given :description (via a select statement).
     Optionally allow users to overwrite previously unloaded data within the same key space.
     """
     select_statement = """
@@ -102,10 +100,10 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
     """
     logger = logging.getLogger(__name__)
 
-    # TODO Move the "{}-{}" logic into the RelationDescription? Or all of this for "csv_folder()"?
+    # TODO Move the "{}-{}" logic into the TableFileSet
+    rendered_prefix = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
     schema_table_name = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
-    rendered_template = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
-    s3_key_prefix = os.path.join(rendered_template, "data", schema.name, schema_table_name, "csv")
+    s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
 
     if dry_run:
@@ -113,12 +111,11 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
     else:
         try:
             logger.info("Unloading data from '%s' to '%s'", description.identifier, unload_path)
-
-            # FIXME Review the target/source/destination values
             with etl.monitor.Monitor(description.identifier, 'unload', dry_run=dry_run,
                                      source={'schema': description.target_table_name.schema,
                                              'table': description.target_table_name.table},
-                                     destination={'bucket_name': schema.s3_bucket,
+                                     destination={'name': schema.name,
+                                                  'bucket_name': schema.s3_bucket,
                                                   'prefix': s3_key_prefix}):
                 run_redshift_unload(conn, description, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
         except Exception as exc:
