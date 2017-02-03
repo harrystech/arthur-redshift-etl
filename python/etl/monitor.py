@@ -258,6 +258,7 @@ class DynamoDBStorage:
                 raise
             # Nullify assignment and start over
             table = None
+            status = None
         # TODO Should we readjust the capacity if a new number is passed in?
         if table is None:
             logger.info("Creating DynamoDB table: '%s'", self.table_name)
@@ -273,9 +274,11 @@ class DynamoDBStorage:
                 ],
                 ProvisionedThroughput={'ReadCapacityUnits': self.capacity, 'WriteCapacityUnits': self.capacity}
             )
-            logger.debug("Waiting for new events table '%s' to exist", self.table_name)
+            status = table.table_status
+        if status != "ACTIVE":
+            logger.info("Waiting for events table '%s' to become active", self.table_name)
             table.wait_until_exists()
-            logger.info("Finished creating events table '%s' (arn=%s)", self.table_name, table.table_arn)
+            logger.debug("Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn)
         return table
 
     def store(self, payload):
