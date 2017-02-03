@@ -225,6 +225,9 @@ def order_by_dependencies(relation_descriptions):
     than any of its dependencies. Ties are resolved based on the initial order
     of the tables. (This motivates the use of a priority queue.)
 
+    If a table depends on some system catalogs (living in pg_catalog), then the table
+    is treated as if it depended on all other tables.
+
     Provides warnings about:
         * relations that directly depend on relations not in the input
         * relations that are depended upon but are not in the input
@@ -235,26 +238,34 @@ def order_by_dependencies(relation_descriptions):
     known_tables = frozenset({description.identifier for description in descriptions})
     nr_tables = len(known_tables)
 
+    # Phase 1 -- build up the priority queue all the while making sure we have only dependencies that we know about
     has_unknown_dependencies = set()
+    has_internal_dependencies = set()
     known_unknowns = set()
     queue = PriorityQueue()
     for initial_order, description in enumerate(descriptions):
-        pg_internal_dependencies = set(d for d in description.dependencies if d.startswith('pg_'))
-        unknown = description.dependencies - known_tables - pg_internal_dependencies
-        if unknown:
-            known_unknowns.update(unknown)
+        pg_internal_dependencies = set(d for d in description.dependencies if d.startswith('pg_catalog'))
+        unknowns = description.dependencies - known_tables - pg_internal_dependencies
+        if unknowns:
+            known_unknowns.update(unknowns)
             has_unknown_dependencies.add(description.identifier)
             # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
-            description.dependencies = description.dependencies.difference(unknown)
+            description.dependencies = description.dependencies.difference(unknowns)
         if pg_internal_dependencies:
             description.dependencies = description.dependencies.difference(pg_internal_dependencies)
+            has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', etl.join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        etl.join_with_quotes(known_unknowns))
+    has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
+    for description in descriptions:
+        if description.identifier in has_internal_dependencies:
+            description.dependencies.update(has_no_internal_dependencies)
 
+    # Phase 2 -- keep looping until all relations have their dependencies ordered before them
     table_map = {description.identifier: description for description in descriptions}
     latest = 0
     while not queue.empty():
