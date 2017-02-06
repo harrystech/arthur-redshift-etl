@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 1 || $# -gt 4 || "$1" = "-h" ]]; then
+if [[ $# -ne 4 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> <environment> <start_time> <source target selection>"
     echo "Provide start_time in UTC and selection as space-delimited arthur pattern globs"
     exit 0
@@ -8,14 +8,14 @@ fi
 
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
-CLUSTER_BUCKET="${1?'Missing bucket name'}"
-CLUSTER_ENVIRONMENT="${2-production}"
-START_TIME="${3?'Missing update source selection'}"
-SELECTION="${4?'Missing update source selection'}"
+CLUSTER_BUCKET="$1"
+CLUSTER_ENVIRONMENT="$2"
+START_TIME="$3"
+SELECTION="$4"
 
 DATE=`date +%Y-%m-%d`
 START_DATE_TIME="$(join_by T $DATE $START_TIME)"
-C_S_SELECTION="$(join_by , $SELECTION)"
+C_S_SELECTION="$(join_by ',' $SELECTION)"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
