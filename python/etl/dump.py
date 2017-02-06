@@ -546,6 +546,7 @@ def dump_source_to_s3_with_sqoop(source, descriptions, bucket_name, prefix, max_
                     logger.exception("Ignoring failure of required relation and proceeding as requested:")
                     failed.append(target_table_name)
                 else:
+                    logger.debug("Dump failed for required relation '%s'", target_table_name.identifier)
                     raise
             else:
                 dumped += 1
@@ -641,6 +642,7 @@ def dump_static_source_to_s3(source, descriptions, bucket_name, prefix, keep_goi
                     logger.exception("Ignoring failure of required relation and proceeding as requested:")
                     failed.append(target_table_name)
                 else:
+                    logger.debug("Dump failed for required relation '%s'", target_table_name.identifier)
                     raise
             else:
                 dumped += 1

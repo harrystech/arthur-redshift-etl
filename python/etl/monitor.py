@@ -12,12 +12,15 @@ from copy import deepcopy
 from decimal import Decimal
 import logging
 import os
+import random
 import threading
+import time
 import traceback
 import uuid
 
 import boto3
 import botocore.exceptions
+import botocore.errorfactory
 import simplejson as json
 
 import etl.config
@@ -244,7 +247,9 @@ class DynamoDBStorage:
         self._thread_local_table = threading.local()
 
     def _get_table(self):
-        """Fetch table or create it (within a new session)"""
+        """
+        Fetch table or create it (within a new session)
+        """
         logger = logging.getLogger(__name__)
         session = boto3.session.Session(region_name=self.region_name)
         dynamodb = session.resource('dynamodb')
@@ -281,18 +286,38 @@ class DynamoDBStorage:
             logger.debug("Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn)
         return table
 
-    def store(self, payload):
-        table = getattr(self._thread_local_table, 'table', None)
-        if not table:
-            table = self._get_table()
-            setattr(self._thread_local_table, 'table', table)
-        item = dict(payload)
-        # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
-        # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
-        item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
-        if "elapsed" in item:
-            item["elapsed"] = Decimal("%.6f" % item['elapsed'])
-        table.put_item(Item=item)
+    def store(self, payload: dict, _retry: bool=True):
+        """
+        Actually send the payload to the DynamoDB table.
+        If this is the first call at all, then get a reference to the table,
+        or even create the table as necessary.
+        This method will try to store the payload a second time if there's an
+        error in the first attempt.
+        """
+        try:
+            table = getattr(self._thread_local_table, 'table', None)
+            if not table:
+                table = self._get_table()
+                setattr(self._thread_local_table, 'table', table)
+            item = dict(payload)
+            # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
+            # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
+            item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
+            if "elapsed" in item:
+                item["elapsed"] = Decimal("%.6f" % item['elapsed'])
+            table.put_item(Item=item)
+        except botocore.exceptions.ClientError as exc:
+            # Something bad happened while talking to the service ... just try one more time
+            if _retry:
+                logger = logging.getLogger(__name__)
+                logger.exception("Trying to store payload a second time after this mishap:")
+                delay = random.uniform(3, 10)
+                logger.debug("Snoozing for %.1fs", delay)
+                time.sleep(delay)
+                setattr(self._thread_local_table, 'table', None)
+                self.store(payload, _retry=False)
+            else:
+                raise
 
 
 class RelationalStorage:
