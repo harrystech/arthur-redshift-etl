@@ -12,7 +12,9 @@ from copy import deepcopy
 from decimal import Decimal
 import logging
 import os
+import random
 import threading
+import time
 import traceback
 import uuid
 
@@ -195,7 +197,7 @@ class MonitorPayload:
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
-    persister = []
+    dispatchers = []
 
     def __init__(self, monitor, event, timestamp, elapsed=None, extra=None):
         # Basic info
@@ -225,11 +227,20 @@ class MonitorPayload:
             logger.debug("Dry-run: payload = %s", compact_text)
         else:
             logger.debug("Monitor payload = %s", compact_text)
-            for p in MonitorPayload.persister:
-                p.store(payload)
+            for d in MonitorPayload.dispatchers:
+                d.store(payload)
 
 
-class DynamoDBStorage:
+class PayloadDispatcher:
+
+    def store(self, payload):
+        """
+        Send payload to persistence layer
+        """
+        raise NotImplementedError("PayloadDispatcher failed to implement store method")
+
+
+class DynamoDBStorage(PayloadDispatcher):
     """
     Store ETL events in a DynamoDB table.
 
@@ -244,7 +255,9 @@ class DynamoDBStorage:
         self._thread_local_table = threading.local()
 
     def _get_table(self):
-        """Fetch table or create it (within a new session)"""
+        """
+        Fetch table or create it (within a new session)
+        """
         logger = logging.getLogger(__name__)
         session = boto3.session.Session(region_name=self.region_name)
         dynamodb = session.resource('dynamodb')
@@ -258,6 +271,7 @@ class DynamoDBStorage:
                 raise
             # Nullify assignment and start over
             table = None
+            status = None
         # TODO Should we readjust the capacity if a new number is passed in?
         if table is None:
             logger.info("Creating DynamoDB table: '%s'", self.table_name)
@@ -273,26 +287,48 @@ class DynamoDBStorage:
                 ],
                 ProvisionedThroughput={'ReadCapacityUnits': self.capacity, 'WriteCapacityUnits': self.capacity}
             )
-            logger.debug("Waiting for new events table '%s' to exist", self.table_name)
+            status = table.table_status
+        if status != "ACTIVE":
+            logger.info("Waiting for events table '%s' to become active", self.table_name)
             table.wait_until_exists()
-            logger.info("Finished creating events table '%s' (arn=%s)", self.table_name, table.table_arn)
+            logger.debug("Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn)
         return table
 
-    def store(self, payload):
-        table = getattr(self._thread_local_table, 'table', None)
-        if not table:
-            table = self._get_table()
-            setattr(self._thread_local_table, 'table', table)
-        item = dict(payload)
-        # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
-        # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
-        item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
-        if "elapsed" in item:
-            item["elapsed"] = Decimal("%.6f" % item['elapsed'])
-        table.put_item(Item=item)
+    def store(self, payload: dict, _retry: bool=True):
+        """
+        Actually send the payload to the DynamoDB table.
+        If this is the first call at all, then get a reference to the table,
+        or even create the table as necessary.
+        This method will try to store the payload a second time if there's an
+        error in the first attempt.
+        """
+        try:
+            table = getattr(self._thread_local_table, 'table', None)
+            if not table:
+                table = self._get_table()
+                setattr(self._thread_local_table, 'table', table)
+            item = dict(payload)
+            # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
+            # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
+            item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
+            if "elapsed" in item:
+                item["elapsed"] = Decimal("%.6f" % item['elapsed'])
+            table.put_item(Item=item)
+        except botocore.exceptions.ClientError as exc:
+            # Something bad happened while talking to the service ... just try one more time
+            if _retry:
+                logger = logging.getLogger(__name__)
+                logger.exception("Trying to store payload a second time after this mishap:")
+                delay = random.uniform(3, 10)
+                logger.debug("Snoozing for %.1fs", delay)
+                time.sleep(delay)
+                setattr(self._thread_local_table, 'table', None)
+                self.store(payload, _retry=False)
+            else:
+                raise
 
 
-class RelationalStorage:
+class RelationalStorage(PayloadDispatcher):
     """
     Store ETL events in a PostgreSQL table.
 
@@ -346,11 +382,11 @@ def set_environment(environment, dynamodb_settings, postgresql_settings):
         ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
                               dynamodb_settings["capacity"],
                               dynamodb_settings["region"])
-        MonitorPayload.persister.append(ddb)
+        MonitorPayload.dispatchers.append(ddb)
     if postgresql_settings:
         rel = RelationalStorage(postgresql_settings["table_prefix"] + '_' + environment,
                                 postgresql_settings["write_access"])
-        MonitorPayload.persister.append(rel)
+        MonitorPayload.dispatchers.append(rel)
 
 
 def query_for(target_list, etl_id=None):
