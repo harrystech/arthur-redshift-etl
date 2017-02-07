@@ -206,7 +206,7 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
         parser.add_argument("-p", "--prefix",
-                            help="select prefix in S3 bucket (default is user name: '%(default)s')",
+                            help="select prefix in S3 bucket (default is your user name: '%(default)s')",
                             default=getpass.getuser())
     if "table-design-dir" in options:
         parser.add_argument("-t", "--table-design-dir",
