@@ -20,7 +20,6 @@ import uuid
 
 import boto3
 import botocore.exceptions
-import botocore.errorfactory
 import simplejson as json
 
 import etl.config
@@ -198,7 +197,7 @@ class MonitorPayload:
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
-    persister = []
+    dispatchers = []
 
     def __init__(self, monitor, event, timestamp, elapsed=None, extra=None):
         # Basic info
@@ -228,11 +227,20 @@ class MonitorPayload:
             logger.debug("Dry-run: payload = %s", compact_text)
         else:
             logger.debug("Monitor payload = %s", compact_text)
-            for p in MonitorPayload.persister:
-                p.store(payload)
+            for d in MonitorPayload.dispatchers:
+                d.store(payload)
 
 
-class DynamoDBStorage:
+class PayloadDispatcher:
+
+    def store(self, payload):
+        """
+        Send payload to persistence layer
+        """
+        raise NotImplementedError("PayloadDispatcher failed to implement store method")
+
+
+class DynamoDBStorage(PayloadDispatcher):
     """
     Store ETL events in a DynamoDB table.
 
@@ -320,7 +328,7 @@ class DynamoDBStorage:
                 raise
 
 
-class RelationalStorage:
+class RelationalStorage(PayloadDispatcher):
     """
     Store ETL events in a PostgreSQL table.
 
@@ -374,11 +382,11 @@ def set_environment(environment, dynamodb_settings, postgresql_settings):
         ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
                               dynamodb_settings["capacity"],
                               dynamodb_settings["region"])
-        MonitorPayload.persister.append(ddb)
+        MonitorPayload.dispatchers.append(ddb)
     if postgresql_settings:
         rel = RelationalStorage(postgresql_settings["table_prefix"] + '_' + environment,
                                 postgresql_settings["write_access"])
-        MonitorPayload.persister.append(rel)
+        MonitorPayload.dispatchers.append(rel)
 
 
 def query_for(target_list, etl_id=None):
