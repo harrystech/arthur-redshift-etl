@@ -62,7 +62,6 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
 
-    print(unload_statement)
     with etl.pg.log_error():
         etl.pg.execute(conn, unload_statement)
 
