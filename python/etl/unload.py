@@ -50,12 +50,13 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
         FROM {}
         """.format(", ".join(description.columns), description.target_table_name)
     credentials = "aws_iam_role={}".format(aws_iam_role)
+    null_string = "'\\\\N'"
     unload_statement = """
         UNLOAD ('{}')
         TO '{}'
         CREDENTIALS '{}' MANIFEST
-        DELIMITER ',' ESCAPE ADDQUOTES GZIP
-        """.format(select_statement, unload_path, credentials)
+        DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS {}
+        """.format(select_statement, unload_path, credentials, null_string)
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
 
