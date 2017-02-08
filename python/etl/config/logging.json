@@ -18,7 +18,7 @@
             "class": "logging.StreamHandler",
             "formatter": "console",
             "level": "INFO",
-            "stream": "ext://sys.stdout",
+            "stream": "ext://sys.stderr",
             "filters": [ "insert_trace_key" ]
         },
         "file": {
