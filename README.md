@@ -121,7 +121,7 @@ to be able to connect to PostgreSQL databases and write CSV files for a Datafram
 | Software | Version | JAR file  |
 |---|---|---|
 | [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver | 9.4 | [postgresql-9.4.1208.jar](https://jdbc.postgresql.org/download/postgresql-9.4.1208.jar) |
-| [Spark-CSV package](https://spark-packages.org/) | 1.4 | [spark-csv_2.10-1.4.0.jar](http://repo1.maven.org/maven2/com/databricks/spark-csv_2.10/1.4.0/spark-csv_2.10-1.4.0.jar) |
+| [Spark-CSV package](https://spark-packages.org/) | 1.5 | [spark-csv_2.10-1.5.0.jar](http://repo1.maven.org/maven2/com/databricks/spark-csv_2.10/1.5.0/spark-csv_2.10-1.5.0.jar) |
 | [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) | 1.4 | [commons-csv-1.4.jar](http://central.maven.org/maven2/org/apache/commons/commons-csv/1.4/commons-csv-1.4.jar) |
 | [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.1.10 | [RedshiftJDBC41-1.1.10.1010.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.1.10.1010.jar) |
 
@@ -265,12 +265,11 @@ arthur.py sync "<schema>.<table>"  # This will upload local files for just one t
 | ---- | ---- |
 | `dump`  | Get data from upstream sources |
 | `load`, `update` | Move data from upstream sources and let it percolate |
-| `etl` | Combine dump and update steps (use `-f` to run a load after dump) |
 | `unload` | Take data from a relation in the data warehouse and dump as CSVs into S3 |
 
 ```shell
+arthur.py dump
 arthur.py load  # This will automatically create schemas as necessary
-arthur.py etl --force  # This will automatically create schemas as necessary
 ```
 
 ## Working with a staging environment

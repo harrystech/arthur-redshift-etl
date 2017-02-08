@@ -63,10 +63,10 @@ class UniqueConstraintError(etl.ETLError):
 
 class RelationDescription:
     """
-    Handy object for working with relations (tables or views) created with Arthur
-    Created from a collection of files that pertain to the same table
-    Offers helpful properties for lazily loading contents of relation files
-    Modified by other functions in relations module to set attributes related to dependency graph
+    Handy object for working with relations (tables or views) created with Arthur.
+    Created from a collection of files that pertain to the same table.
+    Offers helpful properties for lazily loading contents of relation files.
+    Modified by other functions in relations module to set attributes related to dependency graph.
     """
 
     def __getattr__(self, attr):
@@ -75,45 +75,35 @@ class RelationDescription:
         """
         if hasattr(self._fileset, attr):
             return getattr(self._fileset, attr)
-        raise AttributeError('Neither %s nor %s has attribute %s' % (self.__class__, self._fileset.__class__, attr))
+        raise AttributeError("Neither '%s' nor '%s' has attribute '%s'" % (self.__class__.__name__,
+                                                                           self._fileset.__class__.__name__,
+                                                                           attr))
 
     def __init__(self, discovered_files: etl.file_sets.TableFileSet):
         # Basic properties to locate files describing the relation
         self._fileset = discovered_files
+        self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         self.prefix = discovered_files.path
+        # Note the subtle different to TableFileSet -- here the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
-        self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         # Lazy-loading of table design, query statement, etc.
         self._table_design = None
         self._query_stmt = None
         self._unload_target = None
-        # Properties for ordering relations
-        self.order = None
         self._dependencies = None
-        self.required = True
-
-    # TODO Make __str__ behave same way as TableName, and use __repr__ for the fancy details
-    def __str__(self):
-        return "{}({}:{},#{})".format(self.__class__.__name__, self.identifier, self.source_path_name, self.order)
+        # Deferred evaluation whether this relation is required
+        self._is_required = None
 
     @property
     def identifier(self):
         return self.target_table_name.identifier
 
-    def norm_path(self, filename: str) -> str:
-        """
-        Return "normalized" path based on filename of design file or SQL file.
+    def __str__(self):
+        return str(self.target_table_name)
 
-        Assumption: If the filename ends with .yaml or .sql, then the file belongs under "schemas".
-        Else the file belongs under "data".
-        """
-        if filename.endswith((".yaml", ".yml", ".sql")):
-            return "schemas/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
-        else:
-            return "data/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
-
-    # TODO Also need something like as_path which returns {target_schema_name}/{source_schema_name}-{table_name}
+    def __repr__(self):
+        return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
     @property
     def table_design(self):
@@ -136,6 +126,12 @@ class RelationDescription:
     @property
     def is_unloadable(self):
         return "unload_target" in self.table_design
+
+    @property
+    def is_required(self):
+        if self._is_required is None:
+            raise RuntimeError("State of 'is_required' for RelationDescription '{}' is unknown".format(self.identifier))
+        return self._is_required
 
     @property
     def unload_target(self):
@@ -161,10 +157,6 @@ class RelationDescription:
             self._dependencies = set(self.table_design.get("depends_on", []))
         return self._dependencies
 
-    @dependencies.setter
-    def dependencies(self, value):
-        self._dependencies = value
-
     @property
     def unquoted_columns(self):
         """
@@ -184,17 +176,12 @@ class RelationDescription:
         return self.target_table_name.schema
 
     @classmethod
-    def from_file_sets(cls, file_sets, error_on_missing_design=True,
-                       dependency_order=False, required_relation_selector=None):
+    def from_file_sets(cls, file_sets, error_on_missing_design=True, required_relation_selector=None):
         """
         Return a list of relation descriptions based on a list of file sets.
 
-        If there's a file set without a table design file, then there's a warning
-        and that file set is skipped.  (This comes in handy when creating the design
-        file for a CTAS or VIEW programmatically.)
-
-        When dependency_order is True, relation descriptions are returned in such order that relations appear
-        after all of their dependencies. Otherwise, descriptions are returned in schema-sorted order.
+        If there's a file set without a table design file, then there's a warning and that file set
+        is skipped.  (This comes in handy when creating the design file for a CTAS or VIEW automatically.)
 
         If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
         to dump or load in these relations will end the ETL run.
@@ -211,19 +198,26 @@ class RelationDescription:
                     logger.warning("Found file(s) without matching table design: %s",
                                    etl.join_with_quotes(file_set.files))
 
-        if dependency_order or required_relation_selector:
-            ordered_descriptions = order_by_dependencies(descriptions)
-            if required_relation_selector is not None:
-                set_required_relations(ordered_descriptions, required_relation_selector)
-            if dependency_order is True:
-                descriptions = ordered_descriptions
-            else:
-                descriptions = sorted(ordered_descriptions, key=attrgetter('natural_order'))
+        if required_relation_selector:
+            set_required_relations(descriptions, required_relation_selector)
 
         return descriptions
 
 
-def order_by_dependencies(table_descriptions):
+class SortableRelationDescription:
+    """
+    Add decoration around relation descriptions so that we can easily
+    compute the execution order and then throw away our intermediate results.
+    """
+
+    def __init__(self, original_description: RelationDescription):
+        self.original_description = original_description
+        self.identifier = original_description.identifier
+        self.dependencies = set(original_description.dependencies)
+        self.order = None
+
+
+def order_by_dependencies(relation_descriptions):
     """
     Sort the relations such that any dependents surely are loaded afterwards.
 
@@ -231,35 +225,48 @@ def order_by_dependencies(table_descriptions):
     than any of its dependencies. Ties are resolved based on the initial order
     of the tables. (This motivates the use of a priority queue.)
 
+    If a table depends on some system catalogs (living in pg_catalog), then the table
+    is treated as if it depended on all other tables.
+
     Provides warnings about:
         * relations that directly depend on relations not in the input
         * relations that are depended upon but are not in the input
     """
     logger = logging.getLogger(__name__)
-    known_tables = frozenset({description.identifier for description in table_descriptions})
+
+    descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
+    known_tables = frozenset({description.identifier for description in descriptions})
     nr_tables = len(known_tables)
 
+    # Phase 1 -- build up the priority queue all the while making sure we have only dependencies that we know about
     has_unknown_dependencies = set()
+    has_internal_dependencies = set()
     known_unknowns = set()
     queue = PriorityQueue()
-    for initial_order, description in enumerate(table_descriptions):
-        pg_internal_dependencies = set(d for d in description.dependencies if d.startswith('pg_'))
-        unknown = description.dependencies - known_tables - pg_internal_dependencies
-        if unknown:
-            known_unknowns.update(unknown)
+    for initial_order, description in enumerate(descriptions):
+        pg_internal_dependencies = set(d for d in description.dependencies if d.startswith('pg_catalog'))
+        unknowns = description.dependencies - known_tables - pg_internal_dependencies
+        if unknowns:
+            known_unknowns.update(unknowns)
             has_unknown_dependencies.add(description.identifier)
             # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
-            description.dependencies = description.dependencies.difference(unknown)
+            description.dependencies = description.dependencies.difference(unknowns)
         if pg_internal_dependencies:
             description.dependencies = description.dependencies.difference(pg_internal_dependencies)
+            has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', etl.join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        etl.join_with_quotes(known_unknowns))
+    has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
+    for description in descriptions:
+        if description.identifier in has_internal_dependencies:
+            description.dependencies.update(has_no_internal_dependencies)
 
-    table_map = {description.identifier: description for description in table_descriptions}
+    # Phase 2 -- keep looping until all relations have their dependencies ordered before them
+    table_map = {description.identifier: description for description in descriptions}
     latest = 0
     while not queue.empty():
         minimum, tie_breaker, description = queue.get()
@@ -276,20 +283,26 @@ def order_by_dependencies(table_descriptions):
         else:
             queue.put((max(latest, minimum) + 1, tie_breaker, description))
 
-    dependency_ordered_tables = sorted(table_descriptions, key=attrgetter("order"))
-    return dependency_ordered_tables
+    return [description.original_description for description in sorted(descriptions, key=attrgetter("order"))]
 
 
-def set_required_relations(ordered_descriptions, required_selector):
+def set_required_relations(descriptions, required_selector) -> None:
+    """
+    Set the required property of the descriptions if they are directly or indirectly feeding
+    into relations selected by the :required_selector.
+    """
+    ordered_descriptions = order_by_dependencies(descriptions)
+    # Start with all descriptions that are matching the required selector
     required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
-    # Walk through descriptions in reverse dependency order, expanding required set based on dependency fanout
+    # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
     for description in ordered_descriptions[::-1]:
-        if any([description.identifier in req.dependencies for req in required_relations]):
+        if any([description.identifier in required.dependencies for required in required_relations]):
             required_relations.append(description)
+
     for relation in ordered_descriptions:
-        relation.required = False
+        relation._is_required = False
     for relation in required_relations:
-        relation.required = True
+        relation._is_required = True
 
 
 def validate_table_as_view(conn, description, keep_going=False):

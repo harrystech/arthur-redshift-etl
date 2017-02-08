@@ -1,22 +1,30 @@
 [
     {
-        "Name": "ETL (#{etl_environment})",
+        "Name": "ETL dump (#{etl_environment})",
         "Args": [
             "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
             "/tmp/redshift_etl/config/",
-            "etl",
+            "dump",
             "--prolix",
             "--prefix",
-            "#{etl_environment}",
-            "--force",
-            "harryswww",
-            "mammut",
-            "hyppo",
-            "zoo_tables",
-            "historic",
-            "tallboy",
-            "cascade"
+            "#{etl_environment}"
+        ],
+        "Jar": "command-runner.jar",
+        "Type": "CUSTOM_JAR",
+        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "Properties": ""
+    },
+    {
+        "Name": "ETL load (#{etl_environment})",
+        "Args": [
+            "/tmp/redshift_etl/venv/bin/arthur.py",
+            "--config",
+            "/tmp/redshift_etl/config/",
+            "load",
+            "--prolix",
+            "--prefix",
+            "#{etl_environment}"
         ],
         "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",

@@ -1,7 +1,7 @@
 simplejson~=3.8
 jsonschema~=2.5
 PyYAML~=3.11
-boto3~=1.4
+boto3~=1.4,>=1.4.4
 psycopg2~=2.6
 pep8>=1.7
 pgpasslib~=1.1
