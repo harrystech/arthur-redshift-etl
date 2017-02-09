@@ -18,7 +18,7 @@ import simplejson as json
 import etl
 import etl.config
 import etl.design
-import etl.dump
+import etl.extract
 import etl.dw
 import etl.file_sets
 import etl.json_encoder
@@ -184,7 +184,7 @@ def build_full_parser(prog_name):
             # Commands to help with table designs and uploading them
             DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
             # ETL commands to extract, load (or update), or transform
-            DumpDataToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
+            ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
             ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand, EventsQueryCommand]:
@@ -416,27 +416,27 @@ class CopyToS3Command(SubCommand):
         etl.relation.copy_to_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
-class DumpDataToS3Command(SubCommand):
+class ExtractToS3Command(SubCommand):
 
     def __init__(self):
-        super().__init__("dump",
-                         "dump table data from sources",
-                         "Dump table contents to files in S3 along with a manifest file.")
+        super().__init__("extract",
+                         "extract table data from sources",
+                         "Extract table contents to files in S3 along with a manifest file.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("--with-sqoop", help="dump data using Sqoop (using 'sqoop import', this is the default)",
-                           const="sqoop", action="store_const", dest="dumper", default="sqoop")
-        group.add_argument("--with-spark", help="dump data using Spark Dataframe (using submit_arthur.sh)",
-                           const="spark", action="store_const", dest="dumper")
+        group.add_argument("--with-sqoop", help="extract data using Sqoop (using 'sqoop import', this is the default)",
+                           const="sqoop", action="store_const", dest="extractor", default="sqoop")
+        group.add_argument("--with-spark", help="extract data using Spark Dataframe (using submit_arthur.sh)",
+                           const="spark", action="store_const", dest="extractor")
         parser.add_argument("-k", "--keep-going",
-                            help="dump as much data as possible, ignoring errors along the way (Sqoop only)",
+                            help="extract as much data as possible, ignoring errors along the way (Sqoop only)",
                             default=False, action="store_true")
 
     def callback(self, args, config):
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
-        if args.dumper == "spark" and "SPARK_ENV_LOADED" not in os.environ:
+        if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
             # Try the full path (in the EMR cluster), or try without path and hope for the best.
             submit_arthur = "/tmp/redshift_etl/venv/bin/submit_arthur.sh"
             if not os.path.exists(submit_arthur):
@@ -447,8 +447,9 @@ class DumpDataToS3Command(SubCommand):
 
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
                                                        required_relation_selector=config.required_in_full_load_selector)
-        etl.dump.dump_to_s3(args.dumper, config.schemas, descriptions,
-                            max_partitions=args.max_partitions, keep_going=args.keep_going, dry_run=args.dry_run)
+        etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
+                                             max_partitions=args.max_partitions, keep_going=args.keep_going,
+                                             dry_run=args.dry_run)
 
 
 class LoadRedshiftCommand(SubCommand):

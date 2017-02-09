@@ -21,7 +21,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-from typing import List
+from typing import Any, Dict, List, Union
 
 import psycopg2
 import simplejson as json
@@ -102,7 +102,7 @@ class RelationDescription:
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
     @property
-    def table_design(self):
+    def table_design(self) -> Dict[str, Any]:
         if self._table_design is None:
             if self.bucket_name:
                 loader = partial(etl.design.download_table_design, self.bucket_name)
@@ -195,6 +195,32 @@ class RelationDescription:
             set_required_relations(descriptions, required_relation_selector)
 
         return descriptions
+
+    def get_columns_with_casts(self) -> List[str]:
+        """
+        Pick columns and decide how they are selected (as-is or with an expression).
+
+        Whether there's an expression or just a name the resulting column is always
+        called out delimited.
+        """
+        selected_columns = []
+        for column in self.table_design["columns"]:
+            if not column.get("skipped", False):
+                if column.get("expression"):
+                    selected_columns.append('{expression} AS "{name}"'.format(**column))
+                else:
+                    selected_columns.append('"{name}"'.format(**column))
+        return selected_columns
+
+    def find_primary_key(self) -> Union[str, None]:
+        """
+        Return primary key (single column) from the table design, if defined, else None.
+        """
+        if "primary_key" in self.table_design.get("constraints", {}):
+            # Note that column constraints such as primary key are stored as one-element lists, hence:
+            return self.table_design["constraints"]["primary_key"][0]
+        else:
+            return None
 
 
 class SortableRelationDescription:
