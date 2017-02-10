@@ -607,9 +607,10 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     conn = etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)
     with closing(conn) as conn, conn as conn:
         try:
-            for description in execution_order:
+            for index, description in enumerate(execution_order):
+                logger.debug("Starting to work on '%s' (%d/%d)", description.identifier, index, len(execution_order))
                 if description.identifier in failed:
-                    logger.info("Skipping load for relation %s due to failed dependencies", description.identifier)
+                    logger.info("Skipping load for relation '%s' due to failed dependencies", description.identifier)
                     continue
                 target_schema = schema_config_lookup[description.target_table_name.schema]
                 try:
