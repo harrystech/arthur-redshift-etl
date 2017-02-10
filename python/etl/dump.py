@@ -519,12 +519,12 @@ def dump_source_to_s3_with_sqoop(source, descriptions, max_partitions, keep_goin
                     dump_table_with_sqoop(jdbc_url, dsn_properties, description, max_partitions, dry_run=dry_run)
             except DataDumpError:
                 failed.append(description.target_table_name)
-                if not description.required:
+                if not description.is_required:
                     logger.exception("Dump failed for non-required relation '%s':", description.identifier)
                 elif keep_going:
                     logger.exception("Ignoring failure of required relation and proceeding as requested:")
                 else:
-                    logger.debug("Dump failed for required relation '%s'", target_table_name.identifier)
+                    logger.debug("Dump failed for required relation '%s'", description.identifier)
                     raise
             else:
                 dumped += 1
@@ -610,7 +610,7 @@ def dump_static_source_to_s3(source, descriptions, keep_going=False, dry_run=Fal
                 elif keep_going:
                     logger.exception("Ignoring failure of required relation and proceeding as requested:")
                 else:
-                    logger.debug("Dump failed for required relation '%s'", target_table_name.identifier)
+                    logger.debug("Dump failed for required relation '%s'", description.identifier)
                     raise
             else:
                 dumped += 1
