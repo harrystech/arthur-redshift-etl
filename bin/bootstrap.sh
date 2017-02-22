@@ -19,7 +19,6 @@ set -e
 
 BUCKET_NAME="$1"
 ETL_ENVIRONMENT="$2"
-RUNNING_LOCAL=${3-"--ec2"}
 REDSHIFT_ETL_HOME="/tmp/redshift_etl"
 
 case ${3-"--ec2"} in
@@ -57,13 +56,15 @@ cd "$REDSHIFT_ETL_HOME"
 
 # Download code to all nodes, this includes Python code and its requirements.txt
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
-aws s3 cp --exclude '*' --include ping_cronut.sh --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/bin/" ./bin/
+aws s3 cp --exclude '*' --include ping_cronut.sh --include bootstrap.sh \
+    --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/bin/" ./bin/
+chmod +x ./bin/*.sh
 
-# Download configuration and credentials
+# Download configuration (except for credentials when not in EC2)
 if [[ "$RUNNING_LOCAL" = "no" ]]; then
     aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
 else
-    aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/ --exclude credentials.sh
+    aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/ --exclude credentials*.sh
 fi
 
 # Add custom hosts to EMR
