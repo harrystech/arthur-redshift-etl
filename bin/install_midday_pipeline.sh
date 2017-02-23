@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 5 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <environment> <start_time> <source target selection>"
-    echo "Provide start_time in UTC and selection as space-delimited arthur pattern globs"
+if [[ $# -lt 4 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <bucket_name> <environment> <start_time> <source table selection> [<source table selection> ...]"
+    echo "Provide start_time in UTC (something like 10:30:00)."
+    echo "Specify source tables using space-delimited arthur pattern globs."
     exit 0
 fi
 
@@ -11,7 +12,8 @@ function join_by { local IFS="$1"; shift; echo "$*"; }
 CLUSTER_BUCKET="$1"
 CLUSTER_ENVIRONMENT="$2"
 START_TIME="$3"
-SELECTION="$4"
+shift 3
+SELECTION="$@"
 
 DATE=`date +%Y-%m-%d`
 START_DATE_TIME="$(join_by T $DATE $START_TIME)"
