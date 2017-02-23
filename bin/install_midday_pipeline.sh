@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 4 || "$1" = "-h" ]]; then
+if [[ $# -lt 5 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> <environment> <start_time> <source target selection>"
     echo "Provide start_time in UTC and selection as space-delimited arthur pattern globs"
     exit 0
