@@ -50,12 +50,13 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
         FROM {}
         """.format(", ".join(description.columns), description.target_table_name)
     credentials = "aws_iam_role={}".format(aws_iam_role)
-    null_string = "'\\\\N'"
+    # TODO Need to review why we can't use r"\N"
+    null_string = "\\\\N"
     unload_statement = """
         UNLOAD ('{}')
         TO '{}'
         CREDENTIALS '{}' MANIFEST
-        DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS {}
+        DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS '{}'
         """.format(select_statement, unload_path, credentials, null_string)
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
@@ -145,7 +146,7 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
                                             relation.unload_target)
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
-    conn = etl.pg.connection(config.dsn_etl, readonly=True)
+    conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
         for relation, unload_schema in relation_target_tuples:
             try:
