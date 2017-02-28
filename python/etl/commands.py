@@ -384,7 +384,7 @@ class DownloadSchemasCommand(SubCommand):
             created = []
         try:
             etl.design.download_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                        config.type_maps, dry_run=args.dry_run, auto=args.auto)
+                                        config.type_maps, auto=args.auto, dry_run=args.dry_run)
         finally:
             etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
 
