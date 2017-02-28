@@ -492,7 +492,7 @@ def compare_columns(live_design, file_design):
         logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
 
 
-def download_schemas(schemas, selector, table_design_dir, local_files, type_maps, dry_run=False, auto=False):
+def download_schemas(schemas, selector, table_design_dir, local_files, type_maps, auto=False, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
     Unless in auto mode, ignore non-source schemas.
