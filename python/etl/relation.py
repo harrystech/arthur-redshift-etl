@@ -33,10 +33,6 @@ import etl.file_sets
 import etl.s3
 
 
-class MissingDesignError(etl.ETLError):
-    pass
-
-
 class MissingQueryError(etl.ETLError):
     pass
 
@@ -176,7 +172,7 @@ class RelationDescription:
         return self.target_table_name.schema
 
     @classmethod
-    def from_file_sets(cls, file_sets, error_on_missing_design=True, required_relation_selector=None):
+    def from_file_sets(cls, file_sets, required_relation_selector=None):
         """
         Return a list of relation descriptions based on a list of file sets.
 
@@ -192,11 +188,8 @@ class RelationDescription:
             if file_set.design_file_name is not None:
                 descriptions.append(cls(file_set))
             else:
-                if error_on_missing_design:
-                    raise MissingDesignError("Missing table design file for %s" % etl.join_with_quotes(file_set.files))
-                else:
-                    logger.warning("Found file(s) without matching table design: %s",
-                                   etl.join_with_quotes(file_set.files))
+                logger.warning("Found file(s) without matching table design: %s",
+                               etl.join_with_quotes(file_set.files))
 
         if required_relation_selector:
             set_required_relations(descriptions, required_relation_selector)

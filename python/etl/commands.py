@@ -289,7 +289,7 @@ class SubCommand:
             raise ValueError("scheme invalid")
 
     def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None,
-                                   return_all=False, error_if_empty=True, error_on_missing_design=True):
+                                   return_all=False, error_if_empty=True):
         """
         Most commands need to (1) collect file sets and (2) create relation descriptions around those.
         Commands vary slightly as to what error handling they want to do and whether they need all
@@ -306,9 +306,7 @@ class SubCommand:
                                                  error_if_empty=error_if_empty)
 
         descriptions = etl.relation.RelationDescription.from_file_sets(
-            file_sets,
-            error_on_missing_design=error_on_missing_design,
-            required_relation_selector=required_relation_selector)
+            file_sets, required_relation_selector=required_relation_selector)
 
         if not return_all and required_relation_selector is not None:
             descriptions = [d for d in descriptions if args.pattern.match(d.target_table_name)]
@@ -414,7 +412,7 @@ class CopyToS3Command(SubCommand):
         if args.deploy_config:
             etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
-        descriptions = self.find_relation_descriptions(args, default_scheme="file", error_on_missing_design=False)
+        descriptions = self.find_relation_descriptions(args, default_scheme="file")
         etl.relation.copy_to_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
@@ -535,7 +533,7 @@ class ValidateDesignsCommand(SubCommand):
 
     def callback(self, args, config):
         # FIXME This should pick up all files so that dependency ordering can be done correctly.
-        descriptions = self.find_relation_descriptions(args, error_if_empty=False, error_on_missing_design=False)
+        descriptions = self.find_relation_descriptions(args, error_if_empty=False)
         etl.relation.validate_designs(config.dsn_etl, descriptions,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
@@ -551,7 +549,7 @@ class ExplainQueryCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        descriptions = self.find_relation_descriptions(args, error_on_missing_design=False)
+        descriptions = self.find_relation_descriptions(args)
         etl.relation.test_queries(config.dsn_etl, descriptions)
 
 
@@ -606,8 +604,7 @@ class ShowDependentsCommand(SubCommand):
         descriptions = self.find_relation_descriptions(args,
                                                        required_relation_selector=config.required_in_full_load_selector,
                                                        return_all=True,
-                                                       error_if_empty=False,
-                                                       error_on_missing_design=False)
+                                                       error_if_empty=False)
         etl.load.show_dependents(descriptions, args.pattern)
 
 
