@@ -373,7 +373,7 @@ class DownloadSchemasCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
         parser.add_argument("-a", "--auto",
-                            help="auto-generate design file from any transformations found",
+                            help="auto-generate design file from any transformations found (not in upstream schema)",
                             action="store_true")
 
     def callback(self, args, config):
@@ -384,7 +384,7 @@ class DownloadSchemasCommand(SubCommand):
             created = []
         try:
             etl.design.download_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                        config.type_maps, dry_run=args.dry_run)
+                                        config.type_maps, auto=args.auto, dry_run=args.dry_run)
         finally:
             etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
 
