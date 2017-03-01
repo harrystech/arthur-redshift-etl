@@ -492,18 +492,21 @@ def compare_columns(live_design, file_design):
         logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
 
 
-def download_schemas(sources, selector, table_design_dir, local_files, type_maps, dry_run=False):
+def download_schemas(schemas, selector, table_design_dir, local_files, type_maps, auto=False, dry_run=False):
     """
-    Download schemas from upstream source tables and compare against local design files (if available).
+    Download schemas from database tables and compare against local design files (if available).
+    Unless in auto mode, ignore non-source schemas.
     """
     logger = logging.getLogger(__name__)
     total = 0
-    for source in sources:
-        if not source.has_dsn:
-            logger.info("Skipping non-database source in S3: '%s'", source.name)
-        elif selector.match_schema(source.name):
-            normalize_and_create(os.path.join(table_design_dir, source.name), dry_run=dry_run)
-            total += create_or_update_table_designs_from_source(source, selector, table_design_dir, local_files,
+    for schema in schemas:
+        if not schema.has_dsn:
+            logger.info("Skipping static source schema or unload target in S3: '%s'", schema.name)
+        elif not auto and not schema.is_database_source:
+            logger.info("Skipping non-source database schema: '%s'", schema.name)
+        elif selector.match_schema(schema.name):
+            normalize_and_create(os.path.join(table_design_dir, schema.name), dry_run=dry_run)
+            total += create_or_update_table_designs_from_source(schema, selector, table_design_dir, local_files,
                                                                 type_maps, dry_run=dry_run)
     if not local_files:
         logger.warning("Found no matching files in '%s' for '%s'", table_design_dir, selector)
