@@ -1,11 +1,11 @@
 import etl
 
 
-class UnknownTableSizeError(etl.ETLError):
+class DataExtractError(etl.ETLError):
     pass
 
 
-class DataExtractError(etl.ETLError):
+class UnknownTableSizeError(DataExtractError):
     pass
 
 

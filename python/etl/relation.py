@@ -80,7 +80,7 @@ class RelationDescription:
         self._fileset = discovered_files
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         self.prefix = discovered_files.path
-        # Note the subtle different to TableFileSet -- here the manifest_file_name is always present since it's computed
+        # Note the subtle difference to TableFileSet--here the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design, query statement, etc.
@@ -134,7 +134,7 @@ class RelationDescription:
         return self.table_design.get("unload_target")
 
     @property
-    def query_stmt(self):
+    def query_stmt(self) -> str:
         if self._query_stmt is None:
             if self.sql_file_name is None:
                 raise MissingQueryError("Missing SQL file for '{}'".format(self.identifier))
@@ -536,7 +536,7 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
         logger.info("Skipping validation against database (nothing to do)")
 
 
-def test_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
+def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     """
     Test queries by running EXPLAIN with the query.
     """
@@ -555,7 +555,7 @@ def test_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
                             "\n | ".join(row[0] for row in plan))
 
 
-def copy_to_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
+def sync_with_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
     """
     Copy (validated) table design and SQL files from local directory to S3 bucket.
 
@@ -578,4 +578,4 @@ def copy_to_s3(descriptions: List[RelationDescription], bucket_name: str, prefix
             else:
                 etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
     if not dry_run:
-        logger.info("Uploaded %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)
+        logger.info("Synced %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)

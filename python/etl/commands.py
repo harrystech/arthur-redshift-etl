@@ -118,8 +118,9 @@ def submit_step(cluster_id, sub_command):
                     "ActionOnFailure": "CONTINUE",
                     "HadoopJarStep": {
                         "Jar": "command-runner.jar",
-                        "Args": ["/tmp/redshift_etl/venv/bin/arthur.py",
-                                 "--config", "/tmp/redshift_etl/config"] + remaining
+                        "Args": [etl.config.etl_dir("venv/bin/arthur.py"),
+                                 "--config",
+                                 etl.config.etl_dir("config")] + remaining
                     }
                 }
             ]
@@ -182,7 +183,7 @@ def build_full_parser(prog_name):
             # Commands to deal with data warehouse as admin:
             InitializeSetupCommand, CreateUserCommand,
             # Commands to help with table designs and uploading them
-            DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, CopyToS3Command,
+            DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
@@ -387,7 +388,7 @@ class DownloadSchemasCommand(SubCommand):
             etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
 
 
-class CopyToS3Command(SubCommand):
+class SyncWithS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("sync",
@@ -413,15 +414,16 @@ class CopyToS3Command(SubCommand):
             etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
         descriptions = self.find_relation_descriptions(args, default_scheme="file")
-        etl.relation.copy_to_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        etl.relation.sync_with_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class ExtractToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("extract",
-                         "extract table data from sources",
-                         "Extract table contents to files in S3 along with a manifest file.")
+                         "extract data from upstream sources",
+                         "Extract table contents from upstream databases or gather references to existing CSV files"
+                         " in S3. This also creates fresh manifest files.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
@@ -431,14 +433,15 @@ class ExtractToS3Command(SubCommand):
         group.add_argument("--with-spark", help="extract data using Spark Dataframe (using submit_arthur.sh)",
                            const="spark", action="store_const", dest="extractor")
         parser.add_argument("-k", "--keep-going",
-                            help="extract as much data as possible, ignoring errors along the way (Sqoop only)",
+                            help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
 
     def callback(self, args, config):
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
+        # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
         if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
             # Try the full path (in the EMR cluster), or try without path and hope for the best.
-            submit_arthur = "/tmp/redshift_etl/venv/bin/submit_arthur.sh"
+            submit_arthur = etl.config.etl_dir("venv/bin/submit_arthur.sh")
             if not os.path.exists(submit_arthur):
                 submit_arthur = "submit_arthur.sh"
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
@@ -551,7 +554,7 @@ class ExplainQueryCommand(SubCommand):
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args)
-        etl.relation.test_queries(config.dsn_etl, descriptions)
+        etl.relation.explain_queries(config.dsn_etl, descriptions)
 
 
 class ListFilesCommand(SubCommand):

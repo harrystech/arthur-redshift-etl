@@ -1,3 +1,4 @@
+import logging
 import os.path
 from contextlib import closing
 from typing import List, Dict, Tuple
@@ -14,9 +15,11 @@ from etl.relation import RelationDescription
 
 
 class SparkExtractor(Extractor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.name = "spark"
+
+    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
+                 keep_going: bool, dry_run: bool):
+        super().__init__("spark", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
+        self.logger = logging.getLogger(__name__)
         self._sql_context = None
 
     @property

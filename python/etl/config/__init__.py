@@ -12,6 +12,7 @@ from functools import lru_cache
 import logging
 import logging.config
 import os
+import os.path
 import sys
 
 import pkg_resources
@@ -22,6 +23,17 @@ import yaml
 import etl
 import etl.pg
 import etl.s3
+
+
+# Local temp directory used for bootstrap, temp files, etc.
+ETL_DIR = "/tmp/redshift_etl"
+
+
+def etl_dir(path) -> str:
+    """
+    Return the absolute path within the ETL directory for the selected path.
+    """
+    return os.path.join(ETL_DIR, path)
 
 
 class DataWarehouseUser:

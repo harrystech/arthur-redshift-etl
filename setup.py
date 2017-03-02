@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 
 setup(
@@ -10,7 +10,7 @@ setup(
     keywords="redshift postgresql etl extract transform load",
     url="https://github.com/harrystech/harrys-redshift-etl",
     package_dir={"": "python"},
-    packages=["etl", "etl.config", "etl.extract"],
+    packages=find_packages('python'),
     package_data={"etl": ["config/*"]},
     scripts=["python/scripts/submit_arthur.sh"],
     entry_points={
