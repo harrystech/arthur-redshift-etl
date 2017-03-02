@@ -14,6 +14,7 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
+from collections import Counter
 from contextlib import closing
 import difflib
 from functools import partial
@@ -541,6 +542,8 @@ def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     Test queries by running EXPLAIN with the query.
     """
     logger = logging.getLogger(__name__)
+    bad_distribution_styles = ["DS_DIST_INNER", "DS_BCAST_INNER", "DS_DIST_ALL_INNER", "DS_DIST_BOTH"]
+    counter = Counter()
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
@@ -549,10 +552,15 @@ def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
         for description in descriptions:
             if description.is_ctas_relation or description.is_view_relation:
                 logger.debug("Testing query for '%s'", description.identifier)
-                plan = etl.pg.query(conn, "EXPLAIN\n" + description.query_stmt)
-                logger.info("Explain plan for query of '%s':\n | %s",
-                            description.identifier,
-                            "\n | ".join(row[0] for row in plan))
+                plan = etl.pg.explain(conn, description.query_stmt)
+                print("Explain plan for query of '{0.identifier}':\n | {1}".format(description, "\n | ".join(plan)))
+                for row in plan:
+                    for ds in bad_distribution_styles:
+                        if ds in row:
+                            counter[ds] += 1
+    for ds in bad_distribution_styles:
+        if counter[ds]:
+            logger.warning("Found %s distribution style %d time(s)", ds, counter[ds])
 
 
 def sync_with_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:

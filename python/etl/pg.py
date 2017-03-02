@@ -172,6 +172,14 @@ def execute(cx, stmt, args=(), return_result=False):
             return cursor.fetchall()
 
 
+def explain(cx, stmt, args=()):
+    """
+    Return explain plan for the query as a list of steps.
+    """
+    rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
+    return [row[0] for row in rows]
+
+
 def ping(cx):
     """
     Give me a ping to the database, Vasili. One ping only, please.
