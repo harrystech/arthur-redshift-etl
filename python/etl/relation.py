@@ -14,6 +14,7 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
+from collections import Counter
 from contextlib import closing
 import difflib
 from functools import partial
@@ -21,7 +22,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-from typing import List
+from typing import Any, Dict, List, Union
 
 import psycopg2
 import simplejson as json
@@ -80,7 +81,7 @@ class RelationDescription:
         self._fileset = discovered_files
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
         self.prefix = discovered_files.path
-        # Note the subtle different to TableFileSet -- here the manifest_file_name is always present since it's computed
+        # Note the subtle difference to TableFileSet--here the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design, query statement, etc.
@@ -102,7 +103,7 @@ class RelationDescription:
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
     @property
-    def table_design(self):
+    def table_design(self) -> Dict[str, Any]:
         if self._table_design is None:
             if self.bucket_name:
                 loader = partial(etl.design.download_table_design, self.bucket_name)
@@ -134,7 +135,7 @@ class RelationDescription:
         return self.table_design.get("unload_target")
 
     @property
-    def query_stmt(self):
+    def query_stmt(self) -> str:
         if self._query_stmt is None:
             if self.sql_file_name is None:
                 raise MissingQueryError("Missing SQL file for '{}'".format(self.identifier))
@@ -195,6 +196,32 @@ class RelationDescription:
             set_required_relations(descriptions, required_relation_selector)
 
         return descriptions
+
+    def get_columns_with_casts(self) -> List[str]:
+        """
+        Pick columns and decide how they are selected (as-is or with an expression).
+
+        Whether there's an expression or just a name the resulting column is always
+        called out delimited.
+        """
+        selected_columns = []
+        for column in self.table_design["columns"]:
+            if not column.get("skipped", False):
+                if column.get("expression"):
+                    selected_columns.append('{expression} AS "{name}"'.format(**column))
+                else:
+                    selected_columns.append('"{name}"'.format(**column))
+        return selected_columns
+
+    def find_primary_key(self) -> Union[str, None]:
+        """
+        Return primary key (single column) from the table design, if defined, else None.
+        """
+        if "primary_key" in self.table_design.get("constraints", {}):
+            # Note that column constraints such as primary key are stored as one-element lists, hence:
+            return self.table_design["constraints"]["primary_key"][0]
+        else:
+            return None
 
 
 class SortableRelationDescription:
@@ -510,11 +537,13 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
         logger.info("Skipping validation against database (nothing to do)")
 
 
-def test_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
+def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     """
     Test queries by running EXPLAIN with the query.
     """
     logger = logging.getLogger(__name__)
+    bad_distribution_styles = ["DS_DIST_INNER", "DS_BCAST_INNER", "DS_DIST_ALL_INNER", "DS_DIST_BOTH"]
+    counter = Counter()
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
@@ -523,13 +552,18 @@ def test_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
         for description in descriptions:
             if description.is_ctas_relation or description.is_view_relation:
                 logger.debug("Testing query for '%s'", description.identifier)
-                plan = etl.pg.query(conn, "EXPLAIN\n" + description.query_stmt)
-                logger.info("Explain plan for query of '%s':\n | %s",
-                            description.identifier,
-                            "\n | ".join(row[0] for row in plan))
+                plan = etl.pg.explain(conn, description.query_stmt)
+                print("Explain plan for query of '{0.identifier}':\n | {1}".format(description, "\n | ".join(plan)))
+                for row in plan:
+                    for ds in bad_distribution_styles:
+                        if ds in row:
+                            counter[ds] += 1
+    for ds in bad_distribution_styles:
+        if counter[ds]:
+            logger.warning("Found %s distribution style %d time(s)", ds, counter[ds])
 
 
-def copy_to_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
+def sync_with_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
     """
     Copy (validated) table design and SQL files from local directory to S3 bucket.
 
@@ -552,4 +586,4 @@ def copy_to_s3(descriptions: List[RelationDescription], bucket_name: str, prefix
             else:
                 etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
     if not dry_run:
-        logger.info("Uploaded %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)
+        logger.info("Synced %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)

@@ -1,16 +1,16 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 
 setup(
     name="redshift-etl",
-    version="0.19.3",
+    version="0.20.0",
     author="Harry's Data Engineering and Contributors",
     description="ETL code to ferry data from PostgreSQL databases to Redshift cluster",
     license="MIT",
     keywords="redshift postgresql etl extract transform load",
     url="https://github.com/harrystech/harrys-redshift-etl",
     package_dir={"": "python"},
-    packages=["etl", "etl.config"],
+    packages=find_packages('python'),
     package_data={"etl": ["config/*"]},
     scripts=["python/scripts/submit_arthur.sh"],
     entry_points={

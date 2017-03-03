@@ -263,12 +263,12 @@ arthur.py sync "<schema>.<table>"  # This will upload local files for just one t
 
 | Sub-command   | Goal |
 | ---- | ---- |
-| `dump`  | Get data from upstream sources |
+| `extract`  | Get data from upstream sources |
 | `load`, `update` | Move data from upstream sources and let it percolate |
-| `unload` | Take data from a relation in the data warehouse and dump as CSVs into S3 |
+| `unload` | Take data from a relation in the data warehouse and extract as CSVs into S3 |
 
 ```shell
-arthur.py dump
+arthur.py extract
 arthur.py load  # This will automatically create schemas as necessary
 ```
 

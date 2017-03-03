@@ -1,11 +1,11 @@
 [
     {
-        "Name": "ETL dump (#{etl_environment})",
+        "Name": "ETL extract (#{etl_environment})",
         "Args": [
             "/tmp/redshift_etl/venv/bin/arthur.py",
             "--config",
             "/tmp/redshift_etl/config/",
-            "dump",
+            "extract",
             "--prolix",
             "--prefix",
             "#{etl_environment}"
