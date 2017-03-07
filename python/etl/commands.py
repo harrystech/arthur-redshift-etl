@@ -329,8 +329,8 @@ class InitializeSetupCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
-        parser.add_argument("-f", "--force", help="destructively initialize the referenced database even though"
-                            "its name doesn't look like a test database",
+        parser.add_argument("-f", "--force", help="destructively initialize the referenced database regardless"
+                            " of whether it looks like a validation database",
                             default=False, action="store_true")
         parser.add_argument("-u", "--with-user-creation", help="create users and groups before (re)creating database",
                             default=False, action="store_true")
