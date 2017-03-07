@@ -71,13 +71,30 @@ def restore_schemas(conn, schemas):
             etl.pg.grant_select_in_schema(conn, schema.name, reader_group)
 
 
-def initial_setup(config, database_name, with_user_creation=False, dry_run=False):
+def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
     """
     Place named data warehouse database into initial state
         This destroys the contents of the targeted database.
         Optionally add with_users flag to create users and groups.
     """
     logger = logging.getLogger(__name__)
+
+    try:
+        database_name = config.dsn_etl['database']
+    except KeyError:
+        logger.error("Could not identify database initialization target; ETL connection string not set:")
+        raise
+
+    if database_name.startswith('validation'):
+        logger.info("Initializing validation database '%s'", database_name)
+    else:
+        if force:
+            logger.info("Initializing non-validation database '%s' forcefully as requested", database_name)
+        else:
+            raise etl.ETLError(
+                "Refused to initialize non-validation database '%s' without the --force option" % database_name
+            )
+
     if with_user_creation:
         if dry_run:
             logger.info("Dry-run: Skipping creation of required groups: %s", join_with_quotes(config.groups))

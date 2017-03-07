@@ -323,20 +323,22 @@ class InitializeSetupCommand(SubCommand):
 
     def __init__(self):
         super().__init__("initialize",
-                         "create named database",
-                         "(Re)create named database, optionally creating users and groups (typically once per cluster)")
+                         "create ETL database",
+                         "(Re)create database referenced in ETL credential, optionally creating users and groups"
+                         " (typically once per cluster)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
-        parser.add_argument("database_name", help="name of database to initialize; first drops this database if exists",
-                            nargs='?')
+        parser.add_argument("-f", "--force", help="destructively initialize the referenced database even though"
+                            "its name doesn't look like a test database",
+                            default=False, action="store_true")
         parser.add_argument("-u", "--with-user-creation", help="create users and groups before (re)creating database",
                             default=False, action="store_true")
 
     def callback(self, args, config):
         with etl.pg.log_error():
-            etl.dw.initial_setup(config, args.database_name, with_user_creation=args.with_user_creation,
-                                 dry_run=args.dry_run)
+            etl.dw.initial_setup(config, with_user_creation=args.with_user_creation,
+                                 force=args.force, dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
