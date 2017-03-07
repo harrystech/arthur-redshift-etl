@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 3 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <environment> <loader_environment>"
+if [[ $# -ne 4 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences>"
+    echo "      Start time should take format like: `date +"%Y-%m-%dT%H:%M:%S"`"
     exit 0
 fi
 
 CLUSTER_BUCKET="$1"
 CLUSTER_ENVIRONMENT="$2"
-LOADER_ENVIRONMENT="$3"
+STARTDATETIME="$3"
+OCCURRENCES="$4"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
@@ -29,8 +31,8 @@ aws datapipeline create-pipeline \
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/data_pipeline.json \
-    --parameter-values myS3Bucket="$CLUSTER_BUCKET" myEtlEnvironment="$CLUSTER_ENVIRONMENT" mySecondaryLoadEnvironment="$LOADER_ENVIRONMENT" \
+    --pipeline-definition file://./aws_config/rebuild_pipeline.json \
+    --parameter-values myS3Bucket="$CLUSTER_BUCKET" myEtlEnvironment="$CLUSTER_ENVIRONMENT" myStartDateTime="$STARTDATETIME" myOccurrences="$OCCURRENCES" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"

@@ -17,6 +17,7 @@ import threading
 import time
 import traceback
 import uuid
+import re
 
 import boto3
 import botocore.exceptions
@@ -58,6 +59,15 @@ class MetaMonitor(type):
         if cls._environment is None:
             raise ValueError("Value of 'environment' is None")
         return cls._environment
+
+    @property
+    def dynamo_sanitized_environment(cls):
+        """
+        Access the environment, replacing any unpermitted characters with '-'
+        DynamoDB tables must match this pattern: [a-zA-Z0-9_.-]+
+        """
+        pat = re.compile('[a-zA-Z0-9_.-]+')
+        return '-'.join(pat.findall(cls.environment))
 
     @environment.setter
     def environment(cls, value):
@@ -379,7 +389,7 @@ class InsertTraceKey(logging.Filter):
 def set_environment(environment, dynamodb_settings, postgresql_settings):
     Monitor.environment = environment
     if dynamodb_settings:
-        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
+        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + Monitor.dynamo_sanitized_environment,
                               dynamodb_settings["capacity"],
                               dynamodb_settings["region"])
         MonitorPayload.dispatchers.append(ddb)
