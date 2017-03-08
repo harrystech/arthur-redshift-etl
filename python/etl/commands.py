@@ -324,8 +324,9 @@ class InitializeSetupCommand(SubCommand):
     def __init__(self):
         super().__init__("initialize",
                          "create ETL database",
-                         "(Re)create database referenced in ETL credential, optionally creating users and groups"
-                         " (typically once per cluster)")
+                         "(Re)create database referenced in ETL credential, optionally creating users and groups."
+                         " Normally, we expect this to be a validation database (name starts with validation.)"
+                         " When bringing up your primary production or development database, use the --force option.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
