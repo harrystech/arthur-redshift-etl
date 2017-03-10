@@ -30,7 +30,7 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 set -e -x
 
 aws datapipeline create-pipeline \
-    --name "ETL Refresh Pipeline ($CLUSTER_ENVIRONMENT @ $START_TIME)" \
+    --name "ETL Refresh Pipeline ($CLUSTER_ENVIRONMENT @ $START_DATE_TIME)" \
     --unique-id redshift_etl_pipeline \
     --tags key=DataWarehouseEnvironment,value=Production \
     | tee "$PIPELINE_ID_FILE"
