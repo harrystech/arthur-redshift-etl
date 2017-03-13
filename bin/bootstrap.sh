@@ -56,7 +56,7 @@ cd "$REDSHIFT_ETL_HOME"
 
 # Download code to all nodes, this includes Python code and its requirements.txt
 aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
-aws s3 cp --exclude '*' --include ping_cronut.sh --include bootstrap.sh \
+aws s3 cp --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
     --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh
 
