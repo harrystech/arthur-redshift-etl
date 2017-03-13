@@ -86,3 +86,7 @@ aws s3 sync --delete \
     --include RedshiftJDBC41-1.1.10.1010.jar \
     --include spark-csv_2.10-1.4.0.jar \
     jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
+
+set +x
+echo
+echo "You should run: 'arthur.py sync --deploy --prefix $CLUSTER_TARGET_ENVIRONMENT'."
