@@ -26,6 +26,10 @@ if [[ "$CLUSTER_BUCKET" = "local" ]]; then
     exit 1
 fi
 
+echo
+echo "DEPRECATED This script has been deprecated: please use bin/setup_env.sh or bin/sync_env.sh"
+echo
+
 ask_to_confirm () {
     while true; do
         read -r -p "$1 (y/[n]) " ANSWER
