@@ -126,6 +126,15 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
     write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
+def check_unload_target_defined(relation: RelationDescription, target_lookup: Dict[str, DataWarehouseSchema]) -> None:
+    """
+    Raises UnloadTargetNotFoundError if the relation's unload target is not in target_lookup.
+    """
+    if relation.unload_target not in target_lookup:
+        raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
+                                        relation.unload_target)
+
+
 def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescription], prefix: str,
                  allow_overwrite: bool, keep_going: bool, dry_run: bool) -> None:
     """
@@ -139,17 +148,12 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
         return
 
     target_lookup = {schema.name: schema for schema in config.schemas if schema.is_an_unload_target}
-    relation_target_tuples = []
-    for relation in unloadable_relations:
-        if relation.unload_target not in target_lookup:
-            raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
-                                            relation.unload_target)
-        relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
     conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
-        for relation, unload_schema in relation_target_tuples:
+        for relation in unloadable_relations:
             try:
+                check_unload_target_defined(relation, target_lookup)
                 unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
