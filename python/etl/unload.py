@@ -16,7 +16,7 @@ schema or table from which the data was dumped to CSV.
 """
 
 from contextlib import closing
-from typing import List
+from typing import List, Dict
 import logging
 import os
 
