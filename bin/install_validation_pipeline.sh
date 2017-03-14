@@ -9,7 +9,7 @@ fi
 CLUSTER_BUCKET="$1"
 CLUSTER_ENVIRONMENT="$2"
 STARTDATETIME="$3"
-OCCURRENCES="${4-1}"
+OCCURRENCES="${4:-1}"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
