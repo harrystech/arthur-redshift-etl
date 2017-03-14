@@ -256,7 +256,7 @@ def order_by_dependencies(relation_descriptions):
     logger = logging.getLogger(__name__)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        descriptions = executor.map(lambda v: SortableRelationDescription(v), relation_descriptions)
+        descriptions = list(executor.map(lambda v: SortableRelationDescription(v), relation_descriptions))
 
     known_tables = frozenset({description.identifier for description in descriptions})
     nr_tables = len(known_tables)
