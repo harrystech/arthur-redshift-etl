@@ -154,6 +154,7 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
         for relation in unloadable_relations:
             try:
                 check_unload_target_defined(relation, target_lookup)
+                unload_schema = target_lookup[relation.unload_target]
                 unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
