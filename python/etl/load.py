@@ -210,6 +210,10 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     credentials = "aws_iam_role={}".format(aws_iam_role)
     s3_path = "s3://{}/{}".format(description.bucket_name, description.manifest_file_name)
     table_name = description.target_table_name
+
+    if not (description.has_manifest or skip_copy or dry_run):
+        raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
+
     if dry_run:
         logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     elif skip_copy:
@@ -433,8 +437,6 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
     if description.is_ctas_relation or description.is_view_relation:
         object_key = description.sql_file_name
     else:
-        if not (description.has_manifest or skip_copy or dry_run):
-            raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
         object_key = description.manifest_file_name
 
     # TODO The monitor should contain the number of rows that were loaded.
@@ -448,6 +450,7 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
                                           'table': table_name.table}):
         if description.is_view_relation:
             create_view(conn, description, drop_view=drop, dry_run=dry_run)
+            grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         elif description.is_ctas_relation:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
             create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
@@ -455,13 +458,17 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             analyze(conn, table_name, dry_run=dry_run)
             etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
             modified = True
+            grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         else:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
-            copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
-            analyze(conn, table_name, dry_run=dry_run)
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
-            modified = True
-        grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
+            try:
+                copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
+                analyze(conn, table_name, dry_run=dry_run)
+                etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+                modified = True
+            finally:
+                # Grant access to data source regardless of loading errors (writers may fix the problem outside of ETL)
+                grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         return modified
 
 
