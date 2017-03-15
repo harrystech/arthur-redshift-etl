@@ -4,6 +4,12 @@
 
 if [[ $# -ne 3 && $# -ne 4 ]]; then
     echo "Usage: `basename $0` [-y] <bucket_name> <source_env> <target_env>"
+    echo
+    echo "This will sync the target environmnet with the source environment."
+    echo "You normally specify environments by their prefix in S3."
+    echo "Unless you pass in '-y', you will have to confirm the sync operation since"
+    echo "it is potentially destructive."
+    echo "An attempt will be made to copy credentials, but is not an error if that fails."
     exit 0
 fi
 
@@ -50,3 +56,11 @@ for FOLDER in bin config data jars schemas; do
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
 done
+
+if ! aws s3 sync --exclude '*' --include 'credentials*.sh' \
+        "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config" \
+        "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
+then
+    set +x
+    echo "You will have to copy your credentials manually."
+fi
