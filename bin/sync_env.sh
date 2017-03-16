@@ -2,27 +2,40 @@
 
 # Sync one environment over another.
 
-if [[ $# -ne 3 && $# -ne 4 ]]; then
-    echo "Usage: `basename $0` [-y] <bucket_name> <source_env> <target_env>"
+show_help () {
+    echo "Usage: `basename $0` [-y] [-c] <bucket_name> <source_env> <target_env>"
     echo
     echo "This will sync the target environmnet with the source environment."
     echo "You normally specify environments by their prefix in S3."
     echo "Unless you pass in '-y', you will have to confirm the sync operation since"
     echo "it is potentially destructive."
-    echo "An attempt will be made to copy credentials, but is not an error if that fails."
-    exit 0
-fi
+    echo "If '-c' is passed in, an attempt will be made to copy credentials, but is"
+    echo "not an error if that fails."
+}
 
-if [[ $# -eq 4 ]]; then
-    if [[ "$1" = "-y" ]]; then
-      CONFIRMED_YES=yes
-      shift
-    else
-       echo "Not a valid option: $1"
-       exit 1
-    fi
-else
-    CONFIRMED_YES=no
+OPTIND=1         # Reset in case getopts has been used previously in the shell.
+
+CONFIRMED_YES=no
+COPY_CREDENTIALS=no
+
+while getopts ":h?yc" opt; do
+    case "$opt" in
+    h|\?)
+        show_help
+        exit 0
+        ;;
+    y)  CONFIRMED_YES=yes
+        ;;
+    c)  COPY_CREDENTIALS=yes
+        ;;
+    esac
+done
+
+shift $((OPTIND-1))
+
+if [[ $# -ne 3 ]]; then
+    show_help
+    exit 1
 fi
 
 CLUSTER_BUCKET="$1"
@@ -57,10 +70,15 @@ for FOLDER in bin config data jars schemas; do
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
 done
 
-if ! aws s3 sync --exclude '*' --include 'credentials*.sh' \
-        "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config" \
-        "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
-then
-    set +x
-    echo "You will have to copy your credentials manually."
+set +x
+
+if [[ "$COPY_CREDENTIALS" = "yes" ]]; then
+    set -x
+    if ! aws s3 sync --exclude '*' --include 'credentials*.sh' \
+            "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config" \
+            "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
+    then
+        set +x
+        echo "You will have to copy your credentials manually."
+    fi
 fi
