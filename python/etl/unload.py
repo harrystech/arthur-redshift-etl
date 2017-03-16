@@ -16,7 +16,7 @@ schema or table from which the data was dumped to CSV.
 """
 
 from contextlib import closing
-from typing import List, Dict
+from typing import List
 import logging
 import os
 
@@ -126,15 +126,6 @@ def unload_redshift_relation(conn: connection, description: RelationDescription,
     write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
-def check_unload_target_defined(relation: RelationDescription, target_lookup: Dict[str, DataWarehouseSchema]) -> None:
-    """
-    Raises UnloadTargetNotFoundError if the relation's unload target is not in target_lookup.
-    """
-    if relation.unload_target not in target_lookup:
-        raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
-                                        relation.unload_target)
-
-
 def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescription], prefix: str,
                  allow_overwrite: bool, keep_going: bool, dry_run: bool) -> None:
     """
@@ -153,7 +144,9 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     with closing(conn) as conn:
         for relation in unloadable_relations:
             try:
-                check_unload_target_defined(relation, target_lookup)
+                if relation.unload_target not in target_lookup:
+                    raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
+                                                    relation.unload_target)
                 unload_schema = target_lookup[relation.unload_target]
                 unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
