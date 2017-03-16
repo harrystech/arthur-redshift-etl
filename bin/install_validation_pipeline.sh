@@ -11,10 +11,10 @@ CLUSTER_ENVIRONMENT="$2"
 STARTDATETIME="$3"
 OCCURRENCES="${4:-1}"
 
-# Verify that this bucket/environment pair is set up on s3
-BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
-if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist!"
+# Verify that this bucket/environment pair is set up on s3 with credentials
+VALIDATION_CREDENTIALS="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/validation/config/credentials_validation.sh"
+if ! aws s3 ls "$VALIDATION_CREDENTIALS" > /dev/null; then
+    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist with credentials_validation.sh!"
     exit 1
 fi
 
