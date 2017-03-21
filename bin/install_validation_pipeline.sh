@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 3 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences>"
-    echo "      Start time should take format like: `date +"%Y-%m-%dT%H:%M:%S"`"
+if [[ $# -lt 3 || "$1" = "-h" || $# -gt 4 ]]; then
+    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> [<occurrences>]"
+    echo "      Start time should take the ISO8601 format like: `date +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      The number of occurrences defaults to 1."
     exit 0
 fi
 
