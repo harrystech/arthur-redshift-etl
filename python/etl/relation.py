@@ -255,6 +255,8 @@ def order_by_dependencies(relation_descriptions):
     """
     logger = logging.getLogger(__name__)
 
+    # Initializing the SortableRelationDescription instances pulls in the table designs from S3 since we'll access
+    # the dependencies.  (Practically we didn't see a speed-up for more than 8 workers.)
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         descriptions = list(executor.map(lambda v: SortableRelationDescription(v), relation_descriptions))
 
