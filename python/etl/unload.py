@@ -139,15 +139,17 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
         return
 
     target_lookup = {schema.name: schema for schema in config.schemas if schema.is_an_unload_target}
+    relation_target_tuples = []
+    for relation in unloadable_relations:
+        if relation.unload_target not in target_lookup:
+            raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
+                                            relation.unload_target)
+        relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
     conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
-        for relation in unloadable_relations:
+        for relation, unload_schema in relation_target_tuples:
             try:
-                if relation.unload_target not in target_lookup:
-                    raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
-                                                    relation.unload_target)
-                unload_schema = target_lookup[relation.unload_target]
                 unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
