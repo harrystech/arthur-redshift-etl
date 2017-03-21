@@ -26,14 +26,14 @@ import etl.s3
 
 
 # Local temp directory used for bootstrap, temp files, etc.
-ETL_DIR = "/tmp/redshift_etl"
+ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
-def etl_dir(path) -> str:
+def etl_tmp_dir(path) -> str:
     """
     Return the absolute path within the ETL directory for the selected path.
     """
-    return os.path.join(ETL_DIR, path)
+    return os.path.join(ETL_TMP_DIR, path)
 
 
 class DataWarehouseUser:
