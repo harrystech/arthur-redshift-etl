@@ -608,7 +608,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     with closing(conn) as conn, conn as conn:
         try:
             for index, description in enumerate(execution_order):
-                logger.debug("Starting to work on '%s' (%d/%d)", description.identifier, index, len(execution_order))
+                logger.debug("Starting to work on '%s' (%d/%d)", description.identifier, index+1, len(execution_order))
                 if description.identifier in failed:
                     logger.info("Skipping load for relation '%s' due to failed dependencies", description.identifier)
                     continue

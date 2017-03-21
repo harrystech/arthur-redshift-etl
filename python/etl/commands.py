@@ -118,9 +118,9 @@ def submit_step(cluster_id, sub_command):
                     "ActionOnFailure": "CONTINUE",
                     "HadoopJarStep": {
                         "Jar": "command-runner.jar",
-                        "Args": [etl.config.etl_dir("venv/bin/arthur.py"),
+                        "Args": [etl.config.etl_tmp_dir("venv/bin/arthur.py"),
                                  "--config",
-                                 etl.config.etl_dir("config")] + remaining
+                                 etl.config.etl_tmp_dir("config")] + remaining
                     }
                 }
             ]
@@ -447,7 +447,7 @@ class ExtractToS3Command(SubCommand):
         # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
         if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
             # Try the full path (in the EMR cluster), or try without path and hope for the best.
-            submit_arthur = etl.config.etl_dir("venv/bin/submit_arthur.sh")
+            submit_arthur = etl.config.etl_tmp_dir("venv/bin/submit_arthur.sh")
             if not os.path.exists(submit_arthur):
                 submit_arthur = "submit_arthur.sh"
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
