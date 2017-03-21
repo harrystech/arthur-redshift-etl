@@ -30,7 +30,7 @@ class SqoopExtractor(Extractor):
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
-        self._sqoop_options_dir = etl.config.etl_dir("sqoop")
+        self._sqoop_options_dir = etl.config.etl_tmp_dir("sqoop")
         if not os.path.isdir(self._sqoop_options_dir) and not self.dry_run:
             self.logger.info("Creating directory '%s' (with mode 750)", self._sqoop_options_dir)
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
