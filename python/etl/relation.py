@@ -22,6 +22,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
+import concurrent
 from typing import Any, Dict, List, Union
 
 import psycopg2
@@ -254,7 +255,11 @@ def order_by_dependencies(relation_descriptions):
     """
     logger = logging.getLogger(__name__)
 
-    descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
+    # Initializing the SortableRelationDescription instances pulls in the table designs from S3 since we'll access
+    # the dependencies.  (Practically we didn't see a speed-up for more than 8 workers.)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        descriptions = list(executor.map(lambda v: SortableRelationDescription(v), relation_descriptions))
+
     known_tables = frozenset({description.identifier for description in descriptions})
     nr_tables = len(known_tables)
 

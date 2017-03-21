@@ -595,7 +595,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     if whole_schemas:
         with closing(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)) as conn:
             if dry_run:
-                logger.info("Skipping backup of schemas and creation")
+                logger.info("Dry-run: Skipping backup of schemas and creation")
             else:
                 etl.dw.backup_schemas(conn, involved_schemas)
                 etl.dw.create_schemas(conn, involved_schemas)
@@ -636,7 +636,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
         except Exception:
             if whole_schemas:
                 if dry_run:
-                    logger.info("Skipping restoration of backup in exception handling")
+                    logger.info("Dry-run: Skipping restoration of backup in exception handling")
                 elif not no_rollback:
                     # Defensively create a new connection to rollback
                     etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
