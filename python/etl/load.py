@@ -461,14 +461,12 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         else:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
-            try:
-                copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
-                analyze(conn, table_name, dry_run=dry_run)
-                etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
-                modified = True
-            finally:
-                # Grant access to data source regardless of loading errors (writers may fix the problem outside of ETL)
-                grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
+            # Grant access to data source regardless of loading errors (writers may fix the problem outside of ETL)
+            grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
+            copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
+            analyze(conn, table_name, dry_run=dry_run)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+            modified = True
         return modified
 
 
