@@ -43,6 +43,10 @@ class CyclicDependencyError(etl.ETLError):
     pass
 
 
+class ReloadConsistencyError(etl.ETLError):
+    pass
+
+
 class UniqueConstraintError(etl.ETLError):
     def __init__(self, relation, constraint, keys, examples):
         self.relation = relation
@@ -521,6 +525,24 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
+def validate_reload(descriptions: List[RelationDescription]):
+    """
+    Verify that columns between unloaded tables and reloaded tables are the same.
+    The order matters for these lists.
+    """
+    logger = logging.getLogger(__name__)
+    unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
+
+    for unloaded in unloaded_descriptions:
+        reloaded = etl.TableName(unloaded.unload_target, unloaded.target_table_name.table)
+        for description in descriptions:
+            if description.target_table_name == reloaded:
+                logger.info("Checking for consistency of '%s' and '%s'", unloaded.identifier, description.identifier)
+                if unloaded.unquoted_columns != description.unquoted_columns:
+                    diff = set(unloaded.unquoted_columns).symmetric_difference(set(description.unquoted_columns))
+                    raise ReloadConsistencyError("Difference detected! Suspect columns include %s" % sorted(diff))
+
+
 def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_going=False, skip_deps=False) -> None:
     """
     Make sure that all table design files pass the validation checks.
@@ -528,6 +550,7 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
     logger = logging.getLogger(__name__)
 
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
+    validate_reload(valid_descriptions)
 
     logger.info("Validating dependency ordering")
     order_by_dependencies(valid_descriptions)
