@@ -525,22 +525,30 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
-def validate_reload(descriptions: List[RelationDescription]):
+def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
-    The order matters for these lists.
+
+    Note that the order matters for these lists of columns.  Once the designs are validated,
+    we can unload a relation 's.t' with a target 'u' and then extract and load it back into 'u.t'.
     """
     logger = logging.getLogger(__name__)
     unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
+    descriptions_lookup = {d.identifier: d for d in descriptions}
 
     for unloaded in unloaded_descriptions:
+        logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
         reloaded = etl.TableName(unloaded.unload_target, unloaded.target_table_name.table)
-        for description in descriptions:
-            if description.target_table_name == reloaded:
-                logger.info("Checking for consistency of '%s' and '%s'", unloaded.identifier, description.identifier)
-                if unloaded.unquoted_columns != description.unquoted_columns:
-                    diff = set(unloaded.unquoted_columns).symmetric_difference(set(description.unquoted_columns))
-                    raise ReloadConsistencyError("Difference detected! Suspect columns include %s" % sorted(diff))
+        if reloaded.identifier in descriptions_lookup:
+            description = descriptions_lookup[reloaded.identifier]
+            logger.info("Checking for consistency of '%s' and '%s'", unloaded.identifier, description.identifier)
+            if unloaded.unquoted_columns != description.unquoted_columns:
+                diff = set(unloaded.unquoted_columns).symmetric_difference(set(description.unquoted_columns))
+                logger.error("Column difference detected between '%s' and '%s'. Suspect columns include: %s",
+                             unloaded.identifier, description.identifier, etl.join_with_quotes(diff))
+                if not keep_going:
+                    raise ReloadConsistencyError("Unloaded relation '%s' failed to match counterpart"
+                                                 % unloaded.identifier)
 
 
 def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_going=False, skip_deps=False) -> None:
@@ -550,7 +558,7 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
     logger = logging.getLogger(__name__)
 
     valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
-    validate_reload(valid_descriptions)
+    validate_reload(valid_descriptions, keep_going=keep_going)
 
     logger.info("Validating dependency ordering")
     order_by_dependencies(valid_descriptions)
