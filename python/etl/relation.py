@@ -525,12 +525,39 @@ def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
                     raise
 
 
+def get_list_difference(list1, list2):
+    """
+    Return list of elements that help turn list1 into list2 -- a "minimal" list of
+    differences based on changing one list into the other.
+
+    >>> sorted(get_list_difference(["a", "b"], ["b", "a"]))
+    ['b']
+    >>> sorted(get_list_difference(["a", "b"], ["a", "c", "b"]))
+    ['c']
+    >>> sorted(get_list_difference(["a", "b", "c", "d", "e"], ["a", "c", "b", "e"]))
+    ['c', 'd']
+
+    The last list happens because the matcher asks to insert 'c', then delete 'c' and 'd' later.
+    """
+    diff = set()
+    matcher = difflib.SequenceMatcher(None, list1, list2)  # None means skip junk detection
+    for code, left1, right1, left2, right2 in matcher.get_opcodes():
+        if code != 'equal':
+            diff.update(list1[left1:right1])
+            diff.update(list2[left2:right2])
+    return diff
+
+
 def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
 
-    Note that the order matters for these lists of columns.  Once the designs are validated,
-    we can unload a relation 's.t' with a target 'u' and then extract and load it back into 'u.t'.
+    Once the designs are validated, we can unload a relation 's.t' with a target 'u' and
+    then extract and load it back into 'u.t'.
+
+    Note that the order matters for these lists of columns.  (Which is also why we
+    can't take the (symmetric) difference between columns but must be careful checking
+    the column lists.)
     """
     logger = logging.getLogger(__name__)
     unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
@@ -541,9 +568,11 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
         reloaded = etl.TableName(unloaded.unload_target, unloaded.target_table_name.table)
         if reloaded.identifier in descriptions_lookup:
             description = descriptions_lookup[reloaded.identifier]
-            logger.info("Checking for consistency of '%s' and '%s'", unloaded.identifier, description.identifier)
-            if unloaded.unquoted_columns != description.unquoted_columns:
-                diff = set(unloaded.unquoted_columns).symmetric_difference(set(description.unquoted_columns))
+            logger.info("Checking for consistency between '%s' and '%s'", unloaded.identifier, description.identifier)
+            unloaded_columns = unloaded.unquoted_columns
+            reloaded_columns = description.unquoted_columns
+            if unloaded_columns != reloaded_columns:
+                diff = get_list_difference(reloaded_columns, unloaded_columns)
                 logger.error("Column difference detected between '%s' and '%s'. Suspect columns include: %s",
                              unloaded.identifier, description.identifier, etl.join_with_quotes(diff))
                 if not keep_going:
