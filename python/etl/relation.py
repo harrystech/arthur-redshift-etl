@@ -573,8 +573,10 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
             reloaded_columns = description.unquoted_columns
             if unloaded_columns != reloaded_columns:
                 diff = get_list_difference(reloaded_columns, unloaded_columns)
-                logger.error("Column difference detected between '%s' and '%s'. Suspect columns include: %s",
-                             unloaded.identifier, description.identifier, etl.join_with_quotes(diff))
+                logger.error("Column difference detected between '%s' and '%s'",
+                             unloaded.identifier, description.identifier)
+                logger.error("You need to replace, insert and/or delete in '%s': %s",
+                             description.identifier, etl.join_with_quotes(diff))
                 if not keep_going:
                     raise ReloadConsistencyError("Unloaded relation '%s' failed to match counterpart"
                                                  % unloaded.identifier)
