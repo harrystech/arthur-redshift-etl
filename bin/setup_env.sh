@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
 # Setup your "environment" under a new prefix in S3.
+# This will create a new distribution locally and upload everything into S3.
+
+set -eu
 
 if [[ $# -ne 2 ]]; then
     echo "Usage: `basename $0` <bucket_name> <target_env>"
@@ -28,7 +31,6 @@ ask_to_confirm () {
 
 ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'?"
 
-
 if [[ -z "$DATA_WAREHOUSE_CONFIG" ]]; then
     echo "Cannot find configuration files.  Please set DATA_WAREHOUSE_CONFIG to a directory."
     exit 2
@@ -51,17 +53,18 @@ if [[ ! -r setup.py ]]; then
 fi
 
 echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to S3"
-set -e -x
+set -x
 
 # Collect release information
-TMP_FILE="/tmp/copy_env_release_${USER}_$$.txt"
-> "$TMP_FILE"
-trap "rm \"$TMP_FILE\"" EXIT
-python3 setup.py --fullname >> "$TMP_FILE"
-git rev-parse --show-toplevel >> "$TMP_FILE"
-git rev-parse HEAD >> "$TMP_FILE"
-date "+%Y-%m-%d %H:%M:%S%z" >> "$TMP_FILE"
-aws s3 cp "$TMP_FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/release.txt"
+RELEASE_FILE="/tmp/setup_env_release_${USER}_$$.txt"
+> "$RELEASE_FILE"
+trap "rm \"$RELEASE_FILE\"" EXIT
+
+python3 setup.py --fullname >> "$RELEASE_FILE"
+git rev-parse --show-toplevel >> "$RELEASE_FILE"
+git rev-parse HEAD >> "$RELEASE_FILE"
+date "+%Y-%m-%d %H:%M:%S%z" >> "$RELEASE_FILE"
+aws s3 cp "$RELEASE_FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/release.txt"
 
 python3 setup.py sdist
 LATEST_TAR_FILE=`ls -1t dist/redshift-etl*tar.gz | head -1`
@@ -89,4 +92,4 @@ aws s3 sync --delete \
 
 set +x
 echo
-echo "You should run: 'arthur.py sync --deploy --prefix $CLUSTER_TARGET_ENVIRONMENT'."
+echo "You should *now* run: arthur.py sync --deploy --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
