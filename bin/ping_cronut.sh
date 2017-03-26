@@ -16,7 +16,7 @@
 # need not be related to the name chosen in the Cronut app.
 
 if [[ $# -lt 1 || "$1" = "-h" ]]; then
-    echo "Usage: $0 <name of ping in env file>"
+    echo "Usage: $0 <Name of Cronut Public ID in env file>"
     exit 0
 fi
 
@@ -33,7 +33,8 @@ if [ -z $CRONUT_PUBLIC_ID ]; then
     exit 1
 fi
 
-echo "Sending POST request to Cronut for \"$1\" with public_id=$CRONUT_PUBLIC_ID"
+CURRENT_TIME=`date '+%s'`
+echo "Sending POST request to Cronut for \"$1\" with public_id=$CRONUT_PUBLIC_ID (timestamp=$CURRENT_TIME)"
 
 set -u
 
@@ -42,7 +43,6 @@ trap "rm \"$CRONUT_PUBLIC_KEY_FILE\"" EXIT
 echo -n "$CRONUT_PUBLIC_KEY" > "$CRONUT_PUBLIC_KEY_FILE"
 
 # We need to encrypt and url-encode the public_id parameter for the ping:
-CURRENT_TIME=`date '+%s'`
 echo -n "$CURRENT_TIME-$CRONUT_PUBLIC_ID" |
 openssl rsautl -encrypt -pubin -inkey "$CRONUT_PUBLIC_KEY_FILE" |
 curl --silent \

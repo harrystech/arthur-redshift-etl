@@ -26,9 +26,16 @@ if [[ "$CLUSTER_BUCKET" = "local" ]]; then
     exit 1
 fi
 
-echo
-echo "DEPRECATED This script has been deprecated: please use bin/setup_env.sh or bin/sync_env.sh"
-echo
+echo "** DEPRECATION WARNING **"
+echo "This script has been deprecated!"
+
+if [[ "$CLUSTER_SOURCE_ENVIRONMENT" = "local" ]]; then
+    echo "You should be using: setup_env.sh $CLUSTER_BUCKET $CLUSTER_TARGET_ENVIRONMENT"
+else
+    echo "You should be using: sync_env.sh $CLUSTER_BUCKET $CLUSTER_SOURCE_ENVIRONMENT $CLUSTER_TARGET_ENVIRONMENT"
+fi
+
+echo "** DEPRECATION WARNING **"
 
 ask_to_confirm () {
     while true; do
