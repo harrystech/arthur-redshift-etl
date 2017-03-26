@@ -4,7 +4,7 @@
 #   Non-interactive jobs will run the steps and then quit.
 #   Interactive jobs will run the steps and then wait for additional work.
 #
-# Checkout the copy_env.sh script to have files ready in S3 for the EMR cluster.
+# Checkout the setup_env.sh and sync_env.sh scripts to have files ready in S3 for the EMR cluster.
 #
 # TODO Find a better way to parameterize cluster, check out cloud formation?
 

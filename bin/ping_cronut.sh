@@ -39,8 +39,8 @@ echo "Sending POST request to Cronut for \"$1\" with public_id=$CRONUT_PUBLIC_ID
 set -u
 
 CRONUT_PUBLIC_KEY_FILE="/tmp/cronut_pub_$$"
-trap "rm \"$CRONUT_PUBLIC_KEY_FILE\"" EXIT
 echo -n "$CRONUT_PUBLIC_KEY" > "$CRONUT_PUBLIC_KEY_FILE"
+trap "rm \"$CRONUT_PUBLIC_KEY_FILE\"" EXIT
 
 # We need to encrypt and url-encode the public_id parameter for the ping:
 echo -n "$CURRENT_TIME-$CRONUT_PUBLIC_ID" |
