@@ -242,6 +242,14 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 settings[key].update(new_settings[key])
             else:
                 settings[key] = new_settings[key]
+        for source in new_settings.get('sources', []):
+            if 'groups' in source:
+                logger.warning(
+                    'Source "%s" uses a deprecated permissions API in the warehouse settings file:'
+                    ' Please migrate from "groups" to "readers". Will proceed interpreting "groups" as "readers"',
+                    source['name'])
+                if 'readers' in source:
+                    raise etl.ETLError('Source %s illegally used both "groups" and "readers" keys', source['name'])
 
 
 def read_release_file(filename: str) -> None:

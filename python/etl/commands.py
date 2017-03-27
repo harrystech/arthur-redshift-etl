@@ -325,11 +325,14 @@ class InitializeSetupCommand(SubCommand):
         super().__init__("initialize",
                          "create ETL database",
                          "(Re)create database referenced in ETL credential, optionally creating users and groups."
-                         " Normally, we expect this to be a validation database (name starts with 'validation')."
+                         " Normally, we expect this to be a validation database (name starts with validation.)"
                          " When bringing up your primary production or development database, use the --force option.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument("database_name", help="DEPRECATED: Set ETL connection string to target database instead. "
+                                                  "name of database to initialize; first drops this database if exists",
+                            nargs='?')
         parser.add_argument("-f", "--force", help="destructively initialize the referenced database regardless"
                             " of whether it looks like a validation database",
                             default=False, action="store_true")
@@ -338,8 +341,8 @@ class InitializeSetupCommand(SubCommand):
 
     def callback(self, args, config):
         with etl.pg.log_error():
-            etl.dw.initial_setup(config, with_user_creation=args.with_user_creation, force=args.force,
-                                 dry_run=args.dry_run)
+            etl.dw.initial_setup(config, args.database_name, with_user_creation=args.with_user_creation,
+                                 force=args.force, dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
