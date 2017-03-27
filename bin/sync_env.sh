@@ -43,6 +43,11 @@ CLUSTER_BUCKET="$1"
 CLUSTER_SOURCE_ENVIRONMENT="$2"
 CLUSTER_TARGET_ENVIRONMENT="$3"
 
+if ! aws s3 ls "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/" > /dev/null; then
+    echo "Check whether the folder \"$CLUSTER_SOURCE_ENVIRONMENT\" exists in bucket \"$CLUSTER_BUCKET\" and that you have access to it!"
+    exit 2
+fi
+
 ask_to_confirm () {
     while true; do
         read -r -p "$1 (y/[n]) " ANSWER
