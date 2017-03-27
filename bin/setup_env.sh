@@ -80,7 +80,7 @@ aws s3 sync --delete \
     --include "*.sh" \
     --include "*.hosts" \
     --exclude "release.txt" \
-    --exclude "credentials*" \
+    --exclude "credentials*.sh" \
     "$DATA_WAREHOUSE_CONFIG" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
 aws s3 sync --delete \
     --exclude "*" \
