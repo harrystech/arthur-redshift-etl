@@ -8,6 +8,11 @@ fi
 CLUSTER_BUCKET="$1"
 CLUSTER_ENVIRONMENT="$2"
 
+echo "** DEPRECATION WARNING **"
+echo "This script has been deprecated!"
+echo "You should be using: install_validation_pipeline.sh $CLUSTER_BUCKET $CLUSTER_ENVIRONMENT <DATETIME> <OCCURRENCES>"
+echo "** DEPRECATION WARNING **"
+
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then

@@ -202,7 +202,7 @@ def validate_table_design_from_file(local_filename, table_name):
         with open(local_filename) as f:
             table_design = load_table_design(f, table_name)
     except:
-        logger.warning("Failed to load table design from '%s'", local_filename)
+        logger.error("Failed to load table design from '%s'", local_filename)
         raise
     return table_design
 
