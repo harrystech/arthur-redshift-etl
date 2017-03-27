@@ -201,20 +201,26 @@ def create_view(conn, description, drop_view=False, dry_run=False):
 def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
-    A manifest for the CSV files must be provided.
+    A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
 
-    Tables can only be truncated by their owners, so this will delete all rows
-    instead of truncating the tables.
+    Tables can only be truncated by their owners (and outside of a transaction), so this will delete
+    all rows instead of truncating the tables.
     """
     logger = logging.getLogger(__name__)
     credentials = "aws_iam_role={}".format(aws_iam_role)
     s3_path = "s3://{}/{}".format(description.bucket_name, description.manifest_file_name)
     table_name = description.target_table_name
+
     if dry_run:
+        if not description.has_manifest:
+            logger.warning("Missing manifest file for '%s'", description.identifier)
         logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     elif skip_copy:
         logger.info("Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     else:
+        if not description.has_manifest:
+            raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
+
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
             # FIXME Given that we're always running as the owner now, could we truncate now?
@@ -368,15 +374,16 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
 
 def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=False):
     """
-    Grant all privileges to ETL (always the first group) and grant select permission to users' groups.
+    Grant privileges on (new) relation based on configuration.
+
+    We always grant all privileges to the ETL user.  We may grant read-only access
+    or read-write access based on configuration.  Note that the is always based on groups, not users.
     """
     logger = logging.getLogger(__name__)
     if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'",
-                    table_name.identifier, owner)
+        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", table_name.identifier, owner)
     else:
-        logger.info("Granting all privileges on '%s' to '%s'",
-                    table_name.identifier, owner)
+        logger.info("Granting all privileges on '%s' to '%s'", table_name.identifier, owner)
         etl.pg.grant_all_to_user(conn, table_name.schema, table_name.table, owner)
 
     if reader_groups:
@@ -391,10 +398,10 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
 
     if writer_groups:
         if dry_run:
-            logger.info("Dry-run: Skipping granting of writer access on '%s' to %s",
+            logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
                         table_name.identifier, etl.join_with_quotes(writer_groups))
         else:
-            logger.info("Granting writer access on '%s' to %s",
+            logger.info("Granting write access on '%s' to %s",
                         table_name.identifier, etl.join_with_quotes(writer_groups))
             for writer in writer_groups:
                 etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
@@ -433,8 +440,6 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
     if description.is_ctas_relation or description.is_view_relation:
         object_key = description.sql_file_name
     else:
-        if not (description.has_manifest or skip_copy or dry_run):
-            raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
         object_key = description.manifest_file_name
 
     # TODO The monitor should contain the number of rows that were loaded.
@@ -448,20 +453,24 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
                                           'table': table_name.table}):
         if description.is_view_relation:
             create_view(conn, description, drop_view=drop, dry_run=dry_run)
+            grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         elif description.is_ctas_relation:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
             create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
                                           dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
+            # TODO What should we do with table data if a constraint violation is detected? Delete it?
             etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+            grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             modified = True
         else:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
+            # Grant access to data source regardless of loading errors (writers may fix the problem outside of ETL)
+            grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
             etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
             modified = True
-        grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         return modified
 
 
@@ -608,7 +617,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     with closing(conn) as conn, conn as conn:
         try:
             for index, description in enumerate(execution_order):
-                logger.debug("Starting to work on '%s' (%d/%d)", description.identifier, index+1, len(execution_order))
+                logger.info("Starting to work on '%s' (%d/%d)", description.identifier, index+1, len(execution_order))
                 if description.identifier in failed:
                     logger.info("Skipping load for relation '%s' due to failed dependencies", description.identifier)
                     continue
