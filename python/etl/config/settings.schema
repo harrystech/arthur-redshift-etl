@@ -35,7 +35,6 @@
                 "read_access": { "$ref": "#/definitions/identifier" },
                 "include_tables": { "$ref": "#/definitions/identifier_list" },
                 "exclude_tables": { "$ref": "#/definitions/identifier_list" },
-                "groups": { "$ref": "#/definitions/identifier_list" },
                 "readers": { "$ref": "#/definitions/identifier_list" },
                 "writers": { "$ref": "#/definitions/identifier_list" }
             },
@@ -51,7 +50,6 @@
                 "s3_path_template": { "$ref": "#/definitions/path_template" },
                 "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
                 "include_tables": { "$ref": "#/definitions/identifier_list" },
-                "groups": { "$ref": "#/definitions/identifier_list" },
                 "readers": { "$ref": "#/definitions/identifier_list" },
                 "writers": { "$ref": "#/definitions/identifier_list" }
             },
