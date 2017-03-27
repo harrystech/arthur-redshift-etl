@@ -216,7 +216,7 @@ Copy the ETL code (including bootstrap scripts and configuration):
 ```shell
 export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentials>"
 # export DATA_WAREHOUSE_CONFIG="\cd ./config && \pwd`
-bin/copy_env.sh "<your S3 bucket>" local $USER
+bin/setup_env.sh "<your S3 bucket>" $USER
 ```
 
 #### Starting a cluster and submitting commands
@@ -283,7 +283,7 @@ arthur.py initialize staging --dry-run  # In case you want to see what happeens 
 
 Once everything is working fine in staging, you can promote the code into production.
 ```shell
-./bin/copy_env.sh "<your S3 bucket>" staging production
+./bin/sync_env.sh "<your S3 bucket>" staging production
 ```
 
 # Debugging and Contributing
