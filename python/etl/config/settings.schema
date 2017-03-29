@@ -161,7 +161,6 @@
             "required": [ "as_is_att_type", "cast_needed_att_type" ],
             "additionalProperties": false
         },
-        "constraints_as_warnings": { "$ref": "#/definitions/identifier_list" },
         "required_in_full_load": { "$ref": "#/definitions/identifier_list" }
     },
     "required": [ "data_warehouse", "s3", "sources", "type_maps" ],

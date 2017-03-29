@@ -403,7 +403,7 @@ def validate_table_as_view(conn, description, keep_going=False):
     etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
 
 
-def validate_constraints(conn, description, dry_run=False, only_warn=False):
+def validate_constraints(conn, description, dry_run=False):
     """
     Raises a UniqueConstraintError if :description's target table doesn't obey unique constraints declared in its design
     Returns None
@@ -435,11 +435,8 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
                 continue
             results = etl.pg.query(conn, statement)
             if results:
-                error = UniqueConstraintError(description, constraint_type, columns, results)
-                if only_warn:
-                    logger.warning(error)
-                else:
-                    raise error
+                error = UniqueConstraintError(description, constraint, columns, results)
+                raise error
 
 
 def _check_dependencies(observed, table_design):

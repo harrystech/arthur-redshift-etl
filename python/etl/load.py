@@ -426,8 +426,7 @@ def vacuum(conn, table_name, dry_run=False):
 
 
 def load_or_update_redshift_relation(conn, description, credentials, schema,
-                                     drop=False, skip_copy=False, dry_run=False,
-                                     constraints_as_warning=False):
+                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
@@ -455,7 +454,7 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
             # TODO What should we do with table data if a constraint violation is detected? Delete it?
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             modified = True
         else:
@@ -464,7 +463,7 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
             modified = True
         return modified
 
@@ -591,7 +590,6 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
 
-    warning_selector = data_warehouse.constraints_as_warnings_selector
     required_selector = data_warehouse.required_in_full_load_selector
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
     involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
@@ -620,8 +618,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
                 try:
                     modified = load_or_update_redshift_relation(
                         conn, description, data_warehouse.iam_role, target_schema,
-                        drop=drop, skip_copy=skip_copy, dry_run=dry_run,
-                        constraints_as_warning=warning_selector.match(description.target_table_name))
+                        drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run)
                     if modified:
                         vacuumable.append(description.target_table_name)
                 except Exception as e:
