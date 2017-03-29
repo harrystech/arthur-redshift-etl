@@ -312,7 +312,7 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                        FROM {})""".format(table_name, s_columns, temp_name)
 
 
-def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explain_plan=False, dry_run=False):
+def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=False):
     """
     Run the CREATE TABLE AS statement to load data into temp table, then copy into final table.
 
@@ -347,9 +347,6 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
         dml_temp_stmt = None
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name)
 
-    if add_explain_plan:
-        plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt)
-        logger.info("Explain plan for query:\n | %s", "\n | ".join(row[0] for row in plan))
     if dry_run:
         logger.info("Dry-run: Skipping loading of table '%s' using '%s'", table_name.identifier, temp_identifier)
         logger.debug("Skipped DDL for '%s': %s", temp_identifier, ddl_temp_stmt)
@@ -357,9 +354,8 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
         logger.debug("Skipped DML for '%s': %s", table_name.identifier, dml_stmt)
     elif skip_copy:
         logger.info("Skipping copy for '%s' from query", table_name.identifier)
-        if not add_explain_plan:
-            # Run explain plan to test the query and ensure upstream tables and views exist
-            etl.pg.execute(conn, "EXPLAIN\n" + query_stmt)
+        # Run explain plan to test the query and ensure upstream tables and views exist
+        etl.pg.execute(conn, "EXPLAIN\n" + query_stmt)
     else:
         logger.info("Creating temp table '%s'", temp_identifier)
         etl.pg.execute(conn, ddl_temp_stmt)
@@ -430,7 +426,7 @@ def vacuum(conn, table_name, dry_run=False):
 
 
 def load_or_update_redshift_relation(conn, description, credentials, schema,
-                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False,
+                                     drop=False, skip_copy=False, dry_run=False,
                                      constraints_as_warning=False):
     """
     Load single table from CSV or using a SQL query or create new view.
@@ -456,8 +452,7 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         elif description.is_ctas_relation:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
-            create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
-                                          dry_run=dry_run)
+            create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
             # TODO What should we do with table data if a constraint violation is detected? Delete it?
             etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
@@ -576,7 +571,7 @@ def show_dependents(descriptions, selector):
 
 
 def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, stop_after_first=False,
-                            no_rollback=False, skip_copy=False, add_explain_plan=False, dry_run=False):
+                            no_rollback=False, skip_copy=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -625,7 +620,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
                 try:
                     modified = load_or_update_redshift_relation(
                         conn, description, data_warehouse.iam_role, target_schema,
-                        drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run,
+                        drop=drop, skip_copy=skip_copy, dry_run=dry_run,
                         constraints_as_warning=warning_selector.match(description.target_table_name))
                     if modified:
                         vacuumable.append(description.target_table_name)

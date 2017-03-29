@@ -18,6 +18,7 @@ import simplejson as json
 import etl
 import etl.config
 import etl.design
+import etl.explain
 import etl.extract
 import etl.dw
 import etl.file_sets
@@ -467,7 +468,7 @@ class LoadRedshiftCommand(SubCommand):
         self.use_force = True
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "explain", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY command (for debugging)",
                             action="store_true")
@@ -486,7 +487,6 @@ class LoadRedshiftCommand(SubCommand):
                                              stop_after_first=args.stop_after_first,
                                              no_rollback=args.no_rollback,
                                              skip_copy=args.skip_copy,
-                                             add_explain_plan=args.add_explain_plan,
                                              dry_run=args.dry_run)
 
 
@@ -550,14 +550,14 @@ class ExplainQueryCommand(SubCommand):
     def __init__(self):
         super().__init__("explain",
                          "collect explain plans",
-                         "Run EXPLAIN on queries (for CTAS or VIEW) for files in local filesystem.")
+                         "Run EXPLAIN on queries (for CTAS or VIEW), check query plan for distributions.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args)
-        etl.relation.explain_queries(config.dsn_etl, descriptions)
+        etl.explain.explain_queries(config.dsn_etl, descriptions)
 
 
 class ListFilesCommand(SubCommand):

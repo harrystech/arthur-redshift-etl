@@ -14,7 +14,6 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
-from collections import Counter
 from contextlib import closing
 import difflib
 from functools import partial
@@ -22,7 +21,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-import concurrent
+import concurrent.futures
 from typing import Any, Dict, List, Union
 
 import psycopg2
@@ -424,10 +423,10 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
     """
 
     constraints = design['constraints']
-    for constraint in ["primary_key", "natural_key", "surrogate_key", "unique"]:
-        if constraint in constraints:
-            logger.info("Checking %s constraint on '%s'", constraint, description.identifier)
-            columns = constraints[constraint]
+    for constraint_type in ["primary_key", "natural_key", "surrogate_key", "unique"]:
+        if constraint_type in constraints:
+            logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
+            columns = constraints[constraint_type]
             quoted_columns = ", ".join('"{}"'.format(name) for name in columns)
             statement = statement_template.format(cols=quoted_columns, table=description.target_table_name)
             if dry_run:
@@ -436,7 +435,7 @@ def validate_constraints(conn, description, dry_run=False, only_warn=False):
                 continue
             results = etl.pg.query(conn, statement)
             if results:
-                error = UniqueConstraintError(description, constraint, columns, results)
+                error = UniqueConstraintError(description, constraint_type, columns, results)
                 if only_warn:
                     logger.warning(error)
                 else:
@@ -602,32 +601,6 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
         validate_designs_using_views(dsn, tables_to_validate_as_views, keep_going=keep_going)
     else:
         logger.info("Skipping validation against database (nothing to do)")
-
-
-def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
-    """
-    Test queries by running EXPLAIN with the query.
-    """
-    logger = logging.getLogger(__name__)
-    bad_distribution_styles = ["DS_DIST_INNER", "DS_BCAST_INNER", "DS_DIST_ALL_INNER", "DS_DIST_BOTH"]
-    counter = Counter()
-
-    # We can't use a read-only connection here because Redshift needs to (or wants to) create
-    # temporary tables when building the query plan if temporary tables (probably from CTEs)
-    # will be needed during query execution.  (Look for scans on volt_tt_* tables.)
-    with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
-        for description in descriptions:
-            if description.is_ctas_relation or description.is_view_relation:
-                logger.debug("Testing query for '%s'", description.identifier)
-                plan = etl.pg.explain(conn, description.query_stmt)
-                print("Explain plan for query of '{0.identifier}':\n | {1}".format(description, "\n | ".join(plan)))
-                for row in plan:
-                    for ds in bad_distribution_styles:
-                        if ds in row:
-                            counter[ds] += 1
-    for ds in bad_distribution_styles:
-        if counter[ds]:
-            logger.warning("Found %s distribution style %d time(s)", ds, counter[ds])
 
 
 def sync_with_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
