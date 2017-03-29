@@ -60,7 +60,7 @@ CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{
 # TODO This should come out of the user's configuration
 CLUSTER_REGION="us-east-1"
 
-if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
+if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then
     CLUSTER_TERMINATE="--no-auto-terminate"
     CLUSTER_TERMINATION_PROTECTION="--termination-protected"
 else
@@ -68,7 +68,7 @@ else
     CLUSTER_TERMINATION_PROTECTION="--no-termination-protected"
 fi
 
-if [ "$CLUSTER_ENVIRONMENT" = "production" ]; then
+if [[ "$CLUSTER_ENVIRONMENT" =~ "production" ]]; then
     CLUSTER_TAGS="DataWarehouseEnvironment=Production"
 else
     CLUSTER_TAGS="DataWarehouseEnvironment=Development"
@@ -90,7 +90,10 @@ BINDIR=`dirname $0`
 TOPDIR=`\cd $BINDIR/.. && \pwd`
 CLUSTER_CONFIG_SOURCE="$TOPDIR/aws_config"
 
-CLUSTER_CONFIG_DIR="/tmp/cluster_config_${USER}_${CLUSTER_ENVIRONMENT}_$$"
+# Remove non-alphanumeric characters with a '_' to make sure we'll have a safe filename.
+SAFE_ENVIRONMENT=`printf "$CLUSTER_ENVIRONMENT" | tr -s -c '[:alnum:]' '_'`
+
+CLUSTER_CONFIG_DIR="/tmp/cluster_config_${USER}_${SAFE_ENVIRONMENT}_$$"
 if [[ -d "$CLUSTER_CONFIG_DIR" ]]; then
     rm -f "$CLUSTER_CONFIG_DIR"/*
 else
@@ -129,10 +132,10 @@ aws emr create-cluster \
         | tee "$CLUSTER_ID_FILE"
 CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
 
-aws emr describe-cluster --cluster-id "$CLUSTER_ID" | \
+aws emr describe-cluster --cluster-id "$CLUSTER_ID" |
     jq '.Cluster.Status | {"State": .State}, .Timeline, .StateChangeReason | if has("CreationDateTime") then map_values(todate) else . end'
 
-if [ "$CLUSTER_IS_INTERACTIVE" = "yes" ]; then
+if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then
     sleep 10
     aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
     set +x

@@ -76,6 +76,8 @@ for FOLDER in bin config data jars schemas; do
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
 done
 
+# Copying credentials will succeed when called within a data pipeline
+# but may fail when trying to do so on the command line.
 if ! aws s3 sync --exclude '*' --include 'credentials*.sh' \
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config" \
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"

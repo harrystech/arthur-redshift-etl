@@ -80,7 +80,7 @@ aws s3 sync --delete \
     --include "*.sh" \
     --include "*.hosts" \
     --exclude "release.txt" \
-    --exclude "credentials*" \
+    --exclude "credentials*.sh" \
     "$DATA_WAREHOUSE_CONFIG" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
 aws s3 sync --delete \
     --exclude "*" \
@@ -92,4 +92,4 @@ aws s3 sync --delete \
 
 set +x
 echo
-echo "You should *now* run: arthur.py sync --deploy --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
+echo "You should *now* run: arthur.py sync --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
