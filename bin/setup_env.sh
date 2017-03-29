@@ -92,4 +92,4 @@ aws s3 sync --delete \
 
 set +x
 echo
-echo "You should *now* run: arthur.py sync --deploy --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
+echo "You should *now* run: arthur.py sync --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
