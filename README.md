@@ -286,7 +286,9 @@ Once everything is working fine in staging, you can promote the code into produc
 ./bin/sync_env.sh "<your S3 bucket>" staging production
 ```
 
-# Debugging and Contributing
+# Contributing and Releases
+
+## Creating pull requests
 
 Pull requests are welcome!
 
@@ -302,8 +304,32 @@ ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/))
-* And rebase your commits into logical chunks
+* Use git rebasing to merge your commits into logical chunks
 (See [Thoughtbot's guidelines](https://github.com/thoughtbot/guides/blob/master/protocol/git/README.md))
+
+## Releasing new versions
+
+Here are the basic steps to release a new version. Appropriate as you deem appropriate.
+
+* Create a new branch for the release candidate, e.g. `v0_22_0` for v0.22.0.
+(Do yourself a favor and use underscores in branch names and periods in the tag names.)
+
+* Your first commit on this branch is a bump in the version number in `setup.py`.
+
+* Create a pull request for your new branch.
+
+* Draft the release notes under [Releases](https://github.com/harrystech/harrys-redshift-etl/releases).
+    * It might be easier to keep updating the description as you go modifying PRs as per the next step.
+    * Stick to semantic versioning and set the release version, e.g. `v0.22.0`
+
+* Go through pull requests that are ready for release and change their base branch to your release branch (in our example, `v0_22_0`).
+    * Make sure the PR message contains the Issue number or the Jira story (like DW-99).
+    * Add the changes from the story work into the draft of the release notes.
+    * Then merge the ready PRs into your release candidate.
+
+* Test then merge the PR with your release candidate into master.
+
+* Ship the new version using `setup_env.sh`.
 
 # Tips & Tricks
 
