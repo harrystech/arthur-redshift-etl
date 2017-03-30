@@ -136,6 +136,7 @@ class SparkExtractor(Extractor):
                          timer)
         return table_size
 
+    # FIXME Doctest got broken during refactoring.
     def _suggest_best_partition_number(self, table_size: int) -> int:
         """
         Suggest number of partitions based on the table size (in bytes).  Number of partitions is always

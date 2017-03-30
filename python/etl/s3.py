@@ -83,6 +83,9 @@ def upload_empty_object(bucket_name: str, object_key: str) -> None:
 def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
     """
     Write data object (formatted as JSON, readable as YAML) into an S3 object.
+
+    Although we generally support YAML because it allows adding comments, we prefer
+    the format and formatting of JSON.
     """
     uploader = S3Uploader(bucket_name)
     with tempfile.NamedTemporaryFile(mode="w+") as local_file:
@@ -94,7 +97,7 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
 
 def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
     """
-    For each object key in object_keys, attempt to delete the key and its content from an S3 bucket
+    For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
     """
     logger = logging.getLogger(__name__)
     bucket = _get_s3_bucket(bucket_name)
@@ -115,13 +118,13 @@ def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) 
             logger.warning("Failed to delete %d objects, trying one more time", len(failed))
             delete_objects(bucket_name, failed, _retry=False)
         else:
-            raise S3ServiceError("Failed to delete %d files" % len(failed))
+            raise S3ServiceError("Failed to delete %d file(s)" % len(failed))
 
 
 def get_s3_object_last_modified(bucket_name: str, object_key: str, wait: bool=True) -> Union[datetime, None]:
     """
-    Return the last_modified datetime timestamp for an S3 Object
-    If the call errors out, return None
+    Return the last_modified datetime timestamp for an S3 Object.
+    If the call errors out, return None.
     """
     logger = logging.getLogger(__name__)
     try:

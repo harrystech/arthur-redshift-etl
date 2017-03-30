@@ -324,7 +324,7 @@ class DynamoDBStorage(PayloadDispatcher):
             if "elapsed" in item:
                 item["elapsed"] = Decimal("%.6f" % item['elapsed'])
             table.put_item(Item=item)
-        except botocore.exceptions.ClientError as exc:
+        except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
                 logger = logging.getLogger(__name__)

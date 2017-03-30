@@ -8,7 +8,7 @@ import fnmatch
 import pkg_resources
 
 
-# TODO rename package to "redshift_etl" and rename python module to "redshift_etl"
+# TODO rename package to "redshift_etl"
 def package_version(package_name="redshift-etl"):
     return "{} v{}".format(package_name, pkg_resources.get_distribution(package_name).version)
 

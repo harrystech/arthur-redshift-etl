@@ -22,7 +22,6 @@ from etl.errors import MissingMappingError, TableDesignParseError, TableDesignSe
 import etl.pg
 import etl.file_sets
 import etl.s3
-from etl.relation import RelationDescription
 
 
 class ColumnDefinition(namedtuple("_ColumnDefinition",
@@ -31,30 +30,32 @@ class ColumnDefinition(namedtuple("_ColumnDefinition",
                                    "source_sql_type", "expression", "not_null", "references"  # optional
                                    ])):
     """
-    Wrapper for column attributes ... describes columns by name, type (e.g. for Avro), sql_type.
+    Wrapper for column attributes ... describes columns by name, type (similar to Avro), and sql_type.
     """
     __slots__ = ()
 
 
 def fetch_tables(cx, source, selector):
     """
-    Retrieve all tables that match the given list of tables (which look like
-    schema.name or schema.*) and return them as a list of TableName instances.
+    Retrieve all tables for this source (and matching the selector) and return them as a list of TableName instances.
 
-    The first list of patterns defines all tables ever accessible, the
-    second list allows to exclude lists from consideration and finally the
-    table pattern allows to select specific tables (probably via command line args).
+    The :source configuration contains a "whitelist" (which tables to include) and a
+    "blacklist" (which tables to exclude). Note that "exclude" always overrides "include."
+    The list of tables matching the whitelist but not the blacklist can be further narrowed
+    down by the pattern in :selector.
     """
     logger = logging.getLogger(__name__)
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
-    result = etl.pg.query(cx, """SELECT nsp.nspname AS "schema"
-                                      , cls.relname AS "table"
-                                   FROM pg_catalog.pg_class cls
-                                   JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
-                                  WHERE cls.relname NOT LIKE 'tmp%%'
-                                        AND cls.relname NOT LIKE 'pg_%%'
-                                        AND cls.relkind IN ('r', 'm', 'v')
-                                  ORDER BY nsp.nspname, cls.relname""")
+    result = etl.pg.query(cx, """
+        SELECT nsp.nspname AS "schema"
+             , cls.relname AS "table"
+          FROM pg_catalog.pg_class cls
+          JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
+         WHERE cls.relname NOT LIKE 'tmp%%'
+               AND cls.relname NOT LIKE 'pg_%%'
+               AND cls.relkind IN ('r', 'm', 'v')
+         ORDER BY nsp.nspname, cls.relname
+         """)
     found = []
     for row in result:
         source_table_name = etl.TableName(row['schema'], row['table'])
@@ -82,25 +83,27 @@ def fetch_columns(cx, table_name):
     Retrieve table definition (column names and types).
     """
     # TODO Multiple indices lead to multiple rows per attribute when using join with pg_index
-    ddl = etl.pg.query(cx, """SELECT a.attname AS attribute
-                                   , pg_catalog.format_type(t.oid, a.atttypmod) AS attribute_type
-                                   , a.attnotnull AS not_null_constraint
-                                     -- , COALESCE(i.indisunique, FALSE) AS is_unique_constraint
-                                     -- , COALESCE(i.indisprimary, FALSE) AS is_primary_constraint
-                                FROM pg_catalog.pg_attribute AS a
-                                JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
-                                JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
-                                JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-                                     -- LEFT JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
-                                     --                                   AND a.attnum = ANY(i.indkey)
-                               WHERE a.attnum > 0  -- skip system columns
-                                     AND NOT a.attisdropped
-                                     AND ns.nspname = %s
-                                     AND cls.relname = %s
-                               ORDER BY a.attnum""",
-                       (table_name.schema, table_name.table))
-    logging.getLogger(__name__).info("Found %d column(s) in table '%s'", len(ddl), table_name.identifier)
-    return ddl
+    # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
+    columns = etl.pg.query(cx, """
+        SELECT a.attname AS attribute
+             , pg_catalog.format_type(t.oid, a.atttypmod) AS attribute_type
+             , a.attnotnull AS not_null_constraint
+               -- , COALESCE(i.indisunique, FALSE) AS is_unique_constraint
+               -- , COALESCE(i.indisprimary, FALSE) AS is_primary_constraint
+          FROM pg_catalog.pg_attribute AS a
+          JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
+          JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
+          JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
+               -- LEFT JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
+               --                                   AND a.attnum = ANY(i.indkey)
+         WHERE a.attnum > 0  -- skip system columns
+               AND NOT a.attisdropped
+               AND ns.nspname = %s
+               AND cls.relname = %s
+         ORDER BY a.attnum
+         """, (table_name.schema, table_name.table))
+    logging.getLogger(__name__).info("Found %d column(s) in table '%s'", len(columns), table_name.identifier)
+    return columns
 
 
 def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
@@ -171,7 +174,22 @@ def create_table_design(source_table_name, target_table_name, columns):
     return validate_table_design(table_design, target_table_name)
 
 
-def validate_table_design_from_file(local_filename, table_name):
+def load_table_design(stream, table_name):
+    """
+    Load table design from stream (usually, an open file).
+    The table design is validated before being returned.
+    """
+    try:
+        table_design = yaml.safe_load(stream)
+    except yaml.parser.ParserError as exc:
+        raise TableDesignParseError() from exc
+    return validate_table_design(table_design, table_name)
+
+
+def load_table_design_from_localfile(local_filename, table_name):
+    """
+    Load (and validate) table design file in local file system.
+    """
     logger = logging.getLogger(__name__)
     logger.debug("Loading local table design from '%s'", local_filename)
     try:
@@ -180,6 +198,15 @@ def validate_table_design_from_file(local_filename, table_name):
     except:
         logger.error("Failed to load table design from '%s'", local_filename)
         raise
+    return table_design
+
+
+def load_table_design_from_s3(bucket_name, design_file, table_name):
+    """
+    Download (and validate) table design from file in S3.
+    """
+    with closing(etl.s3.get_s3_object_content(bucket_name, design_file)) as content:
+        table_design = load_table_design(content, table_name)
     return table_design
 
 
@@ -195,7 +222,6 @@ def validate_table_design(table_design, table_name):
     logger.debug("Trying to validate table design for '%s'", table_name.identifier)
     validate_table_design_syntax(table_design, table_name)
     validate_table_design_semantics(table_design, table_name)
-    logger.debug("Validated table design for '%s'", table_name.identifier)
     return table_design
 
 
@@ -222,26 +248,24 @@ def validate_table_design_syntax(table_design, table_name):
         raise TableDesignValidationError() from exc
 
 
-def validate_table_design_semantics(table_design, table_name):
+def validate_semantics_of_view(table_design):
     """
-    Validate table design against rule set based on values (e.g. name of columns).
-    Raise an exception if anything is amiss.
+    Check for semantics that only apply to views.
+
+    Basically, definitions of views may only contain column names.
     """
-    if table_design["name"] != table_name.identifier:
-        raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
-                                                                                      table_name.identifier))
-
-    # VIEW validation only requires check that columns have nothing more than the name information
-    if table_design["source_name"] == "VIEW":
-        for column in table_design["columns"]:
-            if len(column) != 1:
-                raise TableDesignSemanticError("Too much information for column of a VIEW: %s" % list(column))
-        return
-
-    # Designs for physical tables need further validation for columns:
+    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra information
+    # for the columns, like type, sql_type.
     for column in table_design["columns"]:
-        if column.get("skipped", False):
-            continue
+        if len(column) != 1:
+            raise TableDesignSemanticError("Too much information for column of a VIEW: %s" % list(column))
+
+
+def validate_semantics_of_table(table_design):
+    """
+    Check for semantics that apply to tables only ... either upstream sources or CTAS.
+    """
+    for column in table_design["columns"]:
         if column.get("identity", False) and not column.get("not_null", False):
             # NULL columns may not be primary key (identity)
             raise TableDesignSemanticError("identity column must be set to not null")
@@ -249,12 +273,13 @@ def validate_table_design_semantics(table_design, table_name):
     identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
     if len(identity_columns) > 1:
         raise TableDesignSemanticError("only one column should have identity")
+
     surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
     if len(surrogate_keys) and not surrogate_keys == identity_columns:
         raise TableDesignSemanticError("surrogate key must be identity")
 
     # Make sure that whenever we reference a column that that column is actually part of the table's columns
-    column_set = frozenset(column["name"] for column in table_design["columns"])
+    column_set = frozenset(column["name"] for column in table_design["columns"] if not column.get("skipped"))
     column_list_references = [
         ('constraints', 'primary_key'),
         ('constraints', 'natural_key'),
@@ -264,10 +289,25 @@ def validate_table_design_semantics(table_design, table_name):
         ('attributes', 'interleaved_sort'),
         ('attributes', 'compound_sort')
     ]
-    invalid_col_list_template = "{obj}'s {key} list should only contain named columns but it does not"
+    invalid_col_list_template = "{obj}'s {key} list contains unknown columns"
     for obj, key in column_list_references:
         if not column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
             raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
+
+
+def validate_table_design_semantics(table_design, table_name):
+    """
+    Validate table design against rule set based on values (e.g. name of columns).
+    Raise an exception if anything is amiss.
+    """
+    if table_design["name"] != table_name.identifier:
+        raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
+                                                                                      table_name.identifier))
+
+    if table_design["source_name"] == "VIEW":
+        validate_semantics_of_view(table_design)
+    else:
+        validate_semantics_of_table(table_design)
 
 
 def column_list_has_columns(valid_columns, candidate_columns):
@@ -292,27 +332,6 @@ def column_list_has_columns(valid_columns, candidate_columns):
         if column not in valid_columns:
             return False
     return True
-
-
-def load_table_design(stream, table_name):
-    """
-    Load table design from stream (usually, an open file). The table design is
-    validated before being returned.
-    """
-    try:
-        table_design = yaml.safe_load(stream)
-    except yaml.parser.ParserError as exc:
-        raise TableDesignParseError() from exc
-    return validate_table_design(table_design, table_name)
-
-
-def download_table_design(bucket_name, design_file, table_name):
-    """
-    Download table design from file in S3.
-    """
-    with closing(etl.s3.get_s3_object_content(bucket_name, design_file)) as content:
-        table_design = load_table_design(content, table_name)
-    return table_design
 
 
 def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False):
@@ -364,7 +383,7 @@ def create_or_update_table_designs_from_source(source, selector, local_dir, loca
     source_files = {file_set.source_table_name: file_set
                     for file_set in local_files if file_set.source_name == source.name}
     try:
-        logger.info("Connecting to database '%s' to look for tables", source.name)
+        logger.info("Connecting to database source '%s' to look for tables", source.name)
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in sorted(source_tables):
@@ -380,7 +399,7 @@ def create_or_update_table_designs_from_source(source, selector, local_dir, loca
                 if source_file_set and source_file_set.design_file_name:
                     # Replace bootstrapped table design with one from file but check whether set of columns changed.
                     design_file = source_file_set.design_file_name
-                    existing_table_design = validate_table_design_from_file(design_file, target_table_name)
+                    existing_table_design = load_table_design_from_localfile(design_file, target_table_name)
                     compare_columns(table_design, existing_table_design)
                 else:
                     # TODO In case there's a local SQL file, that name should be used as basis for new table design
@@ -414,9 +433,11 @@ def bootstrap_views(local_files, schemas, dry_run=False):
                 continue
             # TODO Pull out the connection so that we don't open it per table but per schema
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
-                description = RelationDescription(file)
+                # We cannot use the query_stmt from RelationDescription because we'd have a circular dependency.
+                with open(file.sql_file_name) as f:
+                    query_stmt = f.read()
                 logger.info("Creating view for '%s' which has no design file", file.target_table_name.identifier)
-                ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file.target_table_name, description.query_stmt)
+                ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file.target_table_name, query_stmt)
                 if dry_run:
                     logger.info('Dry-run: skipping view creation')
                 else:

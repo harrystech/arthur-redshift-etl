@@ -1,9 +1,8 @@
 """
 Help developers "debug" their queries using the explain command.
 
-In addition to showing the query plan, the output will also
-contain warnings regarding costly distributions or temporary
-tables.
+In addition to showing the query plan, the output will also contain warnings
+regarding costly distributions or creation of temporary tables.
 
 See http://docs.aws.amazon.com/redshift/latest/dg/c_data_redistribution.html
 """
@@ -39,7 +38,6 @@ def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
             if description.is_ctas_relation or description.is_view_relation:
                 logger.debug("Testing query for '%s'", description.identifier)
                 plan = etl.pg.explain(conn, description.query_stmt)
-                logger.debug("Query plan:\n | " + "\n | ".join(plan))
                 print("Explain plan for query of '{0.identifier}':\n | {1}".format(description, "\n | ".join(plan)))
                 if any(row == "" for row in plan):
                     queries_with_temps += 1

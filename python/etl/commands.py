@@ -29,8 +29,9 @@ import etl.pg
 import etl.pipeline
 import etl.relation
 import etl.sync
-import etl.unload
 from etl.timer import Timer
+import etl.unload
+import etl.validate
 
 
 class InvalidArgumentsError(Exception):
@@ -72,7 +73,7 @@ def run_arg_as_command(my_name="arthur.py"):
         logger = logging.getLogger(__name__)
         with Timer() as timer:
             try:
-                settings = etl.config.load_settings(args.config)
+                settings = etl.config.load_config(args.config)
                 if hasattr(args, "prefix"):
                     # Only commands which require an environment should require a monitor.
                     etl.monitor.set_environment(args.prefix,
@@ -537,7 +538,7 @@ class ValidateDesignsCommand(SubCommand):
     def callback(self, args, config):
         # FIXME This should pick up all files so that dependency ordering can be done correctly.
         descriptions = self.find_relation_descriptions(args, error_if_empty=False)
-        etl.relation.validate_designs(config.dsn_etl, descriptions,
+        etl.validate.validate_designs(config.dsn_etl, descriptions,
                                       keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
 
 

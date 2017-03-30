@@ -4,7 +4,10 @@ Objects to deal with configuration of our data warehouse, like
 * its schemas
 * its users
 
-Also code to load the configuration.
+We use "config" files to refer to all files that may reside in the "config" directory:
+* "Settings" files (ending in '.yaml') which drive the data warehouse settings
+* Environment files (with variables)
+* Other files (like release notes)
 """
 
 from collections import defaultdict
@@ -14,7 +17,7 @@ import logging.config
 import os
 import os.path
 import sys
-from typing import List
+from typing import Iterable, List, Sequence
 
 import pkg_resources
 import jsonschema
@@ -29,9 +32,9 @@ import etl.pg
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
-def etl_tmp_dir(path) -> str:
+def etl_tmp_dir(path: str) -> str:
     """
-    Return the absolute path within the ETL directory for the selected path.
+    Return the absolute path within the ETL runtime directory for the selected path.
     """
     return os.path.join(ETL_TMP_DIR, path)
 
@@ -252,7 +255,7 @@ def read_release_file(filename: str) -> None:
     logger.info("Release information: %s", ', '.join(lines))
 
 
-def yield_config_files(config_files: List[str], default_file: str=None):
+def yield_config_files(config_files: Sequence[str], default_file: str=None) -> Iterable[str]:
     """
     Generate filenames from the list of files or directories in :config_files and :default_file
 
@@ -273,14 +276,14 @@ def yield_config_files(config_files: List[str], default_file: str=None):
             yield filename
 
 
-def load_settings(config_files: List[str], default_file: str="default_settings.yaml") -> dict:
+def load_config(config_files: Sequence[str], default_file: str="default_settings.yaml") -> dict:
     """
     Load settings and environment from config files (starting with the default if provided).
 
     If the config "file" is actually a directory, (try to) read all the
     files in that directory.
 
-    The settings are validating against their schema before being returned.
+    The settings are validated against their schema before being returned.
     """
     logger = logging.getLogger(__name__)
     settings = defaultdict(dict)
@@ -305,11 +308,11 @@ def load_settings(config_files: List[str], default_file: str="default_settings.y
     return dict(settings)
 
 
-def gather_setting_files(config_files: List[str]) -> List[str]:
+def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     """
-    Gather all config files (*.yaml filels) -- this drops any hierarchy in the config files.
+    Gather all settings files (*.yaml files) -- this drops any hierarchy in the config files (!).
 
-    It is an error if we detect that there are config files in separate directories that have the same filename.
+    It is an error if we detect that there are settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
     settings_found = set()
@@ -343,7 +346,7 @@ def env_value(name: str) -> str:
 
 
 @lru_cache()
-def load_json(filename):
+def load_json(filename: str):
     return json.loads(pkg_resources.resource_string(__name__, filename))
 
 

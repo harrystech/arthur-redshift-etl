@@ -73,5 +73,5 @@ def build_parser():
 if __name__ == "__main__":
     main_args = build_parser().parse_args()
     etl.config.configure_logging()
-    main_settings = etl.config.load_settings(main_args.config)
+    main_settings = etl.config.load_config(main_args.config)
     find_modified_rows(main_args, main_settings)

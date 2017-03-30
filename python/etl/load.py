@@ -48,7 +48,7 @@ from etl import TableName
 import etl.config
 import etl.design
 import etl.dw
-from etl.errors import MissingManifestError, RequiredRelationFailed
+from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
 import etl.file_sets
 import etl.monitor
 import etl.pg
@@ -440,7 +440,7 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
             # TODO What should we do with table data if a constraint violation is detected? Delete it?
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
+            verify_constraints(conn, description, dry_run=dry_run)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             modified = True
         else:
@@ -449,9 +449,44 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run)
+            verify_constraints(conn, description, dry_run=dry_run)
             modified = True
         return modified
+
+
+def verify_constraints(conn, description, dry_run=False) -> None:
+    """
+    Raises a FailedConstraintError if :description's target table doesn't obey its declared unique constraints.
+    """
+    logger = logging.getLogger(__name__)
+    constraints = description.table_design.get("constraints")
+    if constraints is None:
+        logger.info("No constraints discovered for '%s'", description.identifier)
+        return
+
+    # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
+    # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voila!
+    statement_template = """
+        SELECT {columns}
+          FROM {table}
+      GROUP BY {columns}
+        HAVING COUNT(*) > 1
+         LIMIT 5
+    """
+
+    for constraint_type in ["primary_key", "natural_key", "surrogate_key", "unique"]:
+        if constraint_type in constraints:
+            logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
+            columns = constraints[constraint_type]
+            # FIXME There should be a helper method to quote a list of names
+            quoted_columns = ", ".join('"{}"'.format(name) for name in columns)
+            statement = statement_template.format(columns=quoted_columns, table=description.target_table_name)
+            if dry_run:
+                logger.info("Dry-run: Skipping duplicate row query")
+            else:
+                results = etl.pg.query(conn, statement)
+                if results:
+                    raise FailedConstraintError(description, constraint_type, columns, results)
 
 
 def evaluate_execution_order(descriptions, selector, only_first=False, whole_schemas=False):
@@ -571,7 +606,6 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     names / types correct.
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading table designs and pondering evaluation order")
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)

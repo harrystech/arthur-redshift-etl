@@ -42,7 +42,7 @@ class ReloadConsistencyError(etl.ETLError):
     pass
 
 
-class UniqueConstraintError(etl.ETLError):
+class FailedConstraintError(etl.ETLError):
     def __init__(self, relation, constraint_type, columns, examples):
         self.relation = relation
         self.constraint_type = constraint_type

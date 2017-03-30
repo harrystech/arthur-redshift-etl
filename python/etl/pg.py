@@ -176,8 +176,11 @@ def explain(cx, stmt, args=()):
     """
     Return explain plan for the query as a list of steps.
     """
+    logger = logging.getLogger(__name__)
     rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
-    return [row[0] for row in rows]
+    lines = [row[0] for row in rows]
+    logger.debug("Query plan:\n | " + "\n | ".join(lines))
+    return lines
 
 
 def ping(cx):
