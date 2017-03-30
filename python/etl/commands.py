@@ -28,6 +28,7 @@ import etl.monitor
 import etl.pg
 import etl.pipeline
 import etl.relation
+import etl.sync
 import etl.unload
 from etl.timer import Timer
 
@@ -411,14 +412,9 @@ class SyncWithS3Command(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        if args.force:
-            etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
-
-        if args.deploy_config:
-            etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
-
         descriptions = self.find_relation_descriptions(args, default_scheme="file")
-        etl.relation.sync_with_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        etl.sync.sync_with_s3(args.config, descriptions, args.bucket_name, args.prefix, args.pattern,
+                              force=args.force, deploy_config=args.deploy_config, dry_run=args.dry_run)
 
 
 class ExtractToS3Command(SubCommand):

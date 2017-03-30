@@ -14,6 +14,8 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
+from collections import Counter
+import concurrent.futures
 from contextlib import closing
 import difflib
 from functools import partial
@@ -21,7 +23,6 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-import concurrent.futures
 from typing import Any, Dict, List, Union
 
 import psycopg2
@@ -29,37 +30,11 @@ import simplejson as json
 
 import etl
 import etl.design
-import etl.pg
+from etl.errors import CyclicDependencyError, MissingQueryError, ReloadConsistencyError, TableDesignError, \
+    UniqueConstraintError
 import etl.file_sets
+import etl.pg
 import etl.s3
-
-
-class MissingQueryError(etl.ETLError):
-    pass
-
-
-class CyclicDependencyError(etl.ETLError):
-    pass
-
-
-class ReloadConsistencyError(etl.ETLError):
-    pass
-
-
-class UniqueConstraintError(etl.ETLError):
-    def __init__(self, relation, constraint, keys, examples):
-        self.relation = relation
-        self.constraint = constraint
-        self.keys = keys
-        self.example_string = ', '.join(map(str, examples))
-
-    def __str__(self):
-        return ("Relation {r} violates {c} constraint: "
-                "Example duplicate values of {k} are: {e}".format(
-                    r=self.relation, c=self.constraint,
-                    k=self.keys,
-                    e=self.example_string)
-                )
 
 
 class RelationDescription:
@@ -284,7 +259,7 @@ def order_by_dependencies(relation_descriptions):
             has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
-        # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.
+        # TODO In a "strict" or "pedantic" mode, if known_unknowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', etl.join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        etl.join_with_quotes(known_unknowns))
@@ -374,7 +349,7 @@ def validate_table_as_view(conn, description, keep_going=False):
         if keep_going:
             logger.warning(comparison_output)
         else:
-            raise etl.design.TableDesignError(comparison_output)
+            raise TableDesignError(comparison_output)
     else:
         logger.info('Dependencies listing in design file matches SQL')
 
@@ -395,7 +370,7 @@ def validate_table_as_view(conn, description, keep_going=False):
         if keep_going:
             logger.warning(comparison_output)
         else:
-            raise etl.design.TableDesignError(comparison_output)
+            raise TableDesignError(comparison_output)
     else:
         logger.info('Column listing in design file matches column listing in SQL')
 
@@ -496,7 +471,7 @@ def validate_design_file_semantics(descriptions, keep_going=False):
             logger.info("Loading and validating file '%s'", description.design_file_name)
             if description.table_design:
                 ok.append(description)
-        except etl.design.TableDesignError:
+        except TableDesignError:
             if not keep_going:
                 raise
     return ok
@@ -597,29 +572,3 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
         validate_designs_using_views(dsn, tables_to_validate_as_views, keep_going=keep_going)
     else:
         logger.info("Skipping validation against database (nothing to do)")
-
-
-def sync_with_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
-    """
-    Copy (validated) table design and SQL files from local directory to S3 bucket.
-
-    Essentially "publishes" data-warehouse code.
-    """
-    logger = logging.getLogger(__name__)
-
-    for description in descriptions:
-        files = [description.design_file_name]
-        if description.is_ctas_relation or description.is_view_relation:
-            if description.sql_file_name:
-                files.append(description.sql_file_name)
-            else:
-                raise MissingQueryError("Missing matching SQL file for '%s'" % description.design_file_name)
-
-        for local_filename in files:
-            object_key = os.path.join(prefix, description.norm_path(local_filename))
-            if dry_run:
-                logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", local_filename, bucket_name, object_key)
-            else:
-                etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
-    if not dry_run:
-        logger.info("Synced %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)

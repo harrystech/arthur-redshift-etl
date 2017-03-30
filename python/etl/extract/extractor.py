@@ -5,7 +5,7 @@ from operator import attrgetter
 from typing import Dict, List
 
 from etl.config import DataWarehouseSchema
-from etl.extract.errors import MissingCsvFilesError, DataExtractError
+from etl.errors import MissingCsvFilesError, DataExtractError
 import etl.monitor
 from etl.relation import RelationDescription
 import etl.s3

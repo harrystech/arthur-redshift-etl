@@ -14,6 +14,7 @@ import logging.config
 import os
 import os.path
 import sys
+from typing import List
 
 import pkg_resources
 import jsonschema
@@ -22,7 +23,6 @@ import yaml
 
 import etl
 import etl.pg
-import etl.s3
 
 
 # Local temp directory used for bootstrap, temp files, etc.
@@ -252,7 +252,7 @@ def read_release_file(filename: str) -> None:
     logger.info("Release information: %s", ', '.join(lines))
 
 
-def yield_config_files(config_files: list, default_file: str=None):
+def yield_config_files(config_files: List[str], default_file: str=None):
     """
     Generate filenames from the list of files or directories in :config_files and :default_file
 
@@ -273,7 +273,7 @@ def yield_config_files(config_files: list, default_file: str=None):
             yield filename
 
 
-def load_settings(config_files: list, default_file: str="default_settings.yaml") -> dict:
+def load_settings(config_files: List[str], default_file: str="default_settings.yaml") -> dict:
     """
     Load settings and environment from config files (starting with the default if provided).
 
@@ -305,18 +305,15 @@ def load_settings(config_files: list, default_file: str="default_settings.yaml")
     return dict(settings)
 
 
-def upload_settings(config_files, bucket_name, prefix, dry_run=False):
+def gather_setting_files(config_files: List[str]) -> List[str]:
     """
-    Upload warehouse configuration files (*.yaml) to target bucket/prefix's "config" dir
+    Gather all config files (*.yaml filels) -- this drops any hierarchy in the config files.
 
-    Don't upload the default file, as that comes along within the package's deployment
-
-    It is an error to try to upload files with the same name (coming from different config
-    directories).
+    It is an error if we detect that there are config files in separate directories that have the same filename.
+    So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
-    logger = logging.getLogger(__name__)
     settings_found = set()
-    objects_to_upload = []
+    settings_with_path = []
 
     for fullname in yield_config_files(config_files):
         if fullname.endswith(('.yaml', '.yml')):
@@ -325,13 +322,8 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False):
                 settings_found.add(filename)
             else:
                 raise KeyError("Found configuration file in multiple locations: '%s'" % filename)
-            object_key = os.path.join(prefix, 'config', filename)
-            objects_to_upload.append((fullname, object_key))
-    for fullname, object_key in objects_to_upload:
-        if dry_run:
-            logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", fullname, bucket_name, object_key)
-        else:
-            etl.s3.upload_to_s3(fullname, bucket_name, object_key)
+            settings_with_path.append(fullname)
+    return sorted(settings_with_path)
 
 
 def env_value(name: str) -> str:
@@ -342,8 +334,11 @@ def env_value(name: str) -> str:
     :param name: Name of environment variable
     :return: Value of environment variable
     """
-    if name not in os.environ:
+    value = os.environ.get(name)
+    if value is None:
         raise KeyError('Environment variable "%s" not set' % name)
+    if not value:
+        raise ValueError('Environment variable "%s" is empty' % name)
     return os.environ[name]
 
 

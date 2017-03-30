@@ -48,25 +48,11 @@ from etl import TableName
 import etl.config
 import etl.design
 import etl.dw
+from etl.errors import MissingManifestError, RequiredRelationFailed
 import etl.file_sets
 import etl.monitor
 import etl.pg
 import etl.relation
-
-
-class MissingManifestError(etl.ETLError):
-    pass
-
-
-class RequiredRelationFailed(etl.ETLError):
-    def __init__(self, failed_description, illegal_failures, required_selector):
-        self.failed_description = failed_description
-        self.illegal_failures = illegal_failures
-        self.required_selector = required_selector
-
-    def __str__(self):
-        return "Failure of {d} implies failures of {f}, which are required by selector {r}".format(
-            d=self.failed_description.identifier, f=', '.join(self.illegal_failures), r=self.required_selector)
 
 
 def format_column_list(columns):

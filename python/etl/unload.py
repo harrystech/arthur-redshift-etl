@@ -22,21 +22,14 @@ import os
 
 from psycopg2.extensions import connection  # For type annotation
 
-from etl.config import DataWarehouseConfig, DataWarehouseSchema
-from etl.relation import RelationDescription
-from etl.thyme import Thyme
 import etl
+from etl.config import DataWarehouseConfig, DataWarehouseSchema
+from etl.errors import UnloadTargetNotFoundError, DataUnloadError
 import etl.monitor
+from etl.relation import RelationDescription
 import etl.pg
 import etl.s3
-
-
-class DataUnloadError(etl.ETLError):
-    pass
-
-
-class UnloadTargetNotFoundError(DataUnloadError):
-    pass
+from etl.thyme import Thyme
 
 
 def run_redshift_unload(conn: connection, description: RelationDescription, unload_path: str, aws_iam_role: str,

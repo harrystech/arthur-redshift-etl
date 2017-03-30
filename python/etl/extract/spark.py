@@ -8,7 +8,7 @@ from psycopg2.extensions import connection  # For type annotation
 import etl.pg
 from etl import TableName
 from etl.config import DataWarehouseSchema
-from etl.extract.errors import UnknownTableSizeError
+from etl.errors import UnknownTableSizeError
 from etl.extract.extractor import Extractor
 from etl.timer import Timer
 from etl.relation import RelationDescription

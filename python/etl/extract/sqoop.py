@@ -7,7 +7,7 @@ from typing import Dict, List, Union
 
 import etl.config
 from etl.config import DataWarehouseSchema
-from etl.extract.errors import SqoopExecutionError
+from etl.errors import SqoopExecutionError
 from etl.extract.extractor import Extractor
 import etl.monitor
 import etl.pg

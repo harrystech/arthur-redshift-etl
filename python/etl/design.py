@@ -18,35 +18,11 @@ import yaml.parser
 
 import etl
 import etl.config
+from etl.errors import MissingMappingError, TableDesignParseError, TableDesignSemanticError, TableDesignValidationError
 import etl.pg
 import etl.file_sets
 import etl.s3
 from etl.relation import RelationDescription
-
-
-class MissingMappingError(etl.ETLError):
-    """Exception when an attribute type's target type is unknown"""
-    pass
-
-
-class TableDesignError(etl.ETLError):
-    """Exception when a table design file is incorrect"""
-    pass
-
-
-class TableDesignParseError(TableDesignError):
-    """Exception when a table design file cannot be parsed"""
-    pass
-
-
-class TableDesignValidationError(TableDesignError):
-    """Exception when a table design file does not pass schema validation"""
-    pass
-
-
-class TableDesignSemanticError(TableDesignError):
-    """Exception when a table design file does not pass logic checks"""
-    pass
 
 
 class ColumnDefinition(namedtuple("_ColumnDefinition",

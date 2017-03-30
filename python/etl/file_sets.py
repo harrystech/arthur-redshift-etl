@@ -26,17 +26,9 @@ import os
 import os.path
 import re
 
-from etl import TableName
+from etl import TableName, TableSelector
 import etl.config
 import etl.s3
-
-
-class BadSourceDefinitionError(etl.ETLError):
-    pass
-
-
-class S3ServiceError(etl.ETLError):
-    pass
 
 
 class TableFileSet:
@@ -292,7 +284,7 @@ def _find_file_sets_from(iterable, selector):
     return file_sets
 
 
-def delete_files_in_bucket(bucket_name: str, prefix: str, selector: str, dry_run: bool=False) -> None:
+def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool=False) -> None:
     """
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """

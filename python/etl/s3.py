@@ -13,20 +13,16 @@ import threading
 from typing import Iterator, List, Union, Tuple
 from datetime import datetime
 
-import etl
 from etl.json_encoder import FancyJsonEncoder
+from etl.errors import S3ServiceError
 
 
 _resources_for_thread = threading.local()
 
 
-class S3ServiceError(etl.ETLError):
-    pass
-
-
 def _get_s3_bucket(bucket_name: str):
     """
-    Return new Bucket object for a bucket that does exist (waits until it does)
+    Return new Bucket object for a bucket that does exist.
 
     This bucket is a tied to a per-thread session with S3.
     """
@@ -39,19 +35,33 @@ def _get_s3_bucket(bucket_name: str):
     return s3.Bucket(bucket_name)
 
 
-def upload_to_s3(filename: str, bucket_name: str, object_key: str) -> None:
-    """
-    Upload the contents of a file to the given keyspace in an S3 bucket
-    """
-    logger = logging.getLogger(__name__)
-    try:
-        logger.info("Uploading '%s' to 's3://%s/%s'", filename, bucket_name, object_key)
-        bucket = _get_s3_bucket(bucket_name)
-        bucket.upload_file(filename, object_key)
-    except botocore.exceptions.ClientError as exc:
-        error_code = exc.response['Error']['Code']
-        logger.error("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
-        raise
+class S3Uploader:
+
+    """Upload files from local filesystem into the given S3 folder."""
+
+    def __init__(self, bucket_name: str, dry_run: bool=False):
+        self.logger = logging.getLogger(__name__)
+        self.bucket_name = bucket_name
+        self._bucket = _get_s3_bucket(self.bucket_name)
+        if dry_run:
+            self._call = self.skip_upload
+        else:
+            self._call = self.do_upload
+
+    def skip_upload(self, filename: str, object_key: str) -> None:
+        self.logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
+
+    def do_upload(self, filename: str, object_key: str) -> None:
+        try:
+            self.logger.info("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
+            self._bucket.upload_file(filename, object_key)
+        except botocore.exceptions.ClientError as exc:
+            error_code = exc.response['Error']['Code']
+            self.logger.error("Error code %s for object 's3://%s/%s'", error_code, self.bucket_name, object_key)
+            raise
+
+    def __call__(self, filename: str, object_key: str) -> None:
+        self._call(filename, object_key)
 
 
 def upload_empty_object(bucket_name: str, object_key: str) -> None:
@@ -74,11 +84,12 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
     """
     Write data object (formatted as JSON, readable as YAML) into an S3 object.
     """
+    uploader = S3Uploader(bucket_name)
     with tempfile.NamedTemporaryFile(mode="w+") as local_file:
         json.dump(data, local_file, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
         local_file.write('\n')
         local_file.flush()
-        upload_to_s3(local_file.name, bucket_name, object_key)
+        uploader(local_file.name, object_key)
 
 
 def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
