@@ -435,8 +435,7 @@ def validate_constraints(conn, description, dry_run=False):
                 continue
             results = etl.pg.query(conn, statement)
             if results:
-                error = UniqueConstraintError(description, constraint, columns, results)
-                raise error
+                raise UniqueConstraintError(description, constraint_type, columns, results)
 
 
 def _check_dependencies(observed, table_design):
