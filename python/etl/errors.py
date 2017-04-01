@@ -1,14 +1,43 @@
 import etl
 
-# TODO Think about a better hierarchy of errors (runtime vs. configuration vs. ...)
+
+class ETLError(Exception):
+    """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
+    pass
 
 
-class MissingMappingError(etl.ETLError):
+class ETLSystemError(ETLError):
+    """
+    Blunder in the ETL code -- you'll need to check the ETL code, sorry about that.
+
+    This exception should be raised when rolling back ETL code might solve the issue.
+    """
+    pass
+
+
+class ETLConfigError(ETLError):
+    """
+    Error in the data warehouse configuration -- you'll need to check your config or schemas.
+
+    This exception should be raised when sync'ing a fixed version might solve the issue.
+    """
+    pass
+
+
+class ETLRuntimeError(ETLError):
+    """
+    Error found at runtime -- you might be able to just try again or need to fix something upstream.
+
+    This exception should be raised when the show-stopper lies outside of code or configuration.
+    """
+
+
+class MissingMappingError(ETLConfigError):
     """Exception when an attribute type's target type is unknown"""
     pass
 
 
-class TableDesignError(etl.ETLError):
+class TableDesignError(ETLConfigError):
     """Exception when a table design file is incorrect"""
     pass
 
@@ -28,21 +57,22 @@ class TableDesignSemanticError(TableDesignError):
     pass
 
 
-class MissingQueryError(etl.ETLError):
+class MissingQueryError(ETLConfigError):
     """Exception when the query (SQL file) is missing"""
     pass
 
 
-class CyclicDependencyError(etl.ETLError):
+class CyclicDependencyError(ETLConfigError):
+    """Exception when evaluation order runs in circles"""
     pass
 
 
-class ReloadConsistencyError(etl.ETLError):
+class ReloadConsistencyError(ETLConfigError):
     """Exception when unloaded and re-loaded columns don't match"""
     pass
 
 
-class FailedConstraintError(etl.ETLError):
+class FailedConstraintError(ETLRuntimeError):
     def __init__(self, relation, constraint_type, columns, examples):
         self.relation = relation
         self.constraint_type = constraint_type
@@ -54,7 +84,7 @@ class FailedConstraintError(etl.ETLError):
                 "Example duplicate values of {0.columns} are: {0.example_string}".format(self))
 
 
-class DataExtractError(etl.ETLError):
+class DataExtractError(ETLRuntimeError):
     """Exception when extracting from an upstream source fails"""
     pass
 
@@ -71,20 +101,15 @@ class MissingCsvFilesError(DataExtractError):
     pass
 
 
-# FIXME No longer used?
-# class BadSourceDefinitionError(etl.ETLError):
-#     pass
-
-
-class S3ServiceError(etl.ETLError):
+class S3ServiceError(ETLRuntimeError):
     pass
 
 
-class MissingManifestError(etl.ETLError):
+class MissingManifestError(ETLRuntimeError):
     pass
 
 
-class RequiredRelationFailed(etl.ETLError):
+class RequiredRelationFailed(ETLRuntimeError):
     def __init__(self, failed_description, illegal_failures, required_selector):
         self.failed_description = failed_description
         self.illegal_failures = illegal_failures
@@ -95,7 +120,7 @@ class RequiredRelationFailed(etl.ETLError):
             d=self.failed_description.identifier, f=', '.join(self.illegal_failures), r=self.required_selector)
 
 
-class DataUnloadError(etl.ETLError):
+class DataUnloadError(ETLRuntimeError):
     pass
 
 

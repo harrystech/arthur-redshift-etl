@@ -24,6 +24,7 @@ import logging
 from etl import join_with_quotes
 import etl.commands
 import etl.config
+from etl.errors import ETLError
 import etl.pg
 
 
@@ -92,7 +93,7 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
     elif force:
         logger.info("Initializing non-validation database '%s' forcefully as requested", database_name)
     else:
-        raise etl.ETLError(
+        raise ETLError(
             "Refused to initialize non-validation database '%s' without the --force option" % database_name
         )
 

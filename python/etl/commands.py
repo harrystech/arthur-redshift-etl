@@ -18,6 +18,7 @@ import simplejson as json
 import etl
 import etl.config
 import etl.design
+from etl.errors import ETLError, ETLSystemError
 import etl.explain
 import etl.extract
 import etl.dw
@@ -87,7 +88,7 @@ def run_arg_as_command(my_name="arthur.py"):
             except InvalidArgumentsError as exc:
                 logger.exception("ETL never got off the ground:")
                 croak(exc, 1)
-            except etl.ETLError as exc:
+            except ETLError as exc:
                 logger.exception("Something bad happened in the ETL:")
                 logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
                 croak(exc, 1)
@@ -290,7 +291,7 @@ class SubCommand:
         elif scheme == "s3":
             return scheme, args.bucket_name, args.prefix
         else:
-            raise ValueError("scheme invalid")
+            raise ETLSystemError("scheme invalid")
 
     def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None,
                                    return_all=False, error_if_empty=True):

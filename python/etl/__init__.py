@@ -32,11 +32,6 @@ def join_with_quotes(names):
         return ', '.join("'{}'".format(name) for name in names)
 
 
-class ETLError(Exception):
-    """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
-    pass
-
-
 class TableName(namedtuple("_TableName", ["schema", "table"])):
     """
     Class to automatically create delimited identifiers for tables.

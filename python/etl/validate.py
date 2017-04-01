@@ -22,7 +22,7 @@ from typing import List
 import psycopg2
 import simplejson as json
 
-from etl.errors import CyclicDependencyError, ReloadConsistencyError, TableDesignError
+from etl.errors import CyclicDependencyError, ETLError, ReloadConsistencyError, TableDesignError
 import etl.pg
 import etl.relation
 from etl.relation import RelationDescription
@@ -135,6 +135,7 @@ def validate_single_transform(conn, description, keep_going=False):
         if keep_going:
             logger.warning(comparison_output)
         else:
+            # TODO be more specific in the error?
             raise TableDesignError(comparison_output)
     else:
         logger.info('Dependencies listing in design file matches SQL')
@@ -157,6 +158,7 @@ def validate_single_transform(conn, description, keep_going=False):
         if keep_going:
             logger.warning(comparison_output)
         else:
+            # TODO be more specific in the error?
             raise TableDesignError(comparison_output)
     else:
         logger.info('Column listing in design file matches column listing in SQL')
@@ -182,7 +184,7 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
             try:
                 with etl.pg.log_error():
                     validate_single_transform(conn, description, keep_going=keep_going)
-            except (etl.ETLError, psycopg2.Error):
+            except (ETLError, psycopg2.Error):
                 if keep_going:
                     logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
                                      description.identifier)
