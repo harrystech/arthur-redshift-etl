@@ -291,7 +291,6 @@ def check_select_permission(conn: connection, table_name: TableName):
     """
     Check whether permissions on table will allow us to read from database.
     """
-    logger = logging.getLogger(__name__)
     # Why mess with querying the permissions table when you can just try to read (EAFP).
     statement = """SELECT 1 FROM {} WHERE FALSE""".format(table_name)
     try:
@@ -324,7 +323,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
                 # raise TableDesignError("Not null constraint of column '%s' in '%s' not enforced upstream" %
                 #                        (column["name"], table.identifier))
                 logger.warning("Not null constraint of column '%s' in '%s' not enforced upstream",
-                               (column["name"], table.identifier))
+                               column["name"], table.identifier)
         logger.info("Successfully validated '%s' against its upstream source", table.identifier)
     except (psycopg2.Error, ETLError):
         if keep_going:
