@@ -15,7 +15,7 @@ if [[ $# -lt 2 || $# -gt 3 ]]; then
 fi
 
 # Fail if any install step fails
-set -eu
+set -e
 
 BUCKET_NAME="$1"
 ETL_ENVIRONMENT="$2"
