@@ -430,21 +430,21 @@ def bootstrap_views(local_files, schemas, dry_run=False):
     logger = logging.getLogger(__name__)
     created = []
     for schema in schemas:
-        for file in local_files:
-            if file.source_name != schema.name or file.design_file_name:
+        for file_set in local_files:
+            if file_set.source_name != schema.name or file_set.design_file_name:
                 continue
             # TODO Pull out the connection so that we don't open it per table but per schema
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
                 # We cannot use the query_stmt from RelationDescription because we'd have a circular dependency.
-                with open(file.sql_file_name) as f:
+                with open(file_set.sql_file_name) as f:
                     query_stmt = f.read()
-                logger.info("Creating view for '%s' which has no design file", file.target_table_name.identifier)
-                ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file.target_table_name, query_stmt)
+                logger.info("Creating view for '%s' which has no design file", file_set.target_table_name.identifier)
+                ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file_set.target_table_name, query_stmt)
                 if dry_run:
                     logger.info('Dry-run: skipping view creation')
                 else:
                     etl.pg.execute(conn, ddl_stmt)
-                created.append(file)
+                created.append(file_set)
     return created
 
 
@@ -454,12 +454,12 @@ def cleanup_views(created, schemas, dry_run=False):
     """
     logger = logging.getLogger(__name__)
     for schema in schemas:
-        for file in created:
-            if file.source_name != schema.name:
+        for file_set in created:
+            if file_set.source_name != schema.name:
                 continue
             with closing(etl.pg.connection(schema.dsn, autocommit=True)) as conn:
-                ddl_stmt = """DROP VIEW IF EXISTS {}""".format(file.target_table_name)
-                logger.info("Dropping view for '%s'", file.target_table_name.identifier)
+                ddl_stmt = """DROP VIEW IF EXISTS {}""".format(file_set.target_table_name)
+                logger.info("Dropping view for '%s'", file_set.target_table_name.identifier)
                 if dry_run:
                     logger.info('Dry-run: skipping view deletion')
                 else:

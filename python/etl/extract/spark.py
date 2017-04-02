@@ -16,6 +16,10 @@ from etl.relation import RelationDescription
 
 class SparkExtractor(Extractor):
 
+    """
+    Use Apache Spark to download data from upstream databases.
+    """
+
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, dry_run: bool):
         super().__init__("spark", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
@@ -31,10 +35,10 @@ class SparkExtractor(Extractor):
     def _create_sql_context(self):
         """
         Create a new SQL context within a new Spark context. Import of classes from
-        pyspark has to be pushed down into the method as Spark needs to be available
-        in order for the libraries to be imported. Since Spark is not available upon
-        booting up an EMR cluster, an ImportError is served unless the import is
-        deferred into the method.
+        pyspark has to be pushed down into this method as Spark needs to be available
+        in order for the libraries to be imported successfully. Since Spark is not available
+        when the ETL is started initally, we delay the import until the ETL has restarted
+        under Spark.
 
         Side-effect: Logging is configured by the time that pyspark is loaded
         so we have some better control over filters and formatting.
@@ -107,7 +111,7 @@ class SparkExtractor(Extractor):
             self.logger.debug("Determining predicates for table '%s'", source_table_name.identifier)
 
             table_size = self._fetch_table_size(conn, source_table_name)
-            num_partitions = self._suggest_best_partition_number(table_size)
+            num_partitions = suggest_best_partition_number(table_size)
             self.logger.info("Picked %d partition(s) for table '%s' (primary key: '%s')",
                              num_partitions, source_table_name.identifier, primary_key)
 
@@ -135,47 +139,6 @@ class SparkExtractor(Extractor):
         self.logger.info("Size of table '%s': %s (%d bytes) (%s)", table_name.identifier, pretty_table_size, table_size,
                          timer)
         return table_size
-
-    # FIXME Doctest got broken during refactoring.
-    def _suggest_best_partition_number(self, table_size: int) -> int:
-        """
-        Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
-        a factor of 2.
-
-        The number of partitions is based on:
-          Small tables (<= 10M): Use partitions around 1MB.
-          Medium tables (<= 1G): Use partitions around 10MB.
-          Huge tables (> 1G): Use partitions around 20MB.
-
-        >>> suggest_best_partition_number(100)
-        1
-        >>> suggest_best_partition_number(1048576)
-        1
-        >>> suggest_best_partition_number(3 * 1048576)
-        2
-        >>> suggest_best_partition_number(10 * 1048576)
-        8
-        >>> suggest_best_partition_number(100 * 1048576)
-        8
-        >>> suggest_best_partition_number(2000 * 1048576)
-        16
-        """
-        meg = 1024 * 1024
-        if table_size <= 10 * meg:
-            target = 1 * meg
-        elif table_size <= 1024 * meg:
-            target = 10 * meg
-        else:
-            target = 20 * meg
-
-        num_partitions = 1
-        partition_size = table_size
-        # Keep the partition sizes above the target value:
-        while partition_size >= target * 2:
-            num_partitions *= 2
-            partition_size //= 2
-
-        return num_partitions
 
     def _fetch_partition_boundaries(self, conn: connection, table_name: TableName, primary_key: str,
                                     num_partitions: int) -> List[Tuple[int, int]]:
@@ -225,3 +188,46 @@ class SparkExtractor(Extractor):
                 .options(**write_options) \
                 .mode('overwrite') \
                 .save(s3_uri)
+
+
+def suggest_best_partition_number(table_size: int) -> int:
+    """
+    Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
+    a factor of 2.
+
+    The number of partitions is based on:
+      Small tables (<= 10M): Use partitions around 1MB.
+      Medium tables (<= 1G): Use partitions around 10MB.
+      Huge tables (> 1G): Use partitions around 20MB.
+
+    >>> suggest_best_partition_number(100)
+    1
+    >>> suggest_best_partition_number(1048576)
+    1
+    >>> suggest_best_partition_number(3 * 1048576)
+    2
+    >>> suggest_best_partition_number(10 * 1048576)
+    8
+    >>> suggest_best_partition_number(100 * 1048576)
+    8
+    >>> suggest_best_partition_number(200 * 1048576)
+    16
+    >>> suggest_best_partition_number(2000 * 1048576)
+    64
+    """
+    meg = 1024 * 1024
+    if table_size <= 10 * meg:
+        target = 1 * meg
+    elif table_size <= 1024 * meg:
+        target = 10 * meg
+    else:
+        target = 20 * meg
+
+    num_partitions = 1
+    partition_size = table_size
+    # Keep the partition sizes above the target value:
+    while partition_size >= target * 2:
+        num_partitions *= 2
+        partition_size //= 2
+
+    return num_partitions

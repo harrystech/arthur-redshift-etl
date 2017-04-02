@@ -14,9 +14,11 @@ from etl.timer import Timer
 
 class Extractor:
     """
-    The 'Extractor' base class has three subclasses: static, spark, and sqoop. This base class
-    defines common attributes and logic, as well as the 'extract_table' abstract method that each
-    subclass must implement.
+    The extractor base class provides the basic mechanics to
+    * iterate over sources
+      * iterate over tables in each source
+        * call a child's class extract for a single table
+    It is that method (`extract_table`) that child classes must implement.
     """
     def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, needs_to_wait: bool, dry_run: bool):
@@ -32,8 +34,7 @@ class Extractor:
         self.failed_sources = None  # Will be set to a fresh set when starting to extract sources
 
     def extract_table(self, source: DataWarehouseSchema, description: RelationDescription):
-        raise NotImplementedError(
-            "Instance of {} has no proper extract_table method".format(self.__class__.__name__))
+        raise NotImplementedError("Forgot to implement extract_table in {}".format(self.__class__.__name__))
 
     @staticmethod
     def source_info(source: DataWarehouseSchema, description: RelationDescription) -> Dict:
@@ -111,7 +112,7 @@ class Extractor:
         Create manifest file to load all the CSV files for the given relation.
         The manifest file will be created in the folder ABOVE the CSV files.
 
-        If the data files are in 'foo/bar/csv/part-r*', then the manifest is '/foo/bar.manifest'.
+        If the data files are in 'data/foo/bar/csv/part-r*', then the manifest is 'data/foo/bar.manifest'.
 
         Note that for static sources, we need to check the bucket of that source, not the
         bucket where the manifest will be written to.
@@ -122,8 +123,11 @@ class Extractor:
 
         have_success = etl.s3.get_s3_object_last_modified(source_bucket, prefix + "/_SUCCESS",
                                                           wait=self.needs_to_wait and not self.dry_run)
-        if have_success is None and not self.dry_run:
-            raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
+        if have_success is None:
+            if self.dry_run:
+                self.logger.warning("No valid CSV files (_SUCCESS is missing)")
+            else:
+                raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
         csv_files = sorted(key for key in etl.s3.list_objects_for_prefix(source_bucket, prefix)
                            if "part" in key and key.endswith(".gz"))

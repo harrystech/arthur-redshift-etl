@@ -30,6 +30,7 @@ import etl.monitor
 import etl.pg
 import etl.pipeline
 import etl.relation
+import etl.selftest
 import etl.sync
 from etl.timer import Timer
 import etl.unload
@@ -206,7 +207,8 @@ def build_full_parser(prog_name):
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
-            ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand, EventsQueryCommand]:
+            ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand,
+            EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -655,6 +657,19 @@ class EventsQueryCommand(SubCommand):
 
     def callback(self, args, config):
         etl.monitor.query_for(args.pattern, args.etl_id)
+
+
+class SelfTestCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("selftest",
+                         "run code tests of ETL",
+                         "Run self-test of the ETL.")
+
+    def callback(self, args, config):
+        verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0}
+        verbosity = verbosity_levels.get(args.log_level, 1)
+        etl.selftest.run_self_test(verbosity)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,10 @@ class ETLDelayedExit(ETLError):
     """
 
 
+class SelfTestError(ETLSystemError):
+    pass
+
+
 class InvalidArgumentsError(ETLRuntimeError):
     """Exception thrown when arguments are detected to be invalid by the command callback"""
     pass

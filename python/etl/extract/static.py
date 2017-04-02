@@ -10,6 +10,11 @@ from etl.thyme import Thyme
 
 class StaticExtractor(Extractor):
 
+    """
+    Enable using files in S3 as an upstream data source.
+    """
+    # TODO Describe expected file paths, existence of "_SUCCESS" file
+
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, dry_run: bool):
         # For static sources, we go straight to failure when the success file does not exist
