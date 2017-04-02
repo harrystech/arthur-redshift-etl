@@ -6,6 +6,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 """
 
 import argparse
+from contextlib import contextmanager
 import getpass
 import logging
 import os
@@ -18,7 +19,7 @@ import simplejson as json
 import etl
 import etl.config
 import etl.design
-from etl.errors import ETLError, ETLSystemError
+from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
 import etl.explain
 import etl.extract
 import etl.dw
@@ -33,11 +34,6 @@ import etl.sync
 from etl.timer import Timer
 import etl.unload
 import etl.validate
-
-
-class InvalidArgumentsError(Exception):
-    """Exception thrown arguments are detected to be invalid by the command callback"""
-    pass
 
 
 def croak(error, exit_code):
@@ -57,10 +53,42 @@ def croak(error, exit_code):
     sys.exit(exit_code)
 
 
+@contextmanager
+def execute_or_bail():
+    """
+    Either execute (the wrapped code) successfully or bail out with a helpful error message.
+
+    Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
+    """
+    logger = logging.getLogger(__name__)
+    timer = Timer()
+    try:
+        yield
+    except InvalidArgumentsError as exc:
+        logger.exception("ETL never got off the ground:")
+        croak(exc, 1)
+    except ETLError as exc:
+        if isinstance(exc, ETLDelayedExit):
+            logger.critical("Something bad happened in the ETL: %s", str(exc))
+        else:
+            logger.exception("Something bad happened in the ETL:")
+        logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
+        croak(exc, 2)
+    except Exception as exc:
+        logger.exception("Something terrible happened:")
+        logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+        croak(exc, 3)
+    except BaseException as exc:
+        logger.exception("Something really terrible happened:")
+        logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+        croak(exc, 5)
+    else:
+        logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
+
+
 def run_arg_as_command(my_name="arthur.py"):
     """
     Use the sub-command's callback in `func` to actually run the sub-command.
-    Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
     This function can be used as an entry point for a console script.
     """
     parser = build_full_parser(my_name)
@@ -70,38 +98,24 @@ def run_arg_as_command(my_name="arthur.py"):
     elif args.cluster_id:
         submit_step(args.cluster_id, args.sub_command)
     else:
-        etl.config.configure_logging(args.prolix, args.log_level)
-        logger = logging.getLogger(__name__)
-        with Timer() as timer:
-            try:
-                settings = etl.config.load_config(args.config)
-                if hasattr(args, "prefix"):
-                    # Only commands which require an environment should require a monitor.
-                    etl.monitor.set_environment(args.prefix,
-                                                dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
-                                                postgresql_settings=settings["etl_events"].get("postgresql", {}))
-                dw_config = etl.config.DataWarehouseConfig(settings)
-                if hasattr(args, "pattern"):
-                    args.pattern.base_schemas = [s.name for s in dw_config.schemas]
-                setattr(args, "bucket_name", settings["s3"]["bucket_name"])
-                args.func(args, dw_config)
-            except InvalidArgumentsError as exc:
-                logger.exception("ETL never got off the ground:")
-                croak(exc, 1)
-            except ETLError as exc:
-                logger.exception("Something bad happened in the ETL:")
-                logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
-                croak(exc, 1)
-            except Exception as exc:
-                logger.exception("Something terrible happened:")
-                logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
-                croak(exc, 2)
-            except BaseException as exc:
-                logger.exception("Something really terrible happened:")
-                logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
-                croak(exc, 3)
-            else:
-                logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
+        # We need to configure logging before running context because that context expects logging to be setup.
+        try:
+            etl.config.configure_logging(args.prolix, args.log_level)
+        except Exception as exc:
+            croak(exc, 1)
+
+        with execute_or_bail():
+            settings = etl.config.load_config(args.config)
+            if hasattr(args, "prefix"):
+                # Only commands which require an environment should require a monitor.
+                etl.monitor.set_environment(args.prefix,
+                                            dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
+                                            postgresql_settings=settings["etl_events"].get("postgresql", {}))
+            dw_config = etl.config.DataWarehouseConfig(settings)
+            if hasattr(args, "pattern"):
+                args.pattern.base_schemas = [s.name for s in dw_config.schemas]
+            setattr(args, "bucket_name", settings["s3"]["bucket_name"])
+            args.func(args, dw_config)
 
 
 def submit_step(cluster_id, sub_command):

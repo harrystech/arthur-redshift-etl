@@ -18,7 +18,7 @@ import yaml.parser
 
 import etl
 import etl.config
-from etl.errors import MissingMappingError, TableDesignParseError, TableDesignSemanticError, TableDesignValidationError
+from etl.errors import MissingMappingError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
 import etl.pg
 import etl.file_sets
 import etl.s3
@@ -247,8 +247,7 @@ def validate_table_design_syntax(table_design, table_name):
     try:
         jsonschema.validate(table_design, table_design_schema)
     except validation_internal_errors as exc:
-        logger.error("Failed to validate table design for '%s'", table_name.identifier)
-        raise TableDesignValidationError() from exc
+        raise TableDesignSyntaxError("Failed to validate table design for '%s'" % table_name.identifier) from exc
 
 
 def validate_semantics_of_view(table_design):

@@ -68,7 +68,8 @@ class Extractor:
                     if not description.is_required:
                         self.logger.exception("Extract failed for non-required relation '%s':", description.identifier)
                     elif self.keep_going:
-                        self.logger.exception("Ignoring failure of required relation and proceeding as requested:")
+                        self.logger.exception("Ignoring failure of required relation '%s' and proceeding as requested:",
+                                              description.identifier)
                     else:
                         self.logger.debug("Extract failed for required relation '%s'", description.identifier)
                         raise

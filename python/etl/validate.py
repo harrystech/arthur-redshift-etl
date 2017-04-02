@@ -19,6 +19,7 @@ import difflib
 from itertools import groupby
 import logging
 from operator import attrgetter
+import threading
 from typing import List
 
 import psycopg2
@@ -28,28 +29,46 @@ import simplejson as json
 from etl import join_with_quotes, TableName
 from etl.config import DataWarehouseConfig, DataWarehouseSchema
 import etl.design
-from etl.errors import ETLConfigError, ETLError, ReloadConsistencyError, UpstreamValidationError, TableDesignError
+from etl.errors import ETLConfigError, ETLDelayedExit, ETLError, UpstreamValidationError, TableDesignError
 import etl.pg
 import etl.relation
 from etl.relation import RelationDescription
 
 
-def validate_design_file_semantics(descriptions, keep_going=False):
+_error_occurred = threading.Event()  # overkill but at least thread-safe overkill
+
+
+def validate_design_file_semantics(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription],
+                                   keep_going=False) -> List[RelationDescription]:
     """
     Load local design files and validate them along the way against schemas and semantics.
 
-    Return list for successfully validated descriptions if you want to keep going.
+    Return list of successfully validated descriptions if you want to keep going.
     Or raise exception on validation error.
     """
     logger = logging.getLogger(__name__)
     ok = []
+    is_upstream_source = {schema.name: schema.is_upstream_source for schema in schemas}
     for description in descriptions:
+        logger.info("Loading and validating file '%s'", description.design_file_name)
         try:
-            logger.info("Loading and validating file '%s'", description.design_file_name)
-            if description.table_design:
-                ok.append(description)
+            # Note that evaluating whether it's a ctas or view will trigger a load and basic validation.
+            source_name = description.target_table_name.schema
+            if is_upstream_source[source_name]:
+                if description.is_ctas_relation or description.is_view_relation:
+                    raise TableDesignError("Invalid source name '%s' in upstream table '%s'" %
+                                           (description.table_design["source_name"], description.identifier))
+            else:
+                if not (description.is_ctas_relation or description.is_view_relation):
+                    raise TableDesignError("Invalid source name '%s' in CTAS or VIEW '%s'" %
+                                           (description.table_design["source_name"], description.identifier))
+            ok.append(description)
         except TableDesignError:
-            if not keep_going:
+            if keep_going:
+                _error_occurred.set()
+                logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
+                                 description.identifier)
+            else:
                 raise
     return ok
 
@@ -76,45 +95,37 @@ def _check_dependencies(observed, table_design):
                  listed_but_not_actual=list(expected_deps - observed_deps))))
 
 
-def _check_columns(observed, table_design):
+def create_temporary_view(conn: connection, description: RelationDescription, keep_going: bool=False) -> TableName:
     """
-    Compare actual columns in query to those in table design object and return instructions for logger
+    Create a temporary view for testing the description.
 
-    >>> _check_columns(['a', 'b'], dict(columns=[dict(name='b'), dict(name='a')])) # doctest: +ELLIPSIS
-    'Column listing mismatch! Diff of observed vs expected follows:...'
-
-    >>> _check_columns(['a', 'b'], dict(columns=[dict(name='a'), dict(name='b')]))
-
-    """
-    observed = list(observed)
-    expected = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
-
-    # handle identity columns by inserting a column into observed in the expected position
-    for index, column in enumerate(table_design['columns']):
-        if column.get('identity', False):
-            observed.insert(index, column['name'])
-
-    if observed != expected:
-        return 'Column listing mismatch! Diff of observed vs expected follows: {}'.format(
-                 '\n'.join(difflib.context_diff(observed, expected)))
-
-
-def validate_single_transform(conn, description, keep_going=False):
-    """
-    Test-run a relation (CTAS or VIEW) by creating a temporary view.
-
-    With a view created, we can extract dependency information and a list of columns
-    to make sure table design and query match up.
+    This will be a view for both, CTAS and VIEW.
     """
     logger = logging.getLogger(__name__)
-    # FIXME Switch to using a temporary view (starts with '#' and has no schema)
+    # TODO Switch to using a temporary view (starts with '#' and has no schema)
     tmp_view_name = TableName(schema=description.target_table_name.schema,
                               table='$'.join(["arthur_temp", description.target_table_name.table]))
     ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, description.query_stmt)
-    logger.info("Creating view '%s' for table '%s'" % (tmp_view_name.identifier, description.identifier))
-    etl.pg.execute(conn, ddl_stmt)
+    logger.info("Creating view '%s' for relation '%s'" % (tmp_view_name.identifier, description.identifier))
+    try:
+        with etl.pg.log_error():
+            etl.pg.execute(conn, ddl_stmt)
+    except psycopg2.Error:
+        if keep_going:
+            _error_occurred.set()
+        else:
+            raise
+    return tmp_view_name
 
-    # based off example query in AWS docs; *_p is for parent, *_c is for child
+
+def validate_dependencies(conn: connection, description: RelationDescription, tmp_view_name: TableName,
+                          keep_going: bool=False):
+    """
+    Download the dependencies (usually, based on the temporary view) and compare with table design.
+    """
+    logger = logging.getLogger(__name__)
+
+    # based on example query in AWS docs; *_p is for parent, *_c is for child
     dependency_stmt = """
         SELECT DISTINCT
                n_c.nspname AS dependency_schema
@@ -139,35 +150,54 @@ def validate_single_transform(conn, description, keep_going=False):
     comparison_output = _check_dependencies(dependencies, description.table_design)
     if comparison_output:
         if keep_going:
+            _error_occurred.set()
             logger.warning(comparison_output)
         else:
-            # TODO be more specific in the error?
             raise TableDesignError(comparison_output)
     else:
         logger.info('Dependencies listing in design file matches SQL')
 
-    columns_stmt = """
-        SELECT a.attname
-          FROM pg_class c, pg_attribute a, pg_type t, pg_namespace n
-         WHERE c.relname = '{0.table}'
-           AND a.attnum > 0
-           AND a.attrelid = c.oid
-           AND a.atttypid = t.oid
-           AND c.relnamespace = n.oid
-           AND n.nspname = '{0.schema}'
-         ORDER BY attnum ASC
-        """.format(tmp_view_name)
 
-    actual_columns = [row['attname'] for row in etl.pg.query(conn, columns_stmt)]
-    comparison_output = _check_columns(actual_columns, description.table_design)
-    if comparison_output:
+def validate_column_ordering(conn: connection, description: RelationDescription, tmp_view_name: TableName,
+                             keep_going: bool=False):
+    """
+    Download the column order (usually, based on the temporary view) and compare with table design.
+    """
+    logger = logging.getLogger(__name__)
+
+    attributes = etl.design.fetch_attributes(conn, tmp_view_name)
+    actual_columns = [attribute.name for attribute in attributes]
+
+    # Identity columns are inserted after the query has been run, so skip them here.
+    expected_columns = [column["name"] for column in description.table_design["columns"]
+                        if not (column.get("skipped") or column.get("identity"))]
+
+    diff = get_list_difference(expected_columns, actual_columns)
+    if diff:
+        logger.error("Order of columns in design of '%s' does not match result of running its query",
+                     description.identifier)
+        logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
+                     description.identifier, etl.join_with_quotes(diff))
         if keep_going:
-            logger.warning(comparison_output)
+            _error_occurred.set()
         else:
-            # TODO be more specific in the error?
-            raise TableDesignError(comparison_output)
+            raise TableDesignError("Invalid columns or column order in '%s'" % description.identifier)
     else:
-        logger.info('Column listing in design file matches column listing in SQL')
+        logger.info("Order of columns in design of '%s' matches result of running SQL query", description.identifier)
+
+
+def validate_single_transform(conn: connection, description: RelationDescription, keep_going: bool=False):
+    """
+    Test-run a relation (CTAS or VIEW) by creating a temporary view.
+
+    With a view created, we can extract dependency information and a list of columns
+    to make sure table design and query match up.
+    """
+    logger = logging.getLogger(__name__)
+    tmp_view_name = create_temporary_view(conn, description, keep_going)
+
+    validate_dependencies(conn, description, tmp_view_name, keep_going)
+    validate_column_ordering(conn, description, tmp_view_name, keep_going)
 
     logger.info("Dropping view '%s'", tmp_view_name.identifier)
     etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
@@ -182,7 +212,7 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
     transforms = [description for description in descriptions
                   if description.is_ctas_relation or description.is_view_relation]
     if not transforms:
-        logger.info("No transforms found or selected, skipping their validation")
+        logger.info("No transforms found or selected, skipping CTAS or VIEW validation")
         return
 
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
@@ -192,6 +222,7 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
                     validate_single_transform(conn, description, keep_going=keep_going)
             except (ETLError, psycopg2.Error):
                 if keep_going:
+                    _error_occurred.set()
                     logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
                                      description.identifier)
                 else:
@@ -248,11 +279,12 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
                 diff = get_list_difference(reloaded_columns, unloaded_columns)
                 logger.error("Column difference detected between '%s' and '%s'",
                              unloaded.identifier, description.identifier)
-                logger.error("You need to replace, insert and/or delete in '%s': %s",
+                logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
                              description.identifier, etl.join_with_quotes(diff))
-                if not keep_going:
-                    raise ReloadConsistencyError("Unloaded relation '%s' failed to match counterpart"
-                                                 % unloaded.identifier)
+                if keep_going:
+                    _error_occurred.set()
+                else:
+                    raise TableDesignError("Unloaded relation '%s' failed to match counterpart" % unloaded.identifier)
 
 
 def check_select_permission(conn: connection, table_name: TableName):
@@ -280,7 +312,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
         if not columns_info:
             raise TableDesignError("Table '%s' is gone or has no columns left" % source_table_name.identifier)
         current_columns = frozenset(column.name for column in columns_info)
-        design_columns = frozenset(table.unquoted_columns)
+        design_columns = frozenset(column for column in table.unquoted_columns if not column.startswith("etl__"))
         if not current_columns.issuperset(design_columns):
             extra_columns = design_columns.difference(current_columns)
             raise TableDesignError("Design of '%s' has columns that do not exist upstream: %s" %
@@ -288,11 +320,15 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
         current_is_not_null = {column.name for column in columns_info if column.not_null}
         for column in table.table_design["columns"]:
             if column.get("not_null") and column["name"] not in current_is_not_null:
-                raise TableDesignError("Not null constraint of column '%s' in '%s' not enforced upstream" %
-                                       (column["name"], table.identifier))
+                # FIXME Too many errors ... be lenient when starting this test
+                # raise TableDesignError("Not null constraint of column '%s' in '%s' not enforced upstream" %
+                #                        (column["name"], table.identifier))
+                logger.warning("Not null constraint of column '%s' in '%s' not enforced upstream",
+                               (column["name"], table.identifier))
         logger.info("Successfully validated '%s' against its upstream source", table.identifier)
     except (psycopg2.Error, ETLError):
         if keep_going:
+            _error_occurred.set()
             logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
                              source_table_name.identifier)
         else:
@@ -314,8 +350,11 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
     logger = logging.getLogger(__name__)
     source_lookup = {schema.name: schema for schema in schemas if schema.is_database_source}
 
-    # Resort descriptions by source so that we need to only connect once to each source
+    # Re-sort descriptions by source so that we need to only connect once to each source
     upstream_tables = [description for description in descriptions if description.source_name in source_lookup]
+    if not upstream_tables:
+        logger.info("No upstream tables found or selected, skipping source validation")
+        return
     upstream_tables.sort(key=attrgetter("source_name"))
 
     for source_name, table_group in groupby(upstream_tables, attrgetter("source_name")):
@@ -328,6 +367,7 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
                     validate_upstream_table(conn, table, keep_going=keep_going)
         except psycopg2.Error:
             if keep_going:
+                _error_occurred.set()
                 logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", source_name)
             else:
                 raise
@@ -339,13 +379,15 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
     Make sure that all table design files pass the validation checks.
     """
     logger = logging.getLogger(__name__)
+    _error_occurred.clear()
 
-    valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
+    valid_descriptions = validate_design_file_semantics(config.schemas, descriptions, keep_going=keep_going)
     validate_reload(valid_descriptions, keep_going=keep_going)
     try:
         ordered_descriptions = etl.relation.order_by_dependencies(valid_descriptions)
     except ETLConfigError:
         if keep_going:
+            _error_occurred.set()
             logger.exception("Failed to determine evaluation order, proceeding as requested")
             ordered_descriptions = valid_descriptions
         else:
@@ -360,3 +402,6 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
         logger.info("Skipping validation of transforms against data warehouse")
     else:
         validate_transforms(config.dsn_etl, ordered_descriptions, keep_going=keep_going)
+
+    if _error_occurred.is_set():
+        raise ETLDelayedExit("At least one error occurred while validating with 'keep going' option")

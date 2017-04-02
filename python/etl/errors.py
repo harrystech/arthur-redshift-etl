@@ -29,6 +29,19 @@ class ETLRuntimeError(ETLError):
     """
 
 
+class ETLDelayedExit(ETLError):
+    """
+    Exception raised when errors were suppressed during "keep going" processing.
+
+    The errors triggering this unseemly end could be either of the config or runtime variety.
+    """
+
+
+class InvalidArgumentsError(ETLRuntimeError):
+    """Exception thrown when arguments are detected to be invalid by the command callback"""
+    pass
+
+
 class MissingMappingError(ETLConfigError):
     """Exception when an attribute type's target type is unknown"""
     pass
@@ -44,7 +57,7 @@ class TableDesignParseError(TableDesignError):
     pass
 
 
-class TableDesignValidationError(TableDesignError):
+class TableDesignSyntaxError(TableDesignError):
     """Exception when a table design file does not pass schema validation"""
     pass
 
@@ -61,11 +74,6 @@ class MissingQueryError(ETLConfigError):
 
 class CyclicDependencyError(ETLConfigError):
     """Exception when evaluation order runs in circles"""
-    pass
-
-
-class ReloadConsistencyError(ETLConfigError):
-    """Exception when unloaded and re-loaded columns don't match"""
     pass
 
 

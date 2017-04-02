@@ -24,7 +24,7 @@ from psycopg2.extensions import connection  # For type annotation
 
 import etl
 from etl.config import DataWarehouseConfig, DataWarehouseSchema
-from etl.errors import DataUnloadError, TableDesignError
+from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignError
 import etl.monitor
 from etl.relation import RelationDescription
 import etl.pg
@@ -138,6 +138,7 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
             raise TableDesignError("Unload target specified, but not defined: '%s'" % relation.unload_target)
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
+    error_occurred = False
     conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
         for relation, unload_schema in relation_target_tuples:
@@ -146,7 +147,11 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
                 if keep_going:
+                    error_occurred = True
                     logger.warning("Unload failure for '%s'", relation.identifier)
                     logger.exception("Ignoring this exception and proceeding as requested:")
                 else:
                     raise
+
+    if error_occurred:
+        raise ETLDelayedExit("At least one error occurred while unloading with 'keep going' option")

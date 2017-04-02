@@ -3,7 +3,7 @@
 # Setup your "environment" under a new prefix in S3.
 # This will create a new distribution locally and upload everything into S3.
 
-set -eu
+set -e
 
 if [[ $# -ne 2 ]]; then
     echo "Usage: `basename $0` <bucket_name> <target_env>"
@@ -42,6 +42,9 @@ elif [[ -d "$DATA_WAREHOUSE_CONFIG/config" ]]; then
     echo "(Found directory $DATA_WAREHOUSE_CONFIG/config which is unexpected.)"
     exit 2
 fi
+
+set -u
+
 if ! aws s3 ls "s3://$CLUSTER_BUCKET/" > /dev/null; then
     echo "Check whether the bucket \"$CLUSTER_BUCKET\" exists and you have access to it!"
     exit 2

@@ -37,7 +37,12 @@ def _get_s3_bucket(bucket_name: str):
 
 class S3Uploader:
 
-    """Upload files from local filesystem into the given S3 folder."""
+    """
+    Upload files from local filesystem into the given S3 folder.
+
+    Note that the current implementation is NOT thread safe since
+    the bucket resource is tied to the s3 resource of one thread.
+    """
 
     def __init__(self, bucket_name: str, dry_run: bool=False):
         self.logger = logging.getLogger(__name__)
