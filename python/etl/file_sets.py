@@ -186,7 +186,6 @@ def find_file_sets(uri_parts, selector):
     ("s3", "bucket", "prefix", ...) or ("file", "localhost", "directory", ...)
     The selector (as a bare minimum) should have a reasonable set of base schemas.
     """
-    logger = logging.getLogger(__name__)
     scheme, netloc, path = uri_parts[:3]
     if scheme == "s3":
         file_sets = _find_file_sets_from(etl.s3.list_objects_for_prefix(netloc, path + '/data', path + '/schemas'),

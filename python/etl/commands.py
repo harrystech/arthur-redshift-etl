@@ -107,15 +107,17 @@ def run_arg_as_command(my_name="arthur.py"):
 
         with execute_or_bail():
             settings = etl.config.load_config(args.config)
+
             if hasattr(args, "prefix"):
                 # Only commands which require an environment should require a monitor.
                 etl.monitor.set_environment(args.prefix,
                                             dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
                                             postgresql_settings=settings["etl_events"].get("postgresql", {}))
-            dw_config = etl.config.DataWarehouseConfig(settings)
-            if hasattr(args, "pattern"):
-                args.pattern.base_schemas = [s.name for s in dw_config.schemas]
             setattr(args, "bucket_name", settings["s3"]["bucket_name"])
+
+            dw_config = etl.config.get_dw_config()
+            if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
+                args.pattern.base_schemas = [s.name for s in dw_config.schemas]
             args.func(args, dw_config)
 
 
@@ -191,7 +193,7 @@ def build_full_parser(prog_name):
     """
     parser = build_basic_parser(prog_name, description="This command allows to drive the Redshift ETL.")
 
-    package = etl.package_version()
+    package = etl.config.package_version()
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
 
     # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.

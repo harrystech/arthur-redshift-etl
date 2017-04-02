@@ -23,7 +23,7 @@ import os
 from psycopg2.extensions import connection  # For type annotation
 
 import etl
-from etl.config import DataWarehouseConfig, DataWarehouseSchema
+from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignError
 import etl.monitor
 from etl.relation import RelationDescription

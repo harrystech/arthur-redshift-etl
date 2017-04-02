@@ -30,8 +30,7 @@ import logging
 from typing import List, Dict
 
 import etl
-from etl.config import DataWarehouseSchema
-from etl.extract.extractor import Extractor
+from etl.config.dw import DataWarehouseSchema
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor

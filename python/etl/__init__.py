@@ -5,13 +5,6 @@ Utilities and classes to support the ETL in general
 from collections import namedtuple
 import fnmatch
 
-import pkg_resources
-
-
-# TODO rename package to "redshift_etl"
-def package_version(package_name="redshift-etl"):
-    return "{} v{}".format(package_name, pkg_resources.get_distribution(package_name).version)
-
 
 def join_with_quotes(names):
     """

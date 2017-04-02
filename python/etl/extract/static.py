@@ -2,7 +2,7 @@ import logging
 import os.path
 from typing import Dict, List
 
-from etl.config import DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
 from etl.relation import RelationDescription
 from etl.thyme import Thyme

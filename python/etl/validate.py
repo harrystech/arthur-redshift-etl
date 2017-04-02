@@ -27,7 +27,7 @@ from psycopg2.extensions import connection  # For type annotation
 import simplejson as json
 
 from etl import join_with_quotes, TableName
-from etl.config import DataWarehouseConfig, DataWarehouseSchema
+from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 import etl.design
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLError, UpstreamValidationError, TableDesignError
 import etl.pg

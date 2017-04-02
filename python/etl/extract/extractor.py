@@ -4,7 +4,7 @@ import logging
 from operator import attrgetter
 from typing import Dict, List
 
-from etl.config import DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema
 from etl.errors import MissingCsvFilesError, DataExtractError
 import etl.monitor
 from etl.relation import RelationDescription

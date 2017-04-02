@@ -46,6 +46,11 @@ class InvalidArgumentsError(ETLRuntimeError):
     pass
 
 
+class InvalidEnvironmentError(ETLRuntimeError):
+    """Exception when environment settings are invalid"""
+    pass
+
+
 class MissingMappingError(ETLConfigError):
     """Exception when an attribute type's target type is unknown"""
     pass

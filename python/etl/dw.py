@@ -24,6 +24,7 @@ import logging
 from etl import join_with_quotes
 import etl.commands
 import etl.config
+import etl.config.dw
 from etl.errors import ETLError
 import etl.pg
 
@@ -151,7 +152,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
         info = {"name": new_user, "group": config.default_group}
         if add_user_schema:
             info["schema"] = new_user
-        user = etl.config.DataWarehouseUser(info)
+        user = etl.config.dw.DataWarehouseUser(info)
 
     if user.name in ("default", config.owner):
         raise ValueError("Illegal user name '%s'" % user.name)
@@ -173,9 +174,9 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                     logger.info("Adding user '%s' to group '%s'", user.name, group)
                     etl.pg.alter_group_add_user(conn, group, user.name)
             if add_user_schema:
-                user_schema = etl.config.DataWarehouseSchema({"name": user.schema,
-                                                              "owner": user.name,
-                                                              "readers": [user.group, config.groups[0]]})
+                user_schema = etl.config.dw.DataWarehouseSchema({"name": user.schema,
+                                                                 "owner": user.name,
+                                                                 "readers": [user.group, config.groups[0]]})
                 if dry_run:
                     logger.info("Dry-run: Skipping creating schema '%s' with access for %s",
                                 user_schema.name, join_with_quotes(user_schema.groups))
@@ -189,10 +190,9 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
             if user.schema == user.name:
                 search_path[:0] = ["'$user'"]  # needs to be quoted per documentation
             if dry_run:
-                logger.info("Dry-run: Skipping setting search path for user '%s' to: %s",
-                            user.name, ", ".join(search_path))
+                logger.info("Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path)
             else:
-                logger.info("Setting search path for user '%s' to: %s", user.name, ", ".join(search_path))
+                logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
                 etl.pg.alter_search_path(conn, user.name, search_path)
 
 
