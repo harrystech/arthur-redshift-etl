@@ -135,6 +135,7 @@ class DataWarehouseConfig:
         dw_settings = settings["data_warehouse"]
 
         # Environment variables with DSN
+        # TODO make sure that admin acess and etl access point to the same host:port (and different databases)
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
         self._reference_warehouse_access = dw_settings["reference_warehouse_access"]

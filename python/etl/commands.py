@@ -187,7 +187,7 @@ def build_full_parser(prog_name):
             # Commands to deal with data warehouse as admin:
             InitializeSetupCommand, CreateUserCommand,
             # Commands to help with table designs and uploading them
-            DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, SyncWithS3Command,
+            BootstrapSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
@@ -293,8 +293,7 @@ class SubCommand:
         else:
             raise ETLSystemError("scheme invalid")
 
-    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None,
-                                   return_all=False, error_if_empty=True):
+    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None, return_all=False):
         """
         Most commands need to (1) collect file sets and (2) create relation descriptions around those.
         Commands vary slightly as to what error handling they want to do and whether they need all
@@ -307,8 +306,7 @@ class SubCommand:
             selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
         else:
             selector = args.pattern
-        file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector,
-                                                 error_if_empty=error_if_empty)
+        file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector)
 
         descriptions = etl.relation.RelationDescription.from_file_sets(
             file_sets, required_relation_selector=required_relation_selector)
@@ -369,7 +367,7 @@ class CreateUserCommand(SubCommand):
                                    skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
-class DownloadSchemasCommand(SubCommand):
+class BootstrapSchemasCommand(SubCommand):
 
     def __init__(self):
         super().__init__("design",
@@ -383,14 +381,14 @@ class DownloadSchemasCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, error_if_empty=False)
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         if args.auto:
             created = etl.design.bootstrap_views(local_files, config.schemas, dry_run=args.dry_run)
         else:
             created = []
         try:
-            etl.design.download_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                        config.type_maps, auto=args.auto, dry_run=args.dry_run)
+            etl.design.bootstrap_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
+                                         config.type_maps, auto=args.auto, dry_run=args.dry_run)
         finally:
             etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
 
@@ -526,21 +524,25 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "validate table design files",
-                         "Validate table designs (use '-q' to only see errors/warnings).")
+                         "Validate table designs (use '-q' to only see errors or warnings).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
         parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
+        parser.add_argument("-s", "--skip-sources-check",
+                            help="skip check of designs against upstream databases",
+                            default=False, action="store_true")
         parser.add_argument("-n", "--skip-dependencies-check",
-                            help="skip check of dependencies against dependencies",
+                            help="skip check of dependencies in designs against data warehouse",
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        # FIXME This should pick up all files so that dependency ordering can be done correctly.
-        descriptions = self.find_relation_descriptions(args, error_if_empty=False)
-        etl.validate.validate_designs(config.dsn_etl, descriptions,
-                                      keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
+        # NB This does not pick up all designs to speed things up but that may lead to false positives.
+        descriptions = self.find_relation_descriptions(args)
+        etl.validate.validate_designs(config, descriptions, keep_going=args.keep_going,
+                                      skip_sources=args.skip_sources_check,
+                                      skip_dependencies=args.skip_dependencies_check)
 
 
 class ExplainQueryCommand(SubCommand):
@@ -571,7 +573,7 @@ class ListFilesCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
         etl.file_sets.list_files(file_sets, long_format=args.long_format)
 
 
@@ -608,8 +610,7 @@ class ShowDependentsCommand(SubCommand):
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args,
                                                        required_relation_selector=config.required_in_full_load_selector,
-                                                       return_all=True,
-                                                       error_if_empty=False)
+                                                       return_all=True)
         etl.load.show_dependents(descriptions, args.pattern)
 
 

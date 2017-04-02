@@ -1,6 +1,3 @@
-import etl
-
-
 class ETLError(Exception):
     """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
     pass
@@ -72,6 +69,11 @@ class ReloadConsistencyError(ETLConfigError):
     pass
 
 
+class UpstreamValidationError(ETLRuntimeError):
+    """Exception when validation against upstream database fails"""
+    pass
+
+
 class FailedConstraintError(ETLRuntimeError):
     def __init__(self, relation, constraint_type, columns, examples):
         self.relation = relation
@@ -121,8 +123,5 @@ class RequiredRelationFailed(ETLRuntimeError):
 
 
 class DataUnloadError(ETLRuntimeError):
-    pass
-
-
-class UnloadTargetNotFoundError(DataUnloadError):
+    """Exception when the unload operation fails"""
     pass

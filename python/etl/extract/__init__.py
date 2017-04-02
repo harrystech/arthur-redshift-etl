@@ -76,7 +76,7 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
 def filter_relations_for_sources(source_lookup: Dict[str, DataWarehouseSchema],
                                  descriptions: List[RelationDescription]) -> List[RelationDescription]:
     """
-    Filter for the relations that a given "extract" cares about.
+    Filter for the relations that a given "extract" stage cares about.
     """
     logger = logging.getLogger(__name__)
     selected = [d for d in descriptions if d.source_name in source_lookup]

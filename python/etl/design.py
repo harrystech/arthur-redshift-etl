@@ -24,6 +24,10 @@ import etl.file_sets
 import etl.s3
 
 
+class Attribute(namedtuple("_ColumnInfo", ["name", "sql_type", "not_null"])):
+    __slots__ = ()
+
+
 class ColumnDefinition(namedtuple("_ColumnDefinition",
                                   ["name",  # always
                                    "type", "sql_type",  # always for tables
@@ -78,14 +82,14 @@ def fetch_tables(cx, source, selector):
     return found
 
 
-def fetch_columns(cx, table_name):
+def fetch_attributes(cx, table_name):
     """
     Retrieve table definition (column names and types).
     """
     # TODO Multiple indices lead to multiple rows per attribute when using join with pg_index
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
-    columns = etl.pg.query(cx, """
-        SELECT a.attname AS attribute
+    attributes = etl.pg.query(cx, """
+        SELECT a.attname AS attribute_name
              , pg_catalog.format_type(t.oid, a.atttypmod) AS attribute_type
              , a.attnotnull AS not_null_constraint
                -- , COALESCE(i.indisunique, FALSE) AS is_unique_constraint
@@ -102,11 +106,12 @@ def fetch_columns(cx, table_name):
                AND cls.relname = %s
          ORDER BY a.attnum
          """, (table_name.schema, table_name.table))
-    logging.getLogger(__name__).info("Found %d column(s) in table '%s'", len(columns), table_name.identifier)
-    return columns
+    logging.getLogger(__name__).info("Found %d column(s) in table '%s'", len(attributes), table_name.identifier)
+    return [Attribute(name=att["attribute_name"], sql_type=att["attribute_type"], not_null=att["not_null_constraint"])
+            for att in attributes]
 
 
-def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
+def map_types_in_ddl(table_name, attributes, as_is_att_type, cast_needed_att_type):
     """"
     Replace unsupported column types by supported ones and determine casting
     spell (for a single table).
@@ -117,33 +122,31 @@ def map_types_in_ddl(table_name, columns, as_is_att_type, cast_needed_att_type):
     the "new" type), serialization type, and not null constraint (boolean).
     """
     new_columns = []
-    for column in columns:
-        attribute_name = column["attribute"]
-        attribute_type = column["attribute_type"]
+    for attribute in attributes:
         for re_att_type, generic_type in as_is_att_type.items():
-            if re.match('^' + re_att_type + '$', attribute_type):
+            if re.match('^' + re_att_type + '$', attribute.sql_type):
                 # Keep the type, use no expression, and pick generic type from map.
-                mapping_sql_type, mapping_expression, mapping_type = attribute_type, None, generic_type
+                mapping_sql_type, mapping_expression, mapping_type = attribute.sql_type, None, generic_type
                 break
         else:
             for re_att_type, (mapping_sql_type, mapping_expression, mapping_type) in cast_needed_att_type.items():
-                if re.match(re_att_type, attribute_type):
+                if re.match(re_att_type, attribute.sql_type):
                     # Found tuple with new SQL type, expression and generic type.  Rejoice.
                     break
             else:
-                raise MissingMappingError("Unknown type '{}' of {}.{}.{}".format(attribute_type,
+                raise MissingMappingError("Unknown type '{}' of {}.{}.{}".format(attribute.sql_type,
                                                                                  table_name.schema,
                                                                                  table_name.table,
-                                                                                 attribute_name))
-        delimited_name = '"{}"'.format(attribute_name)
-        new_columns.append(ColumnDefinition(name=attribute_name,
-                                            source_sql_type=attribute_type,
+                                                                                 attribute.name))
+        delimited_name = '"{}"'.format(attribute.name)
+        new_columns.append(ColumnDefinition(name=attribute.name,
+                                            source_sql_type=attribute.sql_type,
                                             sql_type=mapping_sql_type,
                                             # Replace %s in the column expression by the column name.
                                             expression=(mapping_expression % delimited_name
                                                         if mapping_expression else None),
                                             type=mapping_type,
-                                            not_null=column["not_null_constraint"],
+                                            not_null=attribute.not_null,
                                             references=None))
     return new_columns
 
@@ -387,7 +390,7 @@ def create_or_update_table_designs_from_source(source, selector, local_dir, loca
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in sorted(source_tables):
-                source_columns = fetch_columns(conn, source_table_name)
+                source_columns = fetch_attributes(conn, source_table_name)
                 target_columns = map_types_in_ddl(source_table_name,
                                                   source_columns,
                                                   type_maps["as_is_att_type"],
@@ -489,7 +492,7 @@ def compare_columns(live_design, file_design):
         logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
 
 
-def download_schemas(schemas, selector, table_design_dir, local_files, type_maps, auto=False, dry_run=False):
+def bootstrap_schemas(schemas, selector, table_design_dir, local_files, type_maps, auto=False, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
     Unless in auto mode, ignore non-source schemas.

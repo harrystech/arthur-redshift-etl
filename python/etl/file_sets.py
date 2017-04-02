@@ -179,7 +179,7 @@ def list_local_files(directory):
                 yield os.path.join(root, filename)
 
 
-def find_file_sets(uri_parts, selector, error_if_empty=True):
+def find_file_sets(uri_parts, selector):
     """
     Generic method to collect files from either s3://bucket/prefix or file://localhost/directory
     based on the tuple describing a parsed URI, which should be either
@@ -197,13 +197,7 @@ def find_file_sets(uri_parts, selector, error_if_empty=True):
         if os.path.exists(path):
             file_sets = _find_file_sets_from(list_local_files(path), selector)
             if not file_sets:
-                if error_if_empty:
-                    raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
-                else:
-                    logger.warning("Found no matching files in '%s' for '%s' (proceeding recklessly...)",
-                                   path, selector)
-        elif not error_if_empty:
-            file_sets = []
+                raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
         else:
             raise FileNotFoundError("Failed to find directory: '%s'" % path)
     # Bind the files that were found to where they were found

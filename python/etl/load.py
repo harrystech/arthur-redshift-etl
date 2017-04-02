@@ -44,7 +44,7 @@ import logging
 import psycopg2
 
 import etl
-from etl import TableName
+from etl import join_column_list, TableName
 import etl.config
 import etl.design
 import etl.dw
@@ -55,28 +55,21 @@ import etl.pg
 import etl.relation
 
 
-def format_column_list(columns):
-    """
-    Return string with comma-separated, delimited column names
-    """
-    return ", ".join('"{}"'.format(column) for column in columns)
-
-
 def _build_constraints(table_design, exclude_foreign_keys=False):
     constraints = table_design.get("constraints", {})
     ddl_constraints = []
     for pk in ("primary_key", "surrogate_key"):
         if pk in constraints:
-            ddl_constraints.append('PRIMARY KEY ( {} )'.format(format_column_list(constraints[pk])))
+            ddl_constraints.append('PRIMARY KEY ( {} )'.format(join_column_list(constraints[pk])))
     for nk in ("unique", "natural_key"):
         if nk in constraints:
-            ddl_constraints.append('UNIQUE ( {} )'.format(format_column_list(constraints[nk])))
+            ddl_constraints.append('UNIQUE ( {} )'.format(join_column_list(constraints[nk])))
     if "foreign_key" in constraints and not exclude_foreign_keys:
         local_columns, reference, reference_columns = constraints["foreign_key"]
         reference_table = TableName(*reference.split('.', 1))
-        ddl_constraints.append('FOREIGN KEY ( {} ) REFERENCES {} ( {} )'.format(format_column_list(local_columns),
+        ddl_constraints.append('FOREIGN KEY ( {} ) REFERENCES {} ( {} )'.format(join_column_list(local_columns),
                                                                                 reference_table,
-                                                                                format_column_list(reference_columns)))
+                                                                                join_column_list(reference_columns)))
     return ddl_constraints
 
 
@@ -87,13 +80,13 @@ def _build_attributes(table_design, exclude_distribution=False):
         dist = attributes["distribution"]
         if isinstance(dist, list):
             ddl_attributes.append('DISTSTYLE KEY')
-            ddl_attributes.append('DISTKEY ( {} )'.format(format_column_list(dist)))
+            ddl_attributes.append('DISTKEY ( {} )'.format(join_column_list(dist)))
         elif dist in ("all", "even"):
             ddl_attributes.append('DISTSTYLE {}'.format(dist.upper()))
     if "compound_sort" in attributes:
-        ddl_attributes.append('COMPOUND SORTKEY ( {} )'.format(format_column_list(attributes["compound_sort"])))
+        ddl_attributes.append('COMPOUND SORTKEY ( {} )'.format(join_column_list(attributes["compound_sort"])))
     elif "interleaved_sort" in attributes:
-        ddl_attributes.append('INTERLEAVED SORTKEY ( {} )'.format(format_column_list(attributes["interleaved_sort"])))
+        ddl_attributes.append('INTERLEAVED SORTKEY ( {} )'.format(join_column_list(attributes["interleaved_sort"])))
     return ddl_attributes
 
 
@@ -126,7 +119,7 @@ def assemble_table_ddl(table_design, table_name, use_identity=False, is_temp=Fal
             # Split column constraint into the table and columns that are referenced
             foreign_table, foreign_columns = column["references"]
             column.update({"foreign_table": foreign_table,
-                           "foreign_column": format_column_list(foreign_columns)})
+                           "foreign_column": join_column_list(foreign_columns)})
             f_column += " REFERENCES {foreign_table} ( {foreign_column} )"
         s_columns.append(f_column.format(**column))
     s_constraints = _build_constraints(table_design, exclude_foreign_keys=is_temp)
@@ -168,7 +161,7 @@ def create_view(conn, description, drop_view=False, dry_run=False):
     """
     logger = logging.getLogger(__name__)
     view_name = description.target_table_name
-    s_columns = format_column_list(column["name"] for column in description.table_design["columns"])
+    s_columns = join_column_list(column["name"] for column in description.table_design["columns"])
     ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
     if drop_view:
         if dry_run:
@@ -243,9 +236,9 @@ def assemble_ctas_ddl(table_design, temp_name, query_stmt):
     Return statement to create table based on a query, something like:
     CREATE TEMP TABLE table_name ( column_name [, ... ] ) table_attributes AS query
     """
-    s_columns = format_column_list(column["name"]
-                                   for column in table_design["columns"]
-                                   if not (column.get("identity", False) or column.get("skipped", False)))
+    s_columns = join_column_list(column["name"]
+                                 for column in table_design["columns"]
+                                 if not (column.get("identity", False) or column.get("skipped", False)))
     # TODO Measure whether adding attributes helps or hurts performance.
     s_attributes = _build_attributes(table_design, exclude_distribution=True)
     return "CREATE TEMP TABLE {} (\n{})\n{}\nAS\n".format(temp_name, s_columns,
@@ -260,9 +253,9 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
     Note that for timestamps, an arbitrary point in the past is used if the column
     isn't nullable.
     """
-    s_columns = format_column_list(column["name"]
-                                   for column in table_design["columns"]
-                                   if not column.get("skipped", False))
+    s_columns = join_column_list(column["name"]
+                                 for column in table_design["columns"]
+                                 if not column.get("skipped", False))
     if add_row_for_key_0:
         na_values_row = []
         for column in table_design["columns"]:
@@ -323,9 +316,9 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=Fa
 
     if has_any_identity:
         ddl_temp_stmt = assemble_table_ddl(table_design, temp_name, use_identity=True, is_temp=True)
-        s_columns = format_column_list(column["name"]
-                                       for column in table_design["columns"]
-                                       if not (column.get("identity", False) or column.get("skipped", False)))
+        s_columns = join_column_list(column["name"]
+                                     for column in table_design["columns"]
+                                     if not (column.get("identity", False) or column.get("skipped", False)))
         dml_temp_stmt = "INSERT INTO {} (\n{}\n) (\n{}\n)".format(temp_name, s_columns, query_stmt)
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_key_0=True)
     else:
@@ -461,7 +454,7 @@ def verify_constraints(conn, description, dry_run=False) -> None:
     logger = logging.getLogger(__name__)
     constraints = description.table_design.get("constraints")
     if constraints is None:
-        logger.info("No constraints discovered for '%s'", description.identifier)
+        logger.info("No constraints to verify for '%s'", description.identifier)
         return
 
     # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
@@ -476,14 +469,14 @@ def verify_constraints(conn, description, dry_run=False) -> None:
 
     for constraint_type in ["primary_key", "natural_key", "surrogate_key", "unique"]:
         if constraint_type in constraints:
-            logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
             columns = constraints[constraint_type]
-            # FIXME There should be a helper method to quote a list of names
-            quoted_columns = ", ".join('"{}"'.format(name) for name in columns)
+            quoted_columns = join_column_list(columns)
             statement = statement_template.format(columns=quoted_columns, table=description.target_table_name)
             if dry_run:
-                logger.info("Dry-run: Skipping duplicate row query")
+                logger.info("Dry-run: Skipping checking %s constraint on '%s'", constraint_type, description.identifier)
+                logger.debug("Skipped query:\n%s", statement)
             else:
+                logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
                 results = etl.pg.query(conn, statement)
                 if results:
                     raise FailedConstraintError(description, constraint_type, columns, results)

@@ -16,13 +16,19 @@ Validating the warehouse schemas (definition of upstream tables and their transf
 
 from contextlib import closing
 import difflib
+from itertools import groupby
 import logging
+from operator import attrgetter
 from typing import List
 
 import psycopg2
+from psycopg2.extensions import connection  # For type annotation
 import simplejson as json
 
-from etl.errors import CyclicDependencyError, ETLError, ReloadConsistencyError, TableDesignError
+from etl import join_with_quotes, TableName
+from etl.config import DataWarehouseConfig, DataWarehouseSchema
+import etl.design
+from etl.errors import ETLConfigError, ETLError, ReloadConsistencyError, UpstreamValidationError, TableDesignError
 import etl.pg
 import etl.relation
 from etl.relation import RelationDescription
@@ -102,8 +108,8 @@ def validate_single_transform(conn, description, keep_going=False):
     """
     logger = logging.getLogger(__name__)
     # FIXME Switch to using a temporary view (starts with '#' and has no schema)
-    tmp_view_name = etl.TableName(schema=description.target_table_name.schema,
-                                  table='$'.join(["arthur_temp", description.target_table_name.table]))
+    tmp_view_name = TableName(schema=description.target_table_name.schema,
+                              table='$'.join(["arthur_temp", description.target_table_name.table]))
     ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, description.query_stmt)
     logger.info("Creating view '%s' for table '%s'" % (tmp_view_name.identifier, description.identifier))
     etl.pg.execute(conn, ddl_stmt)
@@ -125,7 +131,7 @@ def validate_single_transform(conn, description, keep_going=False):
            AND c_p.oid != c_c.oid
         """.format(schema=tmp_view_name.schema, table=tmp_view_name.table)
 
-    dependencies = [etl.TableName(schema=row['dependency_schema'], table=row['dependency_name']).identifier
+    dependencies = [TableName(schema=row['dependency_schema'], table=row['dependency_name']).identifier
                     for row in etl.pg.query(conn, dependency_stmt)]
     dependencies.sort()
     logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies)))
@@ -176,7 +182,7 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
     transforms = [description for description in descriptions
                   if description.is_ctas_relation or description.is_view_relation]
     if not transforms:
-        logger.info("No transforms found, skipping their validation")
+        logger.info("No transforms found or selected, skipping their validation")
         return
 
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
@@ -232,7 +238,7 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
 
     for unloaded in unloaded_descriptions:
         logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
-        reloaded = etl.TableName(unloaded.unload_target, unloaded.target_table_name.table)
+        reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
         if reloaded.identifier in descriptions_lookup:
             description = descriptions_lookup[reloaded.identifier]
             logger.info("Checking for consistency between '%s' and '%s'", unloaded.identifier, description.identifier)
@@ -249,7 +255,86 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
                                                  % unloaded.identifier)
 
 
-def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_going=False, skip_deps=False) -> None:
+def check_select_permission(conn: connection, table_name: TableName):
+    """
+    Check whether permissions on table will allow us to read from database.
+    """
+    logger = logging.getLogger(__name__)
+    # Why mess with querying the permissions table when you can just try to read (EAFP).
+    statement = """SELECT 1 FROM {} WHERE FALSE""".format(table_name)
+    try:
+        etl.pg.execute(conn, statement)
+    except psycopg2.Error as exc:
+        raise UpstreamValidationError("Failed to read from upstream table '%s'" % table_name.identifier) from exc
+
+
+def validate_upstream_table(conn: connection, table: RelationDescription, keep_going=False):
+    """
+    Validate table design of an upstream table against its source database.
+    """
+    logger = logging.getLogger(__name__)
+    source_table_name = table.source_table_name
+    try:
+        check_select_permission(conn, source_table_name)
+        columns_info = etl.design.fetch_attributes(conn, source_table_name)
+        if not columns_info:
+            raise TableDesignError("Table '%s' is gone or has no columns left" % source_table_name.identifier)
+        current_columns = frozenset(column.name for column in columns_info)
+        design_columns = frozenset(table.unquoted_columns)
+        if not current_columns.issuperset(design_columns):
+            extra_columns = design_columns.difference(current_columns)
+            raise TableDesignError("Design of '%s' has columns that do not exist upstream: %s" %
+                                   (source_table_name.identifier, join_with_quotes(extra_columns)))
+        current_is_not_null = {column.name for column in columns_info if column.not_null}
+        for column in table.table_design["columns"]:
+            if column.get("not_null") and column["name"] not in current_is_not_null:
+                raise TableDesignError("Not null constraint of column '%s' in '%s' not enforced upstream" %
+                                       (column["name"], table.identifier))
+        logger.info("Successfully validated '%s' against its upstream source", table.identifier)
+    except (psycopg2.Error, ETLError):
+        if keep_going:
+            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
+                             source_table_name.identifier)
+        else:
+            raise
+
+
+def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription],
+                              keep_going: bool=False) -> None:
+    """
+    Validate the designs (and the current configuration) in comparison to upstream databases.
+
+    This can fail if
+    (1) the upstream database is not reachable
+    (2) the upstream table is not readable
+    (3) the upstream table does not exist
+    (4) the upstream columns are not a superset of the columns in the table design
+    (5) the upstream column does not have the null constraint set while the table design does
+    """
+    logger = logging.getLogger(__name__)
+    source_lookup = {schema.name: schema for schema in schemas if schema.is_database_source}
+
+    # Resort descriptions by source so that we need to only connect once to each source
+    upstream_tables = [description for description in descriptions if description.source_name in source_lookup]
+    upstream_tables.sort(key=attrgetter("source_name"))
+
+    for source_name, table_group in groupby(upstream_tables, attrgetter("source_name")):
+        tables = list(table_group)
+        source = source_lookup[source_name]
+        logger.info("Checking %d table(s) in upstream source '%s'", len(tables), source_name)
+        try:
+            with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
+                for table in tables:
+                    validate_upstream_table(conn, table, keep_going=keep_going)
+        except psycopg2.Error:
+            if keep_going:
+                logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", source_name)
+            else:
+                raise
+
+
+def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDescription], keep_going=False,
+                     skip_sources=False, skip_dependencies=False) -> None:
     """
     Make sure that all table design files pass the validation checks.
     """
@@ -259,14 +344,19 @@ def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_go
     validate_reload(valid_descriptions, keep_going=keep_going)
     try:
         ordered_descriptions = etl.relation.order_by_dependencies(valid_descriptions)
-    except CyclicDependencyError:
+    except ETLConfigError:
         if keep_going:
             logger.exception("Failed to determine evaluation order, proceeding as requested")
             ordered_descriptions = valid_descriptions
         else:
             raise
 
-    if skip_deps:
-        logger.info("Skipping validation of transforms against database")
+    if skip_sources:
+        logger.info("Skipping validation of designs against upstream sources")
     else:
-        validate_transforms(dsn, ordered_descriptions, keep_going=keep_going)
+        validate_upstream_sources(config.schemas, ordered_descriptions, keep_going=keep_going)
+
+    if skip_dependencies:
+        logger.info("Skipping validation of transforms against data warehouse")
+    else:
+        validate_transforms(config.dsn_etl, ordered_descriptions, keep_going=keep_going)

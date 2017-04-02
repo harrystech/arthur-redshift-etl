@@ -24,7 +24,7 @@ from psycopg2.extensions import connection  # For type annotation
 
 import etl
 from etl.config import DataWarehouseConfig, DataWarehouseSchema
-from etl.errors import UnloadTargetNotFoundError, DataUnloadError
+from etl.errors import DataUnloadError, TableDesignError
 import etl.monitor
 from etl.relation import RelationDescription
 import etl.pg
@@ -135,8 +135,7 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     relation_target_tuples = []
     for relation in unloadable_relations:
         if relation.unload_target not in target_lookup:
-            raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
-                                            relation.unload_target)
+            raise TableDesignError("Unload target specified, but not defined: '%s'" % relation.unload_target)
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
     conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
