@@ -45,11 +45,8 @@ import psycopg2
 
 import etl
 from etl import join_column_list, TableName
-import etl.config
-import etl.design
 import etl.dw
 from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
-import etl.file_sets
 import etl.monitor
 import etl.pg
 import etl.relation

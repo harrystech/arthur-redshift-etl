@@ -23,8 +23,8 @@ import os.path
 from queue import PriorityQueue
 from typing import Any, Dict, List, Union
 
-import etl
-import etl.design
+from etl import join_with_quotes
+import etl.design.load
 from etl.errors import CyclicDependencyError, MissingQueryError
 import etl.file_sets
 import etl.pg
@@ -79,9 +79,9 @@ class RelationDescription:
     def table_design(self) -> Dict[str, Any]:
         if self._table_design is None:
             if self.bucket_name:
-                loader = partial(etl.design.load_table_design_from_s3, self.bucket_name)
+                loader = partial(etl.design.load.load_table_design_from_s3, self.bucket_name)
             else:
-                loader = partial(etl.design.load_table_design_from_localfile)
+                loader = partial(etl.design.load.load_table_design_from_localfile)
             self._table_design = loader(self.design_file_name, self.target_table_name)
         return self._table_design
 
@@ -163,7 +163,7 @@ class RelationDescription:
                 descriptions.append(cls(file_set))
             else:
                 logger.warning("Found file(s) without matching table design: %s",
-                               etl.join_with_quotes(file_set.files))
+                               join_with_quotes(file_set.files))
 
         if required_relation_selector:
             set_required_relations(descriptions, required_relation_selector)
@@ -255,9 +255,9 @@ def order_by_dependencies(relation_descriptions):
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         # TODO In a "strict" or "pedantic" mode, if known_unknowns is not an empty set, this should error out.
-        logger.warning('These relations have unknown dependencies: %s', etl.join_with_quotes(has_unknown_dependencies))
+        logger.warning('These relations have unknown dependencies: %s', join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
-                       etl.join_with_quotes(known_unknowns))
+                       join_with_quotes(known_unknowns))
     has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
         if description.identifier in has_internal_dependencies:

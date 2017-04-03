@@ -28,7 +28,7 @@ import simplejson as json
 
 from etl import join_with_quotes, TableName
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
-import etl.design
+import etl.design.bootstrap
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLError, UpstreamValidationError, TableDesignError
 import etl.pg
 import etl.relation
@@ -125,27 +125,8 @@ def validate_dependencies(conn: connection, description: RelationDescription, tm
     """
     logger = logging.getLogger(__name__)
 
-    # based on example query in AWS docs; *_p is for parent, *_c is for child
-    dependency_stmt = """
-        SELECT DISTINCT
-               n_c.nspname AS dependency_schema
-             , c_c.relname AS dependency_name
-          FROM pg_class c_p
-          JOIN pg_depend d_p ON c_p.relfilenode = d_p.refobjid
-          JOIN pg_depend d_c ON d_p.objid = d_c.objid
-          -- the following OR statement covers the case where a COPY has issued a new OID for an upstream table
-          JOIN pg_class c_c ON d_c.refobjid = c_c.relfilenode OR d_c.refobjid = c_c.oid
-          LEFT JOIN pg_namespace n_p ON c_p.relnamespace = n_p.oid
-          LEFT JOIN pg_namespace n_c ON c_c.relnamespace = n_c.oid
-         WHERE c_p.relname = '{table}' AND n_p.nspname = '{schema}'
-            -- do not include the table itself in its dependency list
-           AND c_p.oid != c_c.oid
-        """.format(schema=tmp_view_name.schema, table=tmp_view_name.table)
-
-    dependencies = [TableName(schema=row['dependency_schema'], table=row['dependency_name']).identifier
-                    for row in etl.pg.query(conn, dependency_stmt)]
-    dependencies.sort()
-    logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies)))
+    dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
+    logger.info("Dependencies of '%s' per catalog: %s", description.identifier, join_with_quotes(dependencies))
 
     comparison_output = _check_dependencies(dependencies, description.table_design)
     if comparison_output:
@@ -165,7 +146,7 @@ def validate_column_ordering(conn: connection, description: RelationDescription,
     """
     logger = logging.getLogger(__name__)
 
-    attributes = etl.design.fetch_attributes(conn, tmp_view_name)
+    attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
 
     # Identity columns are inserted after the query has been run, so skip them here.
@@ -307,7 +288,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
     source_table_name = table.source_table_name
     try:
         check_select_permission(conn, source_table_name)
-        columns_info = etl.design.fetch_attributes(conn, source_table_name)
+        columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
         if not columns_info:
             raise TableDesignError("Table '%s' is gone or has no columns left" % source_table_name.identifier)
         current_columns = frozenset(column.name for column in columns_info)

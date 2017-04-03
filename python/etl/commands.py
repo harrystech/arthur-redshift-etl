@@ -18,7 +18,7 @@ import simplejson as json
 
 import etl
 import etl.config
-import etl.design
+import etl.design.bootstrap
 from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
 import etl.explain
 import etl.extract
@@ -204,7 +204,8 @@ def build_full_parser(prog_name):
             # Commands to deal with data warehouse as admin:
             InitializeSetupCommand, CreateUserCommand,
             # Commands to help with table designs and uploading them
-            BootstrapSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, SyncWithS3Command,
+            BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
+            SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
@@ -385,30 +386,40 @@ class CreateUserCommand(SubCommand):
                                    skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
-class BootstrapSchemasCommand(SubCommand):
+class BootstrapSourcesCommand(SubCommand):
 
     def __init__(self):
         super().__init__("design",
                          "bootstrap schema information from sources",
-                         "Download schema information from upstream sources and compare against current table designs.")
+                         "Download schema information from upstream sources and compare against current table designs."
+                         " If there is no local design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
-        parser.add_argument("-a", "--auto",
-                            help="auto-generate design file from any transformations found (not in upstream schema)",
-                            action="store_true")
+
+    def callback(self, args, config):
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
+        etl.design.bootstrap.bootstrap_sources(config.schemas, args.pattern, args.table_design_dir, local_files,
+                                               config.type_maps, dry_run=args.dry_run)
+
+
+class BootstrapTransformationsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("auto_design",
+                         "bootstrap schema information for transformations",
+                         "Download schema information as if transformation had been run in data warehouse."
+                         " If there is no local design file, then create one as a starting point.")
+
+    def add_arguments(self, parser):
+        parser.add_argument('type', choices=['CTAS', 'VIEW'])
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
 
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-        if args.auto:
-            created = etl.design.bootstrap_views(local_files, config.schemas, dry_run=args.dry_run)
-        else:
-            created = []
-        try:
-            etl.design.bootstrap_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                         config.type_maps, auto=args.auto, dry_run=args.dry_run)
-        finally:
-            etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
+        etl.design.bootstrap.bootstrap_transformations(config.dsn_etl, config.schemas,
+                                                       args.table_design_dir, local_files,
+                                                       config.type_maps, args.type == "VIEW", dry_run=args.dry_run)
 
 
 class SyncWithS3Command(SubCommand):
