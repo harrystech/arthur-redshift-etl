@@ -41,7 +41,8 @@ class RelationDescription:
 
     def __getattr__(self, attr):
         """
-        Pass-through access to file set
+        Pass-through access to file set -- if the relation doesn't know about an attribute
+        we'll pick up the attribute from the file set!
         """
         if hasattr(self._fileset, attr):
             return getattr(self._fileset, attr)
@@ -100,7 +101,7 @@ class RelationDescription:
     @property
     def is_required(self):
         if self._is_required is None:
-            raise RuntimeError("State of 'is_required' for RelationDescription '{}' is unknown".format(self.identifier))
+            raise RuntimeError("State of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self))
         return self._is_required
 
     @property

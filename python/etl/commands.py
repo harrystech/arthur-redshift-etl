@@ -249,10 +249,6 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-d", "--drop",
                             help="first drop table or view to force update of definition", default=False,
                             action="store_true")
-    if "explain" in options:
-        parser.add_argument("-x", "--add-explain-plan",
-                            help="DEPRECATED add explain plan to log (use the 'explain' command directly)",
-                            action="store_true")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)

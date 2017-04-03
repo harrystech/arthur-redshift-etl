@@ -1,8 +1,6 @@
 from collections import namedtuple
 from contextlib import closing
-from itertools import groupby
 import logging
-from operator import attrgetter
 import os.path
 import re
 
