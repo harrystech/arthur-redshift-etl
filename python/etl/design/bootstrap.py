@@ -396,4 +396,4 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
                 save_table_design(local_dir, table_name.schema, table_name, table_design, dry_run=dry_run)
     finally:
         # FIXME If the view already existed before ... should we really delete it?
-        cleanup_views(dsn_etl, transforms, dry_run=True)
+        cleanup_views(dsn_etl, transforms, dry_run=dry_run)
