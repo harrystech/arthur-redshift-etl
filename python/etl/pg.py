@@ -67,7 +67,8 @@ def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, r
     Open a connection to the database described by dsn_string which needs to
     be of the format "postgresql://user:password@host:port/database"
 
-    By default, this turns on autocommit on the connection.
+    Caveat Emptor: By default, this turns off autocommit on the connection. This means that you
+    have to explicitly commit on the connection object or run your SQL within a transaction context!
     """
     logger = logging.getLogger(__name__)
     dsn_values = dict(dsn_dict)  # so as to not mutate the argument
@@ -175,9 +176,12 @@ def execute(cx, stmt, args=(), return_result=False):
 def explain(cx, stmt, args=()):
     """
     Return explain plan for the query as a list of steps.
+
+    We sometimes use this just to test out a query syntax so we are heavy on the logging.
     """
     logger = logging.getLogger(__name__)
-    rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
+    with log_error():
+        rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
     lines = [row[0] for row in rows]
     logger.debug("Query plan:\n | " + "\n | ".join(lines))
     return lines

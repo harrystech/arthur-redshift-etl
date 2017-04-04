@@ -408,7 +408,8 @@ class BootstrapTransformationsCommand(SubCommand):
                          " If there is no local design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
-        parser.add_argument('type', choices=['CTAS', 'VIEW'])
+        parser.add_argument('type', choices=['CTAS', 'VIEW'],
+                            help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
 
     def callback(self, args, config):
@@ -581,7 +582,14 @@ class ExplainQueryCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        descriptions = self.find_relation_descriptions(args)
+        if args.scheme == "file":
+            # When running locally, we accept that there be only a SQL file.
+            local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
+            descriptions = [etl.relation.RelationDescription(file_set) for file_set in local_files
+                            if file_set.sql_file_name]
+        else:
+            # When running with S3, we expect full sets of files (SQL plus table design)
+            descriptions = self.find_relation_descriptions(args)
         etl.explain.explain_queries(config.dsn_etl, descriptions)
 
 

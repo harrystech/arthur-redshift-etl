@@ -330,8 +330,8 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=Fa
         logger.debug("Skipped DML for '%s': %s", table_name.identifier, dml_stmt)
     elif skip_copy:
         logger.info("Skipping copy for '%s' from query", table_name.identifier)
-        # Run explain plan to test the query and ensure upstream tables and views exist
-        etl.pg.execute(conn, "EXPLAIN\n" + query_stmt)
+        logger.debug("Testing query for '%s' (syntax, dependencies, ...)", table_name.identifier)
+        etl.pg.explain(conn, query_stmt)
     else:
         logger.info("Creating temp table '%s'", temp_identifier)
         etl.pg.execute(conn, ddl_temp_stmt)

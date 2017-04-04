@@ -3,15 +3,17 @@ from contextlib import closing
 import logging
 import os.path
 import re
+from typing import List
 
 import simplejson as json
 
-import etl
+from etl import TableName
 import etl.config
 import etl.design.load
 from etl.errors import MissingMappingError
-import etl.pg
 import etl.file_sets
+import etl.pg
+from etl.relation import RelationDescription
 import etl.s3
 
 
@@ -53,8 +55,8 @@ def fetch_tables(cx, source, selector):
          """)
     found = []
     for row in result:
-        source_table_name = etl.TableName(row['schema'], row['table'])
-        target_table_name = etl.TableName(source.name, row['table'])
+        source_table_name = TableName(row['schema'], row['table'])
+        target_table_name = TableName(source.name, row['table'])
         for reject_pattern in source.exclude_tables:
             if source_table_name.match_pattern(reject_pattern):
                 logger.debug("Table '%s' matches blacklist", source_table_name.identifier)
@@ -68,8 +70,8 @@ def fetch_tables(cx, source, selector):
                         break
                     else:
                         logger.debug("Table '%s' matches whitelist but is not selected", source_table_name.identifier)
-    logging.getLogger(__name__).info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
-                                     len(found), source.include_tables, source.exclude_tables, selector)
+    logger.info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
+                len(found), source.include_tables, source.exclude_tables, selector)
     return found
 
 
@@ -97,7 +99,6 @@ def fetch_attributes(cx, table_name):
                AND cls.relname = %s
          ORDER BY a.attnum
          """, (table_name.schema, table_name.table))
-    logging.getLogger(__name__).info("Found %d column(s) in relation '%s'", len(attributes), table_name.identifier)
     return [Attribute(name=att["attribute_name"], sql_type=att["attribute_type"], not_null=att["not_null_constraint"])
             for att in attributes]
 
@@ -163,7 +164,7 @@ def fetch_dependencies(cx, table_name):
            AND c_p.oid != c_c.oid
          ORDER BY dependency_schema, dependency_table
         """, (table_name.schema, table_name.table))
-    return [etl.TableName(schema=row['dependency_schema'], table=row['dependency_table']).identifier
+    return [TableName(schema=row['dependency_schema'], table=row['dependency_table']).identifier
             for row in dependencies]
 
 
@@ -194,8 +195,17 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
             del column["not_null"]
         if not column["references"]:
             del column["references"]
-    # Make sure schema and code to create table design files is in sync.
-    return etl.design.load.validate_table_design(table_design, target_table_name)
+    return table_design
+
+
+def create_table_design_for_ctas(conn, table_name, type_maps):
+    """
+    Create (and return) new table design for a CTAS
+    """
+    table_design = create_table_design(conn, table_name, table_name, type_maps)
+    table_design["source_name"] = "CTAS"
+    table_design["depends_on"] = fetch_dependencies(conn, table_name)
+    return table_design
 
 
 def create_table_design_for_view(conn, table_name):
@@ -206,9 +216,10 @@ def create_table_design_for_view(conn, table_name):
     table_design = {
         "name": "%s" % table_name.identifier,
         "source_name": "VIEW",
-        "columns": [{"name": column.name} for column in columns]
+        "columns": [{"name": column.name} for column in columns],
+        "depends_on": fetch_dependencies(conn, table_name)
     }
-    return etl.design.load.validate_table_design(table_design, table_name)
+    return table_design
 
 
 def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False):
@@ -216,7 +227,8 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
     Write new table design file to disk.
     """
     logger = logging.getLogger(__name__)
-    table = table_design["name"]
+    target_table_name = TableName(source_name, source_table_name.table)
+    table = target_table_name.identifier
     # FIXME Move this logic into file sets (note that "source_name" is in table_design)
     filename = os.path.join(local_dir, source_name, "{}-{}.yaml".format(source_table_name.schema,
                                                                         source_table_name.table))
@@ -225,6 +237,7 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
     elif os.path.exists(filename):
         logger.warning("Skipping writing new table design for '%s' since '%s' already exists", table, filename)
     else:
+        etl.design.load.validate_table_design(table_design, target_table_name)
         logger.info("Writing new table design file for '%s' to '%s'", table, filename)
         with open(filename, 'w') as o:
             # JSON pretty printing is prettier than YAML printing.
@@ -263,7 +276,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in sorted(source_tables):
-                target_table_name = etl.TableName(source.name, source_table_name.table)
+                target_table_name = TableName(source.name, source_table_name.table)
                 table_design = create_table_design(conn, source_table_name, target_table_name, type_maps)
                 source_file_set = source_files.get(source_table_name)
                 if source_file_set and source_file_set.design_file_name:
@@ -283,45 +296,47 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     upstream = frozenset(source_tables)
     not_found = upstream.difference(existent)
     if not_found:
-        logger.warning("New table(s) which had no local design: %s", etl.TableName.join_with_quotes(not_found))
+        logger.warning("New table(s) which had no local design: %s", TableName.join_with_quotes(not_found))
     too_many = existent.difference(upstream)
     if too_many:
-        logger.warning("Old table(s) which no longer had upstream table: %s", etl.TableName.join_with_quotes(too_many))
+        logger.warning("Old table(s) which no longer had upstream table: %s", TableName.join_with_quotes(too_many))
 
     return len(source_tables)
 
 
-def create_views(dsn_etl, local_files, dry_run=False):
+def create_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=False):
     """
-    Create views for queries that do not already have a table design
+    Create views for queries that do not already have a table design.
+
+    To avoid modifying the data warehouse by accident, this will fail if any of the relations already exist.
+    """
+    logger = logging.getLogger(__name__)
+    with closing(etl.pg.connection(dsn_etl)) as conn:
+        with conn:
+            for relation in relations:
+                ddl_stmt = """CREATE VIEW {} AS\n{}""".format(relation, relation.query_stmt)
+                if dry_run:
+                    logger.info("Dry-run: Skipping creation of view '%s'", relation.identifier)
+                    logger.debug("Testing query for '%s' (syntax, dependencies, ...)", relation.identifier)
+                    etl.pg.explain(conn, relation.query_stmt)
+                else:
+                    logger.info("Creating view for '%s' which has no design file", relation.identifier)
+                    etl.pg.execute(conn, ddl_stmt)
+
+
+def drop_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=False):
+    """
+    Delete views that were created at the beginning of bootstrap.
     """
     logger = logging.getLogger(__name__)
     with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-        for file_set in local_files:
-            # We cannot use the query_stmt from RelationDescription because we'd have a circular dependency.
-            with open(file_set.sql_file_name) as f:
-                query_stmt = f.read()
-            ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(file_set.target_table_name, query_stmt)
+        for relation in relations:
+            # Since this mirrors the all-or-nothing create_views we recklessly call "DROP VIEW" without "IF EXISTS".
+            ddl_stmt = """DROP VIEW {}""".format(relation)
             if dry_run:
-                logger.info("Dry-run: Skipping creation of view '%s'", file_set.target_table_name.identifier)
+                logger.info("Dry-run: Skipping deletion of view '%s'", relation.identifier)
             else:
-                logger.info("Creating view for '%s' which has no design file",
-                            file_set.target_table_name.identifier)
-                etl.pg.execute(conn, ddl_stmt)
-
-
-def cleanup_views(dsn_etl, local_files, dry_run=False):
-    """
-    Delete views that were created at the beginning of bootstrap
-    """
-    logger = logging.getLogger(__name__)
-    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-        for file_set in local_files:
-            ddl_stmt = """DROP VIEW IF EXISTS {}""".format(file_set.target_table_name)
-            if dry_run:
-                logger.info("Dry-run: Skipping deletion of view '%s'", file_set.target_table_name.identifier)
-            else:
-                logger.info("Dropping view for '%s'", file_set.target_table_name.identifier)
+                logger.info("Dropping view for '%s'", relation.identifier)
                 etl.pg.execute(conn, ddl_stmt)
 
 
@@ -381,19 +396,17 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
         logger.info("Found no queries without matching design files")
         return
 
-    logger.info("Found %d transformation(s) with a query but no design file", len(transforms))
+    descriptions = [RelationDescription(file_set) for file_set in transforms]
+
+    create_views(dsn_etl, descriptions, dry_run=dry_run)
     try:
-        create_views(dsn_etl, transforms, dry_run=dry_run)
-        with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-            for file_set in transforms:
-                table_name = file_set.target_table_name
+        with closing(etl.pg.connection(dsn_etl, readonly=True)) as conn:
+            for relation in descriptions:
+                table_name = relation.target_table_name
                 if as_view:
                     table_design = create_table_design_for_view(conn, table_name)
                 else:
-                    table_design = create_table_design(conn, table_name, table_name, type_maps)
-                    table_design["source_name"] = "CTAS"
-                table_design["depends_on"] = fetch_dependencies(conn, table_name)
+                    table_design = create_table_design_for_ctas(conn, table_name, type_maps)
                 save_table_design(local_dir, table_name.schema, table_name, table_design, dry_run=dry_run)
     finally:
-        # FIXME If the view already existed before ... should we really delete it?
-        cleanup_views(dsn_etl, transforms, dry_run=dry_run)
+        drop_views(dsn_etl, descriptions, dry_run=dry_run)

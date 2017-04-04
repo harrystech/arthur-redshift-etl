@@ -291,6 +291,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
         columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
         if not columns_info:
             raise TableDesignError("Table '%s' is gone or has no columns left" % source_table_name.identifier)
+        logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
         current_columns = frozenset(column.name for column in columns_info)
         design_columns = frozenset(column for column in table.unquoted_columns if not column.startswith("etl__"))
         if not current_columns.issuperset(design_columns):
