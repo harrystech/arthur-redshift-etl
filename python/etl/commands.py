@@ -388,7 +388,7 @@ class BootstrapSourcesCommand(SubCommand):
         super().__init__("design",
                          "bootstrap schema information from sources",
                          "Download schema information from upstream sources and compare against current table designs."
-                         " If there is no local design file, then create one as a starting point.")
+                         " If there is no current design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])

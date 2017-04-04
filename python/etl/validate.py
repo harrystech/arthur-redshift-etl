@@ -20,7 +20,7 @@ from itertools import groupby
 import logging
 from operator import attrgetter
 import threading
-from typing import List
+from typing import Iterable, List, Union
 
 import psycopg2
 from psycopg2.extensions import connection  # For type annotation
@@ -73,28 +73,6 @@ def validate_design_file_semantics(schemas: List[DataWarehouseSchema], descripti
     return ok
 
 
-def _check_dependencies(observed, table_design):
-    """
-    Compare actual dependencies to a table design object and return instructions for logger
-
-    >>> _check_dependencies(['abc.123', '123.abc'], dict(name='fish', depends_on=['123.abc']))  # doctest: +ELLIPSIS
-    'Dependency tracking mismatch! payload =...]}'
-
-    >>> _check_dependencies(['abc.123', '123.abc'], dict(name='fish', depends_on=['123.abc', 'abc.123']))
-
-    """
-    expected = table_design.get('depends_on', [])
-
-    observed_deps = set(observed)
-    expected_deps = set(expected)
-    if not observed_deps == expected_deps:
-        return 'Dependency tracking mismatch! payload = {}'.format(json.dumps(dict(
-                 full_dependencies=observed,
-                 table=table_design['name'],
-                 actual_but_unlisted=list(observed_deps - expected_deps),
-                 listed_but_not_actual=list(expected_deps - observed_deps))))
-
-
 def create_temporary_view(conn: connection, description: RelationDescription, keep_going: bool=False) -> TableName:
     """
     Create a temporary view for testing the description.
@@ -106,7 +84,7 @@ def create_temporary_view(conn: connection, description: RelationDescription, ke
     tmp_view_name = TableName(schema=description.target_table_name.schema,
                               table='$'.join(["arthur_temp", description.target_table_name.table]))
     ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, description.query_stmt)
-    logger.info("Creating view '%s' for relation '%s'" % (tmp_view_name.identifier, description.identifier))
+    logger.info("Creating view '%s' to validate relation '%s'" % (tmp_view_name.identifier, description.identifier))
     try:
         with etl.pg.log_error():
             etl.pg.execute(conn, ddl_stmt)
@@ -118,6 +96,34 @@ def create_temporary_view(conn: connection, description: RelationDescription, ke
     return tmp_view_name
 
 
+def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Union[str, None]:
+    """
+    Calculate differences between what was found while running the query to what was declared in the design.
+
+    >>> compare_query_to_design(["a", "b"], ["b", "a"])
+    >>> compare_query_to_design(["a", "b"], ["a"])
+    "not listed in design = 'b'"
+    >>> compare_query_to_design(["a"], ["a", "b"])
+    "not found from query = 'b'"
+    >>> compare_query_to_design(["a", "b"], ["d", "c", "a"])
+    "not listed in design = 'b'; not found from query = 'c', 'd'"
+    """
+    actual = frozenset(from_query)
+    design = frozenset(from_design)
+
+    not_in_design = join_with_quotes(actual - design)
+    not_in_query = join_with_quotes(design - actual)
+
+    if not_in_design and not_in_query:
+        return "not listed in design = {}; not found from query = {}".format(not_in_design, not_in_query)
+    elif not_in_design:
+        return "not listed in design = {}".format(not_in_design)
+    elif not_in_query:
+        return "not found from query = {}".format(not_in_query)
+    else:
+        return None
+
+
 def validate_dependencies(conn: connection, description: RelationDescription, tmp_view_name: TableName,
                           keep_going: bool=False):
     """
@@ -126,15 +132,17 @@ def validate_dependencies(conn: connection, description: RelationDescription, tm
     logger = logging.getLogger(__name__)
 
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
-    logger.info("Dependencies of '%s' per catalog: %s", description.identifier, join_with_quotes(dependencies))
+    # We break with tradition and show the list of dependencies such that they can be copied into a design file.
+    logger.info("Dependencies of '%s' per catalog: %s", description.identifier, json.dumps(dependencies))
 
-    comparison_output = _check_dependencies(dependencies, description.table_design)
-    if comparison_output:
+    difference = compare_query_to_design(dependencies, description.table_design.get("depends_on", []))
+    if difference:
+        msg = "Mismatch in dependencies of '{}': {}".format(description.identifier, difference)
         if keep_going:
             _error_occurred.set()
-            logger.warning(comparison_output)
+            logger.error(msg)
         else:
-            raise TableDesignError(comparison_output)
+            raise TableDesignError(msg)
     else:
         logger.info('Dependencies listing in design file matches SQL')
 
