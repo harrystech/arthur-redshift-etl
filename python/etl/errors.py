@@ -76,6 +76,11 @@ class TableDesignSemanticError(TableDesignError):
     pass
 
 
+class TableDesignValidationError(TableDesignError):
+    """Exception when a table design does not pass validation (against other table designs, upstream sources, ..."""
+    pass
+
+
 class MissingQueryError(ETLConfigError):
     """Exception when the query (SQL file) is missing"""
     pass
