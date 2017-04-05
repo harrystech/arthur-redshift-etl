@@ -9,12 +9,11 @@
             "pattern": "^\\w[^.]*[.]\\w[^.]*$"
         },
         "identifier": {
+            "description": "Standard SQL identifier",
             "type": "string",
-            "pattern": "^\\w"
-        },
-        "expression": {
-            "type": "string",
-            "minLength": 1
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_$]*$",
+            "minLength": 1,
+            "maxLength": 127
         },
         "column_list": {
             "type": "array",
@@ -27,6 +26,14 @@
             "items": { "$ref": "#/definitions/identifier" },
             "minItems": 1,
             "maxItems": 1
+        },
+        "expression": {
+            "type": "string",
+            "minLength": 1
+        },
+        "data_type": {
+            "type": "string",
+            "pattern": "^\\w"
         },
         "generic_type": {
             "description": "Generic type modeled loosely after Avro and Hive with easy mapping to those",
@@ -67,7 +74,7 @@
             "description": "Description of the table (may start with qualifier such as 'DEPRECATED')"
         },
         "source_name" : {
-            "description": "Either <source name>.<schema name>.<table name>, \"CTAS\", or \"VIEW\"",
+            "description": "Either <source name>.<schema name>.<table name>, CTAS, or VIEW",
             "type" : "string",
             "pattern": "^(CTAS|VIEW|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },
@@ -85,15 +92,15 @@
                         "properties": {
                             "name": { "$ref": "#/definitions/identifier" },
                             "description": { "type": "string" },
-                            "sql_type": { "$ref": "#/definitions/identifier" },
-                            "source_sql_type": { "$ref": "#/definitions/identifier" },
+                            "sql_type": { "$ref": "#/definitions/data_type" },
+                            "source_sql_type": { "$ref": "#/definitions/data_type" },
                             "expression": { "$ref": "#/definitions/expression" },
                             "type": { "$ref": "#/definitions/generic_type" },
                             "encoding": { "$ref": "#/definitions/compression_encoding" },
                             "references": {
                                 "type": "array",
                                 "items": [
-                                    { "$ref": "#/definitions/identifier" },
+                                    { "$ref": "#/definitions/table_name" },
                                     { "$ref": "#/definitions/one_column_as_list" }
                                 ]
                             },
@@ -136,7 +143,7 @@
                     "type": "array",
                     "items": [
                         { "$ref": "#/definitions/column_list" },
-                        { "$ref": "#/definitions/identifier" },
+                        { "$ref": "#/definitions/table_name" },
                         { "$ref": "#/definitions/one_column_as_list" }
                     ],
                     "additionalItems": false

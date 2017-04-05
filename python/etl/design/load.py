@@ -140,6 +140,9 @@ def validate_semantics_of_table(table_design):
         if not column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
             raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
 
+    if table_design["source_name"] != "CTAS" and "depends_on" in table_design:
+        raise TableDesignSemanticError("upstream table has dependencies")
+
 
 def validate_table_design_semantics(table_design, table_name):
     """
@@ -149,6 +152,7 @@ def validate_table_design_semantics(table_design, table_name):
     if table_design["name"] != table_name.identifier:
         raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
                                                                                       table_name.identifier))
+
     if table_design["source_name"] == "VIEW":
         validate_semantics_of_view(table_design)
     else:
