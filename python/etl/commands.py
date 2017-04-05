@@ -632,7 +632,7 @@ class PingCommand(SubCommand):
     def callback(self, args, config):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
         with etl.pg.log_error():
-            etl.dw.ping(dsn)
+            etl.pg.ping(dsn)
 
 
 class ShowDependentsCommand(SubCommand):

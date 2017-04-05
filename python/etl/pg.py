@@ -9,7 +9,7 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import logging
 import os
 import re
@@ -187,10 +187,9 @@ def explain(cx, stmt, args=()):
     return lines
 
 
-def ping(cx):
+def test_connection(cx):
     """
-    Give me a ping to the database, Vasili. One ping only, please.
-    Return true if connection appears to be alive.
+    Send a test query to our connection
     """
     is_alive = False
     try:
@@ -201,6 +200,15 @@ def ping(cx):
         return False
     else:
         return is_alive
+
+
+def ping(dsn):
+    """
+    Give me a ping to the database, Vasili. One ping only, please.
+    """
+    with closing(connection(dsn, readonly=True)) as cx:
+        if test_connection(cx):
+            print("{} is alive".format(dbname(cx)))
 
 
 def drop_and_create_database(cx, database):
@@ -346,14 +354,11 @@ if __name__ == "__main__":
 
     if len(sys.argv) != 2:
         print("Usage: {} dsn_string".format(sys.argv[0]))
-        print('Hint: Try "postgresql://${USER}@localhost:5432/${USER}" as dsn_string')
+        print()
+        print('Hint: Try your local machine: {} "postgres://${{USER}}@localhost:5432/${{USER}}"'.format(sys.argv[0]))
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
     with log_error():
-        with connection(sys.argv[1], readonly=True) as conn:
-            if ping(conn):
-                print("Connection is valid")
-            for row in query(conn, "SELECT now() AS local_server_time"):
-                for k, v in row.items():
-                    print("{} = {}".format(k, v))
+        dsn = parse_connection_string(sys.argv[1])
+        ping(dsn)

@@ -194,12 +194,3 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
             else:
                 logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
                 etl.pg.alter_search_path(conn, user.name, search_path)
-
-
-def ping(dsn):
-    """
-    Send a test query to the data warehouse
-    """
-    with closing(etl.pg.connection(dsn)) as conn:
-        if etl.pg.ping(conn):
-            print("{} is alive".format(etl.pg.dbname(conn)))
