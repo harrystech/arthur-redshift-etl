@@ -2,7 +2,7 @@
 
 if [[ $# -lt 5 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]"
-    echo "      Start time should take the ISO8601 format like: `date +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     echo "      Specify source tables using space-delimited arthur pattern globs."
     exit 0
 fi

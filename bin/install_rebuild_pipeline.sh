@@ -2,7 +2,7 @@
 
 if [[ $# -ne 4 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences>"
-    echo "      Start time should take the ISO8601 format like: `date +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     exit 0
 fi
 

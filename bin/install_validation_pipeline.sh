@@ -2,7 +2,7 @@
 
 if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> [<occurrences>]"
-    echo "      Start time should take the ISO8601 format like: `date +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     echo "      The number of occurrences defaults to 1."
     exit 0
 fi
