@@ -15,7 +15,7 @@ The descriptions of relations contain access to:
 """
 
 import concurrent.futures
-from contextlib import closing
+from contextlib import closing, contextmanager
 from functools import partial
 import logging
 from operator import attrgetter
@@ -23,10 +23,10 @@ import os.path
 from queue import PriorityQueue
 from typing import Any, Dict, List, Union
 
-from etl import join_with_quotes
 import etl.design.load
 from etl.errors import CyclicDependencyError, MissingQueryError
 import etl.file_sets
+from etl.names import join_with_quotes, TableName
 import etl.pg
 import etl.s3
 
@@ -302,3 +302,37 @@ def set_required_relations(descriptions, required_selector) -> None:
         relation._is_required = False
     for relation in required_relations:
         relation._is_required = True
+
+
+@contextmanager
+def matching_temporary_view(conn, description):
+    """
+    Create a temporary view (with a name loosely based around the reference passed in).
+
+    We look up with temp schema the view landed in so that we can use TableName.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
+    view_identifier = "#{0.schema}${0.table}".format(description.target_table_name)[:127]
+
+    with etl.pg.log_error():
+        ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, description.query_stmt)
+        logger.info("Creating view '%s' to match relation '%s'", view_identifier, description.identifier)
+        etl.pg.execute(conn, ddl_stmt)
+
+        lookup_stmt = """
+            SELECT nsp.nspname AS "schema"
+                 , cls.relname AS "table"
+              FROM pg_catalog.pg_class cls
+              JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
+             WHERE cls.relname = %s
+               AND cls.relkind = 'v'
+            """
+        row = etl.pg.query(conn, lookup_stmt, (view_identifier,))[0]
+        view_name = TableName(**row)
+
+        try:
+            yield view_name
+        finally:
+            etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))

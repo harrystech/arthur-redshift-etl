@@ -7,8 +7,8 @@ import logging
 import unittest
 import sys
 
-from etl import join_with_quotes
 from etl.errors import SelfTestError
+from etl.names import join_with_quotes
 
 
 def load_tests(loader, tests, pattern):

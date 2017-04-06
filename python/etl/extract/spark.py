@@ -6,10 +6,10 @@ from typing import List, Dict, Tuple
 from psycopg2.extensions import connection  # For type annotation
 
 import etl.pg
-from etl import TableName
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import UnknownTableSizeError
 from etl.extract.extractor import Extractor
+from etl.names import TableName
 from etl.timer import Timer
 from etl.relation import RelationDescription
 

@@ -16,7 +16,6 @@ import traceback
 import boto3
 import simplejson as json
 
-import etl
 import etl.config
 import etl.design.bootstrap
 from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
@@ -27,6 +26,7 @@ import etl.file_sets
 import etl.json_encoder
 import etl.load
 import etl.monitor
+import etl.names
 import etl.pg
 import etl.pipeline
 import etl.relation
@@ -259,7 +259,7 @@ class StorePatternAsSelector(argparse.Action):
     Store the list of glob patterns (to pick tables) as a TableSelector instance.
     """
     def __call__(self, parser, namespace, values, option_string=None):
-        selector = etl.TableSelector(values)
+        selector = etl.names.TableSelector(values)
         setattr(namespace, "pattern", selector)
 
 
@@ -318,7 +318,7 @@ class SubCommand:
         to build a dependency tree), build the dependency order, then pick out the matching descriptions.
         """
         if return_all or required_relation_selector is not None:
-            selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+            selector = etl.names.TableSelector(base_schemas=args.pattern.base_schemas)
         else:
             selector = args.pattern
         file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector)

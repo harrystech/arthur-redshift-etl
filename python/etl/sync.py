@@ -16,10 +16,10 @@ import logging
 from typing import List
 import os.path
 
-from etl import TableSelector
 import etl.config
 from etl.errors import MissingQueryError
 import etl.file_sets
+from etl.names import TableSelector
 from etl.relation import RelationDescription
 import etl.s3
 

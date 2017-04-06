@@ -1,4 +1,3 @@
-from collections import namedtuple
 from contextlib import closing
 import logging
 import os.path
@@ -7,29 +6,54 @@ from typing import List
 
 import simplejson as json
 
-from etl import TableName
 import etl.config
 import etl.design.load
 from etl.errors import MissingMappingError
 import etl.file_sets
+from etl.names import TableName
 import etl.pg
 from etl.relation import RelationDescription
 import etl.s3
 
 
-class Attribute(namedtuple("_ColumnInfo", ["name", "sql_type", "not_null"])):
-    __slots__ = ()
+class Attribute:
+    """
+    Most basic description of a database "attribute", a.k.a. column.
+    """
+    __slots__ = ("name", "sql_type", "not_null")
+
+    def __init__(self, name, sql_type, not_null):
+        self.name = name
+        self.sql_type = sql_type
+        self.not_null = not_null
 
 
-class ColumnDefinition(namedtuple("_ColumnDefinition",
-                                  ["name",  # always
-                                   "type", "sql_type",  # always for tables
-                                   "source_sql_type", "expression", "not_null", "references"  # optional
-                                   ])):
+class ColumnDefinition:
     """
-    Wrapper for column attributes ... describes columns by name, type (similar to Avro), and sql_type.
+    More granular description of a column in a table (ready to be sent to a table design).
     """
-    __slots__ = ()
+    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null", "references")
+
+    def __init__(self, name, source_sql_type, sql_type, expression, type, not_null, references):
+        self.name = name
+        self.source_sql_type = source_sql_type
+        self.sql_type = sql_type
+        self.expression = expression
+        self.type = type
+        self.not_null = not_null
+        self.references = references
+
+    def to_dict(self):
+        d = dict(name=self.name, sql_type=self.sql_type, type=self.type)
+        if self.expression is not None:
+            d["expression"] = self.expression
+        if self.source_sql_type != self.sql_type:
+            d["source_sql_type"] = self.source_sql_type
+        if self.not_null:
+            d["not_null"] = self.not_null
+        if self.references:
+            d["references"] = self.references
+        return d
 
 
 def fetch_tables(cx, source, selector):
@@ -49,9 +73,10 @@ def fetch_tables(cx, source, selector):
           FROM pg_catalog.pg_class cls
           JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
          WHERE cls.relname NOT LIKE 'tmp%%'
-               AND cls.relname NOT LIKE 'pg_%%'
-               AND cls.relkind IN ('r', 'm', 'v')
-         ORDER BY nsp.nspname, cls.relname
+           AND cls.relname NOT LIKE 'pg_%%'
+           AND cls.relkind IN ('r', 'm', 'v')
+         ORDER BY nsp.nspname
+                , cls.relname
          """)
     found = []
     for row in result:
@@ -82,9 +107,9 @@ def fetch_attributes(cx, table_name):
     # TODO Multiple indices lead to multiple rows per attribute when using join with pg_index
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
     attributes = etl.pg.query(cx, """
-        SELECT a.attname AS attribute_name
-             , pg_catalog.format_type(t.oid, a.atttypmod) AS attribute_type
-             , a.attnotnull AS not_null_constraint
+        SELECT a.attname AS "name"
+             , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
+             , a.attnotnull AS "not_null"
                -- , COALESCE(i.indisunique, FALSE) AS is_unique_constraint
                -- , COALESCE(i.indisprimary, FALSE) AS is_primary_constraint
           FROM pg_catalog.pg_attribute AS a
@@ -94,13 +119,12 @@ def fetch_attributes(cx, table_name):
                -- LEFT JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
                --                                   AND a.attnum = ANY(i.indkey)
          WHERE a.attnum > 0  -- skip system columns
-               AND NOT a.attisdropped
-               AND ns.nspname = %s
-               AND cls.relname = %s
+           AND NOT a.attisdropped
+           AND ns.nspname = %s
+           AND cls.relname = %s
          ORDER BY a.attnum
          """, (table_name.schema, table_name.table))
-    return [Attribute(name=att["attribute_name"], sql_type=att["attribute_type"], not_null=att["not_null_constraint"])
-            for att in attributes]
+    return [Attribute(**att) for att in attributes]
 
 
 def map_types_in_ddl(table_name, attributes, as_is_att_type, cast_needed_att_type):
@@ -164,8 +188,7 @@ def fetch_dependencies(cx, table_name):
            AND c_p.oid != c_c.oid
          ORDER BY dependency_schema, dependency_table
         """, (table_name.schema, table_name.table))
-    return [TableName(schema=row['dependency_schema'], table=row['dependency_table']).identifier
-            for row in dependencies]
+    return [TableName(row['dependency_schema'], row['dependency_table']).identifier for row in dependencies]
 
 
 def create_table_design(conn, source_table_name, target_table_name, type_maps):
@@ -180,21 +203,12 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
     table_design = {
         "name": "%s" % target_table_name.identifier,
         "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),
-        "columns": [column._asdict() for column in target_columns]
+        "columns": [column.to_dict() for column in target_columns]
     }
     # FIXME Extract actual primary keys from pg_catalog, add unique constraints
     if any(column.name == "id" for column in target_columns):
         table_design["constraints"] = {"primary_key": ["id"]}
-    # Remove default settings as well as empty expressions (when columns can be selected by name)
-    for column in table_design["columns"]:
-        if column["expression"] is None:
-            del column["expression"]
-        if column["source_sql_type"] == column["sql_type"]:
-            del column["source_sql_type"]
-        if not column["not_null"]:
-            del column["not_null"]
-        if not column["references"]:
-            del column["references"]
+
     return table_design
 
 

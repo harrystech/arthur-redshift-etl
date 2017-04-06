@@ -7,6 +7,7 @@ Objects to deal with configuration of our data warehouse, like
 
 import etl.config.env
 from etl.errors import InvalidEnvironmentError
+import etl.names
 import etl.pg
 
 
@@ -50,7 +51,7 @@ class DataWarehouseConfig:
         # Mapping SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset
-        self.required_in_full_load_selector = etl.TableSelector(settings.get("required_in_full_load", []))
+        self.required_in_full_load_selector = etl.names.TableSelector(settings.get("required_in_full_load", []))
 
     def _check_access_to_cluster(self):
         """

@@ -8,7 +8,7 @@ from operator import attrgetter
 
 import boto3
 
-from etl import join_with_quotes
+from etl.names import join_with_quotes
 
 
 class DataPipeline:

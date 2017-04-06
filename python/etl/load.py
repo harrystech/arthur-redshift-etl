@@ -44,10 +44,10 @@ import logging
 import psycopg2
 
 import etl
-from etl import join_column_list, TableName
 import etl.dw
 from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
 import etl.monitor
+from etl.names import join_column_list, join_with_quotes, TableName
 import etl.pg
 import etl.relation
 
@@ -361,20 +361,20 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
     if reader_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(reader_groups))
+                        table_name.identifier, join_with_quotes(reader_groups))
         else:
             logger.info("Granting select access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(reader_groups))
+                        table_name.identifier, join_with_quotes(reader_groups))
             for reader in reader_groups:
                 etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
 
     if writer_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(writer_groups))
+                        table_name.identifier, join_with_quotes(writer_groups))
         else:
             logger.info("Granting write access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(writer_groups))
+                        table_name.identifier, join_with_quotes(writer_groups))
             for writer in writer_groups:
                 etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
 
@@ -543,7 +543,7 @@ def show_dependents(descriptions, selector):
     if len(execution_order) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
-    logger.info("Involved schemas: %s", etl.join_with_quotes(involved_schema_names))
+    logger.info("Involved schemas: %s", join_with_quotes(involved_schema_names))
 
     selected = frozenset(description.identifier for description in execution_order
                          if selector.match(description.target_table_name))

@@ -29,11 +29,11 @@ of upstream sources. The data is stored in gzipped CSV form, into a specified ke
 import logging
 from typing import List, Dict
 
-import etl
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
+from etl.names import join_with_quotes
 import etl.pg
 from etl.relation import RelationDescription
 
@@ -81,5 +81,5 @@ def filter_relations_for_sources(source_lookup: Dict[str, DataWarehouseSchema],
     selected = [d for d in descriptions if d.source_name in source_lookup]
     if selected:
         sources = set(d.source_name for d in selected)
-        logger.info("Selected %d relation(s) from source(s): %s", len(selected), etl.join_with_quotes(sources))
+        logger.info("Selected %d relation(s) from source(s): %s", len(selected), join_with_quotes(sources))
     return selected

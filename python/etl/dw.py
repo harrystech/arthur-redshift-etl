@@ -21,11 +21,11 @@ handy when you want to update the user's search path.
 from contextlib import closing
 import logging
 
-from etl import join_with_quotes
 import etl.commands
 import etl.config
 import etl.config.dw
 from etl.errors import ETLError
+from etl.names import join_with_quotes
 import etl.pg
 
 

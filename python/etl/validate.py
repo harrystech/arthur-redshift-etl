@@ -27,11 +27,11 @@ import psycopg2
 from psycopg2.extensions import connection  # For type annotation
 import simplejson as json
 
-from etl import join_with_quotes, TableName
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 import etl.design.bootstrap
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLRuntimeError  # Exception classes that we might catch
 from etl.errors import TableDesignValidationError, UpstreamValidationError  # Exception classes that we might raise
+from etl.names import join_with_quotes, TableName
 import etl.pg
 import etl.relation
 from etl.relation import RelationDescription
@@ -85,23 +85,6 @@ def validate_semantics(schemas: List[DataWarehouseSchema], descriptions: List[Re
     return list(filter(None, result))
 
 
-def create_temporary_view(conn: connection, description: RelationDescription) -> TableName:
-    """
-    Create a temporary view for testing the description.
-
-    This will be a view for both, CTAS and VIEW.
-    """
-    logger = logging.getLogger(__name__)
-    # TODO Switch to using a temporary view (starts with '#' and has no schema)
-    tmp_view_name = TableName(schema=description.target_table_name.schema,
-                              table='$'.join(["arthur_temp", description.target_table_name.table]))
-    ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, description.query_stmt)
-    logger.info("Creating view '%s' to validate relation '%s'" % (tmp_view_name.identifier, description.identifier))
-    with etl.pg.log_error():
-        etl.pg.execute(conn, ddl_stmt)
-    return tmp_view_name
-
-
 def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Union[str, None]:
     """
     Calculate differences between what was found while running the query to what was declared in the design.
@@ -143,7 +126,7 @@ def validate_dependencies(conn: connection, description: RelationDescription, tm
     difference = compare_query_to_design(dependencies, description.table_design.get("depends_on", []))
     if difference:
         logger.error("Mismatch in dependencies of '{}': {}".format(description.identifier, difference))
-        raise TableDesignValidationError("mismatched dependencies in '%s'", description.identifier)
+        raise TableDesignValidationError("mismatched dependencies in '%s'" % description.identifier)
     else:
         logger.info('Dependencies listing in design file matches SQL')
 
@@ -166,7 +149,7 @@ def validate_column_ordering(conn: connection, description: RelationDescription,
         logger.error("Order of columns in design of '%s' does not match result of running its query",
                      description.identifier)
         logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                     description.identifier, etl.join_with_quotes(diff))
+                     description.identifier, join_with_quotes(diff))
         raise TableDesignValidationError("invalid columns or column order in '%s'" % description.identifier)
     else:
         logger.info("Order of columns in design of '%s' matches result of running SQL query", description.identifier)
@@ -181,13 +164,9 @@ def validate_single_transform(conn: connection, description: RelationDescription
     """
     logger = logging.getLogger(__name__)
     try:
-        tmp_view_name = create_temporary_view(conn, description)
-        try:
+        with etl.relation.matching_temporary_view(conn, description) as tmp_view_name:
             validate_dependencies(conn, description, tmp_view_name)
             validate_column_ordering(conn, description, tmp_view_name)
-        finally:
-            logger.info("Dropping view '%s'", tmp_view_name.identifier)
-            etl.pg.execute(conn, "DROP VIEW {}".format(tmp_view_name))
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if keep_going:
             _error_occurred.set()
@@ -266,7 +245,7 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
                 logger.error("Column difference detected between '%s' and '%s'",
                              unloaded.identifier, description.identifier)
                 logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                             description.identifier, etl.join_with_quotes(diff))
+                             description.identifier, join_with_quotes(diff))
                 if keep_going:
                     _error_occurred.set()
                 else:
