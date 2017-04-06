@@ -309,7 +309,7 @@ def matching_temporary_view(conn, description):
     """
     Create a temporary view (with a name loosely based around the reference passed in).
 
-    We look up with temp schema the view landed in so that we can use TableName.
+    We look up which temp schema the view landed in so that we can use TableName.
     """
     logger = logging.getLogger(__name__)
 

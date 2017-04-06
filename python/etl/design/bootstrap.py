@@ -171,7 +171,7 @@ def fetch_dependencies(cx, table_name):
     """
     Lookup dependencies (other tables)
     """
-    # Adopted from https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_view_dependency.sql
+    # See from https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
     stmt = """
         SELECT DISTINCT
                target_ns.nspname AS "schema"
@@ -181,7 +181,7 @@ def fetch_dependencies(cx, table_name):
           JOIN pg_catalog.pg_depend AS dep ON cls.oid = dep.refobjid
           JOIN pg_catalog.pg_depend AS target_dep ON dep.objid = target_dep.objid
           JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid AND cls.oid <> target_cls.oid
-          LEFT OUTER JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
+          JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
          WHERE ns.nspname = %s
            AND cls.relname = %s
         """
