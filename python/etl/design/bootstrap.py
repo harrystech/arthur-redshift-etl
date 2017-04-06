@@ -70,8 +70,8 @@ def fetch_tables(cx, source, selector):
     result = etl.pg.query(cx, """
         SELECT nsp.nspname AS "schema"
              , cls.relname AS "table"
-          FROM pg_catalog.pg_class cls
-          JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
+          FROM pg_catalog.pg_class AS cls
+          JOIN pg_catalog.pg_namespace AS nsp ON cls.relnamespace = nsp.oid
          WHERE cls.relname NOT LIKE 'tmp%%'
            AND cls.relname NOT LIKE 'pg_%%'
            AND cls.relkind IN ('r', 'm', 'v')
@@ -171,24 +171,22 @@ def fetch_dependencies(cx, table_name):
     """
     Lookup dependencies (other tables)
     """
-    # based on example query in AWS docs; *_p is for parent, *_c is for child
-    dependencies = etl.pg.query(cx, """
+    # Adopted from https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_view_dependency.sql
+    stmt = """
         SELECT DISTINCT
-               n_c.nspname AS dependency_schema
-             , c_c.relname AS dependency_table
-          FROM pg_class c_p
-          JOIN pg_depend d_p ON c_p.relfilenode = d_p.refobjid
-          JOIN pg_depend d_c ON d_p.objid = d_c.objid
-          -- the following OR statement covers the case where a COPY has issued a new OID for an upstream table
-          JOIN pg_class c_c ON d_c.refobjid = c_c.relfilenode OR d_c.refobjid = c_c.oid
-          LEFT JOIN pg_namespace n_p ON c_p.relnamespace = n_p.oid
-          LEFT JOIN pg_namespace n_c ON c_c.relnamespace = n_c.oid
-         WHERE n_p.nspname = %s AND c_p.relname = %s
-            -- do not include the table itself in its dependency list
-           AND c_p.oid != c_c.oid
-         ORDER BY dependency_schema, dependency_table
-        """, (table_name.schema, table_name.table))
-    return [TableName(row['dependency_schema'], row['dependency_table']).identifier for row in dependencies]
+               target_ns.nspname AS "schema"
+             , target_cls.relname AS "table"
+          FROM pg_catalog.pg_class AS cls
+          JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
+          JOIN pg_catalog.pg_depend AS dep ON cls.oid = dep.refobjid
+          JOIN pg_catalog.pg_depend AS target_dep ON dep.objid = target_dep.objid
+          JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid AND cls.oid <> target_cls.oid
+          LEFT OUTER JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
+         WHERE ns.nspname = %s
+           AND cls.relname = %s
+        """
+    dependencies = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
+    return [TableName(**row).identifier for row in dependencies]
 
 
 def create_table_design(conn, source_table_name, target_table_name, type_maps):
