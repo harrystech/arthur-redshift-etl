@@ -90,12 +90,12 @@ class RelationDescription:
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design, query statement, etc.
-        self._table_design = None
-        self._query_stmt = None
-        self._unload_target = None
-        self._dependencies = None
+        self._table_design = None  # type: Union[None, dict]
+        self._query_stmt = None  # type: Union[None, str]
+        self._unload_target = None  # type: Union[None, str]
+        self._dependencies = None  # type: Union[None, List[str]]
         # Deferred evaluation whether this relation is required
-        self._is_required = None
+        self._is_required = None  # type: Union[None, bool]
 
     @property
     def identifier(self):
