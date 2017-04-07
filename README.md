@@ -302,7 +302,7 @@ ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/))
-* And think about rebasing your commits into logical chunks
+* And rebase your commits into logical chunks
 (See [Thoughtbot's guidelines](https://github.com/thoughtbot/guides/blob/master/protocol/git/README.md))
 
 # Tips & Tricks
@@ -328,6 +328,13 @@ And if you're using `virtualenv-wrapper`, then you should make this part of the 
 Consider installing [iPython](https://ipython.org/index.html).
 ```shell
 pip3 install ipython
+```
+
+### Running type checker
+
+Here is how to run the static type checker [mypi](http://mypy-lang.org/):
+```shell
+mypy python --strict-optional --ignore-missing-imports
 ```
 
 ### EMR login / EC2 login
