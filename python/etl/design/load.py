@@ -140,11 +140,8 @@ def validate_semantics_of_table(table_design):
         if not column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
             raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
 
-    if table_design["source_name"] != "CTAS" and "depends_on" in table_design:
-        raise TableDesignSemanticError("upstream table has dependencies")
 
-
-def validate_table_design_semantics(table_design, table_name):
+def validate_table_design_semantics(table_design, table_name, _memoize_is_upstream_source={}):
     """
     Validate table design against rule set based on values (e.g. name of columns).
     Raise an exception if anything is amiss.
@@ -152,11 +149,30 @@ def validate_table_design_semantics(table_design, table_name):
     if table_design["name"] != table_name.identifier:
         raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
                                                                                       table_name.identifier))
+    if table_name.schema not in _memoize_is_upstream_source:
+        dw_config = etl.config.get_dw_config()
+        for schema in dw_config.schemas:
+            if schema.name == table_name.schema:
+                _memoize_is_upstream_source[table_name.schema] = schema.is_upstream_source
+                break
 
     if table_design["source_name"] == "VIEW":
         validate_semantics_of_view(table_design)
+        if _memoize_is_upstream_source[table_name.schema]:
+            raise TableDesignSemanticError("invalid upstream source '%s' in view '%s'" %
+                                           (table_name.schema, table_name.identifier))
+    elif table_design["source_name"] == "CTAS":
+        validate_semantics_of_table(table_design)
+        if _memoize_is_upstream_source[table_name.schema]:
+            raise TableDesignSemanticError("invalid source name '%s' in upstream table '%s'" %
+                                           (table_design["source_name"], table_name.identifier))
     else:
         validate_semantics_of_table(table_design)
+        if not _memoize_is_upstream_source[table_name.schema]:
+            raise TableDesignSemanticError("invalid source name '%s' in transformation '%s'" %
+                                           (table_design["source_name"], table_name.identifier))
+        if "depends_on" in table_design:
+            raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_name.identifier)
 
 
 def column_list_has_columns(valid_columns, candidate_columns):

@@ -596,6 +596,9 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     names / types correct.
     """
     logger = logging.getLogger(__name__)
+
+    etl.relation.RelationDescription.load_in_parallel(descriptions)
+
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)

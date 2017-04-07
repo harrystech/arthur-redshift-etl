@@ -21,7 +21,7 @@ from itertools import groupby
 import logging
 from operator import attrgetter
 import threading
-from typing import FrozenSet, Iterable, List, Union
+from typing import Iterable, List, Union
 
 import psycopg2
 from psycopg2.extensions import connection  # For type annotation
@@ -41,28 +41,16 @@ from etl.timer import Timer
 _error_occurred = threading.Event()
 
 
-def validate_relation_description(description: RelationDescription, known_upstream_sources: FrozenSet,
-                                  keep_going=False) -> Union[RelationDescription, None]:
+def validate_relation_description(description: RelationDescription, keep_going=False
+                                  ) -> Union[RelationDescription, None]:
     """
-    Load table design (which always also validates against the schema) and add a check
-    based on whether the relation is part of an upstream source or not.
-
+    Load table design (which always also validates against the schema).
     If we try to keep_going, then we don't fail but return None for invalid table designs.
-    (This is the exception in this module.)
     """
     logger = logging.getLogger(__name__)
     logger.info("Loading and validating file '%s'", description.design_file_name)
     try:
-        # Note that evaluating whether it's a CTAS or VIEW will trigger a load.
-        has_upstream_source_name = description.table_design["source_name"] not in ["CTAS", "VIEW"]
-        # TODO Try to move this into during design.load.validate_table_design_semantics
-        is_in_upstream_source = description.target_table_name.schema in known_upstream_sources
-        if is_in_upstream_source and not has_upstream_source_name:
-            raise TableDesignValidationError("invalid source name '%s' in upstream table '%s'" %
-                                             (description.table_design["source_name"], description.identifier))
-        elif not is_in_upstream_source and has_upstream_source_name:
-            raise TableDesignValidationError("invalid source name '%s' in CTAS or VIEW '%s'" %
-                                             (description.table_design["source_name"], description.identifier))
+        description.load()
     except ETLConfigError:
         if keep_going:
             _error_occurred.set()
@@ -73,16 +61,15 @@ def validate_relation_description(description: RelationDescription, known_upstre
     return description
 
 
-def validate_semantics(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription],
-                       keep_going=False) -> List[RelationDescription]:
+def validate_semantics(descriptions: List[RelationDescription], keep_going=False) -> List[RelationDescription]:
     """
     Load local design files and validate them along the way against schemas and semantics.
 
     Return list of successfully validated description or raise exception on validation error.
     """
-    upstream_sources = frozenset(schema.name for schema in schemas if schema.is_upstream_source)
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        result = executor.map(lambda v: validate_relation_description(v, upstream_sources, keep_going), descriptions)
+        result = executor.map(lambda description: validate_relation_description(description, keep_going), descriptions)
+    # Drop all descriptions from the result which returned None (meaning they failed validation).
     return list(filter(None, result))
 
 
@@ -165,7 +152,7 @@ def validate_single_transform(conn: connection, description: RelationDescription
     """
     logger = logging.getLogger(__name__)
     try:
-        with etl.relation.matching_temporary_view(conn, description) as tmp_view_name:
+        with description.matching_temporary_view(conn) as tmp_view_name:
             validate_dependencies(conn, description, tmp_view_name)
             validate_column_ordering(conn, description, tmp_view_name)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
@@ -369,7 +356,7 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
     logger = logging.getLogger(__name__)
     _error_occurred.clear()
 
-    valid_descriptions = validate_semantics(config.schemas, descriptions, keep_going=keep_going)
+    valid_descriptions = validate_semantics(descriptions, keep_going=keep_going)
     validate_reload(valid_descriptions, keep_going=keep_going)
     ordered_descriptions = validate_execution_order(valid_descriptions, keep_going=keep_going)
 

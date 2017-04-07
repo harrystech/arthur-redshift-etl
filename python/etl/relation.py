@@ -29,6 +29,7 @@ import etl.file_sets
 from etl.names import join_with_quotes, TableName
 import etl.pg
 import etl.s3
+import etl.timer
 
 
 class RelationDescription:
@@ -76,14 +77,34 @@ class RelationDescription:
     def __repr__(self):
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
-    @property
-    def table_design(self) -> Dict[str, Any]:
+    def load(self) -> None:
+        """
+        Force a loading of the table design (which is normally loaded "on demand").
+
+        Strictly speaking, this isn't thread-safe.  But if you worry about thread safety here, rethink your code.
+        """
         if self._table_design is None:
             if self.bucket_name:
                 loader = partial(etl.design.load.load_table_design_from_s3, self.bucket_name)
             else:
                 loader = partial(etl.design.load.load_table_design_from_localfile)
             self._table_design = loader(self.design_file_name, self.target_table_name)
+
+    @staticmethod
+    def load_in_parallel(descriptions: List["RelationDescription"]) -> None:
+        """
+        Load all descriptions' table design file in parallel.
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("Loading table design for %d relation(s)", len(descriptions))
+        with etl.timer.Timer() as timer:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                executor.map(lambda description: description.load(), descriptions)
+        logger.info("Finished loading %d table design file(s) (%s)", len(descriptions), timer)
+
+    @property
+    def table_design(self) -> Dict[str, Any]:
+        self.load()
         return self._table_design
 
     @property
@@ -197,6 +218,39 @@ class RelationDescription:
         else:
             return None
 
+    @contextmanager
+    def matching_temporary_view(self, conn):
+        """
+        Create a temporary view (with a name loosely based around the reference passed in).
+
+        We look up which temp schema the view landed in so that we can use TableName.
+        """
+        logger = logging.getLogger(__name__)
+
+        # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
+        view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
+
+        with etl.pg.log_error():
+            ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, self.query_stmt)
+            logger.info("Creating view '%s' to match relation '%s'", view_identifier, self.identifier)
+            etl.pg.execute(conn, ddl_stmt)
+
+            lookup_stmt = """
+                SELECT nsp.nspname AS "schema"
+                     , cls.relname AS "table"
+                  FROM pg_catalog.pg_class cls
+                  JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
+                 WHERE cls.relname = %s
+                   AND cls.relkind = 'v'
+                """
+            row = etl.pg.query(conn, lookup_stmt, (view_identifier,))[0]
+            view_name = TableName(**row)
+
+            try:
+                yield view_name
+            finally:
+                etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))
+
 
 class SortableRelationDescription:
     """
@@ -227,12 +281,7 @@ def order_by_dependencies(relation_descriptions):
         * relations that are depended upon but are not in the input
     """
     logger = logging.getLogger(__name__)
-    logger.info("Pondering evaluation order of %d relation(s)", len(relation_descriptions))
-
-    # Initializing the SortableRelationDescription instances pulls in the table designs from S3 since we'll access
-    # the dependencies.  (Practically we didn't see a speed-up for more than 8 workers.)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        descriptions = list(executor.map(lambda v: SortableRelationDescription(v), relation_descriptions))
+    descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
     known_tables = frozenset({description.identifier for description in descriptions})
     nr_tables = len(known_tables)
@@ -302,37 +351,3 @@ def set_required_relations(descriptions, required_selector) -> None:
         relation._is_required = False
     for relation in required_relations:
         relation._is_required = True
-
-
-@contextmanager
-def matching_temporary_view(conn, description):
-    """
-    Create a temporary view (with a name loosely based around the reference passed in).
-
-    We look up which temp schema the view landed in so that we can use TableName.
-    """
-    logger = logging.getLogger(__name__)
-
-    # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
-    view_identifier = "#{0.schema}${0.table}".format(description.target_table_name)[:127]
-
-    with etl.pg.log_error():
-        ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, description.query_stmt)
-        logger.info("Creating view '%s' to match relation '%s'", view_identifier, description.identifier)
-        etl.pg.execute(conn, ddl_stmt)
-
-        lookup_stmt = """
-            SELECT nsp.nspname AS "schema"
-                 , cls.relname AS "table"
-              FROM pg_catalog.pg_class cls
-              JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
-             WHERE cls.relname = %s
-               AND cls.relkind = 'v'
-            """
-        row = etl.pg.query(conn, lookup_stmt, (view_identifier,))[0]
-        view_name = TableName(**row)
-
-        try:
-            yield view_name
-        finally:
-            etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))

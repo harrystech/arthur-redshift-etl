@@ -31,7 +31,7 @@ class DataWarehouseConfig:
         self.users = [root] + other_users
         schema_owner_map = {u.schema: u.name for u in self.users if u.schema}
 
-        # Schemas (upstream sources followed by transformations)
+        # Schemas (upstream sources followed by transformations, keeps order of settings file)
         self.schemas = [
             DataWarehouseSchema(
                 dict(info, owner=schema_owner_map.get(info['name'], root.name)),

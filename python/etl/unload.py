@@ -125,8 +125,8 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
     logger = logging.getLogger(__name__)
-    logger.info("Collecting all table information (from S3) before unload")
-    # FIXME Should retrieve table designs in parallel
+    etl.relation.RelationDescription.load_in_parallel(descriptions)
+
     unloadable_relations = [d for d in descriptions if d.is_unloadable]
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")
