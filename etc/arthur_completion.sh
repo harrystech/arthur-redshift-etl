@@ -11,9 +11,13 @@ _arthur_completion()
     cmds="initialize create_user design auto_design sync extract load update unload validate explain ls ping"
     cmds="$cmds show_dependents show_pipelines selftest"
 
-    if [ "$prev" = "arthur.py" ]; then
+    if [[ "$prev" = "arthur.py" ]]; then
         COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
-    elif [ ! -d schemas ]; then
+    elif [[ "$prev" = "-c" ]]; then
+        local CONFIG_FILES
+        CONFIG_FILES=$(find -L  . -depth 1 -name '*yaml' -or -name '*.sh' | sed -e 's:^\./::')
+        COMPREPLY=( $(compgen -W "$CONFIG_FILES" -d -- "$cur") )
+    elif [[ ! -d schemas ]]; then
         COMPREPLY=( )
     else
         local SCHEMAS
