@@ -55,6 +55,7 @@ def validate_relation_description(description: RelationDescription, known_upstre
     try:
         # Note that evaluating whether it's a CTAS or VIEW will trigger a load.
         has_upstream_source_name = description.table_design["source_name"] not in ["CTAS", "VIEW"]
+        # TODO Try to move this into during design.load.validate_table_design_semantics
         is_in_upstream_source = description.target_table_name.schema in known_upstream_sources
         if is_in_upstream_source and not has_upstream_source_name:
             raise TableDesignValidationError("invalid source name '%s' in upstream table '%s'" %
@@ -188,7 +189,7 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
         logger.info("No transforms found or selected, skipping CTAS or VIEW validation")
         return
 
-    # TODO Can we run validation steps in parallel?
+    # FIXME Parallelize but use separate connections per thread
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
         for description in transforms:
             validate_single_transform(conn, description, keep_going=keep_going)
@@ -331,6 +332,7 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
         return
     upstream_tables.sort(key=attrgetter("source_name"))
 
+    # FIXME Parallelize around sources (like extract)
     for source_name, table_group in groupby(upstream_tables, attrgetter("source_name")):
         tables = list(table_group)
         source = source_lookup[source_name]
