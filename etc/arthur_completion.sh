@@ -15,7 +15,7 @@ _arthur_completion()
         COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
     elif [[ "$prev" = "-c" ]]; then
         local CONFIG_FILES
-        CONFIG_FILES=$(find -L  . -depth 1 -name '*yaml' -or -name '*.sh' | sed -e 's:^\./::')
+        CONFIG_FILES=$(find -L  . -maxdepth 2 -name '*.yaml' -or -name '*.sh' | sed -e 's:^\./::')
         COMPREPLY=( $(compgen -W "$CONFIG_FILES" -d -- "$cur") )
     elif [[ ! -d schemas ]]; then
         COMPREPLY=( )
