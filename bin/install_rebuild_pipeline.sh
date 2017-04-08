@@ -11,6 +11,17 @@ CLUSTER_ENVIRONMENT="$2"
 START_DATE_TIME="$3"
 OCCURRENCES="$4"
 
+BINDIR=`dirname $0`
+TOPDIR=`\cd $BINDIR/.. && \pwd`
+CONFIG_SOURCE="$TOPDIR/aws_config"
+
+if [[ ! -d "$CONFIG_SOURCE" ]]; then
+    echo "Cannot find configuration files (aws_config)"
+    exit 1
+else
+    echo "Using local configuration files in $CONFIG_SOURCE"
+fi
+
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
@@ -29,7 +40,7 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 set -e -u -x
 
 aws datapipeline create-pipeline \
-    --unique-id redshift_etl_pipeline \
+    --unique-id rebuild_etl_pipeline \
     --name "ETL Rebuild Pipeline ($CLUSTER_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)" \
     --tags "$PIPELINE_TAGS" \
     | tee "$PIPELINE_ID_FILE"
@@ -37,7 +48,7 @@ aws datapipeline create-pipeline \
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/rebuild_pipeline.json \
+    --pipeline-definition file://${CONFIG_SOURCE}/rebuild_pipeline.json \
     --parameter-values \
         myS3Bucket="$CLUSTER_BUCKET" \
         myEtlEnvironment="$CLUSTER_ENVIRONMENT" \

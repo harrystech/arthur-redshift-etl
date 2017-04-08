@@ -1,26 +1,41 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> [<occurrences>]"
-    echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
+START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+
+if [[ $# -lt 1 || $# -gt 4 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <bucket_name> [<environment> [<startdatetime> [<occurrences>]]]"
+    echo "      The environment defaults to your user name, $USER."
+    echo "      Start time should take the ISO8601 format, defaults to \"$START_NOW\" (now)."
     echo "      The number of occurrences defaults to 1."
     exit 0
 fi
 
 CLUSTER_BUCKET="$1"
-CLUSTER_ENVIRONMENT="$2"
-START_DATE_TIME="$3"
+CLUSTER_ENVIRONMENT="${2:-$USER}"
+START_DATE_TIME="${3:-$START_NOW}"
 OCCURRENCES="${4:-1}"
+
+BINDIR=`dirname $0`
+TOPDIR=`\cd $BINDIR/.. && \pwd`
+CONFIG_SOURCE="$TOPDIR/aws_config"
+
+if [[ ! -d "$CONFIG_SOURCE" ]]; then
+    echo "Cannot find configuration files (aws_config)"
+    exit 1
+else
+    echo "Using local configuration files in $CONFIG_SOURCE"
+fi
 
 # Verify that this bucket/environment pair is set up on s3 with credentials
 VALIDATION_CREDENTIALS="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/validation/config/credentials_validation.sh"
 if ! aws s3 ls "$VALIDATION_CREDENTIALS" > /dev/null; then
-    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist with credentials_validation.sh!"
+    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist,"
+    echo "whether you have access to it, and whether credentials_validation.sh was copied into validation/config!"
     exit 1
 fi
 
 # N.B. This assumes you are in the directory with your warehouse definition (schemas, config, ...)
-if ! GIT_BRANCH=$(git symbolic-ref --short -q HEAD); then
+if ! GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
   GIT_BRANCH="(detached head)"
 fi
 
@@ -45,7 +60,7 @@ aws datapipeline create-pipeline \
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/validation_pipeline.json \
+    --pipeline-definition file://${CONFIG_SOURCE}/validation_pipeline.json \
     --parameter-values \
         myS3Bucket="$CLUSTER_BUCKET" \
         myEtlEnvironment="$CLUSTER_ENVIRONMENT" \
