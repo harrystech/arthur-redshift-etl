@@ -45,7 +45,7 @@ class S3Uploader:
     the bucket resource is tied to the s3 resource of one thread.
     """
 
-    def __init__(self, bucket_name: str, dry_run: bool=False):
+    def __init__(self, bucket_name: str, dry_run=False) -> None:
         self.logger = logging.getLogger(__name__)
         self.bucket_name = bucket_name
         self._bucket = _get_s3_bucket(self.bucket_name)
@@ -96,12 +96,12 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
     uploader = S3Uploader(bucket_name)
     with tempfile.NamedTemporaryFile(mode="w+") as local_file:
         json.dump(data, local_file, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
-        local_file.write('\n')
+        local_file.write(b'\n')
         local_file.flush()
         uploader(local_file.name, object_key)
 
 
-def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
+def delete_objects(bucket_name: str, object_keys: List[str], _retry=True) -> None:
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
     """
@@ -128,7 +128,7 @@ def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) 
             raise S3ServiceError("Failed to delete %d file(s)" % len(failed))
 
 
-def get_s3_object_last_modified(bucket_name: str, object_key: str, wait: bool=True) -> Union[datetime, None]:
+def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) -> Union[datetime, None]:
     """
     Return the last_modified datetime timestamp for an S3 Object.
     If the call errors out, return None.

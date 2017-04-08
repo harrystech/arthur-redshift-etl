@@ -21,7 +21,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, Optional, Union, List
 
 import etl.design.load
 from etl.errors import CyclicDependencyError, MissingQueryError
@@ -51,7 +51,7 @@ class RelationDescription:
                                                                            self._fileset.__class__.__name__,
                                                                            attr))
 
-    def __init__(self, discovered_files: etl.file_sets.TableFileSet):
+    def __init__(self, discovered_files: etl.file_sets.TableFileSet) -> None:
         # Basic properties to locate files describing the relation
         self._fileset = discovered_files
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
@@ -60,10 +60,10 @@ class RelationDescription:
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design, query statement, etc.
-        self._table_design = None  # type: Union[None, dict]
-        self._query_stmt = None  # type: Union[None, str]
-        self._unload_target = None  # type: Union[None, str]
-        self._dependencies = None  # type: Union[None, List[str]]
+        self._table_design = None  # type: Optional[Dict[str, Any]]
+        self._query_stmt = None  # type: Optional[str]
+        self._unload_target = None  # type: Optional[str]
+        self._dependencies = None  # type: Optional[List[str]]
         # Deferred evaluation whether this relation is required
         self._is_required = None  # type: Union[None, bool]
 
@@ -258,7 +258,7 @@ class SortableRelationDescription:
     compute the execution order and then throw away our intermediate results.
     """
 
-    def __init__(self, original_description: RelationDescription):
+    def __init__(self, original_description: RelationDescription) -> None:
         self.original_description = original_description
         self.identifier = original_description.identifier
         self.dependencies = set(original_description.dependencies)

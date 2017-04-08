@@ -2,7 +2,7 @@ import concurrent.futures
 from itertools import groupby
 import logging
 from operator import attrgetter
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import MissingCsvFilesError, DataExtractError
@@ -32,7 +32,7 @@ class Extractor:
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
-        self.failed_sources = None  # Will be set to a fresh set when starting to extract sources
+        self.failed_sources = set()  # type: Set[str]
 
     def extract_table(self, source: DataWarehouseSchema, description: RelationDescription):
         raise NotImplementedError("Forgot to implement extract_table in {}".format(self.__class__.__name__))
@@ -83,7 +83,7 @@ class Extractor:
         """
         Iterate over sources to be extracted and parallelize extraction at the source level
         """
-        self.failed_sources = set()
+        self.failed_sources.clear()
         # FIXME We need to evaluate whether extracting from multiple sources in parallel works with Spark!
         max_workers = len(self.schemas)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

@@ -1,11 +1,10 @@
 from contextlib import closing
 import logging
 import os.path
-import re
-from typing import List
+from typing import List, Mapping
 
 import simplejson as json
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
 from etl.config.dw import DataWarehouseSchema
@@ -227,7 +226,7 @@ def create_table_design_for_view(conn, table_name):
     return table_design
 
 
-def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False):
+def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False) -> None:
     """
     Write new table design file to disk.
     """

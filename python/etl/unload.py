@@ -20,7 +20,7 @@ from typing import List
 import logging
 import os
 
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
@@ -74,7 +74,7 @@ def write_columns_file(description: RelationDescription, bucket_name: str, prefi
         etl.s3.upload_data_to_s3(data, bucket_name, object_key)
 
 
-def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> None:
+def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
     """
     Write out a "_SUCCESS" file into the same folder as the CSV files to mark
     the unload as complete.  The dump insists on this file before writing a manifest for load.
@@ -88,8 +88,8 @@ def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> No
         etl.s3.upload_empty_object(bucket_name, object_key)
 
 
-def unload_redshift_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
-                             aws_iam_role: str, prefix: str, allow_overwrite=False, dry_run: bool=False) -> None:
+def unload_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
+                    aws_iam_role: str, prefix: str, allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
@@ -144,8 +144,8 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     with closing(conn) as conn:
         for relation, unload_schema in relation_target_tuples:
             try:
-                unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
-                                         allow_overwrite=allow_overwrite, dry_run=dry_run)
+                unload_relation(conn, relation, unload_schema, config.iam_role, prefix,
+                                allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
                 if keep_going:
                     error_occurred = True

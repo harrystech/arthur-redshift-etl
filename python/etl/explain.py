@@ -10,7 +10,7 @@ See http://docs.aws.amazon.com/redshift/latest/dg/c_data_redistribution.html
 from contextlib import closing
 from collections import Counter
 import logging
-from typing import List
+from typing import Dict, List
 
 from etl.relation import RelationDescription
 import etl.pg
@@ -32,7 +32,7 @@ def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
         return
 
     bad_distribution_styles = ["DS_DIST_INNER", "DS_BCAST_INNER", "DS_DIST_ALL_INNER", "DS_DIST_BOTH"]
-    counter = Counter()
+    counter = Counter()  # type: Dict[str, int]
     queries_with_temps = 0
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create

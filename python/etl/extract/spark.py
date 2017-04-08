@@ -3,7 +3,7 @@ import os.path
 from contextlib import closing
 from typing import List, Dict, Tuple
 
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema

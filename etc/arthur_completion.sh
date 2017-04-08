@@ -1,37 +1,45 @@
 #! /bin/bash
 
+# Look here for inspiration: https://github.com/scop/bash-completion
+
 _arthur_completion()
 {
 
-    local cur prev cmds
+    local cur prev opts
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # All sub-commands
-    cmds="initialize create_user design auto_design sync extract load update unload validate explain ls ping"
-    cmds="$cmds show_dependents show_pipelines selftest"
-
-    if [[ "$prev" = "arthur.py" ]]; then
-        COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
-    elif [[ "$prev" = "-c" ]]; then
-        local CONFIG_FILES
-        CONFIG_FILES=$(find -L  . -maxdepth 2 -name '*.yaml' -or -name '*.sh' | sed -e 's:^\./::')
-        COMPREPLY=( $(compgen -W "$CONFIG_FILES" -d -- "$cur") )
-    elif [[ ! -d schemas ]]; then
-        COMPREPLY=( )
-    else
-        local SCHEMAS
-        case "$cur" in
-          *.*)
-            SCHEMAS=$(find -L schemas -type f -name '*.yaml' | sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1.\2:')
+    case "$prev" in
+        "arthur.py")
+            opts="initialize create_user design auto_design sync extract load upgrade update unload
+                  validate explain ls ping show_dependents show_pipelines selftest
+                  --submit --config"
+            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;
-          *)
-            SCHEMAS=$(find -L schemas -type f -name '*.yaml' | sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1:' | uniq)
+        "-c"|"--config")
+            opts=$(find -L  . -maxdepth 2 -name '*.yaml' -or -name '*.sh' | sed -e 's:^\./::')
+            COMPREPLY=( $(compgen -W "$opts" -d -- "$cur") )
             ;;
-        esac
-        COMPREPLY=( $(compgen -W "$SCHEMAS" -- "$cur") )
-    fi
+        "auto_design")
+            COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
+            ;;
+        "selftest")
+            COMPREPLY=( $(compgen -W "all doctest typecheck" -- "$cur") )
+            ;;
+        *)
+            case "$cur" in
+                *.*)
+                    opts=$(find -L schemas -type f -name '*.yaml' 2>/dev/null |
+                           sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1.\2:')
+                    ;;
+                *)
+                    opts=$(find -L schemas -type f -name '*.yaml' 2>/dev/null |
+                           sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1:' | uniq)
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+            ;;
+    esac
 
-}
-
+} &&
 complete -F _arthur_completion arthur.py

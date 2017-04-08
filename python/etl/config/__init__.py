@@ -14,7 +14,7 @@ import logging.config
 import os
 import os.path
 import sys
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence, Set
 
 import pkg_resources
 import jsonschema
@@ -22,6 +22,9 @@ import simplejson as json
 import yaml
 
 import etl.config.dw
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 # Global config objects - always use accessors
@@ -88,7 +91,6 @@ def load_settings_file(filename: str, settings: dict) -> None:
     Load new settings from config file or a directory of config files
     and UPDATE settings (old settings merged with new).
     """
-    logger = logging.getLogger(__name__)
     logger.info("Loading settings from '%s'", filename)
     with open(filename) as f:
         new_settings = yaml.safe_load(f)
@@ -105,7 +107,6 @@ def read_release_file(filename: str) -> None:
     Read the release file and echo its contents to the log.
     Life's exciting. And short. But mostly exciting.
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Loading release information from '%s'", filename)
     with open(filename) as f:
         lines = [line.strip() for line in f]
@@ -142,8 +143,7 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     The settings are validated against their schema before being returned.
     """
-    logger = logging.getLogger(__name__)
-    settings = defaultdict(dict)
+    settings = dict()
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
@@ -176,7 +176,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     It is an error if we detect that there are settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
-    settings_found = set()
+    settings_found = set()  # type: Set[str]
     settings_with_path = []
 
     for fullname in yield_config_files(config_files):

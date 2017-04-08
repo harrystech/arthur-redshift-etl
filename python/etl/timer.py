@@ -14,7 +14,7 @@ def utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
-def elapsed_seconds(start: datetime.datetime, end: datetime=None) -> float:
+def elapsed_seconds(start: datetime.datetime, end: datetime.datetime=None) -> float:
     """
     Return number of seconds elapsed between start time and end time
     or between start time and now if end time is not provided
