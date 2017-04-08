@@ -402,7 +402,7 @@ def vacuum(conn, table_name, dry_run=False):
 
 
 def load_or_update_redshift_relation(conn, description, credentials, schema,
-                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False):
+                                     drop=False, skip_copy=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
@@ -631,7 +631,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
                 try:
                     modified = load_or_update_redshift_relation(
                         conn, description, data_warehouse.iam_role, target_schema,
-                        drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run)
+                        drop=drop, skip_copy=skip_copy, dry_run=dry_run)
                     if modified:
                         vacuumable.append(description.target_table_name)
                 except Exception as e:
