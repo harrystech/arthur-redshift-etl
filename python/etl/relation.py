@@ -281,6 +281,7 @@ def order_by_dependencies(relation_descriptions):
         * relations that are depended upon but are not in the input
     """
     logger = logging.getLogger(__name__)
+    RelationDescription.load_in_parallel(relation_descriptions)
     descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
     known_tables = frozenset({description.identifier for description in descriptions})

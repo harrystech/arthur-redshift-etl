@@ -37,6 +37,8 @@ import etl.relation
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 _error_occurred = threading.Event()
 
@@ -47,7 +49,6 @@ def validate_relation_description(description: RelationDescription, keep_going=F
     Load table design (which always also validates against the schema).
     If we try to keep_going, then we don't fail but return None for invalid table designs.
     """
-    logger = logging.getLogger(__name__)
     logger.info("Loading and validating file '%s'", description.design_file_name)
     try:
         description.load()
@@ -105,8 +106,6 @@ def validate_dependencies(conn: connection, description: RelationDescription, tm
     """
     Download the dependencies (usually, based on the temporary view) and compare with table design.
     """
-    logger = logging.getLogger(__name__)
-
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
     # We break with tradition and show the list of dependencies such that they can be copied into a design file.
     logger.info("Dependencies of '%s' per catalog: %s", description.identifier, json.dumps(dependencies))
@@ -123,8 +122,6 @@ def validate_column_ordering(conn: connection, description: RelationDescription,
     """
     Download the column order (using the temporary view) and compare with table design.
     """
-    logger = logging.getLogger(__name__)
-
     attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
 
@@ -150,7 +147,6 @@ def validate_single_transform(conn: connection, description: RelationDescription
     With a view created, we can extract dependency information and a list of columns
     to make sure table design and query match up.
     """
-    logger = logging.getLogger(__name__)
     try:
         with description.matching_temporary_view(conn) as tmp_view_name:
             validate_dependencies(conn, description, tmp_view_name)
@@ -169,7 +165,6 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
     This allows us to check their syntax, their dependencies, etc.
     """
-    logger = logging.getLogger(__name__)
     transforms = [description for description in descriptions
                   if description.is_ctas_relation or description.is_view_relation]
     if not transforms:
@@ -216,7 +211,6 @@ def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
     can't take the (symmetric) difference between columns but must be careful checking
     the column lists.)
     """
-    logger = logging.getLogger(__name__)
     unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
     descriptions_lookup = {d.identifier: d for d in descriptions}
 
@@ -257,7 +251,6 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     """
     Compare columns in upstream table to the table design file.
     """
-    logger = logging.getLogger(__name__)
     source_table_name = table.source_table_name
 
     columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
@@ -275,8 +268,9 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
                                       (source_table_name.identifier, join_with_quotes(extra_columns)))
     missing_columns = current_columns.difference(design_columns)
     if missing_columns:
-        logger.warning("Column(s) that exist upstream but not in the design of '%s': %s",
-                       table.identifier, join_with_quotes(missing_columns))
+        logger.warning("Column(s) that exist upstream in '%s' but not in the design: %s",
+                       table.source_table_name.identifier,
+                       join_with_quotes(missing_columns))
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
     for column in table.table_design["columns"]:
@@ -292,7 +286,6 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
     """
     Validate table design of an upstream table against its source database.
     """
-    logger = logging.getLogger(__name__)
     try:
         with etl.pg.log_error():
             check_select_permission(conn, table.source_table_name)
@@ -318,7 +311,6 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
     (4) the upstream columns are not a superset of the columns in the table design
     (5) the upstream column does not have the null constraint set while the table design does
     """
-    logger = logging.getLogger(__name__)
     source_lookup = {schema.name: schema for schema in schemas if schema.is_database_source}
 
     # Re-sort descriptions by source so that we need to only connect once to each source
@@ -342,7 +334,6 @@ def validate_execution_order(descriptions: List[RelationDescription], keep_going
     """
     Wrapper around order_by_dependencies to deal with our keep_going predilection.
     """
-    logger = logging.getLogger(__name__)
     try:
         ordered_descriptions = etl.relation.order_by_dependencies(descriptions)
     except ETLConfigError:
@@ -362,7 +353,6 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
 
     See module documentation for list of checks.
     """
-    logger = logging.getLogger(__name__)
     _error_occurred.clear()
 
     valid_descriptions = validate_semantics(descriptions, keep_going=keep_going)

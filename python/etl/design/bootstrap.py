@@ -16,6 +16,9 @@ import etl.pg
 from etl.relation import RelationDescription
 import etl.s3
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
     """
@@ -191,24 +194,21 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     Create table design files for tables from a single source to local directory.
     Whenever some table designs already exist locally, validate them against the information found from upstream.
     """
-    logger = logging.getLogger(__name__)
     source_files = {file_set.source_table_name: file_set
-                    for file_set in local_files if file_set.source_name == source.name}
+                    for file_set in local_files
+                    if file_set.source_name == source.name and file_set.design_file_name}
     try:
         logger.info("Connecting to database source '%s' to look for tables", source.name)
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
-            for source_table_name in sorted(source_tables):
-                target_table_name = TableName(source.name, source_table_name.table)
-                table_design = create_table_design(conn, source_table_name, target_table_name, type_maps)
-                source_file_set = source_files.get(source_table_name)
-                if source_file_set and source_file_set.design_file_name:
-                    # Replace bootstrapped table design with one from file but check whether set of columns changed.
-                    design_file = source_file_set.design_file_name
-                    existing_table_design = etl.design.load.load_table_design_from_localfile(design_file,
-                                                                                             target_table_name)
-                    compare_columns(table_design, existing_table_design)
+            for source_table_name in source_tables:
+                if source_table_name in source_files:
+                    logger.info("Skipping '%s' from source '%s' because table design file exists: '%s'",
+                                source_table_name.identifier, source.name,
+                                source_files[source_table_name].design_file_name)
                 else:
+                    target_table_name = TableName(source.name, source_table_name.table)
+                    table_design = create_table_design(conn, source_table_name, target_table_name, type_maps)
                     save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
@@ -219,10 +219,10 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     upstream = frozenset(name.identifier for name in source_tables)
     not_found = upstream.difference(existent)
     if not_found:
-        logger.warning("New table(s) which had no local design: %s", join_with_quotes(not_found))
+        logger.warning("New table(s) in '%s' without local design: %s", source.name, join_with_quotes(not_found))
     too_many = existent.difference(upstream)
     if too_many:
-        logger.warning("Old table(s) which no longer had upstream table: %s", join_with_quotes(too_many))
+        logger.error("Table design(s) without upstream table in '%s': %s", source.name, join_with_quotes(too_many))
 
     return len(source_tables)
 
@@ -233,7 +233,6 @@ def create_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=Fa
 
     To avoid modifying the data warehouse by accident, this will fail if any of the relations already exist.
     """
-    logger = logging.getLogger(__name__)
     with closing(etl.pg.connection(dsn_etl)) as conn:
         with conn:
             for relation in relations:
@@ -251,7 +250,6 @@ def drop_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=Fals
     """
     Delete views that were created at the beginning of bootstrap.
     """
-    logger = logging.getLogger(__name__)
     with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             # Since this mirrors the all-or-nothing create_views we recklessly call "DROP VIEW" without "IF EXISTS".
@@ -263,39 +261,12 @@ def drop_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=Fals
                 etl.pg.execute(conn, ddl_stmt)
 
 
-def compare_columns(live_design, file_design):
-    """
-    Compare columns between what is actually present in a table vs. what is described in a table design
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Checking design for '%s'", live_design["name"])
-    live_columns = frozenset(column["name"] for column in live_design["columns"])
-    file_columns = frozenset(column["name"] for column in file_design["columns"])
-    # TODO define policy to declare columns "ETL-only" Or remove this "feature"?
-    etl_columns = {name for name in file_columns if name.startswith("etl__")}
-    logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
-                 file_design["name"], len(live_columns), len(file_columns), len(etl_columns))
-    not_accounted_for_on_file = live_columns.difference(file_columns)
-    described_but_not_live = file_columns.difference(live_columns).difference(etl_columns)
-    if not_accounted_for_on_file:
-        logger.warning("New columns in '%s' that are not in existing table design: %s",
-                       file_design["name"], join_with_quotes(not_accounted_for_on_file))
-        indices = dict((name, i) for i, name in enumerate(column["name"] for column in live_design["columns"]))
-        for name in not_accounted_for_on_file:
-            logger.debug("New column %s.%s: %s", live_design["name"], name,
-                         json.dumps(live_design["columns"][indices[name]], indent="    ", sort_keys=True))
-    if described_but_not_live:
-        logger.warning("Columns that have disappeared in upstream '%s': %s",
-                       file_design["name"], join_with_quotes(described_but_not_live))
-
-
 def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_maps, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
     This will create new design files locally if they don't already exist for any relations tied
     to upstream database sources.
     """
-    logger = logging.getLogger(__name__)
     total = 0
     for schema in schemas:
         if selector.match_schema(schema.name):
@@ -313,20 +284,19 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
     """
     Download design information for transformations.
     """
-    logger = logging.getLogger(__name__)
     is_upstream = {schema.name for schema in schemas if schema.is_upstream_source}
-    transforms = [file_set for file_set in local_files
-                  if not file_set.design_file_name and file_set.source_name not in is_upstream]
-    if not transforms:
+    new_files = [file_set for file_set in local_files
+                 if not file_set.design_file_name and file_set.source_name not in is_upstream]
+    if not new_files:
         logger.info("Found no queries without matching design files")
         return
 
-    descriptions = [RelationDescription(file_set) for file_set in transforms]
+    transforms = [RelationDescription(file_set) for file_set in new_files]
 
-    create_views(dsn_etl, descriptions, dry_run=dry_run)
+    create_views(dsn_etl, transforms, dry_run=dry_run)
     try:
         with closing(etl.pg.connection(dsn_etl, readonly=True)) as conn:
-            for relation in descriptions:
+            for relation in transforms:
                 table_name = relation.target_table_name
                 if as_view:
                     table_design = create_table_design_for_view(conn, table_name)
@@ -334,4 +304,4 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
                     table_design = create_table_design_for_ctas(conn, table_name, type_maps)
                 save_table_design(local_dir, table_name.schema, table_name, table_design, dry_run=dry_run)
     finally:
-        drop_views(dsn_etl, descriptions, dry_run=dry_run)
+        drop_views(dsn_etl, transforms, dry_run=dry_run)
