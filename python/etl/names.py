@@ -25,6 +25,8 @@ def join_with_quotes(names):
     "'foo', 'bar'"
     >>> join_with_quotes({"foo", "bar"})
     "'bar', 'foo'"
+    >>> join_with_quotes(frozenset(["foo", "bar"]))
+    "'bar', 'foo'"
     """
     if isinstance(names, (set, frozenset)):
         return ', '.join("'{}'".format(name) for name in sorted(names))
@@ -48,6 +50,27 @@ class TableName:
 
     Another, more curious use is to store shell patterns for the schema name
     and table name so that we can match against other instances.
+
+    Comparisons (for schema and table names) are case-insensitive.
+
+    >>> orders = TableName.from_identifier("www.orders")
+    >>> str(orders)
+    '"www"."orders"'
+    >>> orders.identifier
+    'www.orders'
+    >>> same_orders = TableName.from_identifier("WWW.Orders")
+    >>> orders == same_orders
+    True
+    >>> id(orders) == id(same_orders)
+    False
+    >>> hash(orders) == hash(same_orders)
+    True
+    >>> w3 = TableName.from_identifier("w3.orders")
+    >>> orders == w3
+    False
+    >>> purchases = TableName.from_identifier("www.purchases")
+    >>> orders < purchases
+    True
     """
 
     __slots__ = ("_schema", "_table")
@@ -96,14 +119,20 @@ class TableName:
         >>> str(tn)
         '"hello"."world"'
         """
-        return '"{0}"."{1}"'.format(self.schema, self.table)
+        return '"{0}"."{1}"'.format(self._schema, self._table)
+
+    def __eq__(self, other):
+        return self._schema == other._schema and self._table == other._table
+
+    def __hash__(self):
+        return hash((self._schema, self._table))
 
     def __lt__(self, other):
         """
-        Order (or sort) two table names.
+        Order two table names, case-insensitive. (Used by sort.)
 
-        >>> ta = TableName("iowa", "cedar rapids")
-        >>> tb = TableName("iowa", "desmoines")
+        >>> ta = TableName("Iowa", "Cedar Rapids")
+        >>> tb = TableName("Iowa", "Desmoines")
         >>> ta < tb
         True
         """
@@ -139,17 +168,6 @@ class TableName:
         False
         """
         return fnmatch.fnmatch(self.identifier, pattern)
-
-    @staticmethod
-    def join_with_quotes(table_names):
-        """
-        Prettify a list of table names, usually for log statements.
-
-        >>> my_tables = [TableName("www", "orders"), TableName("www", "users")]
-        >>> TableName.join_with_quotes(my_tables)
-        "'www.orders', 'www.users'"
-        """
-        return join_with_quotes(sorted(table.identifier for table in table_names))
 
 
 class TableSelector:
@@ -189,7 +207,7 @@ class TableSelector:
         "['finance.*', 'www.*']"
         >>> ts = TableSelector(["www.orders*"])
         >>> str(ts)
-        'www.orders*'
+        "['www.orders*']"
         >>> ts = TableSelector(["www.Users", "www.Products"])
         >>> str(ts)
         "['www.products', 'www.users']"
@@ -255,10 +273,8 @@ class TableSelector:
         # See __init__ for tests
         if len(self._patterns) == 0:
             return '*.*'
-        elif len(self._patterns) == 1:
-            return self._patterns[0].identifier
         else:
-            return "[{}]".format(TableName.join_with_quotes(self._patterns))
+            return "[{}]".format(join_with_quotes(p.identifier for p in self._patterns))
 
     def match_schema(self, schema):
         """
