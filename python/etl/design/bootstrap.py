@@ -1,7 +1,8 @@
 from contextlib import closing
+from itertools import groupby
 import logging
 import os.path
-from typing import List
+from typing import List, Mapping
 
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
@@ -86,6 +87,54 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     return [Attribute(**att) for att in attributes]
 
 
+def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, List[str]]:
+    """
+    Retrieve table constraints from database by looking up indices.
+
+    We will only check primary key constraints and unique constraints.
+    (To recreate the constraint, we could use `pg_get_indexdef`.)
+    """
+    # We need to make two trips to the database because Redshift doesn't support functions on int2vector types.
+    # So we find out which indices exist (with unique constraints) and how many attributes are related to each,
+    # then we look up the attribute names with our exquisitely hand-rolled "where" clause.
+    # See http://www.postgresql.org/message-id/10279.1124395722@sss.pgh.pa.us for further explanations.
+    logger = logging.getLogger(__name__)
+    indices = etl.pg.query(cx, """
+        SELECT i.indexrelid AS index_id
+             , ic.relname AS index_name
+             , CASE
+                   WHEN i.indisprimary THEN 'primary_key'
+                   ELSE 'unique'
+               END AS "constraint_type"
+             , i.indnatts AS nr_atts
+          FROM pg_catalog.pg_class AS cls
+          JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
+          JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
+          JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
+         WHERE i.indisunique
+           AND ns.nspname = %s
+           AND cls.relname = %s
+         ORDER BY ic.relname
+        """, (table_name.schema, table_name.table))
+    found = {}
+    for index_id, index_name, constraint_type, nr_atts in indices:
+        cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(2))
+        attributes = etl.pg.query(cx, """
+            SELECT a.attname AS "name"
+              FROM pg_catalog.pg_attribute AS a
+              JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
+              WHERE i.indexrelid = %%s
+                AND (%s)
+              ORDER BY a.attname
+              """ % cond, (index_id,))
+        columns = list(att["name"] for att in attributes)
+        logger.info("Index '%s' of '%s' adds constraint %s",
+                    index_name, table_name.identifier, json.dumps({constraint_type: columns}))
+        # FIXME This does not preserve multiple unique constraints!
+        found[constraint_type] = columns
+    return found
+
+
 def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]:
     """
     Lookup dependencies (other tables)
@@ -121,6 +170,9 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
         "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),
         "columns": [column.to_dict() for column in target_columns]
     }
+    constraints = fetch_constraints(conn, source_table_name)
+    if constraints:
+        table_design["constraints"] = constraints
     return table_design
 
 

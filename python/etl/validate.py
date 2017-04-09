@@ -276,18 +276,60 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
                                       (source_table_name.identifier, join_with_quotes(extra_columns)))
     missing_columns = current_columns.difference(design_columns)
     if missing_columns:
-        logger.warning("Column(s) that exist upstream in '%s' but not in the design: %s",
-                       table.source_table_name.identifier,
-                       join_with_quotes(missing_columns))
+        logger.warning("Column(s) that exist upstream in '%s' but not in the design '%s': %s",
+                       table.source_name, table.identifier, join_with_quotes(missing_columns))
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
     for column in table.table_design["columns"]:
         if column.get("not_null") and column["name"] not in current_is_not_null:
-            # FIXME Too many errors ... be lenient when starting this test
-            # raise TableDesignError("not null constraint of column '%s' in '%s' not enforced upstream" %
-            #                        (column["name"], table.identifier))
-            logger.warning("Not null constraint of column '%s' in '%s' not enforced upstream",
-                           column["name"], table.identifier)
+            raise TableDesignValidationError("not null constraint of column '%s' in '%s' not enforced upstream" %
+                                             (column["name"], table.identifier))
+
+
+def validate_upstream_constraints(conn: connection, table: RelationDescription) -> None:
+    """
+    Compare table constraints between database and table design file.
+
+    Note that "natural_key" or "surrogate_key" constraints are not valid in upstream tables.
+    """
+    current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
+    design_constraint = table.table_design.get("constraints", {})
+
+    current_primary_key = frozenset(current_constraint.get("primary_key", []))
+    current_unique = frozenset(current_constraint.get("unique", []))
+
+    design_primary_key = frozenset(design_constraint.get("primary_key", []))
+    design_unique = frozenset(design_constraint.get("unique", []))
+
+    # not_used will be true at the beginning if we have something to check, turns false if design has match
+    not_used = {"primary_key": current_primary_key, "unique": current_unique}
+
+    if design_primary_key:
+        if current_primary_key == design_primary_key:
+            del not_used["primary_key"]
+        elif current_primary_key:
+            raise TableDesignValidationError("the primary_key constraint in '%s' (%s) does not match upstream (%s)" %
+                                             (table.identifier,
+                                              join_with_quotes(design_primary_key),
+                                              join_with_quotes(current_primary_key)))
+        else:
+            raise TableDesignValidationError("the primary key constraint in '%s' (%s) is not enforced upstream" %
+                                             (table.identifier, join_with_quotes(design_primary_key)))
+
+    if design_unique:
+        if current_primary_key == design_unique:
+            del not_used["primary_key"]
+        if current_unique == design_unique:
+            del not_used["unique"]
+        if current_primary_key != design_unique and current_unique != design_unique:
+            raise TableDesignValidationError("the unique constraint in '%s' (%s) is not enforced upstream" %
+                                             (table.identifier, join_with_quotes(design_unique)))
+
+    for constraint_type in not_used:
+        if not_used[constraint_type]:
+            logger.warning("Upstream source '%s' has new %s constraint (%s) for '%s'",
+                           table.source_name, constraint_type,
+                           join_with_quotes(not_used[constraint_type]), table.identifier)
 
 
 def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool=False) -> None:
@@ -298,6 +340,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
         with etl.pg.log_error():
             check_select_permission(conn, table.source_table_name)
             validate_upstream_columns(conn, table)
+            validate_upstream_constraints(conn, table)
         logger.info("Successfully validated '%s' against its upstream source", table.identifier)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if keep_going:
