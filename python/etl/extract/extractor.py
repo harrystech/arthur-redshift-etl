@@ -5,7 +5,7 @@ from operator import attrgetter
 from typing import Dict, List, Set
 
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import MissingCsvFilesError, DataExtractError
+from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
 import etl.monitor
 from etl.names import join_with_quotes
 from etl.relation import RelationDescription
@@ -52,6 +52,7 @@ class Extractor:
         """
         For a given upstream source, iterate through given relations to extract the relations' data.
         """
+        self.logger.info("Extracting from source '%s'", source.name)
         failed = []
 
         with Timer() as timer:
@@ -64,7 +65,7 @@ class Extractor:
                                                           'object_key': description.manifest_file_name},
                                              dry_run=self.dry_run):
                         self.extract_table(source, description)
-                except DataExtractError:
+                except ETLRuntimeError:
                     self.failed_sources.add(source.name)
                     failed.append(description)
                     if not description.is_required:
@@ -89,7 +90,6 @@ class Extractor:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for source_name, description_group in groupby(self.descriptions, attrgetter("source_name")):
-                self.logger.info("Extracting from source '%s'", source_name)
                 f = executor.submit(self.extract_source, self.schemas[source_name], list(description_group))
                 futures.append(f)
             if self.keep_going:
@@ -97,7 +97,7 @@ class Extractor:
             else:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
         if self.failed_sources:
-            self.logger.info("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
+            self.logger.error("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
 
         # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
         missing_tables = []
