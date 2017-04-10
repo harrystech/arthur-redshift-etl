@@ -1,7 +1,7 @@
 import logging
 import os.path
 from contextlib import closing
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -21,7 +21,7 @@ class SparkExtractor(Extractor):
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, dry_run: bool):
+                 keep_going: bool, dry_run: bool) -> None:
         super().__init__("spark", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self._sql_context = None
@@ -100,8 +100,8 @@ class SparkExtractor(Extractor):
         (This requirement doesn't come from the table size but the need to split the table
         when reading it in.)
         """
-        primary_key = description.find_primary_key()
-        if "primary_key" is None:
+        primary_key = description.find_primary_key()  # type: Optional[str]
+        if primary_key is None:
             self.logger.info("No primary key defined for '%s', skipping partitioning", source_table_name.identifier)
             return []
         self.logger.debug("Primary key for table '%s' is '%s'", source_table_name.identifier, primary_key)

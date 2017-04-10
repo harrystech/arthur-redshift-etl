@@ -102,10 +102,10 @@ class RelationDescription:
                 executor.map(lambda description: description.load(), descriptions)
         logger.info("Finished loading %d table design file(s) (%s)", len(descriptions), timer)
 
-    @property
+    @property  # This property is lazily loaded
     def table_design(self) -> Dict[str, Any]:
         self.load()
-        return self._table_design
+        return self._table_design  # type: ignore
 
     @property
     def is_ctas_relation(self):
@@ -141,7 +141,7 @@ class RelationDescription:
                 with open(self.sql_file_name) as f:
                     query_stmt = f.read()
             self._query_stmt = query_stmt.strip().rstrip(';')
-        return self._query_stmt
+        return self._query_stmt  # type: ignore
 
     @property
     def dependencies(self):

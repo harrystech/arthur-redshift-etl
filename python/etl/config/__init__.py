@@ -14,7 +14,7 @@ import logging.config
 import os
 import os.path
 import sys
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Iterable, List, Optional, Sequence, Set, Dict
 
 import pkg_resources
 import jsonschema
@@ -68,7 +68,8 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     elif log_level:
         config["handlers"]["console"]["level"] = log_level
     logging.config.dictConfig(config)
-    logging.captureWarnings(True)
+    # Ignored due to lack of stub in type checking library
+    logging.captureWarnings(True)  # type: ignore
     logging.getLogger(__name__).info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
 
 
@@ -146,7 +147,7 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     The settings are validated against their schema before being returned.
     """
-    settings = dict()
+    settings = dict()  # type: Dict
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):

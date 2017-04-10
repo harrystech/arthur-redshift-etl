@@ -22,7 +22,7 @@ class Extractor:
     It is that method (`extract_table`) that child classes must implement.
     """
     def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, needs_to_wait: bool, dry_run: bool):
+                 keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
         self.schemas = schemas
         self.descriptions = descriptions
@@ -100,7 +100,7 @@ class Extractor:
             self.logger.error("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
 
         # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
-        missing_tables = []
+        missing_tables = []  # type: List
         for future in done:
             missing_tables.extend(future.result())
         for table_name in missing_tables:
