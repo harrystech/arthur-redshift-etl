@@ -24,7 +24,7 @@ import threading
 from typing import Iterable, List, Union
 
 import psycopg2
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 import simplejson as json
 
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
@@ -182,16 +182,16 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
             validate_single_transform(conn, description, keep_going=keep_going)
 
 
-def get_list_difference(list1, list2):
+def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     """
     Return list of elements that help turn list1 into list2 -- a "minimal" list of
     differences based on changing one list into the other.
 
-    >>> sorted(get_list_difference(["a", "b"], ["b", "a"]))
+    >>> get_list_difference(["a", "b"], ["b", "a"])
     ['b']
-    >>> sorted(get_list_difference(["a", "b"], ["a", "c", "b"]))
+    >>> get_list_difference(["a", "b"], ["a", "c", "b"])
     ['c']
-    >>> sorted(get_list_difference(["a", "b", "c", "d", "e"], ["a", "c", "b", "e"]))
+    >>> get_list_difference(["a", "b", "c", "d", "e"], ["a", "c", "b", "e"])
     ['c', 'd']
 
     The last list happens because the matcher asks to insert 'c', then delete 'c' and 'd' later.
@@ -202,7 +202,7 @@ def get_list_difference(list1, list2):
         if code != 'equal':
             diff.update(list1[left1:right1])
             diff.update(list2[left2:right2])
-    return diff
+    return sorted(diff)
 
 
 def validate_reload(descriptions: List[RelationDescription], keep_going: bool):

@@ -3,7 +3,7 @@
 if [[ ${1-"-h"} = "-h" ]]; then
     echo "Usage: $0 <bucket_name> <environment> [--local]"
     echo
-    echo "Download files from the S3 bucket into the <environment>/jars folder"
+    echo "Download files from the S3 bucket into /tmp/redshift_etl on the instance"
     echo "and install the Python code in a virtual environment."
     echo "Unless the option --local is used, this also runs yum and updates hosts file."
     exit 0

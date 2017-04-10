@@ -23,7 +23,7 @@ class SqoopExtractor(Extractor):
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, max_partitions: int, dry_run: bool):
+                 keep_going: bool, max_partitions: int, dry_run: bool) -> None:
         super().__init__("sqoop", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self.max_partitions = max_partitions
@@ -51,16 +51,16 @@ class SqoopExtractor(Extractor):
         prefix = os.path.join(description.prefix, description.csv_path_name)
         self.write_manifest_file(description, description.bucket_name, prefix)
 
-    def _write_password_file(self, password: str) -> Union[str, None]:
+    def _write_password_file(self, password: str) -> str:
         """
         Write password to a (temporary) file, return name of file created.
         """
         if self.dry_run:
             self.logger.info("Dry-run: Skipping writing of password file")
-            password_file_path = None
+            password_file_path = "/tmp/never_used"
         else:
             with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="pw_", delete=False) as fp:
-                fp.write(password)
+                fp.write(password)  # type: ignore
                 fp.close()
             password_file_path = fp.name
             self.logger.info("Wrote password to '%s'", password_file_path)
@@ -113,17 +113,17 @@ class SqoopExtractor(Extractor):
             args.extend(["--num-mappers", "1"])
         return args
 
-    def _write_options_file(self, args: List[str]) -> Union[str, None]:
+    def _write_options_file(self, args: List[str]) -> str:
         """
         Write options to a (temporary) file, return name of file created.
         """
         if self.dry_run:
             self.logger.info("Dry-run: Skipping creation of Sqoop options file")
-            options_file_path = None
+            options_file_path = "/tmp/never_used"
         else:
             with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="so_", delete=False) as fp:
-                fp.write('\n'.join(args))
-                fp.write('\n')
+                fp.write('\n'.join(args))  # type: ignore
+                fp.write('\n')  # type: ignore
                 fp.close()
             options_file_path = fp.name
             self.logger.info("Wrote Sqoop options to '%s'", options_file_path)

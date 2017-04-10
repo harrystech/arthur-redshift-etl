@@ -138,8 +138,8 @@ aws emr describe-cluster --cluster-id "$CLUSTER_ID" |
 if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then
     sleep 10
     aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
-    set +x
 
+    set +x
     say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
     aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
 else

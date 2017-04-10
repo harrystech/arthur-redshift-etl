@@ -30,12 +30,15 @@ import logging
 from typing import List, Dict
 
 from etl.config.dw import DataWarehouseSchema
+from etl.extract.extractor import Extractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
 from etl.names import join_with_quotes
 import etl.pg
 from etl.relation import RelationDescription
+
+__all__ = ["extract_upstream_sources"]
 
 
 def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchema],

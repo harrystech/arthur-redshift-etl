@@ -16,7 +16,7 @@ class StaticExtractor(Extractor):
     # TODO Describe expected file paths, existence of "_SUCCESS" file
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, dry_run: bool):
+                 keep_going: bool, dry_run: bool) -> None:
         # For static sources, we go straight to failure when the success file does not exist
         super().__init__("static", schemas, descriptions, keep_going, needs_to_wait=False, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)

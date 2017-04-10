@@ -16,6 +16,7 @@ import random
 import threading
 import time
 import traceback
+from typing import List
 import uuid
 import re
 
@@ -60,6 +61,10 @@ class MetaMonitor(type):
             raise ValueError("Value of 'environment' is None")
         return cls._environment
 
+    @environment.setter
+    def environment(cls, value):
+        cls._environment = value
+
     @property
     def dynamo_sanitized_environment(cls):
         """
@@ -68,10 +73,6 @@ class MetaMonitor(type):
         """
         pat = re.compile('[a-zA-Z0-9_.-]+')
         return '-'.join(pat.findall(cls.environment))
-
-    @environment.setter
-    def environment(cls, value):
-        cls._environment = value
 
     @property
     def cluster_info(cls):
@@ -101,7 +102,7 @@ class Monitor(metaclass=MetaMonitor):
     Monitor instances have these properties which will be stored in the event payload:
         environment: a description of the source folder (aka prefix)
         etl_id: a UUID for each ETL run (All monitors of the same ETL run with the same 'etl_id'.)
-        target: name of table or view in Redshift
+        target: name of table or view in the data warehouse
         step: command that is running, like 'dump', or 'load'
 
     The payloads will have at least the properties of the Monitor instance and:
@@ -143,7 +144,7 @@ class Monitor(metaclass=MetaMonitor):
     _environment = None
     _cluster_info = None
 
-    def __init__(self: "Monitor", target: str, step: str, dry_run: bool=False, **kwargs):
+    def __init__(self, target: str, step: str, dry_run: bool=False, **kwargs) -> None:
         self._logger = logging.getLogger(__name__)
         self._monitor_id = trace_key()
         self._target = target
@@ -207,7 +208,7 @@ class MonitorPayload:
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
-    dispatchers = []
+    dispatchers = []  # type: List[PayloadDispatcher]
 
     def __init__(self, monitor, event, timestamp, elapsed=None, extra=None):
         # Basic info

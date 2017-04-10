@@ -555,7 +555,8 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "validate table design files",
-                         "Validate table designs (use '-q' to only see errors or warnings).")
+                         "Validate table designs by checking their syntax and compatibility with the database"
+                         " (use '-nskq' to see only errors or warnings, without connecting to a database).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
@@ -688,10 +689,17 @@ class SelfTestCommand(SubCommand):
                          "run code tests of ETL",
                          "Run self-test of the ETL.")
 
+    def add_arguments(self, parser):
+        # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
+        parser.set_defaults(log_level="CRITICAL")
+        parser.add_argument("test_family", help="select which family of tests to run",
+                            nargs='?', choices=["doctest", "typecheck", "all"], default="doctest")
+
     def callback(self, args, config):
-        verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0}
-        verbosity = verbosity_levels.get(args.log_level, 1)
-        etl.selftest.run_self_test(verbosity)
+        if args.test_family in ("doctest", "all"):
+            etl.selftest.run_doctest(args.log_level)
+        if args.test_family in ("typecheck", "all"):
+            etl.selftest.run_type_checker()
 
 
 if __name__ == "__main__":

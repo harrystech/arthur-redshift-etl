@@ -1,6 +1,7 @@
 class ETLError(Exception):
-    """Parent to all ETL-oriented exceptions which allows to write effective except statements"""
-    pass
+    """
+    Parent to all ETL-oriented exceptions which allows to write effective except statements
+    """
 
 
 class ETLSystemError(ETLError):
@@ -9,7 +10,6 @@ class ETLSystemError(ETLError):
 
     This exception should be raised when rolling back ETL code might solve the issue.
     """
-    pass
 
 
 class ETLConfigError(ETLError):
@@ -18,7 +18,6 @@ class ETLConfigError(ETLError):
 
     This exception should be raised when sync'ing a fixed version might solve the issue.
     """
-    pass
 
 
 class ETLRuntimeError(ETLError):
@@ -38,62 +37,75 @@ class ETLDelayedExit(ETLError):
 
 
 class SelfTestError(ETLSystemError):
-    pass
+    """
+    Exception when one of the built-in test suites fails
+    """
 
 
 class InvalidArgumentsError(ETLRuntimeError):
-    """Exception thrown when arguments are detected to be invalid by the command callback"""
-    pass
+    """
+    Exception when arguments are detected to be invalid by the command callback
+    """
 
 
 class InvalidEnvironmentError(ETLRuntimeError):
-    """Exception when environment settings are invalid"""
-    pass
+    """
+    Exception when environment settings are invalid
+    """
 
 
 class MissingMappingError(ETLConfigError):
-    """Exception when an attribute type's target type is unknown"""
-    pass
+    """
+    Exception when an attribute type's target type is unknown
+    """
 
 
 class TableDesignError(ETLConfigError):
-    """Exception when a table design file is incorrect"""
-    pass
+    """
+    Exception when a table design file is incorrect
+    """
 
 
 class TableDesignParseError(TableDesignError):
-    """Exception when a table design file cannot be parsed"""
-    pass
+    """
+    Exception when a table design file cannot be parsed
+    """
 
 
 class TableDesignSyntaxError(TableDesignError):
-    """Exception when a table design file does not pass schema validation"""
-    pass
+    """
+    Exception when a table design file does not pass schema validation
+    """
 
 
 class TableDesignSemanticError(TableDesignError):
-    """Exception when a table design file does not pass logic checks"""
-    pass
+    """
+    Exception when a table design file does not pass logic checks
+    """
 
 
 class TableDesignValidationError(TableDesignError):
-    """Exception when a table design does not pass validation (against other table designs, upstream sources, ..."""
-    pass
+    """
+    Exception when a table design does not pass validation (against other table designs, upstream sources, ...
+    """
 
 
 class MissingQueryError(ETLConfigError):
-    """Exception when the query (SQL file) is missing"""
-    pass
+    """
+    Exception when the query (SQL file) is missing
+    """
 
 
 class CyclicDependencyError(ETLConfigError):
-    """Exception when evaluation order runs in circles"""
-    pass
+    """
+    Exception when evaluation order runs in circles
+    """
 
 
 class UpstreamValidationError(ETLRuntimeError):
-    """Exception when validation against upstream database fails"""
-    pass
+    """
+    Exception when validation against upstream database fails
+    """
 
 
 class FailedConstraintError(ETLRuntimeError):
@@ -109,8 +121,9 @@ class FailedConstraintError(ETLRuntimeError):
 
 
 class DataExtractError(ETLRuntimeError):
-    """Exception when extracting from an upstream source fails"""
-    pass
+    """
+    Exception when extracting from an upstream source fails
+    """
 
 
 class UnknownTableSizeError(DataExtractError):
@@ -145,5 +158,6 @@ class RequiredRelationFailed(ETLRuntimeError):
 
 
 class DataUnloadError(ETLRuntimeError):
-    """Exception when the unload operation fails"""
-    pass
+    """
+    Exception when the unload operation fails
+    """
