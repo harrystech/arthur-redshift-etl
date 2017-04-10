@@ -9,6 +9,7 @@ import logging
 import simplejson as json
 import tempfile
 import threading
+import time
 
 from typing import Iterator, List, Union, Tuple
 from datetime import datetime
@@ -120,7 +121,8 @@ def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) 
             failed.append(error['Key'])
     if failed:
         if _retry:
-            logger.warning("Failed to delete %d objects, trying one more time", len(failed))
+            logger.warning("Failed to delete %d objects, trying one more time in 5s", len(failed))
+            time.sleep(5)
             delete_objects(bucket_name, failed, _retry=False)
         else:
             raise S3ServiceError("Failed to delete %d file(s)" % len(failed))
