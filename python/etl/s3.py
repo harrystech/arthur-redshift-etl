@@ -96,7 +96,7 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
     uploader = S3Uploader(bucket_name)
     with tempfile.NamedTemporaryFile(mode="w+") as local_file:
         json.dump(data, local_file, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
-        local_file.write(b'\n')
+        local_file.write('\n')
         local_file.flush()
         uploader(local_file.name, object_key)
 
