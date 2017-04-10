@@ -14,53 +14,22 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
-from collections import Counter
-from contextlib import closing
-import difflib
+import concurrent.futures
+from contextlib import closing, contextmanager
 from functools import partial
 import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-import concurrent
 from typing import Any, Dict, List, Union
 
-import psycopg2
-import simplejson as json
-
-import etl
-import etl.design
-import etl.pg
+import etl.design.load
+from etl.errors import CyclicDependencyError, MissingQueryError
 import etl.file_sets
+from etl.names import join_with_quotes, TableName
+import etl.pg
 import etl.s3
-
-
-class MissingQueryError(etl.ETLError):
-    pass
-
-
-class CyclicDependencyError(etl.ETLError):
-    pass
-
-
-class ReloadConsistencyError(etl.ETLError):
-    pass
-
-
-class UniqueConstraintError(etl.ETLError):
-    def __init__(self, relation, constraint, keys, examples):
-        self.relation = relation
-        self.constraint = constraint
-        self.keys = keys
-        self.example_string = ', '.join(map(str, examples))
-
-    def __str__(self):
-        return ("Relation {r} violates {c} constraint: "
-                "Example duplicate values of {k} are: {e}".format(
-                    r=self.relation, c=self.constraint,
-                    k=self.keys,
-                    e=self.example_string)
-                )
+import etl.timer
 
 
 class RelationDescription:
@@ -73,7 +42,8 @@ class RelationDescription:
 
     def __getattr__(self, attr):
         """
-        Pass-through access to file set
+        Pass-through access to file set -- if the relation doesn't know about an attribute
+        we'll pick up the attribute from the file set!
         """
         if hasattr(self._fileset, attr):
             return getattr(self._fileset, attr)
@@ -107,14 +77,34 @@ class RelationDescription:
     def __repr__(self):
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
-    @property
-    def table_design(self) -> Dict[str, Any]:
+    def load(self) -> None:
+        """
+        Force a loading of the table design (which is normally loaded "on demand").
+
+        Strictly speaking, this isn't thread-safe.  But if you worry about thread safety here, rethink your code.
+        """
         if self._table_design is None:
             if self.bucket_name:
-                loader = partial(etl.design.download_table_design, self.bucket_name)
+                loader = partial(etl.design.load.load_table_design_from_s3, self.bucket_name)
             else:
-                loader = partial(etl.design.validate_table_design_from_file)
+                loader = partial(etl.design.load.load_table_design_from_localfile)
             self._table_design = loader(self.design_file_name, self.target_table_name)
+
+    @staticmethod
+    def load_in_parallel(descriptions: List["RelationDescription"]) -> None:
+        """
+        Load all descriptions' table design file in parallel.
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("Loading table design for %d relation(s)", len(descriptions))
+        with etl.timer.Timer() as timer:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                executor.map(lambda description: description.load(), descriptions)
+        logger.info("Finished loading %d table design file(s) (%s)", len(descriptions), timer)
+
+    @property
+    def table_design(self) -> Dict[str, Any]:
+        self.load()
         return self._table_design
 
     @property
@@ -132,7 +122,7 @@ class RelationDescription:
     @property
     def is_required(self):
         if self._is_required is None:
-            raise RuntimeError("State of 'is_required' for RelationDescription '{}' is unknown".format(self.identifier))
+            raise RuntimeError("State of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self))
         return self._is_required
 
     @property
@@ -195,7 +185,7 @@ class RelationDescription:
                 descriptions.append(cls(file_set))
             else:
                 logger.warning("Found file(s) without matching table design: %s",
-                               etl.join_with_quotes(file_set.files))
+                               join_with_quotes(file_set.files))
 
         if required_relation_selector:
             set_required_relations(descriptions, required_relation_selector)
@@ -228,6 +218,39 @@ class RelationDescription:
         else:
             return None
 
+    @contextmanager
+    def matching_temporary_view(self, conn):
+        """
+        Create a temporary view (with a name loosely based around the reference passed in).
+
+        We look up which temp schema the view landed in so that we can use TableName.
+        """
+        logger = logging.getLogger(__name__)
+
+        # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
+        view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
+
+        with etl.pg.log_error():
+            ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, self.query_stmt)
+            logger.info("Creating view '%s' to match relation '%s'", view_identifier, self.identifier)
+            etl.pg.execute(conn, ddl_stmt)
+
+            lookup_stmt = """
+                SELECT nsp.nspname AS "schema"
+                     , cls.relname AS "table"
+                  FROM pg_catalog.pg_class cls
+                  JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
+                 WHERE cls.relname = %s
+                   AND cls.relkind = 'v'
+                """
+            row = etl.pg.query(conn, lookup_stmt, (view_identifier,))[0]
+            view_name = TableName(**row)
+
+            try:
+                yield view_name
+            finally:
+                etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))
+
 
 class SortableRelationDescription:
     """
@@ -258,11 +281,7 @@ def order_by_dependencies(relation_descriptions):
         * relations that are depended upon but are not in the input
     """
     logger = logging.getLogger(__name__)
-
-    # Initializing the SortableRelationDescription instances pulls in the table designs from S3 since we'll access
-    # the dependencies.  (Practically we didn't see a speed-up for more than 8 workers.)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        descriptions = list(executor.map(lambda v: SortableRelationDescription(v), relation_descriptions))
+    descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
     known_tables = frozenset({description.identifier for description in descriptions})
     nr_tables = len(known_tables)
@@ -285,10 +304,10 @@ def order_by_dependencies(relation_descriptions):
             has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
-        # TODO In a "strict" or "pedantic" mode, if known_unkowns is not an empty set, this should error out.
-        logger.warning('These relations have unknown dependencies: %s', etl.join_with_quotes(has_unknown_dependencies))
+        # TODO In a "strict" or "pedantic" mode, if known_unknowns is not an empty set, this should error out.
+        logger.warning('These relations have unknown dependencies: %s', join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
-                       etl.join_with_quotes(known_unknowns))
+                       join_with_quotes(known_unknowns))
     has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
         if description.identifier in has_internal_dependencies:
@@ -332,325 +351,3 @@ def set_required_relations(descriptions, required_selector) -> None:
         relation._is_required = False
     for relation in required_relations:
         relation._is_required = True
-
-
-def validate_table_as_view(conn, description, keep_going=False):
-    """
-    Test-run a relation (CTAS or VIEW) by creating a temporary view.
-
-    With a view created, we can extract dependency information and a list of columns
-    to make sure table design and query match up.
-    """
-    logger = logging.getLogger(__name__)
-    # FIXME Switch to using a temporary view (starts with '#' and has no schema)
-    tmp_view_name = etl.TableName(schema=description.target_table_name.schema,
-                                  table='$'.join(["arthur_temp", description.target_table_name.table]))
-    ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(tmp_view_name, description.query_stmt)
-    logger.info("Creating view '%s' for table '%s'" % (tmp_view_name.identifier, description.target_table_name))
-    etl.pg.execute(conn, ddl_stmt)
-
-    # based off example query in AWS docs; *_p is for parent, *_c is for child
-    dependency_stmt = """SELECT DISTINCT
-           n_c.nspname AS dependency_schema
-         , c_c.relname AS dependency_name
-      FROM pg_class c_p
-      JOIN pg_depend d_p ON c_p.relfilenode = d_p.refobjid
-      JOIN pg_depend d_c ON d_p.objid = d_c.objid
-      -- the following OR statement covers the case where a COPY has issued a new OID for an upstream table
-      JOIN pg_class c_c ON d_c.refobjid = c_c.relfilenode OR d_c.refobjid = c_c.oid
-      LEFT JOIN pg_namespace n_p ON c_p.relnamespace = n_p.oid
-      LEFT JOIN pg_namespace n_c ON c_c.relnamespace = n_c.oid
-     WHERE c_p.relname = '{table}' AND n_p.nspname = '{schema}'
-        -- do not include the table itself in its dependency list
-       AND c_p.oid != c_c.oid""".format(
-        schema=tmp_view_name.schema, table=tmp_view_name.table)
-
-    dependencies = [etl.TableName(schema=row['dependency_schema'], table=row['dependency_name']).identifier
-                    for row in etl.pg.query(conn, dependency_stmt)]
-    dependencies.sort()
-    logger.info("Dependencies discovered: [{}]".format(', '.join(dependencies)))
-
-    comparison_output = _check_dependencies(dependencies, description.table_design)
-    if comparison_output:
-        if keep_going:
-            logger.warning(comparison_output)
-        else:
-            raise etl.design.TableDesignError(comparison_output)
-    else:
-        logger.info('Dependencies listing in design file matches SQL')
-
-    columns_stmt = """SELECT a.attname
-      FROM pg_class c, pg_attribute a, pg_type t, pg_namespace n
-     WHERE c.relname = '{table}'
-       AND a.attnum > 0
-       AND a.attrelid = c.oid
-       AND a.atttypid = t.oid
-       AND c.relnamespace = n.oid
-       AND n.nspname = '{schema}'
-     ORDER BY attnum ASC""".format(
-        schema=tmp_view_name.schema, table=tmp_view_name.table)
-
-    actual_columns = [row['attname'] for row in etl.pg.query(conn, columns_stmt)]
-    comparison_output = _check_columns(actual_columns, description.table_design)
-    if comparison_output:
-        if keep_going:
-            logger.warning(comparison_output)
-        else:
-            raise etl.design.TableDesignError(comparison_output)
-    else:
-        logger.info('Column listing in design file matches column listing in SQL')
-
-    logger.info("Dropping view '%s'", tmp_view_name.identifier)
-    etl.pg.execute(conn, "DROP VIEW IF EXISTS {}".format(tmp_view_name))
-
-
-def validate_constraints(conn, description, dry_run=False, only_warn=False):
-    """
-    Raises a UniqueConstraintError if :description's target table doesn't obey unique constraints declared in its design
-    Returns None
-    """
-    logger = logging.getLogger(__name__)
-    design = description.table_design
-    if 'constraints' not in design:
-        logger.info("No constraints discovered for '%s'", description.identifier)
-        return
-
-    statement_template = """
-        SELECT {cols}
-        FROM {table}
-        GROUP BY {cols}
-        HAVING COUNT(*) > 1
-        LIMIT 5
-    """
-
-    constraints = design['constraints']
-    for constraint in ["primary_key", "natural_key", "surrogate_key", "unique"]:
-        if constraint in constraints:
-            logger.info("Checking %s constraint on '%s'", constraint, description.identifier)
-            columns = constraints[constraint]
-            quoted_columns = ", ".join('"{}"'.format(name) for name in columns)
-            statement = statement_template.format(cols=quoted_columns, table=description.target_table_name)
-            if dry_run:
-                logger.info('Dry-run: Skipping duplicate row query, checking explain plan instead')
-                etl.pg.execute(conn, "EXPLAIN\n" + statement)
-                continue
-            results = etl.pg.query(conn, statement)
-            if results:
-                error = UniqueConstraintError(description, constraint, columns, results)
-                if only_warn:
-                    logger.warning(error)
-                else:
-                    raise error
-
-
-def _check_dependencies(observed, table_design):
-    """
-    Compare actual dependencies to a table design object and return instructions for logger
-
-    >>> _check_dependencies(['abc.123', '123.abc'], dict(name='fish', depends_on=['123.abc']))  # doctest: +ELLIPSIS
-    'Dependency tracking mismatch! payload =...]}'
-
-    >>> _check_dependencies(['abc.123', '123.abc'], dict(name='fish', depends_on=['123.abc', 'abc.123']))
-
-    """
-    expected = table_design.get('depends_on', [])
-
-    observed_deps = set(observed)
-    expected_deps = set(expected)
-    if not observed_deps == expected_deps:
-        return 'Dependency tracking mismatch! payload = {}'.format(json.dumps(dict(
-                 full_dependencies=observed,
-                 table=table_design['name'],
-                 actual_but_unlisted=list(observed_deps - expected_deps),
-                 listed_but_not_actual=list(expected_deps - observed_deps))))
-
-
-def _check_columns(observed, table_design):
-    """
-    Compare actual columns in query to those in table design object and return instructions for logger
-
-    >>> _check_columns(['a', 'b'], dict(columns=[dict(name='b'), dict(name='a')])) # doctest: +ELLIPSIS
-    'Column listing mismatch! Diff of observed vs expected follows:...'
-
-    >>> _check_columns(['a', 'b'], dict(columns=[dict(name='a'), dict(name='b')]))
-
-    """
-    observed = list(observed)
-    expected = [column["name"] for column in table_design["columns"] if not column.get('skipped', False)]
-
-    # handle identity columns by inserting a column into observed in the expected position
-    for index, column in enumerate(table_design['columns']):
-        if column.get('identity', False):
-            observed.insert(index, column['name'])
-
-    if observed != expected:
-        return 'Column listing mismatch! Diff of observed vs expected follows: {}'.format(
-                 '\n'.join(difflib.context_diff(observed, expected)))
-
-
-def validate_design_file_semantics(descriptions, keep_going=False):
-    """
-    Load local design files and validate them along the way against schemas and semantics.
-    Return list for successfully validated descriptions if you want to keep going.
-    Or raise exception on validation error.
-    """
-    logger = logging.getLogger(__name__)
-    ok = []
-    for description in descriptions:
-        try:
-            logger.info("Loading and validating file '%s'", description.design_file_name)
-            if description.table_design:
-                ok.append(description)
-        except etl.design.TableDesignError:
-            if not keep_going:
-                raise
-    return ok
-
-
-def validate_designs_using_views(dsn, table_descriptions, keep_going=False):
-    """
-    Iterate over all relations (CTAS or VIEW) to test how table design and query match up.
-    """
-    logger = logging.getLogger(__name__)
-    with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
-        for description in table_descriptions:
-            try:
-                with etl.pg.log_error():
-                    validate_table_as_view(conn, description, keep_going=keep_going)
-            except (etl.ETLError, psycopg2.Error):
-                if keep_going:
-                    logger.exception("Ignoring failure to create '%s' and proceeding as requested:",
-                                     description.target_table_name)
-                else:
-                    raise
-
-
-def get_list_difference(list1, list2):
-    """
-    Return list of elements that help turn list1 into list2 -- a "minimal" list of
-    differences based on changing one list into the other.
-
-    >>> sorted(get_list_difference(["a", "b"], ["b", "a"]))
-    ['b']
-    >>> sorted(get_list_difference(["a", "b"], ["a", "c", "b"]))
-    ['c']
-    >>> sorted(get_list_difference(["a", "b", "c", "d", "e"], ["a", "c", "b", "e"]))
-    ['c', 'd']
-
-    The last list happens because the matcher asks to insert 'c', then delete 'c' and 'd' later.
-    """
-    diff = set()
-    matcher = difflib.SequenceMatcher(None, list1, list2)  # None means skip junk detection
-    for code, left1, right1, left2, right2 in matcher.get_opcodes():
-        if code != 'equal':
-            diff.update(list1[left1:right1])
-            diff.update(list2[left2:right2])
-    return diff
-
-
-def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
-    """
-    Verify that columns between unloaded tables and reloaded tables are the same.
-
-    Once the designs are validated, we can unload a relation 's.t' with a target 'u' and
-    then extract and load it back into 'u.t'.
-
-    Note that the order matters for these lists of columns.  (Which is also why we
-    can't take the (symmetric) difference between columns but must be careful checking
-    the column lists.)
-    """
-    logger = logging.getLogger(__name__)
-    unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
-    descriptions_lookup = {d.identifier: d for d in descriptions}
-
-    for unloaded in unloaded_descriptions:
-        logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
-        reloaded = etl.TableName(unloaded.unload_target, unloaded.target_table_name.table)
-        if reloaded.identifier in descriptions_lookup:
-            description = descriptions_lookup[reloaded.identifier]
-            logger.info("Checking for consistency between '%s' and '%s'", unloaded.identifier, description.identifier)
-            unloaded_columns = unloaded.unquoted_columns
-            reloaded_columns = description.unquoted_columns
-            if unloaded_columns != reloaded_columns:
-                diff = get_list_difference(reloaded_columns, unloaded_columns)
-                logger.error("Column difference detected between '%s' and '%s'",
-                             unloaded.identifier, description.identifier)
-                logger.error("You need to replace, insert and/or delete in '%s': %s",
-                             description.identifier, etl.join_with_quotes(diff))
-                if not keep_going:
-                    raise ReloadConsistencyError("Unloaded relation '%s' failed to match counterpart"
-                                                 % unloaded.identifier)
-
-
-def validate_designs(dsn: dict, descriptions: List[RelationDescription], keep_going=False, skip_deps=False) -> None:
-    """
-    Make sure that all table design files pass the validation checks.
-    """
-    logger = logging.getLogger(__name__)
-
-    valid_descriptions = validate_design_file_semantics(descriptions, keep_going=keep_going)
-    validate_reload(valid_descriptions, keep_going=keep_going)
-
-    logger.info("Validating dependency ordering")
-    order_by_dependencies(valid_descriptions)
-
-    tables_to_validate_as_views = [description for description in valid_descriptions
-                                   if description.is_ctas_relation or description.is_view_relation]
-    if skip_deps:
-        logger.info("Skipping validation against database")
-    elif tables_to_validate_as_views:
-        validate_designs_using_views(dsn, tables_to_validate_as_views, keep_going=keep_going)
-    else:
-        logger.info("Skipping validation against database (nothing to do)")
-
-
-def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
-    """
-    Test queries by running EXPLAIN with the query.
-    """
-    logger = logging.getLogger(__name__)
-    bad_distribution_styles = ["DS_DIST_INNER", "DS_BCAST_INNER", "DS_DIST_ALL_INNER", "DS_DIST_BOTH"]
-    counter = Counter()
-
-    # We can't use a read-only connection here because Redshift needs to (or wants to) create
-    # temporary tables when building the query plan if temporary tables (probably from CTEs)
-    # will be needed during query execution.  (Look for scans on volt_tt_* tables.)
-    with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
-        for description in descriptions:
-            if description.is_ctas_relation or description.is_view_relation:
-                logger.debug("Testing query for '%s'", description.identifier)
-                plan = etl.pg.explain(conn, description.query_stmt)
-                print("Explain plan for query of '{0.identifier}':\n | {1}".format(description, "\n | ".join(plan)))
-                for row in plan:
-                    for ds in bad_distribution_styles:
-                        if ds in row:
-                            counter[ds] += 1
-    for ds in bad_distribution_styles:
-        if counter[ds]:
-            logger.warning("Found %s distribution style %d time(s)", ds, counter[ds])
-
-
-def sync_with_s3(descriptions: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
-    """
-    Copy (validated) table design and SQL files from local directory to S3 bucket.
-
-    Essentially "publishes" data-warehouse code.
-    """
-    logger = logging.getLogger(__name__)
-
-    for description in descriptions:
-        files = [description.design_file_name]
-        if description.is_ctas_relation or description.is_view_relation:
-            if description.sql_file_name:
-                files.append(description.sql_file_name)
-            else:
-                raise MissingQueryError("Missing matching SQL file for '%s'" % description.design_file_name)
-
-        for local_filename in files:
-            object_key = os.path.join(prefix, description.norm_path(local_filename))
-            if dry_run:
-                logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", local_filename, bucket_name, object_key)
-            else:
-                etl.s3.upload_to_s3(local_filename, bucket_name, object_key)
-    if not dry_run:
-        logger.info("Synced %d file(s) to 's3://%s/%s/'", len(descriptions), bucket_name, prefix)

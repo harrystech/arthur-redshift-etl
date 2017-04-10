@@ -6,6 +6,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 """
 
 import argparse
+from contextlib import contextmanager
 import getpass
 import logging
 import os
@@ -15,25 +16,25 @@ import traceback
 import boto3
 import simplejson as json
 
-import etl
 import etl.config
-import etl.design
+import etl.design.bootstrap
+from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
+import etl.explain
 import etl.extract
 import etl.dw
 import etl.file_sets
 import etl.json_encoder
 import etl.load
 import etl.monitor
+import etl.names
 import etl.pg
 import etl.pipeline
 import etl.relation
-import etl.unload
+import etl.selftest
+import etl.sync
 from etl.timer import Timer
-
-
-class InvalidArgumentsError(Exception):
-    """Exception thrown arguments are detected to be invalid by the command callback"""
-    pass
+import etl.unload
+import etl.validate
 
 
 def croak(error, exit_code):
@@ -53,10 +54,42 @@ def croak(error, exit_code):
     sys.exit(exit_code)
 
 
+@contextmanager
+def execute_or_bail():
+    """
+    Either execute (the wrapped code) successfully or bail out with a helpful error message.
+
+    Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
+    """
+    logger = logging.getLogger(__name__)
+    timer = Timer()
+    try:
+        yield
+    except InvalidArgumentsError as exc:
+        logger.exception("ETL never got off the ground:")
+        croak(exc, 1)
+    except ETLError as exc:
+        if isinstance(exc, ETLDelayedExit):
+            logger.critical("Something bad happened in the ETL: %s", str(exc))
+        else:
+            logger.exception("Something bad happened in the ETL:")
+        logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
+        croak(exc, 2)
+    except Exception as exc:
+        logger.exception("Something terrible happened:")
+        logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+        croak(exc, 3)
+    except BaseException as exc:
+        logger.exception("Something really terrible happened:")
+        logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+        croak(exc, 5)
+    else:
+        logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
+
+
 def run_arg_as_command(my_name="arthur.py"):
     """
     Use the sub-command's callback in `func` to actually run the sub-command.
-    Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
     This function can be used as an entry point for a console script.
     """
     parser = build_full_parser(my_name)
@@ -66,38 +99,26 @@ def run_arg_as_command(my_name="arthur.py"):
     elif args.cluster_id:
         submit_step(args.cluster_id, args.sub_command)
     else:
-        etl.config.configure_logging(args.prolix, args.log_level)
-        logger = logging.getLogger(__name__)
-        with Timer() as timer:
-            try:
-                settings = etl.config.load_settings(args.config)
-                if hasattr(args, "prefix"):
-                    # Only commands which require an environment should require a monitor.
-                    etl.monitor.set_environment(args.prefix,
-                                                dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
-                                                postgresql_settings=settings["etl_events"].get("postgresql", {}))
-                dw_config = etl.config.DataWarehouseConfig(settings)
-                if hasattr(args, "pattern"):
-                    args.pattern.base_schemas = [s.name for s in dw_config.schemas]
-                setattr(args, "bucket_name", settings["s3"]["bucket_name"])
-                args.func(args, dw_config)
-            except InvalidArgumentsError as exc:
-                logger.exception("ETL never got off the ground:")
-                croak(exc, 1)
-            except etl.ETLError as exc:
-                logger.exception("Something bad happened in the ETL:")
-                logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
-                croak(exc, 1)
-            except Exception as exc:
-                logger.exception("Something terrible happened:")
-                logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
-                croak(exc, 2)
-            except BaseException as exc:
-                logger.exception("Something really terrible happened:")
-                logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
-                croak(exc, 3)
-            else:
-                logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
+        # We need to configure logging before running context because that context expects logging to be setup.
+        try:
+            etl.config.configure_logging(args.prolix, args.log_level)
+        except Exception as exc:
+            croak(exc, 1)
+
+        with execute_or_bail():
+            settings = etl.config.load_config(args.config)
+
+            if hasattr(args, "prefix"):
+                # Only commands which require an environment should require a monitor.
+                etl.monitor.set_environment(args.prefix,
+                                            dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
+                                            postgresql_settings=settings["etl_events"].get("postgresql", {}))
+            setattr(args, "bucket_name", settings["s3"]["bucket_name"])
+
+            dw_config = etl.config.get_dw_config()
+            if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
+                args.pattern.base_schemas = [s.name for s in dw_config.schemas]
+            args.func(args, dw_config)
 
 
 def submit_step(cluster_id, sub_command):
@@ -172,7 +193,7 @@ def build_full_parser(prog_name):
     """
     parser = build_basic_parser(prog_name, description="This command allows to drive the Redshift ETL.")
 
-    package = etl.package_version()
+    package = etl.config.package_version()
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
 
     # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.
@@ -183,12 +204,14 @@ def build_full_parser(prog_name):
             # Commands to deal with data warehouse as admin:
             InitializeSetupCommand, CreateUserCommand,
             # Commands to help with table designs and uploading them
-            DownloadSchemasCommand, ValidateDesignsCommand, ExplainQueryCommand, SyncWithS3Command,
+            BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
+            SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
-            ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand, EventsQueryCommand]:
+            ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand,
+            EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -226,10 +249,6 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-d", "--drop",
                             help="first drop table or view to force update of definition", default=False,
                             action="store_true")
-    if "explain" in options:
-        parser.add_argument("-x", "--add-explain-plan",
-                            help="DEPRECATED add explain plan to log (use the 'explain' command directly)",
-                            action="store_true")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
@@ -240,7 +259,7 @@ class StorePatternAsSelector(argparse.Action):
     Store the list of glob patterns (to pick tables) as a TableSelector instance.
     """
     def __call__(self, parser, namespace, values, option_string=None):
-        selector = etl.TableSelector(values)
+        selector = etl.names.TableSelector(values)
         setattr(namespace, "pattern", selector)
 
 
@@ -287,10 +306,9 @@ class SubCommand:
         elif scheme == "s3":
             return scheme, args.bucket_name, args.prefix
         else:
-            raise ValueError("scheme invalid")
+            raise ETLSystemError("scheme invalid")
 
-    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None,
-                                   return_all=False, error_if_empty=True):
+    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None, return_all=False):
         """
         Most commands need to (1) collect file sets and (2) create relation descriptions around those.
         Commands vary slightly as to what error handling they want to do and whether they need all
@@ -300,11 +318,10 @@ class SubCommand:
         to build a dependency tree), build the dependency order, then pick out the matching descriptions.
         """
         if return_all or required_relation_selector is not None:
-            selector = etl.TableSelector(base_schemas=args.pattern.base_schemas)
+            selector = etl.names.TableSelector(base_schemas=args.pattern.base_schemas)
         else:
             selector = args.pattern
-        file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector,
-                                                 error_if_empty=error_if_empty)
+        file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector)
 
         descriptions = etl.relation.RelationDescription.from_file_sets(
             file_sets, required_relation_selector=required_relation_selector)
@@ -365,30 +382,46 @@ class CreateUserCommand(SubCommand):
                                    skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
-class DownloadSchemasCommand(SubCommand):
+class BootstrapSourcesCommand(SubCommand):
 
     def __init__(self):
         super().__init__("design",
                          "bootstrap schema information from sources",
-                         "Download schema information from upstream sources and compare against current table designs.")
+                         "Download schema information from upstream sources and compare against current table designs."
+                         " If there is no current design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
         parser.add_argument("-a", "--auto",
-                            help="auto-generate design file from any transformations found (not in upstream schema)",
+                            help="DEPRECATED use 'auto_design' instead",
                             action="store_true")
 
     def callback(self, args, config):
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, error_if_empty=False)
         if args.auto:
-            created = etl.design.bootstrap_views(local_files, config.schemas, dry_run=args.dry_run)
-        else:
-            created = []
-        try:
-            etl.design.download_schemas(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                        config.type_maps, auto=args.auto, dry_run=args.dry_run)
-        finally:
-            etl.design.cleanup_views(created, config.schemas, dry_run=args.dry_run)
+            raise InvalidArgumentsError("Option --auto is no longer supported.  Use 'auto_design' instead.")
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
+        etl.design.bootstrap.bootstrap_sources(config.schemas, args.pattern, args.table_design_dir, local_files,
+                                               config.type_maps, dry_run=args.dry_run)
+
+
+class BootstrapTransformationsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("auto_design",
+                         "bootstrap schema information for transformations",
+                         "Download schema information as if transformation had been run in data warehouse."
+                         " If there is no local design file, then create one as a starting point.")
+
+    def add_arguments(self, parser):
+        parser.add_argument('type', choices=['CTAS', 'VIEW'],
+                            help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
+        add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
+
+    def callback(self, args, config):
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
+        etl.design.bootstrap.bootstrap_transformations(config.dsn_etl, config.schemas,
+                                                       args.table_design_dir, local_files,
+                                                       config.type_maps, args.type == "VIEW", dry_run=args.dry_run)
 
 
 class SyncWithS3Command(SubCommand):
@@ -410,14 +443,9 @@ class SyncWithS3Command(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        if args.force:
-            etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
-
-        if args.deploy_config:
-            etl.config.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
-
         descriptions = self.find_relation_descriptions(args, default_scheme="file")
-        etl.relation.sync_with_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        etl.sync.sync_with_s3(args.config, descriptions, args.bucket_name, args.prefix, args.pattern,
+                              force=args.force, deploy_config=args.deploy_config, dry_run=args.dry_run)
 
 
 class ExtractToS3Command(SubCommand):
@@ -467,7 +495,7 @@ class LoadRedshiftCommand(SubCommand):
         self.use_force = True
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "explain", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY command (for debugging)",
                             action="store_true")
@@ -486,7 +514,6 @@ class LoadRedshiftCommand(SubCommand):
                                              stop_after_first=args.stop_after_first,
                                              no_rollback=args.no_rollback,
                                              skip_copy=args.skip_copy,
-                                             add_explain_plan=args.add_explain_plan,
                                              dry_run=args.dry_run)
 
 
@@ -528,21 +555,25 @@ class ValidateDesignsCommand(SubCommand):
     def __init__(self):
         super().__init__("validate",
                          "validate table design files",
-                         "Validate table designs (use '-q' to only see errors/warnings).")
+                         "Validate table designs (use '-q' to only see errors or warnings).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
         parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
+        parser.add_argument("-s", "--skip-sources-check",
+                            help="skip check of designs against upstream databases",
+                            default=False, action="store_true")
         parser.add_argument("-n", "--skip-dependencies-check",
-                            help="skip check of dependencies against dependencies",
+                            help="skip check of dependencies in designs against data warehouse",
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        # FIXME This should pick up all files so that dependency ordering can be done correctly.
-        descriptions = self.find_relation_descriptions(args, error_if_empty=False)
-        etl.relation.validate_designs(config.dsn_etl, descriptions,
-                                      keep_going=args.keep_going, skip_deps=args.skip_dependencies_check)
+        # NB This does not pick up all designs to speed things up but that may lead to false positives.
+        descriptions = self.find_relation_descriptions(args)
+        etl.validate.validate_designs(config, descriptions, keep_going=args.keep_going,
+                                      skip_sources=args.skip_sources_check,
+                                      skip_dependencies=args.skip_dependencies_check)
 
 
 class ExplainQueryCommand(SubCommand):
@@ -550,14 +581,21 @@ class ExplainQueryCommand(SubCommand):
     def __init__(self):
         super().__init__("explain",
                          "collect explain plans",
-                         "Run EXPLAIN on queries (for CTAS or VIEW) for files in local filesystem.")
+                         "Run EXPLAIN on queries (for CTAS or VIEW), check query plan for distributions.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
 
     def callback(self, args, config):
-        descriptions = self.find_relation_descriptions(args)
-        etl.relation.explain_queries(config.dsn_etl, descriptions)
+        if args.scheme == "file":
+            # When running locally, we accept that there be only a SQL file.
+            local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
+            descriptions = [etl.relation.RelationDescription(file_set) for file_set in local_files
+                            if file_set.sql_file_name]
+        else:
+            # When running with S3, we expect full sets of files (SQL plus table design)
+            descriptions = self.find_relation_descriptions(args)
+        etl.explain.explain_queries(config.dsn_etl, descriptions)
 
 
 class ListFilesCommand(SubCommand):
@@ -573,7 +611,7 @@ class ListFilesCommand(SubCommand):
                             action="store_true")
 
     def callback(self, args, config):
-        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern, error_if_empty=False)
+        file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
         etl.file_sets.list_files(file_sets, long_format=args.long_format)
 
 
@@ -594,7 +632,7 @@ class PingCommand(SubCommand):
     def callback(self, args, config):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
         with etl.pg.log_error():
-            etl.dw.ping(dsn)
+            etl.pg.ping(dsn)
 
 
 class ShowDependentsCommand(SubCommand):
@@ -610,8 +648,7 @@ class ShowDependentsCommand(SubCommand):
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args,
                                                        required_relation_selector=config.required_in_full_load_selector,
-                                                       return_all=True,
-                                                       error_if_empty=False)
+                                                       return_all=True)
         etl.load.show_dependents(descriptions, args.pattern)
 
 
@@ -642,6 +679,19 @@ class EventsQueryCommand(SubCommand):
 
     def callback(self, args, config):
         etl.monitor.query_for(args.pattern, args.etl_id)
+
+
+class SelfTestCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("selftest",
+                         "run code tests of ETL",
+                         "Run self-test of the ETL.")
+
+    def callback(self, args, config):
+        verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0}
+        verbosity = verbosity_levels.get(args.log_level, 1)
+        etl.selftest.run_self_test(verbosity)
 
 
 if __name__ == "__main__":

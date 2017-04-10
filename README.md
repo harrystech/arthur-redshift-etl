@@ -242,7 +242,7 @@ arthur.py --submit "<cluster ID>" load --prolix --prefix $USER
 
 ```shell
 # The commands to setup the data warehouse users and groups or any database is by ADMIN (connected to `dev`)
-arthur.py initialize  # NOP
+arthur.py initialize  # NOP but errors out
 arthur.py initialize development --with-user-creation  # Must create users and groups on first call
 ```
 
@@ -251,6 +251,8 @@ arthur.py initialize development --with-user-creation  # Must create users and g
 | Sub-command   | Goal |
 | ---- | ---- |
 | `design`  | Download schemas from upstream sources and bootstrap design files |
+| `auto_design`  | Bootstrap design files for transformations based on new SQL queries |
+| `explain`  | Review query plan for transformations |
 | `validate`  | After making changes to the design files, validate that changes are consistent with the expected format and with respect to each other |
 | `sync` | Upload your local files to your data lake |
 
@@ -272,6 +274,16 @@ arthur.py extract
 arthur.py load  # This will automatically create schemas as necessary
 ```
 
+### Running unit tests
+
+| Sub-command   | Goal |
+| ---- | ---- |
+| `selftest`  | Run unit tests builtin code before committing changes |
+
+```shell
+arthur.py selftest
+```
+
 ## Working with a staging environment
 
 A staging environment can help with deploying data that you'll be confident to release into production.
@@ -286,7 +298,9 @@ Once everything is working fine in staging, you can promote the code into produc
 ./bin/sync_env.sh "<your S3 bucket>" staging production
 ```
 
-# Debugging and Contributing
+# Contributing and Releases
+
+## Creating pull requests
 
 Pull requests are welcome!
 
@@ -302,8 +316,33 @@ ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/))
-* And rebase your commits into logical chunks
+* Use git rebasing to merge your commits into logical chunks
 (See [Thoughtbot's guidelines](https://github.com/thoughtbot/guides/blob/master/protocol/git/README.md))
+
+## Releasing new versions
+
+Here are the basic steps to release a new version. Appropriate as you deem appropriate.
+
+* Create a new branch for the release candidate, e.g. `v0_22_0` for v0.22.0.
+(Do yourself a favor and use underscores in branch names and periods in the tag names.)
+
+* Your first commit on this branch is a bump in the version number in `setup.py`.
+
+* Create a pull request for your new branch.
+
+* Go through pull requests that are ready for release and change their base branch to your release branch (in our example, `v0_22_0`).
+    * Make sure the PR message contains the Issue number or the Jira story (like DW-99).
+    * Add the changes from the story work into comments of the PR.
+    * Then merge the ready PRs into your release candidate.
+
+* Test then merge the PR with your release candidate into master.
+
+* Create a release under [Releases](https://github.com/harrystech/harrys-redshift-etl/releases).
+    * Create a new release and set the release version, e.g. `v0.22.0`.
+    * Copy the comments from the PR where you collected all the changes into the release notes.
+    * Save the release which will add the tag of the release.
+
+* Ship the new version using `setup_env.sh`.
 
 # Tips & Tricks
 

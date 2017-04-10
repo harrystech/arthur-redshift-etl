@@ -2,13 +2,18 @@ import logging
 import os.path
 from typing import Dict, List
 
-from etl.config import DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
 from etl.relation import RelationDescription
 from etl.thyme import Thyme
 
 
 class StaticExtractor(Extractor):
+
+    """
+    Enable using files in S3 as an upstream data source.
+    """
+    # TODO Describe expected file paths, existence of "_SUCCESS" file
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, dry_run: bool):

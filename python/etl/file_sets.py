@@ -26,17 +26,9 @@ import os
 import os.path
 import re
 
-from etl import TableName
 import etl.config
+from etl.names import TableName, TableSelector
 import etl.s3
-
-
-class BadSourceDefinitionError(etl.ETLError):
-    pass
-
-
-class S3ServiceError(etl.ETLError):
-    pass
 
 
 class TableFileSet:
@@ -44,7 +36,8 @@ class TableFileSet:
     Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
 
     TableFileSets have a :natural_order based on their schema's position in the DataWarehouseConfig's
-    schema list and their :source_table_name.
+    schema list and their :source_table_name.  (So we try to sort sources by their order
+    in the configuration and not alphabetically.)
 
     Note that all tables are addressed using their "target name" within the data warehouse, where
     the schema name is equal to the source name and the table name is the same as in the upstream
@@ -67,7 +60,10 @@ class TableFileSet:
         self.netloc = None
         self.path = None
         # Used to order relations (should be opaque to users)
-        self.natural_order = natural_order
+        self._natural_order = natural_order
+
+    def __lt__(self, other):
+        return self._natural_order < other._natural_order
 
     def __repr_(self):
         extensions = []
@@ -95,7 +91,7 @@ class TableFileSet:
         elif self.scheme == "file":
             return filename
         else:
-            raise RuntimeError("Illegal scheme in file set")
+            raise RuntimeError("illegal scheme in file set")
 
     def stat(self, filename):
         """
@@ -106,7 +102,7 @@ class TableFileSet:
         elif self.scheme == "file":
             return local_file_stat(filename)
         else:
-            raise RuntimeError("Illegal scheme in file set")
+            raise RuntimeError("illegal scheme in file set")
 
     @property
     def source_name(self):
@@ -187,14 +183,15 @@ def list_local_files(directory):
                 yield os.path.join(root, filename)
 
 
-def find_file_sets(uri_parts, selector, error_if_empty=True):
+def find_file_sets(uri_parts, selector, allow_empty=False):
     """
     Generic method to collect files from either s3://bucket/prefix or file://localhost/directory
     based on the tuple describing a parsed URI, which should be either
     ("s3", "bucket", "prefix", ...) or ("file", "localhost", "directory", ...)
     The selector (as a bare minimum) should have a reasonable set of base schemas.
+
+    If :allow_empty is True and no files are found in the local filesystem, an empty list is returned.
     """
-    logger = logging.getLogger(__name__)
     scheme, netloc, path = uri_parts[:3]
     if scheme == "s3":
         file_sets = _find_file_sets_from(etl.s3.list_objects_for_prefix(netloc, path + '/data', path + '/schemas'),
@@ -205,13 +202,10 @@ def find_file_sets(uri_parts, selector, error_if_empty=True):
         if os.path.exists(path):
             file_sets = _find_file_sets_from(list_local_files(path), selector)
             if not file_sets:
-                if error_if_empty:
-                    raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
+                if allow_empty:
+                    file_sets = []
                 else:
-                    logger.warning("Found no matching files in '%s' for '%s' (proceeding recklessly...)",
-                                   path, selector)
-        elif not error_if_empty:
-            file_sets = []
+                    raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
         else:
             raise FileNotFoundError("Failed to find directory: '%s'" % path)
     # Bind the files that were found to where they were found
@@ -266,17 +260,18 @@ def _find_file_sets_from(iterable, selector):
     logger = logging.getLogger(__name__)
     target_map = {}
 
-    # Always return files sorted by sources (in original order) and target name
+    # Always return files sorted by sources (in original order) and target name.
     schema_index = {name: index for index, name in enumerate(selector.base_schemas)}
 
     for filename, values in _find_matching_files_from(iterable, selector):
-        source_table_name = etl.TableName(values["schema_name"], values["table_name"])
-        target_table_name = etl.TableName(values["source_name"], values["table_name"])
-        if target_table_name not in target_map:
-            natural_order = schema_index.get(values["source_name"]), source_table_name.identifier
-            target_map[target_table_name] = TableFileSet(source_table_name, target_table_name, natural_order)
-        file_set = target_map[target_table_name]
+        source_table_name = TableName(values["schema_name"], values["table_name"])
+        target_table_name = TableName(values["source_name"], values["table_name"])
 
+        if target_table_name.identifier not in target_map:
+            natural_order = schema_index.get(values["source_name"]), source_table_name.identifier
+            target_map[target_table_name.identifier] = TableFileSet(source_table_name, target_table_name, natural_order)
+
+        file_set = target_map[target_table_name.identifier]
         file_type = values['file_type']
         if file_type == 'yaml':
             file_set.design_file_name = filename
@@ -287,12 +282,12 @@ def _find_file_sets_from(iterable, selector):
         elif file_type == 'data':
             file_set.add_data_file(filename)
 
-    file_sets = sorted(target_map.values(), key=attrgetter('natural_order'))
+    file_sets = sorted(target_map.values())
     logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
     return file_sets
 
 
-def delete_files_in_bucket(bucket_name: str, prefix: str, selector: str, dry_run: bool=False) -> None:
+def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool=False) -> None:
     """
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """

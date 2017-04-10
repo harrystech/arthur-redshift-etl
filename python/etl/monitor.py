@@ -23,7 +23,7 @@ import boto3
 import botocore.exceptions
 import simplejson as json
 
-import etl.config
+import etl.config.env
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds
 import etl.pg
@@ -324,7 +324,7 @@ class DynamoDBStorage(PayloadDispatcher):
             if "elapsed" in item:
                 item["elapsed"] = Decimal("%.6f" % item['elapsed'])
             table.put_item(Item=item)
-        except botocore.exceptions.ClientError as exc:
+        except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
                 logger = logging.getLogger(__name__)
@@ -348,7 +348,7 @@ class RelationalStorage(PayloadDispatcher):
     def __init__(self, table_name, write_access):
         logger = logging.getLogger(__name__)
         self.table_name = table_name
-        self.dsn = etl.config.env_value(write_access)
+        self.dsn = etl.config.env.get(write_access)
         logger.info("Creating table '%s' (unless it already exists)", table_name)
         with closing(etl.pg.connection(self.dsn)) as conn:
             etl.pg.execute(conn, """

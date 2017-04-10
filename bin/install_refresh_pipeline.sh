@@ -2,7 +2,7 @@
 
 if [[ $# -lt 5 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]"
-    echo "      Start time should take the ISO8601 format like: `date +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     echo "      Specify source tables using space-delimited arthur pattern globs."
     exit 0
 fi
@@ -13,6 +13,17 @@ CLUSTER_BUCKET="$1"
 CLUSTER_ENVIRONMENT="$2"
 START_DATE_TIME="$3"
 OCCURRENCES="$4"
+
+BINDIR=`dirname $0`
+TOPDIR=`\cd $BINDIR/.. && \pwd`
+CONFIG_SOURCE="$TOPDIR/aws_config"
+
+if [[ ! -d "$CONFIG_SOURCE" ]]; then
+    echo "Cannot find configuration files (aws_config)"
+    exit 1
+else
+    echo "Using local configuration files in $CONFIG_SOURCE"
+fi
 
 shift 4
 SELECTION="$@"
@@ -36,7 +47,7 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 set -e -u -x
 
 aws datapipeline create-pipeline \
-    --unique-id redshift_etl_pipeline \
+    --unique-id refresh_etl_pipeline \
     --name "ETL Refresh Pipeline ($CLUSTER_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)" \
     --tags "$PIPELINE_TAGS" \
     | tee "$PIPELINE_ID_FILE"
@@ -44,7 +55,7 @@ aws datapipeline create-pipeline \
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://./aws_config/refresh_pipeline.json \
+    --pipeline-definition file://${CONFIG_SOURCE}/refresh_pipeline.json \
     --parameter-values \
         myS3Bucket="$CLUSTER_BUCKET" \
         myEtlEnvironment="$CLUSTER_ENVIRONMENT" \

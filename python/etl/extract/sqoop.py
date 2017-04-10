@@ -6,8 +6,8 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List, Union
 
 import etl.config
-from etl.config import DataWarehouseSchema
-from etl.extract.errors import SqoopExecutionError
+from etl.config.dw import DataWarehouseSchema
+from etl.errors import SqoopExecutionError
 from etl.extract.extractor import Extractor
 import etl.monitor
 import etl.pg
@@ -75,7 +75,6 @@ class SqoopExtractor(Extractor):
         tool specific options, and child-process options.
         """
         source_table_name = description.source_table_name
-        table_design = description.table_design
         columns = description.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
         primary_key = description.find_primary_key()

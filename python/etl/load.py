@@ -44,36 +44,12 @@ import logging
 import psycopg2
 
 import etl
-from etl import TableName
-import etl.config
-import etl.design
 import etl.dw
-import etl.file_sets
+from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
 import etl.monitor
+from etl.names import join_column_list, join_with_quotes, TableName
 import etl.pg
 import etl.relation
-
-
-class MissingManifestError(etl.ETLError):
-    pass
-
-
-class RequiredRelationFailed(etl.ETLError):
-    def __init__(self, failed_description, illegal_failures, required_selector):
-        self.failed_description = failed_description
-        self.illegal_failures = illegal_failures
-        self.required_selector = required_selector
-
-    def __str__(self):
-        return "Failure of {d} implies failures of {f}, which are required by selector {r}".format(
-            d=self.failed_description.identifier, f=', '.join(self.illegal_failures), r=self.required_selector)
-
-
-def format_column_list(columns):
-    """
-    Return string with comma-separated, delimited column names
-    """
-    return ", ".join('"{}"'.format(column) for column in columns)
 
 
 def _build_constraints(table_design, exclude_foreign_keys=False):
@@ -81,16 +57,16 @@ def _build_constraints(table_design, exclude_foreign_keys=False):
     ddl_constraints = []
     for pk in ("primary_key", "surrogate_key"):
         if pk in constraints:
-            ddl_constraints.append('PRIMARY KEY ( {} )'.format(format_column_list(constraints[pk])))
+            ddl_constraints.append('PRIMARY KEY ( {} )'.format(join_column_list(constraints[pk])))
     for nk in ("unique", "natural_key"):
         if nk in constraints:
-            ddl_constraints.append('UNIQUE ( {} )'.format(format_column_list(constraints[nk])))
+            ddl_constraints.append('UNIQUE ( {} )'.format(join_column_list(constraints[nk])))
     if "foreign_key" in constraints and not exclude_foreign_keys:
         local_columns, reference, reference_columns = constraints["foreign_key"]
         reference_table = TableName(*reference.split('.', 1))
-        ddl_constraints.append('FOREIGN KEY ( {} ) REFERENCES {} ( {} )'.format(format_column_list(local_columns),
+        ddl_constraints.append('FOREIGN KEY ( {} ) REFERENCES {} ( {} )'.format(join_column_list(local_columns),
                                                                                 reference_table,
-                                                                                format_column_list(reference_columns)))
+                                                                                join_column_list(reference_columns)))
     return ddl_constraints
 
 
@@ -101,13 +77,13 @@ def _build_attributes(table_design, exclude_distribution=False):
         dist = attributes["distribution"]
         if isinstance(dist, list):
             ddl_attributes.append('DISTSTYLE KEY')
-            ddl_attributes.append('DISTKEY ( {} )'.format(format_column_list(dist)))
+            ddl_attributes.append('DISTKEY ( {} )'.format(join_column_list(dist)))
         elif dist in ("all", "even"):
             ddl_attributes.append('DISTSTYLE {}'.format(dist.upper()))
     if "compound_sort" in attributes:
-        ddl_attributes.append('COMPOUND SORTKEY ( {} )'.format(format_column_list(attributes["compound_sort"])))
+        ddl_attributes.append('COMPOUND SORTKEY ( {} )'.format(join_column_list(attributes["compound_sort"])))
     elif "interleaved_sort" in attributes:
-        ddl_attributes.append('INTERLEAVED SORTKEY ( {} )'.format(format_column_list(attributes["interleaved_sort"])))
+        ddl_attributes.append('INTERLEAVED SORTKEY ( {} )'.format(join_column_list(attributes["interleaved_sort"])))
     return ddl_attributes
 
 
@@ -140,7 +116,7 @@ def assemble_table_ddl(table_design, table_name, use_identity=False, is_temp=Fal
             # Split column constraint into the table and columns that are referenced
             foreign_table, foreign_columns = column["references"]
             column.update({"foreign_table": foreign_table,
-                           "foreign_column": format_column_list(foreign_columns)})
+                           "foreign_column": join_column_list(foreign_columns)})
             f_column += " REFERENCES {foreign_table} ( {foreign_column} )"
         s_columns.append(f_column.format(**column))
     s_constraints = _build_constraints(table_design, exclude_foreign_keys=is_temp)
@@ -182,7 +158,7 @@ def create_view(conn, description, drop_view=False, dry_run=False):
     """
     logger = logging.getLogger(__name__)
     view_name = description.target_table_name
-    s_columns = format_column_list(column["name"] for column in description.table_design["columns"])
+    s_columns = join_column_list(column["name"] for column in description.table_design["columns"])
     ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
     if drop_view:
         if dry_run:
@@ -257,9 +233,9 @@ def assemble_ctas_ddl(table_design, temp_name, query_stmt):
     Return statement to create table based on a query, something like:
     CREATE TEMP TABLE table_name ( column_name [, ... ] ) table_attributes AS query
     """
-    s_columns = format_column_list(column["name"]
-                                   for column in table_design["columns"]
-                                   if not (column.get("identity", False) or column.get("skipped", False)))
+    s_columns = join_column_list(column["name"]
+                                 for column in table_design["columns"]
+                                 if not (column.get("identity", False) or column.get("skipped", False)))
     # TODO Measure whether adding attributes helps or hurts performance.
     s_attributes = _build_attributes(table_design, exclude_distribution=True)
     return "CREATE TEMP TABLE {} (\n{})\n{}\nAS\n".format(temp_name, s_columns,
@@ -274,9 +250,9 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
     Note that for timestamps, an arbitrary point in the past is used if the column
     isn't nullable.
     """
-    s_columns = format_column_list(column["name"]
-                                   for column in table_design["columns"]
-                                   if not column.get("skipped", False))
+    s_columns = join_column_list(column["name"]
+                                 for column in table_design["columns"]
+                                 if not column.get("skipped", False))
     if add_row_for_key_0:
         na_values_row = []
         for column in table_design["columns"]:
@@ -312,7 +288,7 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                        FROM {})""".format(table_name, s_columns, temp_name)
 
 
-def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explain_plan=False, dry_run=False):
+def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=False):
     """
     Run the CREATE TABLE AS statement to load data into temp table, then copy into final table.
 
@@ -337,9 +313,9 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
 
     if has_any_identity:
         ddl_temp_stmt = assemble_table_ddl(table_design, temp_name, use_identity=True, is_temp=True)
-        s_columns = format_column_list(column["name"]
-                                       for column in table_design["columns"]
-                                       if not (column.get("identity", False) or column.get("skipped", False)))
+        s_columns = join_column_list(column["name"]
+                                     for column in table_design["columns"]
+                                     if not (column.get("identity", False) or column.get("skipped", False)))
         dml_temp_stmt = "INSERT INTO {} (\n{}\n) (\n{}\n)".format(temp_name, s_columns, query_stmt)
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_key_0=True)
     else:
@@ -347,9 +323,6 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
         dml_temp_stmt = None
         dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name)
 
-    if add_explain_plan:
-        plan = etl.pg.query(conn, "EXPLAIN\n" + query_stmt)
-        logger.info("Explain plan for query:\n | %s", "\n | ".join(row[0] for row in plan))
     if dry_run:
         logger.info("Dry-run: Skipping loading of table '%s' using '%s'", table_name.identifier, temp_identifier)
         logger.debug("Skipped DDL for '%s': %s", temp_identifier, ddl_temp_stmt)
@@ -357,9 +330,8 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, add_explai
         logger.debug("Skipped DML for '%s': %s", table_name.identifier, dml_stmt)
     elif skip_copy:
         logger.info("Skipping copy for '%s' from query", table_name.identifier)
-        if not add_explain_plan:
-            # Run explain plan to test the query and ensure upstream tables and views exist
-            etl.pg.execute(conn, "EXPLAIN\n" + query_stmt)
+        logger.debug("Testing query for '%s' (syntax, dependencies, ...)", table_name.identifier)
+        etl.pg.explain(conn, query_stmt)
     else:
         logger.info("Creating temp table '%s'", temp_identifier)
         etl.pg.execute(conn, ddl_temp_stmt)
@@ -389,20 +361,20 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
     if reader_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(reader_groups))
+                        table_name.identifier, join_with_quotes(reader_groups))
         else:
             logger.info("Granting select access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(reader_groups))
+                        table_name.identifier, join_with_quotes(reader_groups))
             for reader in reader_groups:
                 etl.pg.grant_select(conn, table_name.schema, table_name.table, reader)
 
     if writer_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(writer_groups))
+                        table_name.identifier, join_with_quotes(writer_groups))
         else:
             logger.info("Granting write access on '%s' to %s",
-                        table_name.identifier, etl.join_with_quotes(writer_groups))
+                        table_name.identifier, join_with_quotes(writer_groups))
             for writer in writer_groups:
                 etl.pg.grant_select_and_write(conn, table_name.schema, table_name.table, writer)
 
@@ -430,8 +402,7 @@ def vacuum(conn, table_name, dry_run=False):
 
 
 def load_or_update_redshift_relation(conn, description, credentials, schema,
-                                     drop=False, skip_copy=False, add_explain_plan=False, dry_run=False,
-                                     constraints_as_warning=False):
+                                     drop=False, skip_copy=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
@@ -456,11 +427,10 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
         elif description.is_ctas_relation:
             create_table(conn, description, drop_table=drop, dry_run=dry_run)
-            create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, add_explain_plan=add_explain_plan,
-                                          dry_run=dry_run)
+            create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
             # TODO What should we do with table data if a constraint violation is detected? Delete it?
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+            verify_constraints(conn, description, dry_run=dry_run)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             modified = True
         else:
@@ -469,9 +439,44 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
-            etl.relation.validate_constraints(conn, description, dry_run=dry_run, only_warn=constraints_as_warning)
+            verify_constraints(conn, description, dry_run=dry_run)
             modified = True
         return modified
+
+
+def verify_constraints(conn, description, dry_run=False) -> None:
+    """
+    Raises a FailedConstraintError if :description's target table doesn't obey its declared unique constraints.
+    """
+    logger = logging.getLogger(__name__)
+    constraints = description.table_design.get("constraints")
+    if constraints is None:
+        logger.info("No constraints to verify for '%s'", description.identifier)
+        return
+
+    # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
+    # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voila!
+    statement_template = """
+        SELECT {columns}
+          FROM {table}
+      GROUP BY {columns}
+        HAVING COUNT(*) > 1
+         LIMIT 5
+    """
+
+    for constraint_type in ["primary_key", "natural_key", "surrogate_key", "unique"]:
+        if constraint_type in constraints:
+            columns = constraints[constraint_type]
+            quoted_columns = join_column_list(columns)
+            statement = statement_template.format(columns=quoted_columns, table=description.target_table_name)
+            if dry_run:
+                logger.info("Dry-run: Skipping checking %s constraint on '%s'", constraint_type, description.identifier)
+                logger.debug("Skipped query:\n%s", statement)
+            else:
+                logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
+                results = etl.pg.query(conn, statement)
+                if results:
+                    raise FailedConstraintError(description, constraint_type, columns, results)
 
 
 def evaluate_execution_order(descriptions, selector, only_first=False, whole_schemas=False):
@@ -538,7 +543,7 @@ def show_dependents(descriptions, selector):
     if len(execution_order) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
-    logger.info("Involved schemas: %s", etl.join_with_quotes(involved_schema_names))
+    logger.info("Involved schemas: %s", join_with_quotes(involved_schema_names))
 
     selected = frozenset(description.identifier for description in execution_order
                          if selector.match(description.target_table_name))
@@ -576,7 +581,7 @@ def show_dependents(descriptions, selector):
 
 
 def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, stop_after_first=False,
-                            no_rollback=False, skip_copy=False, add_explain_plan=False, dry_run=False):
+                            no_rollback=False, skip_copy=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -591,12 +596,13 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     names / types correct.
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading table designs and pondering evaluation order")
+
+    etl.relation.RelationDescription.load_in_parallel(descriptions)
+
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
 
-    warning_selector = data_warehouse.constraints_as_warnings_selector
     required_selector = data_warehouse.required_in_full_load_selector
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
     involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
@@ -625,8 +631,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
                 try:
                     modified = load_or_update_redshift_relation(
                         conn, description, data_warehouse.iam_role, target_schema,
-                        drop=drop, skip_copy=skip_copy, add_explain_plan=add_explain_plan, dry_run=dry_run,
-                        constraints_as_warning=warning_selector.match(description.target_table_name))
+                        drop=drop, skip_copy=skip_copy, dry_run=dry_run)
                     if modified:
                         vacuumable.append(description.target_table_name)
                 except Exception as e:

@@ -22,21 +22,14 @@ import os
 
 from psycopg2.extensions import connection  # For type annotation
 
-from etl.config import DataWarehouseConfig, DataWarehouseSchema
-from etl.relation import RelationDescription
-from etl.thyme import Thyme
 import etl
+from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
+from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
 import etl.monitor
+from etl.relation import RelationDescription
 import etl.pg
 import etl.s3
-
-
-class DataUnloadError(etl.ETLError):
-    pass
-
-
-class UnloadTargetNotFoundError(DataUnloadError):
-    pass
+from etl.thyme import Thyme
 
 
 def run_redshift_unload(conn: connection, description: RelationDescription, unload_path: str, aws_iam_role: str,
@@ -132,7 +125,8 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
     logger = logging.getLogger(__name__)
-    logger.info("Collecting all table information (from S3) before unload")
+    etl.relation.RelationDescription.load_in_parallel(descriptions)
+
     unloadable_relations = [d for d in descriptions if d.is_unloadable]
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")
@@ -142,10 +136,10 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     relation_target_tuples = []
     for relation in unloadable_relations:
         if relation.unload_target not in target_lookup:
-            raise UnloadTargetNotFoundError("Unload target specified, but not defined: '%s'" %
-                                            relation.unload_target)
+            raise TableDesignSemanticError("Unload target specified, but not defined: '%s'" % relation.unload_target)
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
+    error_occurred = False
     conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
         for relation, unload_schema in relation_target_tuples:
@@ -154,7 +148,11 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
                                          allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
                 if keep_going:
+                    error_occurred = True
                     logger.warning("Unload failure for '%s'", relation.identifier)
                     logger.exception("Ignoring this exception and proceeding as requested:")
                 else:
                     raise
+
+    if error_occurred:
+        raise ETLDelayedExit("At least one error occurred while unloading with 'keep going' option")
