@@ -254,6 +254,9 @@ def check_select_permission(conn: connection, table_name: TableName):
 
 
 def validate_upstream_columns(conn: connection, table: RelationDescription) -> None:
+    """
+    Compare columns in upstream table to the table design file.
+    """
     logger = logging.getLogger(__name__)
     source_table_name = table.source_table_name
 
@@ -263,11 +266,17 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
 
     current_columns = frozenset(column.name for column in columns_info)
-    design_columns = frozenset(column for column in table.unquoted_columns if not column.startswith("etl__"))
+    design_columns = frozenset(column["name"]
+                               for column in table.table_design["columns"]
+                               if not column["name"].startswith("etl__"))
     if not current_columns.issuperset(design_columns):
         extra_columns = design_columns.difference(current_columns)
         raise UpstreamValidationError("design of '%s' has columns that do not exist upstream: %s" %
                                       (source_table_name.identifier, join_with_quotes(extra_columns)))
+    missing_columns = current_columns.difference(design_columns)
+    if missing_columns:
+        logger.warning("Column(s) that exist upstream but not in the design of '%s': %s",
+                       table.identifier, join_with_quotes(missing_columns))
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
     for column in table.table_design["columns"]:

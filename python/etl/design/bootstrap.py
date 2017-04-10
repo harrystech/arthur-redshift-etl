@@ -5,12 +5,14 @@ import re
 from typing import List
 
 import simplejson as json
+from psycopg2.extensions import connection  # For type annotation
 
 import etl.config
+from etl.config.dw import DataWarehouseSchema
 import etl.design.load
 from etl.errors import MissingMappingError
 import etl.file_sets
-from etl.names import TableName
+from etl.names import TableName, TableSelector, join_with_quotes
 import etl.pg
 from etl.relation import RelationDescription
 import etl.s3
@@ -19,6 +21,8 @@ import etl.s3
 class Attribute:
     """
     Most basic description of a database "attribute", a.k.a. column.
+
+    Attributes are purely based on information that we find in upstream databases.
     """
     __slots__ = ("name", "sql_type", "not_null")
 
@@ -30,18 +34,19 @@ class Attribute:
 
 class ColumnDefinition:
     """
-    More granular description of a column in a table (ready to be sent to a table design).
-    """
-    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null", "references")
+    More granular description of a column in a table.
 
-    def __init__(self, name, source_sql_type, sql_type, expression, type, not_null, references):
+    These are ready to be sent to a table design or come from a table design file.
+    """
+    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null")
+
+    def __init__(self, name, source_sql_type, sql_type, expression, type, not_null):
         self.name = name
         self.source_sql_type = source_sql_type
         self.sql_type = sql_type
         self.expression = expression
         self.type = type
         self.not_null = not_null
-        self.references = references
 
     def to_dict(self):
         d = dict(name=self.name, sql_type=self.sql_type, type=self.type)
@@ -51,12 +56,10 @@ class ColumnDefinition:
             d["source_sql_type"] = self.source_sql_type
         if self.not_null:
             d["not_null"] = self.not_null
-        if self.references:
-            d["references"] = self.references
         return d
 
 
-def fetch_tables(cx, source, selector):
+def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
     """
     Retrieve all tables for this source (and matching the selector) and return them as a list of TableName instances.
 
@@ -100,24 +103,19 @@ def fetch_tables(cx, source, selector):
     return found
 
 
-def fetch_attributes(cx, table_name):
+def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     """
     Retrieve table definition (column names and types).
     """
-    # TODO Multiple indices lead to multiple rows per attribute when using join with pg_index
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
     attributes = etl.pg.query(cx, """
         SELECT a.attname AS "name"
              , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
              , a.attnotnull AS "not_null"
-               -- , COALESCE(i.indisunique, FALSE) AS is_unique_constraint
-               -- , COALESCE(i.indisprimary, FALSE) AS is_primary_constraint
           FROM pg_catalog.pg_attribute AS a
           JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
           JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
           JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-               -- LEFT JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
-               --                                   AND a.attnum = ANY(i.indkey)
          WHERE a.attnum > 0  -- skip system columns
            AND NOT a.attisdropped
            AND ns.nspname = %s
@@ -162,12 +160,11 @@ def map_types_in_ddl(table_name, attributes, as_is_att_type, cast_needed_att_typ
                                             expression=(mapping_expression % delimited_name
                                                         if mapping_expression else None),
                                             type=mapping_type,
-                                            not_null=attribute.not_null,
-                                            references=None))
+                                            not_null=attribute.not_null))
     return new_columns
 
 
-def fetch_dependencies(cx, table_name):
+def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]:
     """
     Lookup dependencies (other tables)
     """
@@ -193,9 +190,9 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
     """
     Create (and return) new table design
     """
-    source_columns = fetch_attributes(conn, source_table_name)
+    source_attributes = fetch_attributes(conn, source_table_name)
     target_columns = map_types_in_ddl(source_table_name,
-                                      source_columns,
+                                      source_attributes,
                                       type_maps["as_is_att_type"],
                                       type_maps["cast_needed_att_type"])
     table_design = {
@@ -203,10 +200,6 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
         "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),
         "columns": [column.to_dict() for column in target_columns]
     }
-    # FIXME Extract actual primary keys from pg_catalog, add unique constraints
-    if any(column.name == "id" for column in target_columns):
-        table_design["constraints"] = {"primary_key": ["id"]}
-
     return table_design
 
 
@@ -299,19 +292,19 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
                     compare_columns(table_design, existing_table_design)
                 else:
                     save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
+        logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
         logger.critical("Error while processing source '%s'", source.name)
         raise
-    logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
 
-    existent = frozenset(source_files)
-    upstream = frozenset(source_tables)
+    existent = frozenset(name.identifier for name in source_files)
+    upstream = frozenset(name.identifier for name in source_tables)
     not_found = upstream.difference(existent)
     if not_found:
-        logger.warning("New table(s) which had no local design: %s", TableName.join_with_quotes(not_found))
+        logger.warning("New table(s) which had no local design: %s", join_with_quotes(not_found))
     too_many = existent.difference(upstream)
     if too_many:
-        logger.warning("Old table(s) which no longer had upstream table: %s", TableName.join_with_quotes(too_many))
+        logger.warning("Old table(s) which no longer had upstream table: %s", join_with_quotes(too_many))
 
     return len(source_tables)
 
@@ -358,8 +351,8 @@ def compare_columns(live_design, file_design):
     """
     logger = logging.getLogger(__name__)
     logger.info("Checking design for '%s'", live_design["name"])
-    live_columns = {column["name"] for column in live_design["columns"]}
-    file_columns = {column["name"] for column in file_design["columns"]}
+    live_columns = frozenset(column["name"] for column in live_design["columns"])
+    file_columns = frozenset(column["name"] for column in file_design["columns"])
     # TODO define policy to declare columns "ETL-only" Or remove this "feature"?
     etl_columns = {name for name in file_columns if name.startswith("etl__")}
     logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
@@ -368,13 +361,14 @@ def compare_columns(live_design, file_design):
     described_but_not_live = file_columns.difference(live_columns).difference(etl_columns)
     if not_accounted_for_on_file:
         logger.warning("New columns in '%s' that are not in existing table design: %s",
-                       file_design["name"], sorted(not_accounted_for_on_file))
+                       file_design["name"], join_with_quotes(not_accounted_for_on_file))
         indices = dict((name, i) for i, name in enumerate(column["name"] for column in live_design["columns"]))
         for name in not_accounted_for_on_file:
             logger.debug("New column %s.%s: %s", live_design["name"], name,
                          json.dumps(live_design["columns"][indices[name]], indent="    ", sort_keys=True))
     if described_but_not_live:
-        logger.warning("Columns that have disappeared in '%s': %s", file_design["name"], sorted(described_but_not_live))
+        logger.warning("Columns that have disappeared in upstream '%s': %s",
+                       file_design["name"], join_with_quotes(described_but_not_live))
 
 
 def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_maps, dry_run=False):
@@ -386,12 +380,13 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_map
     logger = logging.getLogger(__name__)
     total = 0
     for schema in schemas:
-        if not schema.is_database_source:
-            logger.debug("Skipping schema which is not an upstream database source: '%s'", schema.name)
-        elif selector.match_schema(schema.name):
-            normalize_and_create(os.path.join(table_design_dir, schema.name), dry_run=dry_run)
-            total += create_table_designs_from_source(schema, selector, table_design_dir, local_files,
-                                                      type_maps, dry_run=dry_run)
+        if selector.match_schema(schema.name):
+            if not schema.is_database_source:
+                logger.info("Skipping schema which is not an upstream database source: '%s'", schema.name)
+            else:
+                normalize_and_create(os.path.join(table_design_dir, schema.name), dry_run=dry_run)
+                total += create_table_designs_from_source(schema, selector, table_design_dir, local_files,
+                                                          type_maps, dry_run=dry_run)
     if not total:
         logger.warning("Found no matching tables in any upstream source for '%s'", selector)
 

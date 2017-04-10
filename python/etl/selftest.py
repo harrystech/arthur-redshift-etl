@@ -23,7 +23,7 @@ def load_tests(loader, tests, pattern):
 
 def run_self_test(verbosity):
     # TODO turn logging off while running tests
-    test_program = unittest.main(module="etl", verbosity=verbosity, exit=False)
+    test_program = unittest.main(module="etl", verbosity=verbosity, exit=False, argv=sys.argv[:2])
     test_result = test_program.result
     if not test_result.wasSuccessful():
         raise SelfTestError("Unsuccessful (run=%d, errors=%d, failures=%d)" %
