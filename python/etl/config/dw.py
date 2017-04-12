@@ -36,7 +36,7 @@ class DataWarehouseConfig:
             DataWarehouseSchema(
                 dict(info, owner=schema_owner_map.get(info['name'], root.name)),
                 self._etl_access)
-            for info in settings["sources"] + dw_settings["schemas"]
+            for info in settings["sources"] + dw_settings.get("transformations", dw_settings.get("schemas", []))
         ]
 
         # Schemas may grant access to groups that have no bootstrapped users, so create all mentioned user groups

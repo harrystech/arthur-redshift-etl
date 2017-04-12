@@ -107,6 +107,21 @@
                 },
                 "iam_role": { "$ref": "#/definitions/aws_arn" },
                 "schemas": {
+                    "description": "DEPRECATED use 'transformations' instead",
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "$ref": "#/definitions/identifier" },
+                            "description": { "type": "string" },
+                            "groups": { "$ref": "#/definitions/identifier_list" }
+                        },
+                        "required": [ "name" ],
+                        "additionalProperties": false
+                    },
+                    "uniqueItems": true
+                },
+                "transformations": {
                     "description": "List of schemas with transformations",
                     "type": "array",
                     "items": {
