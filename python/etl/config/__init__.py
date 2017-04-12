@@ -7,14 +7,13 @@ We use "config" files to refer to all files that may reside in the "config" dire
 This module provides global access to settings.  Always treat them nicely and read-only.
 """
 
-from collections import defaultdict
 from functools import lru_cache
 import logging
 import logging.config
 import os
 import os.path
 import sys
-from typing import Iterable, List, Optional, Sequence, Set, Dict
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 import pkg_resources
 import jsonschema
@@ -22,6 +21,8 @@ import simplejson as json
 import yaml
 
 import etl.config.dw
+from etl.config.dw import DataWarehouseConfig
+from etl.errors import SchemaInvalidError, SchemaValidationError
 
 __all__ = ["package_version", "get_dw_config", "get_data_lake_config", "etl_tmp_dir", "configure_logging",
            "validate_with_schema"]
@@ -31,7 +32,7 @@ logger.addHandler(logging.NullHandler())
 
 
 # Global config objects - always use accessors
-_dw_config = None
+_dw_config = None  # type: Optional[DataWarehouseConfig]
 
 # Local temp directory used for bootstrap, temp files, etc.
 ETL_TMP_DIR = "/tmp/redshift_etl"
@@ -70,7 +71,8 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     logging.config.dictConfig(config)
     # Ignored due to lack of stub in type checking library
     logging.captureWarnings(True)  # type: ignore
-    logging.getLogger(__name__).info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
+    logger.info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
+    logger.debug("Current working directory: '%s'", os.getcwd())
 
 
 def load_environ_file(filename: str) -> None:
@@ -80,7 +82,7 @@ def load_environ_file(filename: str) -> None:
     Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
     other lines are silently dropped.
     """
-    logging.getLogger(__name__).info("Loading environment variables from '%s'", filename)
+    logger.info("Loading environment variables from '%s'", filename)
     with open(filename) as f:
         for line in f:
             tokens = [token.strip() for token in line.split('=', 1)]
@@ -147,7 +149,7 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     The settings are validated against their schema before being returned.
     """
-    settings = dict()  # type: Dict
+    settings = dict()  # type: Dict[str, Any]
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
@@ -158,19 +160,39 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
         elif filename.endswith("release.txt"):
             read_release_file(filename)
         else:
-            logger.info("Skipping config file '%s'", filename)
+            logger.info("Skipping unknown config file '%s'", filename)
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
         raise RuntimeError("Failed to find enough configuration files (need at least default and local config)")
 
-    schema = load_json("settings.schema")
-    jsonschema.validate(settings, schema)
+    validate_with_schema(settings, "settings.schema")
 
     global _dw_config
     _dw_config = etl.config.dw.DataWarehouseConfig(settings)
 
-    return dict(settings)
+    return settings
+
+
+def validate_with_schema(obj: dict, schema_name: str) -> None:
+    """
+    Validate the given object (presumably from reading a YAML file) against its schema.
+
+    This will also validate the schema itself!
+    """
+    validation_internal_errors = (
+        jsonschema.exceptions.ValidationError,
+        jsonschema.exceptions.SchemaError,
+        json.scanner.JSONDecodeError)
+    try:
+        schema = etl.config.load_json(schema_name)
+        jsonschema.Draft4Validator.check_schema(schema)
+    except validation_internal_errors as exc:
+        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    try:
+        jsonschema.validate(obj, schema)
+    except validation_internal_errors as exc:
+        raise SchemaValidationError("failed to validate against '%s'" % schema_name) from exc
 
 
 def gather_setting_files(config_files: Sequence[str]) -> List[str]:

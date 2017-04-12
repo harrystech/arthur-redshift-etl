@@ -8,17 +8,18 @@ Table designs are dictionaries of dictionaries or lists etc.
 from contextlib import closing
 import logging
 
-import jsonschema
-import simplejson as json
 import yaml
 import yaml.parser
 
 import etl
 import etl.config
-from etl.errors import TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
+from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
 import etl.pg
 import etl.file_sets
 import etl.s3
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def load_table_design(stream, table_name):
@@ -29,7 +30,7 @@ def load_table_design(stream, table_name):
     try:
         table_design = yaml.safe_load(stream)
     except yaml.parser.ParserError as exc:
-        raise TableDesignParseError() from exc
+        raise TableDesignParseError(exc) from exc
     return validate_table_design(table_design, table_name)
 
 
@@ -37,7 +38,6 @@ def load_table_design_from_localfile(local_filename, table_name):
     """
     Load (and validate) table design file in local file system.
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Loading local table design from '%s'", local_filename)
     try:
         with open(local_filename) as f:
@@ -65,7 +65,6 @@ def validate_table_design(table_design, table_name):
     Phase 2 is built on specific rules that I couldn't figure out how
     to run inside json-schema.
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Trying to validate table design for '%s'", table_name.identifier)
     validate_table_design_syntax(table_design, table_name)
     validate_table_design_semantics(table_design, table_name)
@@ -77,20 +76,9 @@ def validate_table_design_syntax(table_design, table_name):
     Validate table design based on the (JSON) schema (which can only check syntax but not values).
     Raise an exception if anything is amiss.
     """
-    logger = logging.getLogger(__name__)
-    validation_internal_errors = (
-        jsonschema.exceptions.ValidationError,
-        jsonschema.exceptions.SchemaError,
-        json.scanner.JSONDecodeError)
-    # Two things can break here: reading the schema, which is validated, and then reading the table design.
     try:
-        table_design_schema = etl.config.load_json("table_design.schema")
-    except validation_internal_errors:
-        logger.critical("Internal Error: Schema in 'table_design.schema' is not valid")
-        raise
-    try:
-        jsonschema.validate(table_design, table_design_schema)
-    except validation_internal_errors as exc:
+        etl.config.validate_with_schema(table_design, "table_design.schema")
+    except SchemaValidationError as exc:
         raise TableDesignSyntaxError("Failed to validate table design for '%s'" % table_name.identifier) from exc
 
 
