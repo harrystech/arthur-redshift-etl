@@ -1,61 +1,20 @@
 from contextlib import closing
 import logging
 import os.path
-from typing import List, Mapping
+from typing import List
 
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
 from etl.config.dw import DataWarehouseSchema
+from etl.design import Attribute, ColumnDefinition
 import etl.design.load
-from etl.errors import MissingMappingError
 import etl.file_sets
 from etl.names import TableName, TableSelector, join_with_quotes
 import etl.pg
 from etl.relation import RelationDescription
 import etl.s3
-
-
-class Attribute:
-    """
-    Most basic description of a database "attribute", a.k.a. column.
-
-    Attributes are purely based on information that we find in upstream databases.
-    """
-    __slots__ = ("name", "sql_type", "not_null")
-
-    def __init__(self, name, sql_type, not_null):
-        self.name = name
-        self.sql_type = sql_type
-        self.not_null = not_null
-
-
-class ColumnDefinition:
-    """
-    More granular description of a column in a table.
-
-    These are ready to be sent to a table design or come from a table design file.
-    """
-    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null")
-
-    def __init__(self, name, source_sql_type, sql_type, expression, type, not_null):
-        self.name = name
-        self.source_sql_type = source_sql_type
-        self.sql_type = sql_type
-        self.expression = expression
-        self.type = type
-        self.not_null = not_null
-
-    def to_dict(self):
-        d = dict(name=self.name, sql_type=self.sql_type, type=self.type)
-        if self.expression is not None:
-            d["expression"] = self.expression
-        if self.source_sql_type != self.sql_type:
-            d["source_sql_type"] = self.source_sql_type
-        if self.not_null:
-            d["not_null"] = self.not_null
-        return d
 
 
 def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
@@ -124,45 +83,6 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     return [Attribute(**att) for att in attributes]
 
 
-def map_types_in_ddl(table_name, attributes, as_is_att_type, cast_needed_att_type):
-    """"
-    Replace unsupported column types by supported ones and determine casting
-    spell (for a single table).
-
-    Result for every table is a "column definition", which is basically a list
-    of tuples with name, old type, new type, expression information (where
-    the expression within a SELECT will return the value of the attribute with
-    the "new" type), serialization type, and not null constraint (boolean).
-    """
-    new_columns = []
-    for attribute in attributes:
-        for re_att_type, generic_type in as_is_att_type.items():
-            if re.match('^' + re_att_type + '$', attribute.sql_type):
-                # Keep the type, use no expression, and pick generic type from map.
-                mapping_sql_type, mapping_expression, mapping_type = attribute.sql_type, None, generic_type
-                break
-        else:
-            for re_att_type, (mapping_sql_type, mapping_expression, mapping_type) in cast_needed_att_type.items():
-                if re.match(re_att_type, attribute.sql_type):
-                    # Found tuple with new SQL type, expression and generic type.  Rejoice.
-                    break
-            else:
-                raise MissingMappingError("Unknown type '{}' of {}.{}.{}".format(attribute.sql_type,
-                                                                                 table_name.schema,
-                                                                                 table_name.table,
-                                                                                 attribute.name))
-        delimited_name = '"{}"'.format(attribute.name)
-        new_columns.append(ColumnDefinition(name=attribute.name,
-                                            source_sql_type=attribute.sql_type,
-                                            sql_type=mapping_sql_type,
-                                            # Replace %s in the column expression by the column name.
-                                            expression=(mapping_expression % delimited_name
-                                                        if mapping_expression else None),
-                                            type=mapping_type,
-                                            not_null=attribute.not_null))
-    return new_columns
-
-
 def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]:
     """
     Lookup dependencies (other tables)
@@ -190,10 +110,9 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
     Create (and return) new table design
     """
     source_attributes = fetch_attributes(conn, source_table_name)
-    target_columns = map_types_in_ddl(source_table_name,
-                                      source_attributes,
-                                      type_maps["as_is_att_type"],
-                                      type_maps["cast_needed_att_type"])
+    target_columns = [ColumnDefinition.from_attribute(att,
+                                                      type_maps["as_is_att_type"],
+                                                      type_maps["cast_needed_att_type"]) for att in source_attributes]
     table_design = {
         "name": "%s" % target_table_name.identifier,
         "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),

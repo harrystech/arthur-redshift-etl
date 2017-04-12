@@ -16,6 +16,8 @@ import mypy.api
 # Skip etl.commands to avoid circular dependency
 import etl.config
 import etl.design
+import etl.design.bootstrap
+import etl.design.load
 import etl.dw
 import etl.errors
 import etl.explain
