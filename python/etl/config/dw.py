@@ -47,7 +47,7 @@ class DataWarehouseConfig:
         # Surely You're Joking, Mr. Feynman?  Nope, pop works here.
         self.default_group = [user["group"] for user in dw_settings["users"] if user["name"] == "default"].pop()
         # Credentials used in COPY command that allow jumping into our data lake
-        self.iam_role = dw_settings["iam_role"]
+        self.iam_role = etl.config.get_data_lake_config("iam_role")
         # Mapping SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset

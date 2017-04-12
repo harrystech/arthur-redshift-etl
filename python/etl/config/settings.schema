@@ -74,6 +74,21 @@
                 "include_tables": [ "s3_path_template" ]
             },
             "additionalProperties": false
+        },
+        "cluster_group": {
+            "type": "object",
+            "properties": {
+                "instance-type": { "type": "string" },
+                "instance-count": { "type": "integer" },
+                "managed-security-group": { "type": "string" }
+            },
+            "required": [ "instance-type", "managed-security-group" ],
+            "additionalProperties": false
+        },
+        "aws_arn": {
+            "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
+            "type": "string",
+            "pattern": "^arn:aws[^:]*:[^:]+:[^:]*:[0-9a-f]+:"
         }
     },
     "type": "object",
@@ -90,11 +105,9 @@
                     "items": { "$ref": "#/definitions/user_info" },
                     "uniqueItems": true
                 },
-                "iam_role": {
-                    "type": "string",
-                    "pattern": "arn:aws:iam:.*"
-                },
+                "iam_role": { "$ref": "#/definitions/aws_arn" },
                 "schemas": {
+                    "description": "List of schemas with transformations",
                     "type": "array",
                     "items": {
                         "type": "object",
@@ -107,12 +120,46 @@
                         "additionalProperties": false
                     },
                     "uniqueItems": true
+                },
+                "required_in_full_load": { "$ref": "#/definitions/glob_pattern_list" }
+            },
+            "required": [ "admin_access", "etl_access", "reference_warehouse_access", "owner" ],
+            "additionalProperties": false
+        },
+        "sources": {
+            "type": "array",
+            "description": "List of upstream sources (databases or S3)",
+            "items": {
+                "oneOf": [
+                    { "$ref": "#/definitions/upstream_database" },
+                    { "$ref": "#/definitions/upstream_static" }
+                ]
+            },
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "type_maps": {
+            "type": "object",
+            "properties": {
+                "as_is_att_type": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                },
+                "cast_needed_att_type": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 3,
+                        "maxItems": 3
+                    }
                 }
             },
-            "required": [ "admin_access", "etl_access", "reference_warehouse_access", "owner", "iam_role" ],
+            "required": [ "as_is_att_type", "cast_needed_att_type" ],
             "additionalProperties": false
         },
         "s3": {
+            "description": "DEPRECATED use setting in data_lake",
             "type": "object",
             "properties": {
                 "bucket_name": { "$ref": "#/definitions/identifier" }
@@ -120,15 +167,101 @@
             "required": [ "bucket_name" ],
             "additionalProperties": false
         },
-        "sources": {
+        "data_lake": {
+            "description": "Location and attributes of our data lake",
+            "type": "object",
+            "properties": {
+                "s3": {
+                    "type": "object",
+                    "properties": {
+                        "bucket_name": { "$ref": "#/definitions/identifier" }
+                    },
+                    "required": [ "bucket_name" ],
+                    "additionalProperties": false
+                },
+                "iam_role": { "$ref": "#/definitions/aws_arn" }
+            },
+            "required": [ "s3", "iam_role" ],
+            "additionalProperties": false
+        },
+        "resources": {
+            "type": "object",
+            "properties": {
+                "key-name": { "type": "string" },
+                "VPC": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" },
+                        "subnet": { "type": "string" },
+                        "whitelist-security-group": { "type": "string" },
+                        "region": { "type": "string" }
+                    },
+                    "required": [ "id", "subnet", "whitelist-security-group", "region" ],
+                    "additionalProperties": false
+                },
+                "EC2": {
+                    "type": "object",
+                    "properties": {
+                        "instance-type": { "type": "string" },
+                        "image-id": { "type": "string" },
+                        "public-security-group": { "type": "string" },
+                        "iam-instance-profile": { "type": "string" }
+                    },
+                    "required": [ "instance-type", "image-id", "public-security-group", "iam-instance-profile" ],
+                    "additionalProperties": false
+                },
+                "EMR": {
+                    "type": "object",
+                    "properties": {
+                        "release-label": { "type": "string" },
+                        "applications": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "uniqueItems": true,
+                            "minItems": 1
+                        },
+                        "master": { "$ref": "#/definitions/cluster_group" },
+                        "core": { "$ref": "#/definitions/cluster_group" }
+                    }
+                },
+                "SNS": {
+                    "type": "object",
+                    "properties": {
+                        "success": {
+                            "type": "object",
+                            "properties": {
+                                "topicArn": { "$ref": "#/definitions/aws_arn" }
+                            },
+                            "additionalProperties": false
+                        },
+                        "failure": {
+                            "type": "object",
+                            "properties": {
+                                "topicArn": { "$ref": "#/definitions/aws_arn" }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "required": [ "key-name", "VPC", "EC2", "EMR" ],
+            "additionalProperties": false
+        },
+        "pipelines": {
             "type": "array",
             "items": {
-                "oneOf": [
-                   { "$ref": "#/definitions/upstream_database" },
-                   { "$ref": "#/definitions/upstream_static" }
-                ]
+                "type": "object",
+                "properties": {
+                    "unique-id": { "$ref": "#/definitions/identifier" },
+                    "description": { "type": "string" },
+                    "start-time": { "type": "string" },
+                    "occurrences": { "type": "integer" },
+                    "patterns": { "$ref": "#/definitions/glob_pattern_list" }
+                },
+                "required": [ "unique-id", "description" ],
+                "additionalProperties": false
             },
-            "minItems": 1,
             "uniqueItems": true
         },
         "etl_events": {
@@ -154,28 +287,8 @@
             },
             "additionalProperties": false
         },
-        "type_maps": {
-            "type": "object",
-            "properties": {
-                "as_is_att_type": {
-                    "type": "object",
-                    "additionalProperties": { "$ref": "#/definitions/identifier" }
-                },
-                "cast_needed_att_type": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "minItems": 3,
-                        "maxItems": 3
-                    }
-                }
-            },
-            "required": [ "as_is_att_type", "cast_needed_att_type" ],
-            "additionalProperties": false
-        },
         "required_in_full_load": { "$ref": "#/definitions/glob_pattern_list" }
     },
-    "required": [ "data_warehouse", "s3", "sources", "type_maps" ],
+    "required": [ "data_warehouse", "sources", "type_maps" ],
     "additionalProperties": false
 }

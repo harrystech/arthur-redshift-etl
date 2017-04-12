@@ -33,6 +33,7 @@ logger.addHandler(logging.NullHandler())
 
 # Global config objects - always use accessors
 _dw_config = None  # type: Optional[DataWarehouseConfig]
+_data_lake_config = None  # type: Optional[Dict[str, Any]]
 
 # Local temp directory used for bootstrap, temp files, etc.
 ETL_TMP_DIR = "/tmp/redshift_etl"
@@ -45,6 +46,15 @@ def package_version(package_name="redshift-etl"):
 
 def get_dw_config():
     return _dw_config
+
+
+def get_data_lake_config(propname: str=None):
+    if _data_lake_config is None:
+        return None
+    elif propname is not None:
+        return _data_lake_config[propname]
+    else:
+        return _data_lake_config
 
 
 def etl_tmp_dir(path: str) -> str:
@@ -167,6 +177,15 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
         raise RuntimeError("Failed to find enough configuration files (need at least default and local config)")
 
     validate_with_schema(settings, "settings.schema")
+
+    global _data_lake_config
+    _data_lake_config = settings.get("data_lake")
+    # FIXME Clean this up after v0.23.0! For now, copy from old locations
+    if _data_lake_config is None:
+        _data_lake_config = {
+            "s3": {"bucket_name": settings["s3"]["bucket_name"]},
+            "iam_role": settings["data_warehouse"]["iam_role"]
+        }
 
     global _dw_config
     _dw_config = etl.config.dw.DataWarehouseConfig(settings)
