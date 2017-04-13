@@ -11,6 +11,9 @@ import boto3
 
 from etl.names import join_with_quotes
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 class DataPipeline:
 
@@ -71,8 +74,6 @@ def show_pipelines(selection: List[str]) -> None:
     Without a selection, prints an overview of the pipelines.
     With a selection, digs into details of each selected pipeline.
     """
-    logger = logging.getLogger(__name__)
-
     pipelines = list_pipelines(selection)
 
     if not pipelines:

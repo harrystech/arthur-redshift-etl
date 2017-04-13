@@ -21,7 +21,7 @@ from itertools import groupby
 import logging
 from operator import attrgetter
 import threading
-from typing import Iterable, List, Union
+from typing import Iterable, List, Optional
 
 import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
@@ -37,17 +37,17 @@ import etl.relation
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 _error_occurred = threading.Event()
 
 
-def validate_relation_description(description: RelationDescription, keep_going=False
-                                  ) -> Union[RelationDescription, None]:
+def validate_relation_description(description: RelationDescription, keep_going=False) -> Optional[RelationDescription]:
     """
     Load table design (which always also validates against the schema).
     If we try to keep_going, then we don't fail but return None for invalid table designs.
     """
-    logger = logging.getLogger(__name__)
     logger.info("Loading and validating file '%s'", description.design_file_name)
     try:
         description.load()
@@ -73,7 +73,7 @@ def validate_semantics(descriptions: List[RelationDescription], keep_going=False
     return list(filter(None, result))
 
 
-def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Union[str, None]:
+def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Optional[str]:
     """
     Calculate differences between what was found while running the query to what was declared in the design.
 
@@ -105,8 +105,6 @@ def validate_dependencies(conn: connection, description: RelationDescription, tm
     """
     Download the dependencies (usually, based on the temporary view) and compare with table design.
     """
-    logger = logging.getLogger(__name__)
-
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
     # We break with tradition and show the list of dependencies such that they can be copied into a design file.
     logger.info("Dependencies of '%s' per catalog: %s", description.identifier, json.dumps(dependencies))
@@ -123,8 +121,6 @@ def validate_column_ordering(conn: connection, description: RelationDescription,
     """
     Download the column order (using the temporary view) and compare with table design.
     """
-    logger = logging.getLogger(__name__)
-
     attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
 
@@ -150,7 +146,6 @@ def validate_single_transform(conn: connection, description: RelationDescription
     With a view created, we can extract dependency information and a list of columns
     to make sure table design and query match up.
     """
-    logger = logging.getLogger(__name__)
     try:
         with description.matching_temporary_view(conn) as tmp_view_name:
             validate_dependencies(conn, description, tmp_view_name)
@@ -169,7 +164,6 @@ def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
     This allows us to check their syntax, their dependencies, etc.
     """
-    logger = logging.getLogger(__name__)
     transforms = [description for description in descriptions
                   if description.is_ctas_relation or description.is_view_relation]
     if not transforms:
@@ -205,40 +199,48 @@ def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     return sorted(diff)
 
 
-def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
+def validate_reload(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription], keep_going: bool):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
 
     Once the designs are validated, we can unload a relation 's.t' with a target 'u' and
     then extract and load it back into 'u.t'.
 
-    Note that the order matters for these lists of columns.  (Which is also why we
-    can't take the (symmetric) difference between columns but must be careful checking
-    the column lists.)
+    Note that the order matters for these lists of columns.  (Which is also why we can't take
+    the (symmetric) difference between columns but must be careful checking the column lists.)
     """
-    logger = logging.getLogger(__name__)
     unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
+    target_lookup = {schema.name for schema in schemas if schema.is_an_unload_target}
     descriptions_lookup = {d.identifier: d for d in descriptions}
 
     for unloaded in unloaded_descriptions:
-        logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
-        reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
-        if reloaded.identifier in descriptions_lookup:
-            description = descriptions_lookup[reloaded.identifier]
-            logger.info("Checking for consistency between '%s' and '%s'", unloaded.identifier, description.identifier)
-            unloaded_columns = unloaded.unquoted_columns
-            reloaded_columns = description.unquoted_columns
-            if unloaded_columns != reloaded_columns:
-                diff = get_list_difference(reloaded_columns, unloaded_columns)
-                logger.error("Column difference detected between '%s' and '%s'",
-                             unloaded.identifier, description.identifier)
-                logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                             description.identifier, join_with_quotes(diff))
-                if keep_going:
-                    _error_occurred.set()
-                else:
-                    raise TableDesignValidationError("unloaded relation '%s' failed to match counterpart" %
-                                                     unloaded.identifier)
+        try:
+            if unloaded.unload_target not in target_lookup:
+                raise TableDesignValidationError("invalid target '%s' in unloadable relation '%s'" %
+                                                 (unloaded.unload_target, unloaded.identifier))
+            else:
+                logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
+                reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
+                if reloaded.identifier in descriptions_lookup:
+                    description = descriptions_lookup[reloaded.identifier]
+                    logger.info("Checking for consistency between '%s' and '%s'",
+                                unloaded.identifier, description.identifier)
+                    unloaded_columns = unloaded.unquoted_columns
+                    reloaded_columns = description.unquoted_columns
+                    if unloaded_columns != reloaded_columns:
+                        diff = get_list_difference(reloaded_columns, unloaded_columns)
+                        logger.error("Column difference detected between '%s' and '%s'",
+                                     unloaded.identifier, description.identifier)
+                        logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
+                                     description.identifier, join_with_quotes(diff))
+                        raise TableDesignValidationError("unloaded relation '%s' failed to match counterpart" %
+                                                         unloaded.identifier)
+        except TableDesignValidationError:
+            if keep_going:
+                _error_occurred.set()
+                logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier)
+            else:
+                raise
 
 
 def check_select_permission(conn: connection, table_name: TableName):
@@ -257,7 +259,6 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     """
     Compare columns in upstream table to the table design file.
     """
-    logger = logging.getLogger(__name__)
     source_table_name = table.source_table_name
 
     columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
@@ -275,28 +276,71 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
                                       (source_table_name.identifier, join_with_quotes(extra_columns)))
     missing_columns = current_columns.difference(design_columns)
     if missing_columns:
-        logger.warning("Column(s) that exist upstream but not in the design of '%s': %s",
-                       table.identifier, join_with_quotes(missing_columns))
+        logger.warning("Column(s) that exist upstream in '%s' but not in the design '%s': %s",
+                       table.source_name, table.identifier, join_with_quotes(missing_columns))
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
     for column in table.table_design["columns"]:
         if column.get("not_null") and column["name"] not in current_is_not_null:
-            # FIXME Too many errors ... be lenient when starting this test
-            # raise TableDesignError("not null constraint of column '%s' in '%s' not enforced upstream" %
-            #                        (column["name"], table.identifier))
-            logger.warning("Not null constraint of column '%s' in '%s' not enforced upstream",
-                           column["name"], table.identifier)
+            raise TableDesignValidationError("not null constraint of column '%s' in '%s' not enforced upstream" %
+                                             (column["name"], table.identifier))
+
+
+def validate_upstream_constraints(conn: connection, table: RelationDescription) -> None:
+    """
+    Compare table constraints between database and table design file.
+
+    Note that "natural_key" or "surrogate_key" constraints are not valid in upstream tables.
+    """
+    current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
+    design_constraint = table.table_design.get("constraints", {})
+
+    current_primary_key = frozenset(current_constraint.get("primary_key", []))
+    current_unique = frozenset(current_constraint.get("unique", []))
+
+    design_primary_key = frozenset(design_constraint.get("primary_key", []))
+    design_unique = frozenset(design_constraint.get("unique", []))
+
+    # not_used will be true at the beginning if we have something to check, turns false if design has match
+    not_used = {"primary_key": current_primary_key, "unique": current_unique}
+
+    if design_primary_key:
+        if current_primary_key == design_primary_key:
+            del not_used["primary_key"]
+        elif current_primary_key:
+            raise TableDesignValidationError("the primary_key constraint in '%s' (%s) does not match upstream (%s)" %
+                                             (table.identifier,
+                                              join_with_quotes(design_primary_key),
+                                              join_with_quotes(current_primary_key)))
+        else:
+            raise TableDesignValidationError("the primary key constraint in '%s' (%s) is not enforced upstream" %
+                                             (table.identifier, join_with_quotes(design_primary_key)))
+
+    if design_unique:
+        if current_primary_key == design_unique:
+            del not_used["primary_key"]
+        if current_unique == design_unique:
+            del not_used["unique"]
+        if current_primary_key != design_unique and current_unique != design_unique:
+            raise TableDesignValidationError("the unique constraint in '%s' (%s) is not enforced upstream" %
+                                             (table.identifier, join_with_quotes(design_unique)))
+
+    for constraint_type in not_used:
+        if not_used[constraint_type]:
+            logger.info("Upstream source '%s' has additional %s constraint (%s) for '%s'",
+                        table.source_name, constraint_type,
+                        join_with_quotes(not_used[constraint_type]), table.identifier)
 
 
 def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool=False) -> None:
     """
     Validate table design of an upstream table against its source database.
     """
-    logger = logging.getLogger(__name__)
     try:
         with etl.pg.log_error():
             check_select_permission(conn, table.source_table_name)
             validate_upstream_columns(conn, table)
+            validate_upstream_constraints(conn, table)
         logger.info("Successfully validated '%s' against its upstream source", table.identifier)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if keep_going:
@@ -318,7 +362,6 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
     (4) the upstream columns are not a superset of the columns in the table design
     (5) the upstream column does not have the null constraint set while the table design does
     """
-    logger = logging.getLogger(__name__)
     source_lookup = {schema.name: schema for schema in schemas if schema.is_database_source}
 
     # Re-sort descriptions by source so that we need to only connect once to each source
@@ -342,7 +385,6 @@ def validate_execution_order(descriptions: List[RelationDescription], keep_going
     """
     Wrapper around order_by_dependencies to deal with our keep_going predilection.
     """
-    logger = logging.getLogger(__name__)
     try:
         ordered_descriptions = etl.relation.order_by_dependencies(descriptions)
     except ETLConfigError:
@@ -362,12 +404,12 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
 
     See module documentation for list of checks.
     """
-    logger = logging.getLogger(__name__)
     _error_occurred.clear()
 
     valid_descriptions = validate_semantics(descriptions, keep_going=keep_going)
-    validate_reload(valid_descriptions, keep_going=keep_going)
     ordered_descriptions = validate_execution_order(valid_descriptions, keep_going=keep_going)
+
+    validate_reload(config.schemas, valid_descriptions, keep_going=keep_going)
 
     if skip_sources:
         logger.info("Skipping validation of designs against upstream sources")

@@ -123,7 +123,7 @@ def validate_semantics_of_table(table_design):
         ('attributes', 'interleaved_sort'),
         ('attributes', 'compound_sort')
     ]
-    invalid_col_list_template = "{obj}'s {key} list contains unknown columns"
+    invalid_col_list_template = "{key} columns in {obj} contains unknown columns"
     for obj, key in column_list_references:
         if not column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
             raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
@@ -161,6 +161,11 @@ def validate_table_design_semantics(table_design, table_name, _memoize_is_upstre
                                            (table_design["source_name"], table_name.identifier))
         if "depends_on" in table_design:
             raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_name.identifier)
+        constraints = table_design.get("constraints", {})
+        for constraint_type in ("natural_key", "surrogate_key"):
+            if constraint_type in constraints:
+                raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
+                                               (table_name.identifier, constraint_type))
 
 
 def column_list_has_columns(valid_columns, candidate_columns):

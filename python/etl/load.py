@@ -51,6 +51,9 @@ from etl.names import join_column_list, join_with_quotes, TableName
 import etl.pg
 import etl.relation
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def _build_constraints(table_design, exclude_foreign_keys=False):
     constraints = table_design.get("constraints", {})
@@ -135,7 +138,6 @@ def create_table(conn, description, drop_table=False, dry_run=False):
     Table may be dropped before (re-)creation but only the table owner is
     allowed to do so.
     """
-    logger = logging.getLogger(__name__)
     table_name = description.target_table_name
     table_design = description.table_design
     ddl_stmt = assemble_table_ddl(table_design, table_name)
@@ -156,7 +158,6 @@ def create_view(conn, description, drop_view=False, dry_run=False):
     Run the CREATE VIEW statement after dropping (potentially) an existing one.
     NOTE that this a no-op if drop_view is False.
     """
-    logger = logging.getLogger(__name__)
     view_name = description.target_table_name
     s_columns = join_column_list(column["name"] for column in description.table_design["columns"])
     ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
@@ -182,7 +183,6 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     Tables can only be truncated by their owners (and outside of a transaction), so this will delete
     all rows instead of truncating the tables.
     """
-    logger = logging.getLogger(__name__)
     credentials = "aws_iam_role={}".format(aws_iam_role)
     s3_path = "s3://{}/{}".format(description.bucket_name, description.manifest_file_name)
     table_name = description.target_table_name
@@ -302,7 +302,6 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=Fa
     constraints) so we need to have a temp table separate from destination
     table in order to have full flexibility how we define the destination table.
     """
-    logger = logging.getLogger(__name__)
     table_name = description.target_table_name
     table_design = description.table_design
     query_stmt = description.query_stmt
@@ -351,7 +350,6 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
     We always grant all privileges to the ETL user.  We may grant read-only access
     or read-write access based on configuration.  Note that the is always based on groups, not users.
     """
-    logger = logging.getLogger(__name__)
     if dry_run:
         logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", table_name.identifier, owner)
     else:
@@ -384,9 +382,9 @@ def analyze(conn, table_name, dry_run=False):
     Update table statistics.
     """
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping analysis of '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping analysis of '%s'", table_name.identifier)
     else:
-        logging.getLogger(__name__).info("Running analyze step on table '%s'", table_name.identifier)
+        logger.info("Running analyze step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "ANALYZE {}".format(table_name))
 
 
@@ -395,9 +393,9 @@ def vacuum(conn, table_name, dry_run=False):
     Final step ... tidy up the warehouse before guests come over.
     """
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping vacuum of '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping vacuum of '%s'", table_name.identifier)
     else:
-        logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
+        logger.info("Running vacuum step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
@@ -448,7 +446,6 @@ def verify_constraints(conn, description, dry_run=False) -> None:
     """
     Raises a FailedConstraintError if :description's target table doesn't obey its declared unique constraints.
     """
-    logger = logging.getLogger(__name__)
     constraints = description.table_design.get("constraints")
     if constraints is None:
         logger.info("No constraints to verify for '%s'", description.identifier)
@@ -493,8 +490,6 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     If you select to widen the update to entire schemas, then, well, entire schemas
     are updated instead of surgically picking up tables.
     """
-    logger = logging.getLogger(__name__)
-
     complete_sequence = etl.relation.order_by_dependencies(descriptions)
 
     dirty = set()
@@ -537,8 +532,6 @@ def show_dependents(descriptions, selector):
     part of the fan-out of an update.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    logger = logging.getLogger(__name__)
-
     execution_order, involved_schema_names = evaluate_execution_order(descriptions, selector)
     if len(execution_order) == 0:
         logger.warning("Found no matching relations for: %s", selector)
@@ -595,10 +588,6 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     should be a quick way to load data that is "under development" and may not have all dependencies or
     names / types correct.
     """
-    logger = logging.getLogger(__name__)
-
-    etl.relation.RelationDescription.load_in_parallel(descriptions)
-
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)

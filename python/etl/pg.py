@@ -21,6 +21,9 @@ import pgpasslib
 
 from etl.timer import Timer
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def parse_connection_string(dsn: str) -> dict:
     """
@@ -70,7 +73,6 @@ def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, r
     Caveat Emptor: By default, this turns off autocommit on the connection. This means that you
     have to explicitly commit on the connection object or run your SQL within a transaction context!
     """
-    logger = logging.getLogger(__name__)
     dsn_values = dict(dsn_dict)  # so as to not mutate the argument
     dsn_values["application_name"] = application_name
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
@@ -150,7 +152,6 @@ def execute(cx, stmt, args=(), return_result=False):
     Printing the query will not print AWS credentials IF the string used matches "CREDENTIALS '[^']*'"
     So be careful or you'll end up sending your credentials to the logfile.
     """
-    logger = logging.getLogger(__name__)
     with cx.cursor() as cursor:
         stmt = textwrap.dedent(stmt).strip('\n')  # clean-up whitespace from queries embedded in code
         if len(args):
@@ -179,7 +180,6 @@ def explain(cx, stmt, args=()):
 
     We sometimes use this just to test out a query syntax so we are heavy on the logging.
     """
-    logger = logging.getLogger(__name__)
     with log_error():
         rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
     lines = [row[0] for row in rows]
@@ -313,7 +313,6 @@ def log_sql_error(exc):
     http://www.postgresql.org/docs/current/static/libpq-exec.html#LIBPQ-PQRESULTERRORFIELD
     and psycopg2 documentation at http://initd.org/psycopg/docs/extensions.html
     """
-    logger = logging.getLogger(__name__)
     if exc.pgcode is not None:
         logger.error('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
     for name in ('severity',
