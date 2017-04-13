@@ -327,9 +327,9 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
 
     for constraint_type in not_used:
         if not_used[constraint_type]:
-            logger.warning("Upstream source '%s' has new %s constraint (%s) for '%s'",
-                           table.source_name, constraint_type,
-                           join_with_quotes(not_used[constraint_type]), table.identifier)
+            logger.info("Upstream source '%s' has additional %s constraint (%s) for '%s'",
+                        table.source_name, constraint_type,
+                        join_with_quotes(not_used[constraint_type]), table.identifier)
 
 
 def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool=False) -> None:
