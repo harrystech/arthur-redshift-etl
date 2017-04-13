@@ -21,7 +21,7 @@ from itertools import groupby
 import logging
 from operator import attrgetter
 import threading
-from typing import Iterable, List, Union
+from typing import Iterable, List, Optional
 
 import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
@@ -43,8 +43,7 @@ logger.addHandler(logging.NullHandler())
 _error_occurred = threading.Event()
 
 
-def validate_relation_description(description: RelationDescription, keep_going=False
-                                  ) -> Union[RelationDescription, None]:
+def validate_relation_description(description: RelationDescription, keep_going=False) -> Optional[RelationDescription]:
     """
     Load table design (which always also validates against the schema).
     If we try to keep_going, then we don't fail but return None for invalid table designs.
@@ -74,7 +73,7 @@ def validate_semantics(descriptions: List[RelationDescription], keep_going=False
     return list(filter(None, result))
 
 
-def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Union[str, None]:
+def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Optional[str]:
     """
     Calculate differences between what was found while running the query to what was declared in the design.
 
@@ -200,39 +199,48 @@ def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     return sorted(diff)
 
 
-def validate_reload(descriptions: List[RelationDescription], keep_going: bool):
+def validate_reload(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription], keep_going: bool):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
 
     Once the designs are validated, we can unload a relation 's.t' with a target 'u' and
     then extract and load it back into 'u.t'.
 
-    Note that the order matters for these lists of columns.  (Which is also why we
-    can't take the (symmetric) difference between columns but must be careful checking
-    the column lists.)
+    Note that the order matters for these lists of columns.  (Which is also why we can't take
+    the (symmetric) difference between columns but must be careful checking the column lists.)
     """
     unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
+    target_lookup = {schema.name for schema in schemas if schema.is_an_unload_target}
     descriptions_lookup = {d.identifier: d for d in descriptions}
 
     for unloaded in unloaded_descriptions:
-        logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
-        reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
-        if reloaded.identifier in descriptions_lookup:
-            description = descriptions_lookup[reloaded.identifier]
-            logger.info("Checking for consistency between '%s' and '%s'", unloaded.identifier, description.identifier)
-            unloaded_columns = unloaded.unquoted_columns
-            reloaded_columns = description.unquoted_columns
-            if unloaded_columns != reloaded_columns:
-                diff = get_list_difference(reloaded_columns, unloaded_columns)
-                logger.error("Column difference detected between '%s' and '%s'",
-                             unloaded.identifier, description.identifier)
-                logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                             description.identifier, join_with_quotes(diff))
-                if keep_going:
-                    _error_occurred.set()
-                else:
-                    raise TableDesignValidationError("unloaded relation '%s' failed to match counterpart" %
-                                                     unloaded.identifier)
+        try:
+            if unloaded.unload_target not in target_lookup:
+                raise TableDesignValidationError("invalid target '%s' in unloadable relation '%s'" %
+                                                 (unloaded.unload_target, unloaded.identifier))
+            else:
+                logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
+                reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
+                if reloaded.identifier in descriptions_lookup:
+                    description = descriptions_lookup[reloaded.identifier]
+                    logger.info("Checking for consistency between '%s' and '%s'",
+                                unloaded.identifier, description.identifier)
+                    unloaded_columns = unloaded.unquoted_columns
+                    reloaded_columns = description.unquoted_columns
+                    if unloaded_columns != reloaded_columns:
+                        diff = get_list_difference(reloaded_columns, unloaded_columns)
+                        logger.error("Column difference detected between '%s' and '%s'",
+                                     unloaded.identifier, description.identifier)
+                        logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
+                                     description.identifier, join_with_quotes(diff))
+                        raise TableDesignValidationError("unloaded relation '%s' failed to match counterpart" %
+                                                         unloaded.identifier)
+        except TableDesignValidationError:
+            if keep_going:
+                _error_occurred.set()
+                logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier)
+            else:
+                raise
 
 
 def check_select_permission(conn: connection, table_name: TableName):
@@ -356,8 +364,9 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
     _error_occurred.clear()
 
     valid_descriptions = validate_semantics(descriptions, keep_going=keep_going)
-    validate_reload(valid_descriptions, keep_going=keep_going)
     ordered_descriptions = validate_execution_order(valid_descriptions, keep_going=keep_going)
+
+    validate_reload(config.schemas, valid_descriptions, keep_going=keep_going)
 
     if skip_sources:
         logger.info("Skipping validation of designs against upstream sources")
