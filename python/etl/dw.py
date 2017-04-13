@@ -45,6 +45,21 @@ def create_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_
             create_schema_and_grant_access(conn, schema, dry_run=dry_run)
 
 
+def create_missing_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+    """
+    Create only those schemas not already present. Also, grant access to new schemas.
+    """
+    with closing(etl.pg.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+        needed_names = [schema.name for schema in schemas]
+        found_names = etl.pg.select_schemas(conn, needed_names)
+        missing_schemas = [schema for schema in schemas if schema.name not in found_names]
+        if not missing_schemas:
+            logger.info("Found all necessary schemas already in place")
+        else:
+            for schema in missing_schemas:
+                create_schema_and_grant_access(conn, schema, dry_run=dry_run)
+
+
 def create_schema_and_grant_access(conn, schema, owner=None, dry_run=False) -> None:
     group_names = join_with_quotes(schema.groups)
     if dry_run:

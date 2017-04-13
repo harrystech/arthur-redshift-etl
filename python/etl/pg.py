@@ -14,7 +14,7 @@ import os
 import re
 import textwrap
 from contextlib import closing, contextmanager
-from typing import Dict
+from typing import Dict, List
 
 import psycopg2
 import psycopg2.extras
@@ -301,14 +301,15 @@ def list_transactions(cx):
 
 # ---- SCHEMAS ----
 
-
-def select_schemas(cx, names):
+def select_schemas(cx, names) -> List[str]:
     rows = query(cx, """
         SELECT nspname AS name
           FROM pg_catalog.pg_namespace
          WHERE nspname IN %s
         """, (tuple(names),))
-    return frozenset(row[0] for row in rows)
+    found = frozenset(row[0] for row in rows)
+    # Instead of an ORDER BY clause, keep original order.
+    return [name for name in names if name in found]
 
 
 def drop_schema(cx, name):
@@ -347,6 +348,24 @@ def revoke_select_on_all_tables_in_schema(cx, schema, group):
 
 
 # ---- TABLES ----
+
+def relation_kind(cx, schema, table):
+    rows = query(cx, """
+        SELECT CASE cls.relkind
+                 WHEN 'r' THEN 'TABLE'
+                 WHEN 'v' THEN 'VIEW'
+               END AS relation_kind
+          FROM pg_catalog.pg_class AS cls
+          JOIN pg_catalog.pg_namespace AS nsp ON cls.relnamespace = nsp.oid
+         WHERE nsp.nspname = %s
+           AND cls.relname = %s
+           AND cls.relkind IN ('r', 'v')
+        """, (schema, table))
+    if rows:
+        return rows[0][0]
+    else:
+        return None
+
 
 def grant_select(cx, schema, table, group):
     execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))

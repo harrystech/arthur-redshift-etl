@@ -118,13 +118,13 @@ class UpstreamValidationError(ETLRuntimeError):
 
 class FailedConstraintError(ETLRuntimeError):
     def __init__(self, relation, constraint_type, columns, examples):
-        self.relation = relation
+        self.identifier = relation.identifier
         self.constraint_type = constraint_type
         self.columns = columns
         self.example_string = ', '.join(map(str, examples))
 
     def __str__(self):
-        return ("Relation {0.relation} violates {0.constraint_type} constraint: "
+        return ("relation {0.identifier} violates {0.constraint_type} constraint: "
                 "Example duplicate values of {0.columns} are: {0.example_string}".format(self))
 
 
@@ -151,20 +151,32 @@ class S3ServiceError(ETLRuntimeError):
 
 
 class MissingManifestError(ETLRuntimeError):
+    # FIXME Still used / useful?
     pass
 
 
 class RequiredRelationLoadError(ETLRuntimeError):
 
-    def __init__(self, failed, failed_and_required):
-        if failed_and_required:
-            self.message = "Failure of {} implies failure of required relation(s): {}".format(failed,
-                                                                                              failed_and_required)
+    def __init__(self, failed_relation, dependent_required_relations):
+        if failed_relation.is_required:
+            self.message = "error on required relation '{}'".format(failed_relation.identifier)
         else:
-            self.message = "Failure occurred for required {} relation".format(failed)
+            self.message = "error on relation '{}'".format(failed_relation.identifier)
+        if dependent_required_relations:
+            # Avoiding `join_with_quotes` here to keep this module import-free
+            identifiers = ", ".join("'{}'".format(relation.identifier) for relation in dependent_required_relations)
+            self.message += " implies failure of required relations: {}".format(identifiers)
 
     def __str__(self):
         return self.message
+
+
+class UpdateTableError(ETLRuntimeError):
+    pass
+
+
+class RelationModificationError(ETLRuntimeError):
+    pass
 
 
 class DataUnloadError(ETLRuntimeError):

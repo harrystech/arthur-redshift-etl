@@ -358,7 +358,8 @@ class RelationalStorage(PayloadDispatcher):
 
     def __init__(self, table_name, write_access):
         self.table_name = table_name
-        self.dsn = etl.config.env.get(write_access)
+        write_access = self.dsn = etl.config.env.get(write_access)
+        self.dsn = etl.pg.parse_connection_string(write_access)
         logger.info("Creating table '%s' (unless it already exists)", table_name)
         with closing(etl.pg.connection(self.dsn)) as conn:
             etl.pg.execute(conn, """

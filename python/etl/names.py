@@ -5,12 +5,10 @@ To be safe, we always delimit names in queries but would prefer not to during lo
 
 There are additional methods and classes here to support the feature of choosing relations
 by a pattern from the command line.
-
-Finally, we offer some context managers to create temporary views and tables that return the
-names of the created views or tables and automatically clean up.
 """
 
 import fnmatch
+from typing import List
 
 
 def join_with_quotes(names):
@@ -97,6 +95,17 @@ class TableName:
         ('weather', 'temp')
         """
         return self._schema, self._table
+
+    def to_dict(self):
+        """
+        Return schema name and table name as a dict.
+
+        >>> tn = TableName("recipes", "pudding")
+        >>> d = tn.to_dict()
+        >>> d['schema'], d['table']
+        ('recipes', 'pudding')
+        """
+        return dict(zip(["schema", "table"], self.to_tuple()))
 
     @property
     def identifier(self):
@@ -313,7 +322,7 @@ class TableSelector:
         else:
             return "[{}]".format(join_with_quotes(p.identifier for p in self._patterns))
 
-    def match_schema(self, schema):
+    def match_schema(self, schema) -> bool:
         """
         Match against schema name, return true if any pattern matches the schema name
         and the schema is part of the base schemas (if defined).
@@ -336,7 +345,7 @@ class TableSelector:
                     return True
             return False
 
-    def selected_schemas(self):
+    def selected_schemas(self) -> List[str]:
         """
         Return list of schemas from base schemas that match the selection.
         It is an error if a pattern tries to select a specific table instead of a schema.
@@ -352,7 +361,7 @@ class TableSelector:
         for pattern in self._patterns:
             if pattern.table != '*':
                 raise ValueError("pattern selects table, not schema: '%s'" % pattern)
-        return list(filter(self.match_schema, self._base_schemas))
+        return [schema for schema in self._base_schemas if self.match_schema(schema)]
 
     def match(self, table_name):
         """

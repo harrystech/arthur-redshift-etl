@@ -74,15 +74,15 @@ def execute_or_bail():
         if isinstance(exc, ETLDelayedExit):
             logger.critical("Something bad happened in the ETL: %s", str(exc))
         else:
-            logger.exception("Something bad happened in the ETL:")
+            logger.critical("Something bad happened in the ETL:", exc_info=True)
         logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
         croak(exc, 2)
     except Exception as exc:
-        logger.exception("Something terrible happened:")
+        logger.critical("Something terrible happened:", exc_info=True)
         logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
         croak(exc, 3)
     except BaseException as exc:
-        logger.exception("Something really terrible happened:")
+        logger.critical("Something really terrible happened:", exc_info=True)
         logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
         croak(exc, 5)
     else:
@@ -209,7 +209,7 @@ def build_full_parser(prog_name):
             BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
             SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
-            ExtractToS3Command, LoadDataWarehouseCommand, UpdateDataWarehouseCommand,
+            ExtractToS3Command, LoadDataWarehouseCommand, UpgradeDataWarehouseCommand, UpdateDataWarehouseCommand,
             UnloadDataToS3Command,
             # Helper commands
             CreateSchemasCommand, RestoreSchemasCommand,
@@ -227,7 +227,7 @@ def add_standard_arguments(parser, options):
     same when used by multiple sub-commands.
 
     :param parser: should be a sub-parser
-    :param options: see option strings below, like "prefix", "drop" etc.
+    :param options: see option strings below, like "prefix", "pattern"
     """
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
@@ -241,9 +241,12 @@ def add_standard_arguments(parser, options):
                            action="store_const", const="file", dest="scheme", default="file")
         group.add_argument("-r", "--remote-files", help="use files in S3",
                            action="store_const", const="s3", dest="scheme")
-    if "drop" in options:
-        parser.add_argument("-d", "--drop",
-                            help="first drop table or view to force update of definition", default=False,
+    if "max-partitions" in options:
+        parser.add_argument("-m", "--max-partitions", metavar="N",
+                            help="set max number of partitions to write to N (default: %(default)s)", default=4)
+    if "skip-copy" in options:
+        parser.add_argument("-y", "--skip-copy",
+                            help="skip the COPY and INSERT commands (leaves tables empty, for debugging)",
                             action="store_true")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
@@ -516,41 +519,78 @@ class LoadDataWarehouseCommand(SubCommand):
                          "Load data into the data warehouse from files in S3, which will *rebuild* the data warehouse."
                          " This will operate on entire schemas at once, which will be backed up as necessary."
                          " It is an error to try to select tables unless they are all the tables in the schema.")
-        self.use_force = True
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
-        parser.add_argument("-y", "--skip-copy",
-                            help="skip the COPY command (leaves tables empty, for debugging)",
-                            action="store_true")
-        parser.add_argument("--stop-after-first",
-                            help="stop after selected relation, do not follow to dependents (for debugging)",
-                            action="store_true")
+        add_standard_arguments(parser, ["pattern", "prefix", "skip-copy", "dry-run"])
         parser.add_argument("--no-rollback",
                             help="in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
 
     def callback(self, args, config):
-        descriptions = self.find_relation_descriptions(args, default_scheme="s3",
-                                                       required_relation_selector=config.required_in_full_load_selector,
-                                                       return_all=True)
+        try:
+            args.pattern.selected_schemas()
+        except ValueError as exc:
+            raise InvalidArgumentsError(exc) from exc
+
+        relations = self.find_relation_descriptions(args, default_scheme="s3",
+                                                    required_relation_selector=config.required_in_full_load_selector,
+                                                    return_all=True)
         with etl.pg.log_error():
-            etl.load.load_or_update_redshift(config, descriptions, args.pattern,
-                                             drop=self.use_force,
-                                             stop_after_first=args.stop_after_first,
-                                             no_rollback=args.no_rollback,
-                                             skip_copy=args.skip_copy,
-                                             dry_run=args.dry_run)
+            etl.load.load_data_warehouse(relations, args.pattern,
+                                         skip_copy=args.skip_copy,
+                                         no_rollback=args.no_rollback,
+                                         dry_run=args.dry_run)
 
 
-class UpdateDataWarehouseCommand(LoadDataWarehouseCommand):
+class UpgradeDataWarehouseCommand(SubCommand):
 
     def __init__(self):
-        SubCommand.__init__(self, "update",
-                            "update data in Redshift",
-                            "Load data into data warehouse from files in S3 and then into all dependent CTAS relations."
-                            " Tables and views are loaded given their existing schema.")
-        self.use_force = False
+        super().__init__("upgrade",
+                         "load data into source or CTAS tables, create dependent VIEWS along the way",
+                         "Delete selected tables and views, then rebuild them along with all of relations"
+                         " that depend on the selected ones. This is for debugging since the rebuild is"
+                         " visible to users (i.e. outside a transaction).")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "skip-copy", "dry-run"])
+        parser.add_argument("--only-selected",
+                            help="skip rebuilding relations that only depend on the selected ones"
+                            " (leaves warehouse in inconsistent state, for debugging only)",
+                            default=False, action="store_true")
+
+    def callback(self, args, config):
+        relations = self.find_relation_descriptions(args, default_scheme="s3",
+                                                    required_relation_selector=config.required_in_full_load_selector,
+                                                    return_all=True)
+        with etl.pg.log_error():
+            etl.load.upgrade_data_warehouse(relations, args.pattern,
+                                            only_selected=args.only_selected,
+                                            skip_copy=args.skip_copy,
+                                            dry_run=args.dry_run)
+
+
+class UpdateDataWarehouseCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("update",
+                         "update data in the data warehouse from files in S3",
+                         "Load data into data warehouse from files in S3 and then update all dependent CTAS relations.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
+        parser.add_argument("--only-selected",
+                            help="only load data into selected relations"
+                                 " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
+                            default=False, action="store_true")
+        parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
+                            default=False, action="store_true")
+
+    def callback(self, args, config):
+        relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        with etl.pg.log_error():
+            etl.load.update_data_warehouse(relations, args.pattern,
+                                           only_selected=args.only_selected, run_vacuum=args.vacuum,
+                                           dry_run=args.dry_run)
 
 
 class UnloadDataToS3Command(SubCommand):

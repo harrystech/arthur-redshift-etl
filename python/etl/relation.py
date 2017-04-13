@@ -23,11 +23,13 @@ from operator import attrgetter
 from queue import PriorityQueue
 from typing import Any, Dict, FrozenSet, Optional, Union, List
 
+import etl.config
 import etl.design.load
 import etl.file_sets
 import etl.pg
 import etl.s3
 import etl.timer
+from etl.config.dw import DataWarehouseSchema
 from etl.errors import CyclicDependencyError, MissingQueryError
 from etl.names import join_with_quotes, TableName, TableSelector
 
@@ -69,7 +71,7 @@ class RelationDescription:
         self._is_required = None  # type: Union[None, bool]
 
     @property
-    def identifier(self):
+    def identifier(self) -> str:
         return self.target_table_name.identifier
 
     def __str__(self):
@@ -109,19 +111,30 @@ class RelationDescription:
         return self._table_design  # type: ignore
 
     @property
-    def is_ctas_relation(self):
-        return self.table_design["source_name"] == "CTAS"
+    def kind(self) -> str:
+        if self.table_design["source_name"] in ("CTAS", "VIEW"):
+            return self.table_design["source_name"]
+        else:
+            return "DATA"
 
     @property
-    def is_view_relation(self):
-        return self.table_design["source_name"] == "VIEW"
+    def is_ctas_relation(self) -> bool:
+        return self.kind == "CTAS"
 
     @property
-    def is_unloadable(self):
+    def is_view_relation(self) -> bool:
+        return self.kind == "VIEW"
+
+    @property
+    def is_transformation(self) -> bool:
+        return self.kind != "DATA"
+
+    @property
+    def is_unloadable(self) -> bool:
         return "unload_target" in self.table_design
 
     @property
-    def is_required(self):
+    def is_required(self) -> bool:
         if self._is_required is None:
             raise RuntimeError("State of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self))
         return self._is_required
@@ -151,29 +164,39 @@ class RelationDescription:
         return self._dependencies
 
     @property
-    def unquoted_columns(self):
+    def unquoted_columns(self) -> List[str]:
         """
         List of the column names of this relation
         """
         return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
 
     @property
-    def columns(self):
+    def columns(self) -> List[str]:
         """
         List of delimited column names of this relation
         """
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
     @property
+    def has_identity_column(self) -> bool:
+        """
+        Return whether any of the columns is marked as identity column.
+        (Should only ever be possible for CTAS, see validation code).
+        """
+        return any(column.get("identity") for column in self.table_design["columns"])
+
+    # FIXME This is a bit confusingly named.
+    @property
     def source_name(self):
         return self.target_table_name.schema
 
     @property
-    def num_partitions(self):
-        return self.table_design.get('extract_settings', {}).get('num_partitions')
+    def dw_schema(self) -> DataWarehouseSchema:
+        dw_config = etl.config.get_dw_config()
+        return dw_config.schema_lookup(self.source_name)
 
     @classmethod
-    def from_file_sets(cls, file_sets, required_relation_selector=None):
+    def from_file_sets(cls, file_sets, required_relation_selector=None) -> List["RelationDescription"]:
         """
         Return a list of relation descriptions based on a list of file sets.
 

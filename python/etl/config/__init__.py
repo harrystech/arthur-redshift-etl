@@ -85,7 +85,8 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     logging.config.dictConfig(config)
     # Ignored due to lack of stub in type checking library
     logging.captureWarnings(True)  # type: ignore
-    logger.info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
+    logger.info('Starting log for %s', package_version())
+    logger.info('Command line: "%s"', ' '.join(sys.argv))
     logger.debug("Current working directory: '%s'", os.getcwd())
     logger.info(get_release_info())
 
