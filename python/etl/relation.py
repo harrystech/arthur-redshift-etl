@@ -31,6 +31,9 @@ import etl.pg
 import etl.s3
 import etl.timer
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 class RelationDescription:
     """
@@ -95,7 +98,6 @@ class RelationDescription:
         """
         Load all descriptions' table design file in parallel.
         """
-        logger = logging.getLogger(__name__)
         logger.info("Loading table design for %d relation(s)", len(descriptions))
         with etl.timer.Timer() as timer:
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -178,7 +180,6 @@ class RelationDescription:
         If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
         to dump or load in these relations will end the ETL run.
         """
-        logger = logging.getLogger(__name__)
         descriptions = []
         for file_set in file_sets:
             if file_set.design_file_name is not None:
@@ -225,8 +226,6 @@ class RelationDescription:
 
         We look up which temp schema the view landed in so that we can use TableName.
         """
-        logger = logging.getLogger(__name__)
-
         # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
         view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
 
@@ -280,7 +279,6 @@ def order_by_dependencies(relation_descriptions):
         * relations that directly depend on relations not in the input
         * relations that are depended upon but are not in the input
     """
-    logger = logging.getLogger(__name__)
     RelationDescription.load_in_parallel(relation_descriptions)
     descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 

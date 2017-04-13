@@ -1,5 +1,4 @@
 from contextlib import closing
-from itertools import groupby
 import logging
 import os.path
 from typing import List, Mapping
@@ -30,7 +29,6 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     The list of tables matching the whitelist but not the blacklist can be further narrowed
     down by the pattern in :selector.
     """
-    logger = logging.getLogger(__name__)
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
     result = etl.pg.query(cx, """
         SELECT nsp.nspname AS "schema"
@@ -98,7 +96,6 @@ def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, Lis
     # So we find out which indices exist (with unique constraints) and how many attributes are related to each,
     # then we look up the attribute names with our exquisitely hand-rolled "where" clause.
     # See http://www.postgresql.org/message-id/10279.1124395722@sss.pgh.pa.us for further explanations.
-    logger = logging.getLogger(__name__)
     indices = etl.pg.query(cx, """
         SELECT i.indexrelid AS index_id
              , ic.relname AS index_name
@@ -204,7 +201,6 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
     """
     Write new table design file to disk.
     """
-    logger = logging.getLogger(__name__)
     target_table_name = TableName(source_name, source_table_name.table)
     table = target_table_name.identifier
     # FIXME Move this logic into file sets (note that "source_name" is in table_design)
@@ -230,7 +226,6 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
 
     This will create all intermediate directories as needed.
     """
-    logger = logging.getLogger(__name__)
     name = os.path.normpath(directory)
     if not os.path.exists(name):
         if dry_run:

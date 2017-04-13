@@ -17,6 +17,8 @@ from datetime import datetime
 from etl.json_encoder import FancyJsonEncoder
 from etl.errors import S3ServiceError
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 _resources_for_thread = threading.local()
 
@@ -74,7 +76,6 @@ def upload_empty_object(bucket_name: str, object_key: str) -> None:
     """
     Create a key in an S3 bucket with no content
     """
-    logger = logging.getLogger(__name__)
     try:
         logger.debug("Creating empty 's3://%s/%s'", bucket_name, object_key)
         bucket = _get_s3_bucket(bucket_name)
@@ -105,7 +106,6 @@ def delete_objects(bucket_name: str, object_keys: List[str], _retry=True) -> Non
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
     """
-    logger = logging.getLogger(__name__)
     bucket = _get_s3_bucket(bucket_name)
     keys = [{'Key': key} for key in object_keys]
     failed = []
@@ -133,7 +133,6 @@ def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) ->
     Return the last_modified datetime timestamp for an S3 Object.
     If the call errors out, return None.
     """
-    logger = logging.getLogger(__name__)
     try:
         bucket = _get_s3_bucket(bucket_name)
         s3_object = bucket.Object(object_key)
@@ -172,7 +171,6 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
 
     You must close the stream when you're done with it.
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Downloading 's3://%s/%s'", bucket_name, object_key)
     bucket = _get_s3_bucket(bucket_name)
     try:
@@ -192,7 +190,6 @@ def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> Iterator[str]:
     List all the files in "s3://{bucket_name}/{prefix}" for each given prefix
     (where prefix is probably a path and not an object key).
     """
-    logger = logging.getLogger(__name__)
     if not prefixes:
         raise ValueError("List of prefixes may not be empty")
     bucket = _get_s3_bucket(bucket_name)

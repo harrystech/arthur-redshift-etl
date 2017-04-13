@@ -15,6 +15,9 @@ from typing import Dict, List
 from etl.relation import RelationDescription
 import etl.pg
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     """
@@ -25,7 +28,6 @@ def explain_queries(dsn: dict, descriptions: List[RelationDescription]) -> None:
     temporary tables created), warn about that as well. A query plan has multiple sub-queries
     when the query plan has empty lines separating out the sub-queries.
     """
-    logger = logging.getLogger(__name__)
     transforms = [description for description in descriptions if description.sql_file_name is not None]
     if not transforms:
         logger.info("No transformations were selected")

@@ -23,6 +23,9 @@ from etl.names import TableSelector
 from etl.relation import RelationDescription
 import etl.s3
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def upload_settings(config_files, bucket_name, prefix, dry_run=False):
     """
@@ -32,7 +35,6 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False):
 
     It is an error to try to upload files with the same name (coming from different config directories).
     """
-    logger = logging.getLogger(__name__)
     settings_files = etl.config.gather_setting_files(config_files)
     logger.info("Found %d settings file(s) to deploy", len(settings_files))
 
@@ -47,8 +49,6 @@ def sync_with_s3(config_files: List[str], descriptions: List[RelationDescription
     """
     Copy (validated) table design and SQL files from local directory to S3 bucket.
     """
-    logger = logging.getLogger(__name__)
-
     if force:
         etl.file_sets.delete_files_in_bucket(bucket_name, prefix, pattern, dry_run=dry_run)
 

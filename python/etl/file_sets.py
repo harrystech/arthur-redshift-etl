@@ -30,6 +30,9 @@ import etl.config
 from etl.names import TableName, TableSelector
 import etl.s3
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 class TableFileSet:
     """
@@ -172,7 +175,6 @@ def list_local_files(directory):
     It is an error if the directory does not exist.
     Ignore swap files along the way.
     """
-    logger = logging.getLogger(__name__)
     normed_directory = os.path.normpath(directory)
     if not os.path.isdir(normed_directory):
         raise FileNotFoundError("Failed to find directory: '%s'" % normed_directory)
@@ -248,7 +250,7 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
                 if return_success_file or values["file_type"] != "success":
                     yield (filename, values)
         elif not filename.endswith("_$folder$"):
-            logging.getLogger(__name__).warning("Found file not matching expected format: '%s'", filename)
+            logger.warning("Found file not matching expected format: '%s'", filename)
 
 
 def _find_file_sets_from(iterable, selector):
@@ -257,7 +259,6 @@ def _find_file_sets_from(iterable, selector):
     Remember that the (target) schema name is the same as the source name (for upstream sources).
     The selector's base schemas (if present) will override alphabetical sorting for the source_name.
     """
-    logger = logging.getLogger(__name__)
     target_map = {}
 
     # Always return files sorted by sources (in original order) and target name.
@@ -291,7 +292,6 @@ def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelecto
     """
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """
-    logger = logging.getLogger(__name__)
     iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + '/data', prefix + '/schemas')
     deletable = [filename for filename, v in _find_matching_files_from(iterable, selector, return_success_file=True)]
     if dry_run:
