@@ -172,8 +172,8 @@
             "additionalProperties": false
         },
         "depends_on": {
-            "type": "array",
             "description": "List of all dependency tables of this transformation",
+            "type": "array",
             "items": { "$ref": "#/definitions/table_name" },
             "minItems": 1,
             "uniqueItems": true            

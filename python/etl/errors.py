@@ -42,6 +42,14 @@ class SelfTestError(ETLSystemError):
     """
 
 
+class SchemaInvalidError(ETLSystemError):
+    pass
+
+
+class SchemaValidationError(ETLConfigError):
+    pass
+
+
 class InvalidArgumentsError(ETLRuntimeError):
     """
     Exception when arguments are detected to be invalid by the command callback

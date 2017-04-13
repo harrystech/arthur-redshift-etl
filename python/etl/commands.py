@@ -107,13 +107,13 @@ def run_arg_as_command(my_name="arthur.py"):
 
         with execute_or_bail():
             settings = etl.config.load_config(args.config)
+            setattr(args, "bucket_name", etl.config.get_data_lake_config("s3")["bucket_name"])
 
             if hasattr(args, "prefix"):
                 # Only commands which require an environment should require a monitor.
                 etl.monitor.set_environment(args.prefix,
                                             dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
                                             postgresql_settings=settings["etl_events"].get("postgresql", {}))
-            setattr(args, "bucket_name", settings["s3"]["bucket_name"])
 
             dw_config = etl.config.get_dw_config()
             if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
