@@ -13,7 +13,7 @@
         ],
         "Jar": "command-runner.jar",
         "Type": "CUSTOM_JAR",
-        "ActionOnFailure": "TERMINATE_CLUSTER",
+        "ActionOnFailure": "CONTINUE",
         "Properties": ""
     }
 ]
