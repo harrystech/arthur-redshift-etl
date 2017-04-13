@@ -623,6 +623,7 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
             else:
                 etl.dw.backup_schemas(conn, involved_schemas)
                 etl.dw.create_schemas(conn, involved_schemas)
+    logger.info("Starting to load %s relation(s)", len(execution_order))
 
     vacuumable = []
     failed = set()
