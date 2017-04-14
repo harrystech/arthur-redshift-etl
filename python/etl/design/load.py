@@ -108,7 +108,8 @@ def validate_semantics_of_table(table_design):
     if len(identity_columns) > 1:
         raise TableDesignSemanticError("only one column should have identity")
 
-    surrogate_keys = table_design.get("constraints", {}).get("surrogate_key", [])
+    constraints = table_design.get("constraints", [])
+    surrogate_keys = [col for c in constraints for col in c.get('surrogate_key', [])]
     if len(surrogate_keys) and not surrogate_keys == identity_columns:
         raise TableDesignSemanticError("surrogate key must be identity")
 
@@ -118,14 +119,18 @@ def validate_semantics_of_table(table_design):
         ('constraints', 'primary_key'),
         ('constraints', 'natural_key'),
         ('constraints', 'surrogate_key'),
-        ('constraints', 'foreign_key'),
         ('constraints', 'unique'),
         ('attributes', 'interleaved_sort'),
         ('attributes', 'compound_sort')
     ]
+
     invalid_col_list_template = "{key} columns in {obj} contains unknown columns"
     for obj, key in column_list_references:
-        if not column_list_has_columns(column_set, table_design.get(obj, {}).get(key)):
+        if obj == 'constraints':
+            cols = [col for constraint in table_design.get(obj, []) for col in constraint.get(key, [])]
+        elif obj == 'attributes':
+            cols = table_design.get(obj, {}).get(key)
+        if not column_list_has_columns(column_set, cols):
             raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
 
 
@@ -161,11 +166,12 @@ def validate_table_design_semantics(table_design, table_name, _memoize_is_upstre
                                            (table_design["source_name"], table_name.identifier))
         if "depends_on" in table_design:
             raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_name.identifier)
-        constraints = table_design.get("constraints", {})
+        constraints = table_design.get("constraints", [])
+        constraint_types_in_design = [t for c in constraints for t in c]
         for constraint_type in ("natural_key", "surrogate_key"):
-            if constraint_type in constraints:
-                raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
-                                               (table_name.identifier, constraint_type))
+            if constraint_type in constraint_types_in_design:
+                    raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
+                                                   (table_name.identifier, constraint_type))
 
 
 def column_list_has_columns(valid_columns, candidate_columns):

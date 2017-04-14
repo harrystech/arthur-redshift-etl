@@ -134,23 +134,38 @@
             ]
         },
         "constraints": {
-            "type": "object",
-            "properties": {
-                "primary_key": { "$ref": "#/definitions/column_list" },
-                "natural_key": { "$ref": "#/definitions/column_list" },
-                "surrogate_key": { "$ref": "#/definitions/one_column_as_list" },
-                "foreign_key": {
-                    "type": "array",
-                    "items": [
-                        { "$ref": "#/definitions/column_list" },
-                        { "$ref": "#/definitions/table_name" },
-                        { "$ref": "#/definitions/one_column_as_list" }
-                    ],
-                    "additionalItems": false
-                },
-                "unique": { "$ref": "#/definitions/column_list" }
+            "type": "array",
+            "items": {
+                "type": "object",
+                "oneOf": [
+                    {   
+                        "properties": {
+                            "primary_key": { "$ref": "#/definitions/column_list" }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "properties": {
+                            "natural_key": { "$ref": "#/definitions/column_list" }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "properties": { 
+                            "surrogate_key": { "$ref": "#/definitions/one_column_as_list" }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "properties": {
+                            "unique": { "$ref": "#/definitions/column_list" }
+                        },
+                        "additionalProperties": false
+                    }
+                ]
             },
-            "additionalProperties": false
+            "uniqueItems": true,
+            "minItems": 1
         },
         "attributes": {
             "type": "object",
