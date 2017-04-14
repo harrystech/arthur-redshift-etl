@@ -262,6 +262,9 @@ class RelationDescription:
                 etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))
 
 
+RelationDescriptionListType = List[RelationDescription]
+
+
 class SortableRelationDescription:
     """
     Add decoration around relation descriptions so that we can easily

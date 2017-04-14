@@ -36,13 +36,13 @@ from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
 from etl.names import join_with_quotes
 import etl.pg
-from etl.relation import RelationDescription
+from etl.relation import RelationDescriptionListType
 
 __all__ = ["extract_upstream_sources"]
 
 
 def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchema],
-                             descriptions: List[RelationDescription], max_partitions: int,
+                             descriptions: RelationDescriptionListType, max_partitions: int,
                              keep_going: bool, dry_run: bool) -> None:
     """
     Extract data from upstream sources to S3.
@@ -76,7 +76,7 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
 
 
 def filter_relations_for_sources(source_lookup: Dict[str, DataWarehouseSchema],
-                                 descriptions: List[RelationDescription]) -> List[RelationDescription]:
+                                 descriptions: RelationDescriptionListType) -> RelationDescriptionListType:
     """
     Filter for the relations that a given "extract" stage cares about.
     """
