@@ -445,6 +445,18 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
 def verify_constraints(conn, description, dry_run=False) -> None:
     """
     Raises a FailedConstraintError if :description's target table doesn't obey its declared unique constraints.
+
+    Note that NULL in SQL is never equal to another value. This means for unique constraints that
+    rows where (at least) one column is null are not equal even if they have the same values in the
+    not-null columns.  See description of unique index in the PostgreSQL documentation:
+    https://www.postgresql.org/docs/8.1/static/indexes-unique.html
+
+    For constraints that check "key" values (like 'primary_key'), this warning does not apply since
+    the columns must be not null anyways.
+
+    > "Note that a unique constraint does not, by itself, provide a unique identifier because it
+    > does not exclude null values."
+    https://www.postgresql.org/docs/8.1/static/ddl-constraints.html
     """
     constraints = description.table_design.get("constraints")
     if constraints is None:
@@ -454,8 +466,10 @@ def verify_constraints(conn, description, dry_run=False) -> None:
     # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
     # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voila!
     statement_template = """
-        SELECT {columns}
+        SELECT DISTINCT
+               {columns}
           FROM {table}
+         WHERE {condition}
       GROUP BY {columns}
         HAVING COUNT(*) > 1
          LIMIT 5
@@ -465,9 +479,15 @@ def verify_constraints(conn, description, dry_run=False) -> None:
         if constraint_type in constraints:
             columns = constraints[constraint_type]
             quoted_columns = join_column_list(columns)
-            statement = statement_template.format(columns=quoted_columns, table=description.target_table_name)
+            if constraint_type == "unique":
+                condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
+            else:
+                condition = "TRUE"
+            statement = statement_template.format(columns=quoted_columns,
+                                                  table=description.target_table_name,
+                                                  condition=condition)
             if dry_run:
-                logger.info("Dry-run: Skipping checking %s constraint on '%s'", constraint_type, description.identifier)
+                logger.info("Dry-run: Skipping check of %s constraint on '%s'", constraint_type, description.identifier)
                 logger.debug("Skipped query:\n%s", statement)
             else:
                 logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
