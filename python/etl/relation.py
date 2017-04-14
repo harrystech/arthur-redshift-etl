@@ -209,15 +209,27 @@ class RelationDescription:
                     selected_columns.append('"{name}"'.format(**column))
         return selected_columns
 
-    def find_primary_key(self) -> Union[str, None]:
+    def find_partition_key(self) -> Union[str, None]:
         """
-        Return primary key (single column) from the table design, if defined, else None.
+        Return valid partition key for a relation which fulfills the conditions that
+        (1) the column is marked as a primary key
+        (2) the table's primary key is a single column
+        (3) the column has a numeric type.
+
+        If no partition key can be found, returns None.
         """
-        if "primary_key" in self.table_design.get("constraints", {}):
-            # Note that column constraints such as primary key are stored as one-element lists, hence:
-            return self.table_design["constraints"]["primary_key"][0]
-        else:
-            return None
+        primary_keys = self.table_design.get("constraints", {}).get("primary_key", [])
+        if len(primary_keys) == 1:
+            pk = primary_keys[0]
+            for column in self.table_design["columns"]:
+                if column["name"] == pk:
+                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+                    if column["type"] in ("int", "long"):
+                        return pk
+                    else:
+                        logger.warning("Primary key '%s' is not a number and is not usable as a partition key", pk)
+                        break
+        return None
 
     @contextmanager
     def matching_temporary_view(self, conn):

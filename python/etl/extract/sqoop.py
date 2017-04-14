@@ -3,7 +3,7 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Union
+from typing import Dict, List
 
 import etl.config
 from etl.config.dw import DataWarehouseSchema
@@ -77,7 +77,7 @@ class SqoopExtractor(Extractor):
         source_table_name = description.source_table_name
         columns = description.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
-        primary_key = description.find_primary_key()
+        partition_key = description.find_partition_key()
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -106,8 +106,8 @@ class SqoopExtractor(Extractor):
                 # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
                 "--hive-drop-import-delims",
                 "--compress"]  # The default compression codec is gzip.
-        if primary_key:
-            args.extend(["--split-by", q(primary_key), "--num-mappers", str(self.max_partitions)])
+        if partition_key:
+            args.extend(["--split-by", q(partition_key), "--num-mappers", str(self.max_partitions)])
         else:
             # TODO use "--autoreset-to-one-mapper" ?
             args.extend(["--num-mappers", "1"])
