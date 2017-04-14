@@ -113,7 +113,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, Lis
            AND cls.relname = %s
          ORDER BY ic.relname
         """, (table_name.schema, table_name.table))
-    found = {}
+    found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
         cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(2))
         attributes = etl.pg.query(cx, """
@@ -127,8 +127,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, Lis
         columns = list(att["name"] for att in attributes)
         logger.info("Index '%s' of '%s' adds constraint %s",
                     index_name, table_name.identifier, json.dumps({constraint_type: columns}))
-        # FIXME This does not preserve multiple unique constraints!
-        found[constraint_type] = columns
+        found.append({constraint_type: columns})
     return found
 
 
