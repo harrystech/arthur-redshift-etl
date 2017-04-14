@@ -127,12 +127,19 @@ def validate_semantics_of_table(table_design):
     invalid_col_list_template = "{key} columns in {obj} contains unknown columns"
     for obj, key in column_list_references:
         if obj == 'constraints':
-            cols = [col for constraint in table_design.get(obj, []) for col in constraint.get(key, [])]
+            cols = [col for constraint in constraints for col in constraint.get(key, [])]
         elif obj == 'attributes':
-            cols = table_design.get(obj, {}).get(key)
+            cols = table_design.get(obj, {}).get(key, [])
         if not column_list_has_columns(column_set, cols):
             raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
 
+    # Make sure that no constraints other than unique have multiple values
+    seen_constraint_types = set()
+    for constraint in constraints:
+        for constraint_type in constraint:
+            if constraint_type in seen_constraint_types and constraint_type != "unique":
+                raise TableDesignSemanticError("Multiple constraints of type %s" % constraint_type)
+            seen_constraint_types.add(constraint_type)
 
 def validate_table_design_semantics(table_design, table_name, _memoize_is_upstream_source={}):
     """
