@@ -11,7 +11,7 @@ from etl.errors import SqoopExecutionError
 from etl.extract.extractor import Extractor
 import etl.monitor
 import etl.pg
-from etl.relation import RelationDescription, RelationDescriptionListType
+from etl.relation import RelationDescription
 import etl.s3
 
 
@@ -22,7 +22,7 @@ class SqoopExtractor(Extractor):
     upstream sources using Sqoop, http://sqoop.apache.org/
     """
 
-    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: RelationDescriptionListType,
+    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, max_partitions: int, dry_run: bool) -> None:
         super().__init__("sqoop", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)

@@ -11,7 +11,7 @@ from etl.errors import UnknownTableSizeError
 from etl.extract.extractor import Extractor
 from etl.names import TableName
 from etl.timer import Timer
-from etl.relation import RelationDescription, RelationDescriptionListType
+from etl.relation import RelationDescription
 
 
 class SparkExtractor(Extractor):
@@ -20,7 +20,7 @@ class SparkExtractor(Extractor):
     Use Apache Spark to download data from upstream databases.
     """
 
-    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: RelationDescriptionListType,
+    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, dry_run: bool) -> None:
         super().__init__("spark", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)

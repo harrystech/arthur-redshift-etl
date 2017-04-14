@@ -8,7 +8,7 @@ from etl.config.dw import DataWarehouseSchema
 from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
 import etl.monitor
 from etl.names import join_with_quotes
-from etl.relation import RelationDescription, RelationDescriptionListType
+from etl.relation import RelationDescription
 import etl.s3
 from etl.timer import Timer
 
@@ -21,7 +21,7 @@ class Extractor:
         * call a child's class extract for a single table
     It is that method (`extract_table`) that child classes must implement.
     """
-    def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], descriptions: RelationDescriptionListType,
+    def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
                  keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
         self.schemas = schemas
@@ -48,7 +48,7 @@ class Extractor:
                 'table': description.source_table_name.table}
 
     def extract_source(self, source: DataWarehouseSchema,
-                       descriptions: RelationDescriptionListType) -> RelationDescriptionListType:
+                       descriptions: List[RelationDescription]) -> List[RelationDescription]:
         """
         For a given upstream source, iterate through given relations to extract the relations' data.
         """
