@@ -223,6 +223,7 @@ class RelationDescription:
             pk = primary_keys[0]
             for column in self.table_design["columns"]:
                 if column["name"] == pk:
+                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
                     if column["type"] in ("int", "long"):
                         return pk
                     else:
