@@ -203,13 +203,14 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
-            etl.pg.execute(conn, """COPY {}
-                                    FROM %s
-                                    CREDENTIALS %s MANIFEST
-                                    DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
-                                    TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
-                                    TRUNCATECOLUMNS
-                                 """.format(table_name), (s3_path, credentials))
+            etl.pg.execute(conn, """
+                COPY {}
+                FROM %s
+                CREDENTIALS %s MANIFEST
+                DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
+                TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
+                TRUNCATECOLUMNS
+                """.format(table_name), (s3_path, credentials))
             # TODO Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
@@ -217,12 +218,13 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
             conn.rollback()
             if "stl_load_errors" in exc.pgerror:
                 logger.debug("Trying to get error message from stl_log_errors table")
-                info = etl.pg.query(conn, """SELECT query, starttime, filename, colname, type, col_length,
-                                                    line_number, position, err_code, err_reason
-                                               FROM stl_load_errors
-                                              WHERE session = pg_backend_pid()
-                                              ORDER BY starttime DESC
-                                              LIMIT 1""")
+                info = etl.pg.query(conn, """
+                    SELECT query, starttime, filename, colname, type, col_length,
+                           line_number, position, err_code, err_reason
+                      FROM stl_load_errors
+                     WHERE session = pg_backend_pid()
+                     ORDER BY starttime DESC
+                     LIMIT 1""")
                 values = "  \n".join(["{}: {}".format(k, row[k]) for row in info for k in row.keys()])
                 logger.info("Information from stl_load_errors:\n  %s", values)
             raise

@@ -158,8 +158,7 @@ def execute(cx, stmt, args=(), return_result=False):
             printable_stmt = cursor.mogrify(stmt, args)
         else:
             printable_stmt = cursor.mogrify(stmt)
-        logger.debug("QUERY: %s\n;", remove_credentials(printable_stmt.decode()))
-        # stmt += '\n'
+        logger.debug("QUERY:\n%s\n;", remove_credentials(printable_stmt.decode()))
         with Timer() as timer:
             if len(args):
                 cursor.execute(stmt, args)
