@@ -141,7 +141,6 @@ if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then
     set +x
 
     say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
-    aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "$SSH_KEY_PAIR_FILE"
 else
     if [[ -r "$CLUSTER_CONFIG_DIR/steps_$CLUSTER_ENVIRONMENT.json" ]]; then
         STEPS_FILE="file://$CLUSTER_CONFIG_DIR/steps_$CLUSTER_ENVIRONMENT.json"
@@ -149,8 +148,8 @@ else
         STEPS_FILE="file://$CLUSTER_CONFIG_DIR/steps_default.json"
     fi
     aws emr add-steps --cluster-id "$CLUSTER_ID" --steps "$STEPS_FILE"
-
-    set +x
-    echo "If you need to proxy into the cluster, use:"
-    echo "aws emr socks --cluster-id \"$CLUSTER_ID\" --key-pair-file \"$SSH_KEY_PAIR_FILE\""
 fi
+
+set +x
+echo "If you need to proxy into the cluster, use:"
+echo "aws emr socks --cluster-id \"$CLUSTER_ID\" --key-pair-file \"$SSH_KEY_PAIR_FILE\""
