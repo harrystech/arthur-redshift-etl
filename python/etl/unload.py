@@ -23,28 +23,28 @@ import os
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
-from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
-from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
 import etl.monitor
-from etl.relation import RelationDescription
 import etl.pg
 import etl.s3
+from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
+from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
+from etl.relation import RelationDescription
 from etl.thyme import Thyme
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def run_redshift_unload(conn: connection, description: RelationDescription, unload_path: str, aws_iam_role: str,
+def run_redshift_unload(conn: connection, relation: RelationDescription, unload_path: str, aws_iam_role: str,
                         allow_overwrite=False) -> None:
     """
-    Execute the UNLOAD command for  the given :description (via a select statement).
-    Optionally allow users to overwrite previously unloaded data within the same key space.
+    Execute the UNLOAD command for  the given :relation (via a select statement).
+    Optionally allow users to overwrite previously unloaded data within the same keyspace.
     """
     select_statement = """
         SELECT {}
         FROM {}
-        """.format(", ".join(description.columns), description.target_table_name)
+    """.format(", ".join(relation.columns), relation)
     credentials = "aws_iam_role={}".format(aws_iam_role)
     # TODO Need to review why we can't use r"\N"
     null_string = "\\\\N"
@@ -61,12 +61,12 @@ def run_redshift_unload(conn: connection, description: RelationDescription, unlo
         etl.pg.execute(conn, unload_statement)
 
 
-def write_columns_file(description: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
+def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
     """
     Write out a YAML file into the same folder as the CSV files to document the columns of the relation
     """
 
-    data = {"columns": description.unquoted_columns}
+    data = {"columns": relation.unquoted_columns}
     object_key = os.path.join(prefix, "columns.yaml")
 
     if dry_run:
@@ -89,43 +89,43 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
         etl.s3.upload_empty_object(bucket_name, object_key)
 
 
-def unload_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
+def unload_relation(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema,
                     aws_iam_role: str, prefix: str, allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
     # TODO Move the "{}-{}" logic into the TableFileSet
     rendered_prefix = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
-    schema_table_name = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
+    schema_table_name = "{}-{}".format(relation.target_table_name.schema, relation.target_table_name.table)
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
 
     if dry_run:
-        logger.info("Dry-run: Skipping unload for '%s' to '%s'", description.identifier, unload_path)
+        logger.info("Dry-run: Skipping unload for '%s' to '%s'", relation.identifier, unload_path)
     else:
         try:
-            logger.info("Unloading data from '%s' to '%s'", description.identifier, unload_path)
-            with etl.monitor.Monitor(description.identifier, 'unload', dry_run=dry_run,
-                                     source={'schema': description.target_table_name.schema,
-                                             'table': description.target_table_name.table},
+            logger.info("Unloading data from '%s' to '%s'", relation.identifier, unload_path)
+            with etl.monitor.Monitor(relation.identifier, 'unload', dry_run=dry_run,
+                                     source={'schema': relation.target_table_name.schema,
+                                             'table': relation.target_table_name.table},
                                      destination={'name': schema.name,
                                                   'bucket_name': schema.s3_bucket,
                                                   'prefix': s3_key_prefix}):
-                run_redshift_unload(conn, description, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
+                run_redshift_unload(conn, relation, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
         except Exception as exc:
             raise DataUnloadError(exc) from exc
-    write_columns_file(description, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
+    write_columns_file(relation, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
     write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
-def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescription], prefix: str,
+def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescription], prefix: str,
                  allow_overwrite: bool, keep_going: bool, dry_run: bool) -> None:
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
-    etl.relation.RelationDescription.load_in_parallel(descriptions)
+    etl.relation.RelationDescription.load_in_parallel(relations)
 
-    unloadable_relations = [d for d in descriptions if d.is_unloadable]
+    unloadable_relations = [d for d in relations if d.is_unloadable]
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")
         return

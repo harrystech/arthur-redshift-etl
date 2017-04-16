@@ -1,15 +1,15 @@
 import concurrent.futures
-from itertools import groupby
 import logging
+from itertools import groupby
 from operator import attrgetter
 from typing import Dict, List, Set
 
+import etl.monitor
+import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
-import etl.monitor
 from etl.names import join_with_quotes
 from etl.relation import RelationDescription
-import etl.s3
 from etl.timer import Timer
 
 
@@ -21,63 +21,64 @@ class Extractor:
         * call a child's class extract for a single table
     It is that method (`extract_table`) that child classes must implement.
     """
-    def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
+    def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
                  keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
         self.schemas = schemas
-        self.descriptions = descriptions
+        self.relations = relations
         self.keep_going = keep_going
-        # Decide whether we should wait for some application to finish dumping and writing a success file or
+        # Decide whether we should wait for some application to finish extracting and writing a success file or
         # whether we can proceed immediately when testing for presence of that success file.
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
         self.failed_sources = set()  # type: Set[str]
 
-    def extract_table(self, source: DataWarehouseSchema, description: RelationDescription):
+    def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
         raise NotImplementedError("Forgot to implement extract_table in {}".format(self.__class__.__name__))
 
     @staticmethod
-    def source_info(source: DataWarehouseSchema, description: RelationDescription) -> Dict:
+    def source_info(source: DataWarehouseSchema, relation: RelationDescription) -> Dict:
         """
         Return info for the job monitor that says from where the data is extracted.
-        Defaults to the description's idea of the source but may be overridden by child classes.
+        Defaults to the relation's idea of the source but may be overridden by child classes.
         """
-        return {'name': description.source_name,
-                'schema': description.source_table_name.schema,
-                'table': description.source_table_name.table}
+        return {'name': relation.source_name,
+                'schema': relation.source_table_name.schema,
+                'table': relation.source_table_name.table}
 
     def extract_source(self, source: DataWarehouseSchema,
-                       descriptions: List[RelationDescription]) -> List[RelationDescription]:
+                       relations: List[RelationDescription]) -> List[RelationDescription]:
         """
         For a given upstream source, iterate through given relations to extract the relations' data.
         """
-        self.logger.info("Extracting from source '%s'", source.name)
+        self.logger.info("Extracting %d relation(s) from source '%s'", len(relations), source.name)
         failed = []
 
         with Timer() as timer:
-            for description in descriptions:
+            for relation in relations:
                 try:
-                    with etl.monitor.Monitor(description.identifier, 'extract',
+                    with etl.monitor.Monitor(relation.identifier,
+                                             "extract",
                                              options=["with-{0.name}-extractor".format(self)],
-                                             source=self.source_info(source, description),
-                                             destination={'bucket_name': description.bucket_name,
-                                                          'object_key': description.manifest_file_name},
+                                             source=self.source_info(source, relation),
+                                             destination={'bucket_name': relation.bucket_name,
+                                                          'object_key': relation.manifest_file_name},
                                              dry_run=self.dry_run):
-                        self.extract_table(source, description)
+                        self.extract_table(source, relation)
                 except ETLRuntimeError:
                     self.failed_sources.add(source.name)
-                    failed.append(description)
-                    if not description.is_required:
-                        self.logger.exception("Extract failed for non-required relation '%s':", description.identifier)
+                    failed.append(relation)
+                    if not relation.is_required:
+                        self.logger.exception("Extract failed for non-required relation '%s':", relation.identifier)
                     elif self.keep_going:
                         self.logger.exception("Ignoring failure of required relation '%s' and proceeding as requested:",
-                                              description.identifier)
+                                              relation.identifier)
                     else:
-                        self.logger.debug("Extract failed for required relation '%s'", description.identifier)
+                        self.logger.debug("Extract failed for required relation '%s'", relation.identifier)
                         raise
             self.logger.info("Finished extract from source '%s': %d succeeded, %d failed (%s)",
-                             source.name, len(descriptions) - len(failed), len(failed), timer)
+                             source.name, len(relations) - len(failed), len(failed), timer)
         return failed
 
     def extract_sources(self) -> None:
@@ -89,8 +90,8 @@ class Extractor:
         max_workers = len(self.schemas)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
-            for source_name, description_group in groupby(self.descriptions, attrgetter("source_name")):
-                f = executor.submit(self.extract_source, self.schemas[source_name], list(description_group))
+            for source_name, relation_group in groupby(self.relations, attrgetter("source_name")):
+                f = executor.submit(self.extract_source, self.schemas[source_name], list(relation_group))
                 futures.append(f)
             if self.keep_going:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
@@ -108,7 +109,7 @@ class Extractor:
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))
 
-    def write_manifest_file(self, description: RelationDescription, source_bucket: str, prefix: str) -> None:
+    def write_manifest_file(self, relation: RelationDescription, source_bucket: str, prefix: str) -> None:
         """
         Create manifest file to load all the CSV files for the given relation.
         The manifest file will be created in the folder ABOVE the CSV files.
@@ -132,16 +133,19 @@ class Extractor:
 
         csv_files = sorted(key for key in etl.s3.list_objects_for_prefix(source_bucket, prefix)
                            if "part" in key and key.endswith(".gz"))
-        if len(csv_files) == 0 and not self.dry_run:
-            raise MissingCsvFilesError("Found no CSV files")
-
         remote_files = ["s3://{}/{}".format(source_bucket, filename) for filename in csv_files]
         manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
         if self.dry_run:
-            self.logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s'",
-                             description.bucket_name, description.manifest_file_name)
+            if not manifest:
+                self.logger.warning("Dry-run: Found no CSV files")
+            else:
+                self.logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s'",
+                                 relation.bucket_name, relation.manifest_file_name)
         else:
-            self.logger.info("Writing manifest file to 's3://%s/%s'",
-                             description.bucket_name, description.manifest_file_name)
-            etl.s3.upload_data_to_s3(manifest, description.bucket_name, description.manifest_file_name)
+            if not manifest:
+                raise MissingCsvFilesError("Found no CSV files")
+            else:
+                self.logger.info("Writing manifest file to 's3://%s/%s'",
+                                 relation.bucket_name, relation.manifest_file_name)
+                etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)

@@ -34,6 +34,7 @@ def trace_key():
     """
     Return a "trace key" suitable to track program execution.  It's most likely unique between invocations.
     """
+    # We will never make a 32-bit operating system.
     return uuid.uuid4().hex[:16].upper()
 
 
@@ -51,7 +52,6 @@ class MetaMonitor(type):
     @property
     def etl_id(cls):
         if cls._trace_key is None:
-            # We will never make a 32-bit operating system.
             cls._trace_key = trace_key()
         return cls._trace_key
 

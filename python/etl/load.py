@@ -37,19 +37,19 @@ table which is then inserted into the table.  This is needed to attach
 constraints, attributes, and encodings.
 """
 
+import logging
 from contextlib import closing
 from itertools import chain
-import logging
 
 import psycopg2
 
 import etl
 import etl.dw
-from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
 import etl.monitor
-from etl.names import join_column_list, join_with_quotes, TableName
 import etl.pg
 import etl.relation
+from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
+from etl.names import join_column_list, join_with_quotes, TableName
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -131,15 +131,15 @@ def assemble_table_ddl(table_design, table_name, use_identity=False, is_temp=Fal
                                                           "\n".join(s_attributes)).replace('\n', "\n    ")
 
 
-def create_table(conn, description, drop_table=False, dry_run=False):
+def create_table(conn, relation, drop_table=False, dry_run=False):
     """
     Run the CREATE TABLE statement before trying to copy data into table.
     Also assign ownership to make sure all tables are owned by same user.
     Table may be dropped before (re-)creation but only the table owner is
     allowed to do so.
     """
-    table_name = description.target_table_name
-    table_design = description.table_design
+    table_name = relation.target_table_name
+    table_design = relation.table_design
     ddl_stmt = assemble_table_ddl(table_design, table_name)
 
     if dry_run:
@@ -153,14 +153,14 @@ def create_table(conn, description, drop_table=False, dry_run=False):
         etl.pg.execute(conn, ddl_stmt)
 
 
-def create_view(conn, description, drop_view=False, dry_run=False):
+def create_view(conn, relation, drop_view=False, dry_run=False):
     """
     Run the CREATE VIEW statement after dropping (potentially) an existing one.
     NOTE that this a no-op if drop_view is False.
     """
-    view_name = description.target_table_name
-    s_columns = join_column_list(column["name"] for column in description.table_design["columns"])
-    ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
+    view_name = relation.target_table_name
+    s_columns = join_column_list(column["name"] for column in relation.table_design["columns"])
+    ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, relation.query_stmt)
     if drop_view:
         if dry_run:
             logger.info("Dry-run: Skipping (re-)creation of view '%s'", view_name.identifier)
@@ -175,7 +175,7 @@ def create_view(conn, description, drop_view=False, dry_run=False):
         logger.debug("Skipped DDL:\n%s", ddl_stmt)
 
 
-def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
+def copy_data(conn, relation, aws_iam_role, skip_copy=False, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
@@ -184,18 +184,18 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     all rows instead of truncating the tables.
     """
     credentials = "aws_iam_role={}".format(aws_iam_role)
-    s3_path = "s3://{}/{}".format(description.bucket_name, description.manifest_file_name)
-    table_name = description.target_table_name
+    s3_path = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
+    table_name = relation.target_table_name
 
     if dry_run:
-        if not description.has_manifest:
-            logger.warning("Missing manifest file for '%s'", description.identifier)
+        if not relation.has_manifest:
+            logger.warning("Missing manifest file for '%s'", relation.identifier)
         logger.info("Dry-run: Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     elif skip_copy:
         logger.info("Skipping copy for '%s' from '%s'", table_name.identifier, s3_path)
     else:
-        if not description.has_manifest:
-            raise MissingManifestError("Missing manifest file for '{}'".format(description.identifier))
+        if not relation.has_manifest:
+            raise MissingManifestError("Missing manifest file for '{}'".format(relation.identifier))
 
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_path)
         try:
@@ -290,7 +290,7 @@ def assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_ke
                        FROM {})""".format(table_name, s_columns, temp_name)
 
 
-def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=False):
+def create_temp_table_as_and_copy(conn, relation, skip_copy=False, dry_run=False):
     """
     Run the CREATE TABLE AS statement to load data into temp table, then copy into final table.
 
@@ -304,9 +304,9 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=Fa
     constraints) so we need to have a temp table separate from destination
     table in order to have full flexibility how we define the destination table.
     """
-    table_name = description.target_table_name
-    table_design = description.table_design
-    query_stmt = description.query_stmt
+    table_name = relation.target_table_name
+    table_design = relation.table_design
+    query_stmt = relation.query_stmt
 
     temp_identifier = '$'.join(("arthur_temp", table_name.table))
     temp_name = '"{}"'.format(temp_identifier)
@@ -401,52 +401,54 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift_relation(conn, description, credentials, schema,
+def load_or_update_redshift_relation(conn, relation, credentials, schema,
                                      drop=False, skip_copy=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
     """
-    table_name = description.target_table_name
+    table_name = relation.target_table_name
     owner, reader_groups, writer_groups = schema.owner, schema.reader_groups, schema.writer_groups
-    if description.is_ctas_relation or description.is_view_relation:
-        object_key = description.sql_file_name
+    if relation.is_ctas_relation or relation.is_view_relation:
+        object_key = relation.sql_file_name
     else:
-        object_key = description.manifest_file_name
+        object_key = relation.manifest_file_name
 
     # TODO The monitor should contain the number of rows that were loaded.
     modified = False
-    with etl.monitor.Monitor(table_name.identifier, 'load', dry_run=dry_run,
+    with etl.monitor.Monitor(table_name.identifier,
+                             "load",
+                             dry_run=dry_run,
                              options=["skip_copy"] if skip_copy else [],
-                             source={'bucket_name': description.bucket_name,
+                             source={'bucket_name': relation.bucket_name,
                                      'object_key': object_key},
                              destination={'name': etl.pg.dbname(conn),
                                           'schema': table_name.schema,
                                           'table': table_name.table}):
-        if description.is_view_relation:
-            create_view(conn, description, drop_view=drop, dry_run=dry_run)
+        if relation.is_view_relation:
+            create_view(conn, relation, drop_view=drop, dry_run=dry_run)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
-        elif description.is_ctas_relation:
-            create_table(conn, description, drop_table=drop, dry_run=dry_run)
-            create_temp_table_as_and_copy(conn, description, skip_copy=skip_copy, dry_run=dry_run)
+        elif relation.is_ctas_relation:
+            create_table(conn, relation, drop_table=drop, dry_run=dry_run)
+            create_temp_table_as_and_copy(conn, relation, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
             # TODO What should we do with table data if a constraint violation is detected? Delete it?
-            verify_constraints(conn, description, dry_run=dry_run)
+            verify_constraints(conn, relation, dry_run=dry_run)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
             modified = True
         else:
-            create_table(conn, description, drop_table=drop, dry_run=dry_run)
+            create_table(conn, relation, drop_table=drop, dry_run=dry_run)
             # Grant access to data source regardless of loading errors (writers may fix the problem outside of ETL)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
-            copy_data(conn, description, credentials, skip_copy=skip_copy, dry_run=dry_run)
+            copy_data(conn, relation, credentials, skip_copy=skip_copy, dry_run=dry_run)
             analyze(conn, table_name, dry_run=dry_run)
-            verify_constraints(conn, description, dry_run=dry_run)
+            verify_constraints(conn, relation, dry_run=dry_run)
             modified = True
         return modified
 
 
-def verify_constraints(conn, description, dry_run=False) -> None:
+def verify_constraints(conn, relation, dry_run=False) -> None:
     """
-    Raises a FailedConstraintError if :description's target table doesn't obey its declared unique constraints.
+    Raises a FailedConstraintError if :relation's target table doesn't obey its declared unique constraints.
 
     Note that NULL in SQL is never equal to another value. This means for unique constraints that
     rows where (at least) one column is null are not equal even if they have the same values in the
@@ -460,9 +462,9 @@ def verify_constraints(conn, description, dry_run=False) -> None:
     > does not exclude null values."
     https://www.postgresql.org/docs/8.1/static/ddl-constraints.html
     """
-    constraints = description.table_design.get("constraints")
+    constraints = relation.table_design.get("constraints")
     if constraints is None:
-        logger.info("No constraints to verify for '%s'", description.identifier)
+        logger.info("No constraints to verify for '%s'", relation.identifier)
         return
 
     # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
@@ -486,19 +488,19 @@ def verify_constraints(conn, description, dry_run=False) -> None:
             else:
                 condition = "TRUE"
             statement = statement_template.format(columns=quoted_columns,
-                                                  table=description.target_table_name,
+                                                  table=relation.target_table_name,
                                                   condition=condition)
             if dry_run:
-                logger.info("Dry-run: Skipping check of %s constraint on '%s'", constraint_type, description.identifier)
+                logger.info("Dry-run: Skipping check of %s constraint on '%s'", constraint_type, relation.identifier)
                 logger.debug("Skipped query:\n%s", statement)
             else:
-                logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
+                logger.info("Checking %s constraint on '%s'", constraint_type, relation.identifier)
                 results = etl.pg.query(conn, statement)
                 if results:
-                    raise FailedConstraintError(description, constraint_type, columns, results)
+                    raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
-def evaluate_execution_order(descriptions, selector, only_first=False, whole_schemas=False):
+def evaluate_execution_order(relations, selector, only_first=False, whole_schemas=False):
     """
     Returns a tuple like ( list of relations to executed, set of schemas they're in )
 
@@ -512,12 +514,12 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     If you select to widen the update to entire schemas, then, well, entire schemas
     are updated instead of surgically picking up tables.
     """
-    complete_sequence = etl.relation.order_by_dependencies(descriptions)
+    complete_sequence = etl.relation.order_by_dependencies(relations)
 
     dirty = set()
-    for description in complete_sequence:
-        if selector.match(description.target_table_name):
-            dirty.add(description.identifier)
+    for relation in complete_sequence:
+        if selector.match(relation.target_table_name):
+            dirty.add(relation.identifier)
 
     if only_first:
         if len(dirty) != 1:
@@ -525,16 +527,16 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
         if whole_schemas:
             raise ValueError("Cannot elect to pick both, entire schemas and only first relation")
     else:
-        for description in complete_sequence:
-            if any(table in dirty for table in description.dependencies):
-                dirty.add(description.identifier)
+        for relation in complete_sequence:
+            if any(table in dirty for table in relation.dependencies):
+                dirty.add(relation.identifier)
 
-    dirty_schemas = {description.target_table_name.schema
-                     for description in complete_sequence if description.identifier in dirty}
+    dirty_schemas = {relation.target_table_name.schema
+                     for relation in complete_sequence if relation.identifier in dirty}
     if whole_schemas:
-        for description in complete_sequence:
-            if description.target_table_name.schema in dirty_schemas:
-                dirty.add(description.identifier)
+        for relation in complete_sequence:
+            if relation.target_table_name.schema in dirty_schemas:
+                dirty.add(relation.identifier)
 
     # FIXME move this into load/upgrade/update to have verb correct?
     if len(dirty) == len(complete_sequence):
@@ -543,10 +545,10 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
         logger.info("Decided on updating a SINGLE table: %s", list(dirty)[0])
     else:
         logger.info("Decided on updating %d of %d table(s)", len(dirty), len(complete_sequence))
-    return [description for description in complete_sequence if description.identifier in dirty], dirty_schemas
+    return [relation for relation in complete_sequence if relation.identifier in dirty], dirty_schemas
 
 
-def show_dependents(descriptions, selector):
+def show_dependents(relations, selector):
     """
     List the execution order of loads or updates.
 
@@ -554,48 +556,48 @@ def show_dependents(descriptions, selector):
     part of the fan-out of an update.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    execution_order, involved_schema_names = evaluate_execution_order(descriptions, selector)
+    execution_order, involved_schema_names = evaluate_execution_order(relations, selector)
     if len(execution_order) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
     logger.info("Involved schemas: %s", join_with_quotes(involved_schema_names))
 
-    selected = frozenset(description.identifier for description in execution_order
-                         if selector.match(description.target_table_name))
+    selected = frozenset(relation.identifier for relation in execution_order
+                         if selector.match(relation.target_table_name))
 
     immediate = set(selected)
-    for description in execution_order:
-        if description.is_view_relation and any(name in immediate for name in description.dependencies):
-            immediate.add(description.identifier)
+    for relation in execution_order:
+        if relation.is_view_relation and any(name in immediate for name in relation.dependencies):
+            immediate.add(relation.identifier)
     immediate = frozenset(immediate - selected)
 
     logger.info("Execution order includes %d selected, %d immediate, and %d fan-out relation(s)",
                 len(selected), len(immediate), len(execution_order) - len(selected) - len(immediate))
 
-    required = [description for description in execution_order if description.is_required]
+    required = [relation for relation in execution_order if relation.is_required]
     logger.info("Execution order includes %d required relation(s)", len(required))
 
-    max_len = max(len(description.identifier) for description in execution_order)
-    for i, description in enumerate(execution_order):
-        if description.is_ctas_relation:
+    max_len = max(len(relation.identifier) for relation in execution_order)
+    for i, relation in enumerate(execution_order):
+        if relation.is_ctas_relation:
             reltype = "CTAS"
-        elif description.is_view_relation:
+        elif relation.is_view_relation:
             reltype = "VIEW"
         else:
             reltype = "DATA"
-        if description.identifier in selected:
+        if relation.identifier in selected:
             flag = "selected"
-        elif description.identifier in immediate:
+        elif relation.identifier in immediate:
             flag = "immediate"
         else:
             flag = "fan-out"
-        if description.is_required:
+        if relation.is_required:
             flag += ", required"
         print("{index:4d} {identifier:{width}s} ({reltype}) ({flag})".format(
-                index=i + 1, identifier=description.identifier, width=max_len, reltype=reltype, flag=flag))
+                index=i + 1, identifier=relation.identifier, width=max_len, reltype=reltype, flag=flag))
 
 
-def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, stop_after_first=False,
+def load_or_update_redshift(data_warehouse, relations, selector, drop=False, stop_after_first=False,
                             no_rollback=False, skip_copy=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
@@ -612,7 +614,7 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     """
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
-        descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
+        relations, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
 
     required_selector = data_warehouse.required_in_full_load_selector
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
@@ -633,28 +635,27 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     conn = etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)
     with closing(conn) as conn, conn as conn:
         try:
-            for index, description in enumerate(execution_order):
-                logger.info("Starting to work on '%s' (%d/%d)", description.identifier, index+1, len(execution_order))
-                if description.identifier in failed:
-                    logger.info("Skipping load for relation '%s' due to failed dependencies", description.identifier)
+            for relation in execution_order:
+                if relation.identifier in failed:
+                    logger.info("Skipping load for relation '%s' due to failed dependencies", relation.identifier)
                     continue
-                target_schema = schema_config_lookup[description.target_table_name.schema]
+                target_schema = schema_config_lookup[relation.target_table_name.schema]
                 try:
                     modified = load_or_update_redshift_relation(
-                        conn, description, data_warehouse.iam_role, target_schema,
+                        conn, relation, data_warehouse.iam_role, target_schema,
                         drop=drop, skip_copy=skip_copy, dry_run=dry_run)
                     if modified:
-                        vacuumable.append(description.target_table_name)
+                        vacuumable.append(relation.target_table_name)
                 except Exception as e:
                     if whole_schemas:
-                        subtree = _get_failed_subtree(description, execution_order, required_selector)
+                        subtree = _get_failed_subtree(relation, execution_order, required_selector)
                         failed.update(subtree)
                         # FIXME This is difficult to read in the log, especially when the subtree is empty.
                         logger.warning("Load failure for '%s' does not harm any relations required by selector '%s';"
                                        " continuing load omitting these dependent relations: %s"
                                        ". Failure error was: %s",
-                                       description.identifier, required_selector,
-                                       subtree.difference({description.identifier}), e)
+                                       relation.identifier, required_selector,
+                                       subtree.difference({relation.identifier}), e)
                     else:
                         raise
 
@@ -675,20 +676,20 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
                 vacuum(conn, table_name, dry_run=dry_run)
 
 
-def _get_failed_subtree(failed_description, execution_order, required_selector):
+def _get_failed_subtree(failed_relation, execution_order, required_selector):
     """
-    After an exception in loading :description, add its dependency subtree using :execution_order,
+    After an exception in loading :failed_relation, add its dependency subtree using :execution_order,
     and if any element matches :required_selector, raise a RequiredRelationFailed exception
     """
-    subtree = {failed_description.identifier}
-    for description in execution_order:
-        if any(table in subtree for table in description.dependencies):
-            subtree.add(description.identifier)
+    subtree = {failed_relation.identifier}
+    for relation in execution_order:
+        if any(table in subtree for table in relation.dependencies):
+            subtree.add(relation.identifier)
 
     illegal_failures = [d.identifier for d in execution_order
                         if d.identifier in subtree and required_selector.match(d.target_table_name)]
 
     if illegal_failures:
-        raise RequiredRelationFailed(failed_description, illegal_failures, required_selector)
+        raise RequiredRelationFailed(failed_relation, illegal_failures, required_selector)
     else:
         return subtree
