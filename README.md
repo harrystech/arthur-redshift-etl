@@ -371,10 +371,14 @@ pip3 install ipython
 
 ### Running type checker
 
-Here is how to run the static type checker [mypi](http://mypy-lang.org/):
+Here is how to run the static type checker [mypy](http://mypy-lang.org/):
 ```shell
 mypy python --strict-optional --ignore-missing-imports
+
+arthur.py selftest typecheck
 ```
+
+Keep this handy [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
 
 ### EMR login / EC2 login
 

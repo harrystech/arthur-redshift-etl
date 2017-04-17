@@ -5,7 +5,7 @@ import string
 
 class Thyme:
 
-    def __init__(self, date: datetime):
+    def __init__(self, date: datetime) -> None:
         self.date = date
 
     @property

@@ -7,14 +7,13 @@ We use "config" files to refer to all files that may reside in the "config" dire
 This module provides global access to settings.  Always treat them nicely and read-only.
 """
 
-from collections import defaultdict
 from functools import lru_cache
 import logging
 import logging.config
 import os
 import os.path
 import sys
-from typing import Iterable, List, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 import pkg_resources
 import jsonschema
@@ -22,10 +21,19 @@ import simplejson as json
 import yaml
 
 import etl.config.dw
+from etl.config.dw import DataWarehouseConfig
+from etl.errors import SchemaInvalidError, SchemaValidationError
+
+__all__ = ["package_version", "get_dw_config", "get_data_lake_config", "etl_tmp_dir", "configure_logging",
+           "validate_with_schema"]
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 # Global config objects - always use accessors
-_dw_config = None
+_dw_config = None  # type: Optional[DataWarehouseConfig]
+_data_lake_config = None  # type: Optional[Dict[str, Any]]
 
 # Local temp directory used for bootstrap, temp files, etc.
 ETL_TMP_DIR = "/tmp/redshift_etl"
@@ -38,6 +46,15 @@ def package_version(package_name="redshift-etl"):
 
 def get_dw_config():
     return _dw_config
+
+
+def get_data_lake_config(propname: str=None):
+    if _data_lake_config is None:
+        return None
+    elif propname is not None:
+        return _data_lake_config[propname]
+    else:
+        return _data_lake_config
 
 
 def etl_tmp_dir(path: str) -> str:
@@ -62,8 +79,10 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     elif log_level:
         config["handlers"]["console"]["level"] = log_level
     logging.config.dictConfig(config)
-    logging.captureWarnings(True)
-    logging.getLogger(__name__).info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
+    # Ignored due to lack of stub in type checking library
+    logging.captureWarnings(True)  # type: ignore
+    logger.info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
+    logger.debug("Current working directory: '%s'", os.getcwd())
 
 
 def load_environ_file(filename: str) -> None:
@@ -73,7 +92,7 @@ def load_environ_file(filename: str) -> None:
     Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
     other lines are silently dropped.
     """
-    logging.getLogger(__name__).info("Loading environment variables from '%s'", filename)
+    logger.info("Loading environment variables from '%s'", filename)
     with open(filename) as f:
         for line in f:
             tokens = [token.strip() for token in line.split('=', 1)]
@@ -88,7 +107,6 @@ def load_settings_file(filename: str, settings: dict) -> None:
     Load new settings from config file or a directory of config files
     and UPDATE settings (old settings merged with new).
     """
-    logger = logging.getLogger(__name__)
     logger.info("Loading settings from '%s'", filename)
     with open(filename) as f:
         new_settings = yaml.safe_load(f)
@@ -105,7 +123,6 @@ def read_release_file(filename: str) -> None:
     Read the release file and echo its contents to the log.
     Life's exciting. And short. But mostly exciting.
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Loading release information from '%s'", filename)
     with open(filename) as f:
         lines = [line.strip() for line in f]
@@ -142,8 +159,7 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     The settings are validated against their schema before being returned.
     """
-    logger = logging.getLogger(__name__)
-    settings = defaultdict(dict)
+    settings = dict()  # type: Dict[str, Any]
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
@@ -154,19 +170,48 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
         elif filename.endswith("release.txt"):
             read_release_file(filename)
         else:
-            logger.info("Skipping config file '%s'", filename)
+            logger.info("Skipping unknown config file '%s'", filename)
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
         raise RuntimeError("Failed to find enough configuration files (need at least default and local config)")
 
-    schema = load_json("settings.schema")
-    jsonschema.validate(settings, schema)
+    validate_with_schema(settings, "settings.schema")
+
+    global _data_lake_config
+    _data_lake_config = settings.get("data_lake")
+    # FIXME Clean this up after v0.23.0! For now, copy from old locations
+    if _data_lake_config is None:
+        _data_lake_config = {
+            "s3": {"bucket_name": settings["s3"]["bucket_name"]},
+            "iam_role": settings["data_warehouse"]["iam_role"]
+        }
 
     global _dw_config
     _dw_config = etl.config.dw.DataWarehouseConfig(settings)
 
-    return dict(settings)
+    return settings
+
+
+def validate_with_schema(obj: dict, schema_name: str) -> None:
+    """
+    Validate the given object (presumably from reading a YAML file) against its schema.
+
+    This will also validate the schema itself!
+    """
+    validation_internal_errors = (
+        jsonschema.exceptions.ValidationError,
+        jsonschema.exceptions.SchemaError,
+        json.scanner.JSONDecodeError)
+    try:
+        schema = etl.config.load_json(schema_name)
+        jsonschema.Draft4Validator.check_schema(schema)
+    except validation_internal_errors as exc:
+        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    try:
+        jsonschema.validate(obj, schema)
+    except validation_internal_errors as exc:
+        raise SchemaValidationError("failed to validate against '%s'" % schema_name) from exc
 
 
 def gather_setting_files(config_files: Sequence[str]) -> List[str]:
@@ -176,7 +221,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     It is an error if we detect that there are settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
-    settings_found = set()
+    settings_found = set()  # type: Set[str]
     settings_with_path = []
 
     for fullname in yield_config_files(config_files):

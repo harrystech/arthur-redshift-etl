@@ -5,13 +5,14 @@
 
 set -e
 
-if [[ $# -ne 2 ]]; then
-    echo "Usage: `basename $0` <bucket_name> <target_env>"
+if [[ $# -lt 1 || $# -gt 2 || $1 = "-h" ]]; then
+    echo "Usage: `basename $0` <bucket_name> [<target_env>]"
+    echo "    The <target_env> defaults to your user name ($USER)."
     exit 0
 fi
 
 CLUSTER_BUCKET="$1"
-CLUSTER_TARGET_ENVIRONMENT="$2"
+CLUSTER_TARGET_ENVIRONMENT="${2-$USER}"
 
 ask_to_confirm () {
     while true; do
@@ -85,13 +86,16 @@ aws s3 sync --delete \
     --exclude "release.txt" \
     --exclude "credentials*.sh" \
     "$DATA_WAREHOUSE_CONFIG" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
-aws s3 sync --delete \
-    --exclude "*" \
-    --include commons-csv-1.4.jar \
-    --include postgresql-9.4.1208.jar \
-    --include RedshiftJDBC41-1.1.10.1010.jar \
-    --include spark-csv_2.10-1.4.0.jar \
-    jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
+# Users who don't intend to use Spark may not have the jars directory.
+if [[ -d "jars" ]]; then
+    aws s3 sync --delete \
+        --exclude "*" \
+        --include commons-csv-1.4.jar \
+        --include postgresql-9.4.1208.jar \
+        --include RedshiftJDBC41-1.1.10.1010.jar \
+        --include spark-csv_2.10-1.4.0.jar \
+        jars "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars"
+fi
 
 set +x
 echo

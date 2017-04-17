@@ -28,9 +28,11 @@ from etl.errors import ETLError
 from etl.names import join_with_quotes
 import etl.pg
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def create_schemas(conn, schemas, owner=None):
-    logger = logging.getLogger(__name__)
 
     for schema in schemas:
         logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
@@ -42,7 +44,6 @@ def create_schemas(conn, schemas, owner=None):
 
 
 def backup_schemas(conn, schemas):
-    logger = logging.getLogger(__name__)
 
     for schema in schemas:
         if not etl.pg.schema_exists(conn, schema.name):
@@ -58,7 +59,6 @@ def backup_schemas(conn, schemas):
 
 
 def restore_schemas(conn, schemas):
-    logger = logging.getLogger(__name__)
 
     for schema in schemas:
         if not etl.pg.schema_exists(conn, schema.backup_name):
@@ -81,8 +81,6 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
     You have to set `force` to true if the name of the database doesn't start with 'validation'.
     Optionally use `with_users` flag to create users and groups.
     """
-    logger = logging.getLogger(__name__)
-
     try:
         database_name = config.dsn_etl['database']
     except KeyError:
@@ -142,8 +140,6 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
 
     This is safe to re-run as long as you skip creating users and groups the second time around.
     """
-    logger = logging.getLogger(__name__)
-
     # Find user in the list of pre-defined users or create new user instance with default settings
     for user in config.users:
         if user.name == new_user:

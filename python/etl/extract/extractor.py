@@ -2,10 +2,10 @@ import concurrent.futures
 from itertools import groupby
 import logging
 from operator import attrgetter
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import MissingCsvFilesError, DataExtractError
+from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
 import etl.monitor
 from etl.names import join_with_quotes
 from etl.relation import RelationDescription
@@ -22,7 +22,7 @@ class Extractor:
     It is that method (`extract_table`) that child classes must implement.
     """
     def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, needs_to_wait: bool, dry_run: bool):
+                 keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
         self.schemas = schemas
         self.descriptions = descriptions
@@ -32,7 +32,7 @@ class Extractor:
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
-        self.failed_sources = None  # Will be set to a fresh set when starting to extract sources
+        self.failed_sources = set()  # type: Set[str]
 
     def extract_table(self, source: DataWarehouseSchema, description: RelationDescription):
         raise NotImplementedError("Forgot to implement extract_table in {}".format(self.__class__.__name__))
@@ -52,6 +52,7 @@ class Extractor:
         """
         For a given upstream source, iterate through given relations to extract the relations' data.
         """
+        self.logger.info("Extracting from source '%s'", source.name)
         failed = []
 
         with Timer() as timer:
@@ -64,7 +65,7 @@ class Extractor:
                                                           'object_key': description.manifest_file_name},
                                              dry_run=self.dry_run):
                         self.extract_table(source, description)
-                except DataExtractError:
+                except ETLRuntimeError:
                     self.failed_sources.add(source.name)
                     failed.append(description)
                     if not description.is_required:
@@ -83,13 +84,12 @@ class Extractor:
         """
         Iterate over sources to be extracted and parallelize extraction at the source level
         """
-        self.failed_sources = set()
+        self.failed_sources.clear()
         # FIXME We need to evaluate whether extracting from multiple sources in parallel works with Spark!
         max_workers = len(self.schemas)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for source_name, description_group in groupby(self.descriptions, attrgetter("source_name")):
-                self.logger.info("Extracting from source '%s'", source_name)
                 f = executor.submit(self.extract_source, self.schemas[source_name], list(description_group))
                 futures.append(f)
             if self.keep_going:
@@ -97,10 +97,10 @@ class Extractor:
             else:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
         if self.failed_sources:
-            self.logger.info("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
+            self.logger.error("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
 
         # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
-        missing_tables = []
+        missing_tables = []  # type: List
         for future in done:
             missing_tables.extend(future.result())
         for table_name in missing_tables:

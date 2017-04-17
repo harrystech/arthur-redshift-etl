@@ -5,10 +5,14 @@ Implement commands that interact with AWS Data Pipeline
 import fnmatch
 import logging
 from operator import attrgetter
+from typing import List
 
 import boto3
 
 from etl.names import join_with_quotes
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class DataPipeline:
@@ -26,7 +30,7 @@ class DataPipeline:
         return "DataPipeline('{}','{}')".format(self.pipeline_id, self.name)
 
 
-def list_pipelines(selection):
+def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     """
     List pipelines related to this project (which must have the tag for 'DataWarehouseEnvironment' set)
 
@@ -35,7 +39,7 @@ def list_pipelines(selection):
     """
     client = boto3.client('datapipeline')
 
-    all_pipeline_ids = []
+    all_pipeline_ids = []  # type: List[str]
     resp = client.list_pipelines()
     while True:
         all_pipeline_ids.extend(id_['id'] for id_ in resp['pipelineIdList'])
@@ -63,15 +67,13 @@ def list_pipelines(selection):
     return sorted(dw_pipelines, key=attrgetter("name"))
 
 
-def show_pipelines(selection):
+def show_pipelines(selection: List[str]) -> None:
     """
     List the currently installed pipelines, possibly using a subset based on the selection pattern.
 
     Without a selection, prints an overview of the pipelines.
     With a selection, digs into details of each selected pipeline.
     """
-    logger = logging.getLogger(__name__)
-
     pipelines = list_pipelines(selection)
 
     if not pipelines:

@@ -3,7 +3,7 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Union
+from typing import Dict, List
 
 import etl.config
 from etl.config.dw import DataWarehouseSchema
@@ -23,7 +23,7 @@ class SqoopExtractor(Extractor):
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, max_partitions: int, dry_run: bool):
+                 keep_going: bool, max_partitions: int, dry_run: bool) -> None:
         super().__init__("sqoop", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self.max_partitions = max_partitions
@@ -51,16 +51,16 @@ class SqoopExtractor(Extractor):
         prefix = os.path.join(description.prefix, description.csv_path_name)
         self.write_manifest_file(description, description.bucket_name, prefix)
 
-    def _write_password_file(self, password: str) -> Union[str, None]:
+    def _write_password_file(self, password: str) -> str:
         """
         Write password to a (temporary) file, return name of file created.
         """
         if self.dry_run:
             self.logger.info("Dry-run: Skipping writing of password file")
-            password_file_path = None
+            password_file_path = "/tmp/never_used"
         else:
             with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="pw_", delete=False) as fp:
-                fp.write(password)
+                fp.write(password)  # type: ignore
                 fp.close()
             password_file_path = fp.name
             self.logger.info("Wrote password to '%s'", password_file_path)
@@ -77,7 +77,7 @@ class SqoopExtractor(Extractor):
         source_table_name = description.source_table_name
         columns = description.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
-        primary_key = description.find_primary_key()
+        partition_key = description.find_partition_key()
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -106,24 +106,24 @@ class SqoopExtractor(Extractor):
                 # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
                 "--hive-drop-import-delims",
                 "--compress"]  # The default compression codec is gzip.
-        if primary_key:
-            args.extend(["--split-by", q(primary_key), "--num-mappers", str(self.max_partitions)])
+        if partition_key:
+            args.extend(["--split-by", q(partition_key), "--num-mappers", str(self.max_partitions)])
         else:
             # TODO use "--autoreset-to-one-mapper" ?
             args.extend(["--num-mappers", "1"])
         return args
 
-    def _write_options_file(self, args: List[str]) -> Union[str, None]:
+    def _write_options_file(self, args: List[str]) -> str:
         """
         Write options to a (temporary) file, return name of file created.
         """
         if self.dry_run:
             self.logger.info("Dry-run: Skipping creation of Sqoop options file")
-            options_file_path = None
+            options_file_path = "/tmp/never_used"
         else:
             with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="so_", delete=False) as fp:
-                fp.write('\n'.join(args))
-                fp.write('\n')
+                fp.write('\n'.join(args))  # type: ignore
+                fp.write('\n')  # type: ignore
                 fp.close()
             options_file_path = fp.name
             self.logger.info("Wrote Sqoop options to '%s'", options_file_path)

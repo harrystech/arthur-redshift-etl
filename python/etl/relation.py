@@ -21,7 +21,7 @@ import logging
 from operator import attrgetter
 import os.path
 from queue import PriorityQueue
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, Optional, Union, List
 
 import etl.design.load
 from etl.errors import CyclicDependencyError, MissingQueryError
@@ -30,6 +30,9 @@ from etl.names import join_with_quotes, TableName
 import etl.pg
 import etl.s3
 import etl.timer
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class RelationDescription:
@@ -51,7 +54,7 @@ class RelationDescription:
                                                                            self._fileset.__class__.__name__,
                                                                            attr))
 
-    def __init__(self, discovered_files: etl.file_sets.TableFileSet):
+    def __init__(self, discovered_files: etl.file_sets.TableFileSet) -> None:
         # Basic properties to locate files describing the relation
         self._fileset = discovered_files
         self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
@@ -60,10 +63,10 @@ class RelationDescription:
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design, query statement, etc.
-        self._table_design = None  # type: Union[None, dict]
-        self._query_stmt = None  # type: Union[None, str]
-        self._unload_target = None  # type: Union[None, str]
-        self._dependencies = None  # type: Union[None, List[str]]
+        self._table_design = None  # type: Optional[Dict[str, Any]]
+        self._query_stmt = None  # type: Optional[str]
+        self._unload_target = None  # type: Optional[str]
+        self._dependencies = None  # type: Optional[List[str]]
         # Deferred evaluation whether this relation is required
         self._is_required = None  # type: Union[None, bool]
 
@@ -95,17 +98,16 @@ class RelationDescription:
         """
         Load all descriptions' table design file in parallel.
         """
-        logger = logging.getLogger(__name__)
         logger.info("Loading table design for %d relation(s)", len(descriptions))
         with etl.timer.Timer() as timer:
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 executor.map(lambda description: description.load(), descriptions)
         logger.info("Finished loading %d table design file(s) (%s)", len(descriptions), timer)
 
-    @property
+    @property  # This property is lazily loaded
     def table_design(self) -> Dict[str, Any]:
         self.load()
-        return self._table_design
+        return self._table_design  # type: ignore
 
     @property
     def is_ctas_relation(self):
@@ -141,7 +143,7 @@ class RelationDescription:
                 with open(self.sql_file_name) as f:
                     query_stmt = f.read()
             self._query_stmt = query_stmt.strip().rstrip(';')
-        return self._query_stmt
+        return self._query_stmt  # type: ignore
 
     @property
     def dependencies(self):
@@ -178,7 +180,6 @@ class RelationDescription:
         If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
         to dump or load in these relations will end the ETL run.
         """
-        logger = logging.getLogger(__name__)
         descriptions = []
         for file_set in file_sets:
             if file_set.design_file_name is not None:
@@ -208,15 +209,27 @@ class RelationDescription:
                     selected_columns.append('"{name}"'.format(**column))
         return selected_columns
 
-    def find_primary_key(self) -> Union[str, None]:
+    def find_partition_key(self) -> Union[str, None]:
         """
-        Return primary key (single column) from the table design, if defined, else None.
+        Return valid partition key for a relation which fulfills the conditions that
+        (1) the column is marked as a primary key
+        (2) the table's primary key is a single column
+        (3) the column has a numeric type.
+
+        If no partition key can be found, returns None.
         """
-        if "primary_key" in self.table_design.get("constraints", {}):
-            # Note that column constraints such as primary key are stored as one-element lists, hence:
-            return self.table_design["constraints"]["primary_key"][0]
-        else:
-            return None
+        primary_keys = self.table_design.get("constraints", {}).get("primary_key", [])
+        if len(primary_keys) == 1:
+            pk = primary_keys[0]
+            for column in self.table_design["columns"]:
+                if column["name"] == pk:
+                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+                    if column["type"] in ("int", "long"):
+                        return pk
+                    else:
+                        logger.warning("Primary key '%s' is not a number and is not usable as a partition key", pk)
+                        break
+        return None
 
     @contextmanager
     def matching_temporary_view(self, conn):
@@ -225,8 +238,6 @@ class RelationDescription:
 
         We look up which temp schema the view landed in so that we can use TableName.
         """
-        logger = logging.getLogger(__name__)
-
         # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
         view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
 
@@ -258,7 +269,7 @@ class SortableRelationDescription:
     compute the execution order and then throw away our intermediate results.
     """
 
-    def __init__(self, original_description: RelationDescription):
+    def __init__(self, original_description: RelationDescription) -> None:
         self.original_description = original_description
         self.identifier = original_description.identifier
         self.dependencies = set(original_description.dependencies)
@@ -280,7 +291,7 @@ def order_by_dependencies(relation_descriptions):
         * relations that directly depend on relations not in the input
         * relations that are depended upon but are not in the input
     """
-    logger = logging.getLogger(__name__)
+    RelationDescription.load_in_parallel(relation_descriptions)
     descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
     known_tables = frozenset({description.identifier for description in descriptions})

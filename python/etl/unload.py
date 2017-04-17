@@ -20,7 +20,7 @@ from typing import List
 import logging
 import os
 
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
@@ -30,6 +30,9 @@ from etl.relation import RelationDescription
 import etl.pg
 import etl.s3
 from etl.thyme import Thyme
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def run_redshift_unload(conn: connection, description: RelationDescription, unload_path: str, aws_iam_role: str,
@@ -62,7 +65,6 @@ def write_columns_file(description: RelationDescription, bucket_name: str, prefi
     """
     Write out a YAML file into the same folder as the CSV files to document the columns of the relation
     """
-    logger = logging.getLogger(__name__)
 
     data = {"columns": description.unquoted_columns}
     object_key = os.path.join(prefix, "columns.yaml")
@@ -74,12 +76,11 @@ def write_columns_file(description: RelationDescription, bucket_name: str, prefi
         etl.s3.upload_data_to_s3(data, bucket_name, object_key)
 
 
-def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> None:
+def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
     """
     Write out a "_SUCCESS" file into the same folder as the CSV files to mark
     the unload as complete.  The dump insists on this file before writing a manifest for load.
     """
-    logger = logging.getLogger(__name__)
     object_key = os.path.join(prefix, "_SUCCESS")
     if dry_run:
         logger.info("Dry-run: Skipping creation of 's3://%s/%s'", bucket_name, object_key)
@@ -88,13 +89,11 @@ def write_success_file(bucket_name: str, prefix: str, dry_run: bool=False) -> No
         etl.s3.upload_empty_object(bucket_name, object_key)
 
 
-def unload_redshift_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
-                             aws_iam_role: str, prefix: str, allow_overwrite=False, dry_run: bool=False) -> None:
+def unload_relation(conn: connection, description: RelationDescription, schema: DataWarehouseSchema,
+                    aws_iam_role: str, prefix: str, allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
-    logger = logging.getLogger(__name__)
-
     # TODO Move the "{}-{}" logic into the TableFileSet
     rendered_prefix = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
     schema_table_name = "{}-{}".format(description.target_table_name.schema, description.target_table_name.table)
@@ -124,7 +123,6 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
-    logger = logging.getLogger(__name__)
     etl.relation.RelationDescription.load_in_parallel(descriptions)
 
     unloadable_relations = [d for d in descriptions if d.is_unloadable]
@@ -144,8 +142,8 @@ def unload_to_s3(config: DataWarehouseConfig, descriptions: List[RelationDescrip
     with closing(conn) as conn:
         for relation, unload_schema in relation_target_tuples:
             try:
-                unload_redshift_relation(conn, relation, unload_schema, config.iam_role, prefix,
-                                         allow_overwrite=allow_overwrite, dry_run=dry_run)
+                unload_relation(conn, relation, unload_schema, config.iam_role, prefix,
+                                allow_overwrite=allow_overwrite, dry_run=dry_run)
             except DataUnloadError:
                 if keep_going:
                     error_occurred = True

@@ -1,62 +1,23 @@
 from contextlib import closing
 import logging
 import os.path
-import re
-from typing import List
+from typing import List, Mapping
 
 import simplejson as json
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
 from etl.config.dw import DataWarehouseSchema
+from etl.design import Attribute, ColumnDefinition
 import etl.design.load
-from etl.errors import MissingMappingError
 import etl.file_sets
 from etl.names import TableName, TableSelector, join_with_quotes
 import etl.pg
 from etl.relation import RelationDescription
 import etl.s3
 
-
-class Attribute:
-    """
-    Most basic description of a database "attribute", a.k.a. column.
-
-    Attributes are purely based on information that we find in upstream databases.
-    """
-    __slots__ = ("name", "sql_type", "not_null")
-
-    def __init__(self, name, sql_type, not_null):
-        self.name = name
-        self.sql_type = sql_type
-        self.not_null = not_null
-
-
-class ColumnDefinition:
-    """
-    More granular description of a column in a table.
-
-    These are ready to be sent to a table design or come from a table design file.
-    """
-    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null")
-
-    def __init__(self, name, source_sql_type, sql_type, expression, type, not_null):
-        self.name = name
-        self.source_sql_type = source_sql_type
-        self.sql_type = sql_type
-        self.expression = expression
-        self.type = type
-        self.not_null = not_null
-
-    def to_dict(self):
-        d = dict(name=self.name, sql_type=self.sql_type, type=self.type)
-        if self.expression is not None:
-            d["expression"] = self.expression
-        if self.source_sql_type != self.sql_type:
-            d["source_sql_type"] = self.source_sql_type
-        if self.not_null:
-            d["not_null"] = self.not_null
-        return d
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
@@ -68,7 +29,6 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     The list of tables matching the whitelist but not the blacklist can be further narrowed
     down by the pattern in :selector.
     """
-    logger = logging.getLogger(__name__)
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
     result = etl.pg.query(cx, """
         SELECT nsp.nspname AS "schema"
@@ -125,43 +85,51 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     return [Attribute(**att) for att in attributes]
 
 
-def map_types_in_ddl(table_name, attributes, as_is_att_type, cast_needed_att_type):
-    """"
-    Replace unsupported column types by supported ones and determine casting
-    spell (for a single table).
-
-    Result for every table is a "column definition", which is basically a list
-    of tuples with name, old type, new type, expression information (where
-    the expression within a SELECT will return the value of the attribute with
-    the "new" type), serialization type, and not null constraint (boolean).
+def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, List[str]]:
     """
-    new_columns = []
-    for attribute in attributes:
-        for re_att_type, generic_type in as_is_att_type.items():
-            if re.match('^' + re_att_type + '$', attribute.sql_type):
-                # Keep the type, use no expression, and pick generic type from map.
-                mapping_sql_type, mapping_expression, mapping_type = attribute.sql_type, None, generic_type
-                break
-        else:
-            for re_att_type, (mapping_sql_type, mapping_expression, mapping_type) in cast_needed_att_type.items():
-                if re.match(re_att_type, attribute.sql_type):
-                    # Found tuple with new SQL type, expression and generic type.  Rejoice.
-                    break
-            else:
-                raise MissingMappingError("Unknown type '{}' of {}.{}.{}".format(attribute.sql_type,
-                                                                                 table_name.schema,
-                                                                                 table_name.table,
-                                                                                 attribute.name))
-        delimited_name = '"{}"'.format(attribute.name)
-        new_columns.append(ColumnDefinition(name=attribute.name,
-                                            source_sql_type=attribute.sql_type,
-                                            sql_type=mapping_sql_type,
-                                            # Replace %s in the column expression by the column name.
-                                            expression=(mapping_expression % delimited_name
-                                                        if mapping_expression else None),
-                                            type=mapping_type,
-                                            not_null=attribute.not_null))
-    return new_columns
+    Retrieve table constraints from database by looking up indices.
+
+    We will only check primary key constraints and unique constraints.
+    (To recreate the constraint, we could use `pg_get_indexdef`.)
+    """
+    # We need to make two trips to the database because Redshift doesn't support functions on int2vector types.
+    # So we find out which indices exist (with unique constraints) and how many attributes are related to each,
+    # then we look up the attribute names with our exquisitely hand-rolled "where" clause.
+    # See http://www.postgresql.org/message-id/10279.1124395722@sss.pgh.pa.us for further explanations.
+    indices = etl.pg.query(cx, """
+        SELECT i.indexrelid AS index_id
+             , ic.relname AS index_name
+             , CASE
+                   WHEN i.indisprimary THEN 'primary_key'
+                   ELSE 'unique'
+               END AS "constraint_type"
+             , i.indnatts AS nr_atts
+          FROM pg_catalog.pg_class AS cls
+          JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
+          JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
+          JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
+         WHERE i.indisunique
+           AND ns.nspname = %s
+           AND cls.relname = %s
+         ORDER BY ic.relname
+        """, (table_name.schema, table_name.table))
+    found = {}
+    for index_id, index_name, constraint_type, nr_atts in indices:
+        cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(2))
+        attributes = etl.pg.query(cx, """
+            SELECT a.attname AS "name"
+              FROM pg_catalog.pg_attribute AS a
+              JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
+              WHERE i.indexrelid = %%s
+                AND (%s)
+              ORDER BY a.attname
+              """ % cond, (index_id,))
+        columns = list(att["name"] for att in attributes)
+        logger.info("Index '%s' of '%s' adds constraint %s",
+                    index_name, table_name.identifier, json.dumps({constraint_type: columns}))
+        # FIXME This does not preserve multiple unique constraints!
+        found[constraint_type] = columns
+    return found
 
 
 def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]:
@@ -191,15 +159,17 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
     Create (and return) new table design
     """
     source_attributes = fetch_attributes(conn, source_table_name)
-    target_columns = map_types_in_ddl(source_table_name,
-                                      source_attributes,
-                                      type_maps["as_is_att_type"],
-                                      type_maps["cast_needed_att_type"])
+    target_columns = [ColumnDefinition.from_attribute(att,
+                                                      type_maps["as_is_att_type"],
+                                                      type_maps["cast_needed_att_type"]) for att in source_attributes]
     table_design = {
         "name": "%s" % target_table_name.identifier,
         "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),
         "columns": [column.to_dict() for column in target_columns]
     }
+    constraints = fetch_constraints(conn, source_table_name)
+    if constraints:
+        table_design["constraints"] = constraints
     return table_design
 
 
@@ -227,11 +197,10 @@ def create_table_design_for_view(conn, table_name):
     return table_design
 
 
-def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False):
+def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False) -> None:
     """
     Write new table design file to disk.
     """
-    logger = logging.getLogger(__name__)
     target_table_name = TableName(source_name, source_table_name.table)
     table = target_table_name.identifier
     # FIXME Move this logic into file sets (note that "source_name" is in table_design)
@@ -257,7 +226,6 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
 
     This will create all intermediate directories as needed.
     """
-    logger = logging.getLogger(__name__)
     name = os.path.normpath(directory)
     if not os.path.exists(name):
         if dry_run:
@@ -273,24 +241,21 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     Create table design files for tables from a single source to local directory.
     Whenever some table designs already exist locally, validate them against the information found from upstream.
     """
-    logger = logging.getLogger(__name__)
     source_files = {file_set.source_table_name: file_set
-                    for file_set in local_files if file_set.source_name == source.name}
+                    for file_set in local_files
+                    if file_set.source_name == source.name and file_set.design_file_name}
     try:
         logger.info("Connecting to database source '%s' to look for tables", source.name)
         with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
-            for source_table_name in sorted(source_tables):
-                target_table_name = TableName(source.name, source_table_name.table)
-                table_design = create_table_design(conn, source_table_name, target_table_name, type_maps)
-                source_file_set = source_files.get(source_table_name)
-                if source_file_set and source_file_set.design_file_name:
-                    # Replace bootstrapped table design with one from file but check whether set of columns changed.
-                    design_file = source_file_set.design_file_name
-                    existing_table_design = etl.design.load.load_table_design_from_localfile(design_file,
-                                                                                             target_table_name)
-                    compare_columns(table_design, existing_table_design)
+            for source_table_name in source_tables:
+                if source_table_name in source_files:
+                    logger.info("Skipping '%s' from source '%s' because table design file exists: '%s'",
+                                source_table_name.identifier, source.name,
+                                source_files[source_table_name].design_file_name)
                 else:
+                    target_table_name = TableName(source.name, source_table_name.table)
+                    table_design = create_table_design(conn, source_table_name, target_table_name, type_maps)
                     save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
@@ -301,10 +266,10 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     upstream = frozenset(name.identifier for name in source_tables)
     not_found = upstream.difference(existent)
     if not_found:
-        logger.warning("New table(s) which had no local design: %s", join_with_quotes(not_found))
+        logger.warning("New table(s) in '%s' without local design: %s", source.name, join_with_quotes(not_found))
     too_many = existent.difference(upstream)
     if too_many:
-        logger.warning("Old table(s) which no longer had upstream table: %s", join_with_quotes(too_many))
+        logger.error("Table design(s) without upstream table in '%s': %s", source.name, join_with_quotes(too_many))
 
     return len(source_tables)
 
@@ -315,7 +280,6 @@ def create_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=Fa
 
     To avoid modifying the data warehouse by accident, this will fail if any of the relations already exist.
     """
-    logger = logging.getLogger(__name__)
     with closing(etl.pg.connection(dsn_etl)) as conn:
         with conn:
             for relation in relations:
@@ -333,7 +297,6 @@ def drop_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=Fals
     """
     Delete views that were created at the beginning of bootstrap.
     """
-    logger = logging.getLogger(__name__)
     with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             # Since this mirrors the all-or-nothing create_views we recklessly call "DROP VIEW" without "IF EXISTS".
@@ -345,39 +308,12 @@ def drop_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=Fals
                 etl.pg.execute(conn, ddl_stmt)
 
 
-def compare_columns(live_design, file_design):
-    """
-    Compare columns between what is actually present in a table vs. what is described in a table design
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Checking design for '%s'", live_design["name"])
-    live_columns = frozenset(column["name"] for column in live_design["columns"])
-    file_columns = frozenset(column["name"] for column in file_design["columns"])
-    # TODO define policy to declare columns "ETL-only" Or remove this "feature"?
-    etl_columns = {name for name in file_columns if name.startswith("etl__")}
-    logger.debug("Number of columns of '%s' in database: %d vs. in design: %d (ETL: %d)",
-                 file_design["name"], len(live_columns), len(file_columns), len(etl_columns))
-    not_accounted_for_on_file = live_columns.difference(file_columns)
-    described_but_not_live = file_columns.difference(live_columns).difference(etl_columns)
-    if not_accounted_for_on_file:
-        logger.warning("New columns in '%s' that are not in existing table design: %s",
-                       file_design["name"], join_with_quotes(not_accounted_for_on_file))
-        indices = dict((name, i) for i, name in enumerate(column["name"] for column in live_design["columns"]))
-        for name in not_accounted_for_on_file:
-            logger.debug("New column %s.%s: %s", live_design["name"], name,
-                         json.dumps(live_design["columns"][indices[name]], indent="    ", sort_keys=True))
-    if described_but_not_live:
-        logger.warning("Columns that have disappeared in upstream '%s': %s",
-                       file_design["name"], join_with_quotes(described_but_not_live))
-
-
 def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_maps, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
     This will create new design files locally if they don't already exist for any relations tied
     to upstream database sources.
     """
-    logger = logging.getLogger(__name__)
     total = 0
     for schema in schemas:
         if selector.match_schema(schema.name):
@@ -395,20 +331,19 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
     """
     Download design information for transformations.
     """
-    logger = logging.getLogger(__name__)
     is_upstream = {schema.name for schema in schemas if schema.is_upstream_source}
-    transforms = [file_set for file_set in local_files
-                  if not file_set.design_file_name and file_set.source_name not in is_upstream]
-    if not transforms:
+    new_files = [file_set for file_set in local_files
+                 if not file_set.design_file_name and file_set.source_name not in is_upstream]
+    if not new_files:
         logger.info("Found no queries without matching design files")
         return
 
-    descriptions = [RelationDescription(file_set) for file_set in transforms]
+    transforms = [RelationDescription(file_set) for file_set in new_files]
 
-    create_views(dsn_etl, descriptions, dry_run=dry_run)
+    create_views(dsn_etl, transforms, dry_run=dry_run)
     try:
         with closing(etl.pg.connection(dsn_etl, readonly=True)) as conn:
-            for relation in descriptions:
+            for relation in transforms:
                 table_name = relation.target_table_name
                 if as_view:
                     table_design = create_table_design_for_view(conn, table_name)
@@ -416,4 +351,4 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
                     table_design = create_table_design_for_ctas(conn, table_name, type_maps)
                 save_table_design(local_dir, table_name.schema, table_name, table_design, dry_run=dry_run)
     finally:
-        drop_views(dsn_etl, descriptions, dry_run=dry_run)
+        drop_views(dsn_etl, transforms, dry_run=dry_run)

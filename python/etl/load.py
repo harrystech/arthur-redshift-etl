@@ -51,6 +51,9 @@ from etl.names import join_column_list, join_with_quotes, TableName
 import etl.pg
 import etl.relation
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def _build_constraints(table_design, exclude_foreign_keys=False):
     constraints = table_design.get("constraints", {})
@@ -135,7 +138,6 @@ def create_table(conn, description, drop_table=False, dry_run=False):
     Table may be dropped before (re-)creation but only the table owner is
     allowed to do so.
     """
-    logger = logging.getLogger(__name__)
     table_name = description.target_table_name
     table_design = description.table_design
     ddl_stmt = assemble_table_ddl(table_design, table_name)
@@ -156,7 +158,6 @@ def create_view(conn, description, drop_view=False, dry_run=False):
     Run the CREATE VIEW statement after dropping (potentially) an existing one.
     NOTE that this a no-op if drop_view is False.
     """
-    logger = logging.getLogger(__name__)
     view_name = description.target_table_name
     s_columns = join_column_list(column["name"] for column in description.table_design["columns"])
     ddl_stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, s_columns, description.query_stmt)
@@ -182,7 +183,6 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
     Tables can only be truncated by their owners (and outside of a transaction), so this will delete
     all rows instead of truncating the tables.
     """
-    logger = logging.getLogger(__name__)
     credentials = "aws_iam_role={}".format(aws_iam_role)
     s3_path = "s3://{}/{}".format(description.bucket_name, description.manifest_file_name)
     table_name = description.target_table_name
@@ -203,13 +203,14 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
             # The connection should not be open with autocommit at this point or we may have empty random tables.
             etl.pg.execute(conn, """DELETE FROM {}""".format(table_name))
             # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
-            etl.pg.execute(conn, """COPY {}
-                                    FROM %s
-                                    CREDENTIALS %s MANIFEST
-                                    DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
-                                    TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
-                                    TRUNCATECOLUMNS
-                                 """.format(table_name), (s3_path, credentials))
+            etl.pg.execute(conn, """
+                COPY {}
+                FROM %s
+                CREDENTIALS %s MANIFEST
+                DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
+                TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
+                TRUNCATECOLUMNS
+                """.format(table_name), (s3_path, credentials))
             # TODO Retrieve list of files that were actually loaded
             row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
@@ -217,12 +218,13 @@ def copy_data(conn, description, aws_iam_role, skip_copy=False, dry_run=False):
             conn.rollback()
             if "stl_load_errors" in exc.pgerror:
                 logger.debug("Trying to get error message from stl_log_errors table")
-                info = etl.pg.query(conn, """SELECT query, starttime, filename, colname, type, col_length,
-                                                    line_number, position, err_code, err_reason
-                                               FROM stl_load_errors
-                                              WHERE session = pg_backend_pid()
-                                              ORDER BY starttime DESC
-                                              LIMIT 1""")
+                info = etl.pg.query(conn, """
+                    SELECT query, starttime, filename, colname, type, col_length,
+                           line_number, position, err_code, err_reason
+                      FROM stl_load_errors
+                     WHERE session = pg_backend_pid()
+                     ORDER BY starttime DESC
+                     LIMIT 1""")
                 values = "  \n".join(["{}: {}".format(k, row[k]) for row in info for k in row.keys()])
                 logger.info("Information from stl_load_errors:\n  %s", values)
             raise
@@ -302,7 +304,6 @@ def create_temp_table_as_and_copy(conn, description, skip_copy=False, dry_run=Fa
     constraints) so we need to have a temp table separate from destination
     table in order to have full flexibility how we define the destination table.
     """
-    logger = logging.getLogger(__name__)
     table_name = description.target_table_name
     table_design = description.table_design
     query_stmt = description.query_stmt
@@ -351,7 +352,6 @@ def grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=
     We always grant all privileges to the ETL user.  We may grant read-only access
     or read-write access based on configuration.  Note that the is always based on groups, not users.
     """
-    logger = logging.getLogger(__name__)
     if dry_run:
         logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", table_name.identifier, owner)
     else:
@@ -384,9 +384,9 @@ def analyze(conn, table_name, dry_run=False):
     Update table statistics.
     """
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping analysis of '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping analysis of '%s'", table_name.identifier)
     else:
-        logging.getLogger(__name__).info("Running analyze step on table '%s'", table_name.identifier)
+        logger.info("Running analyze step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "ANALYZE {}".format(table_name))
 
 
@@ -395,9 +395,9 @@ def vacuum(conn, table_name, dry_run=False):
     Final step ... tidy up the warehouse before guests come over.
     """
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run: Skipping vacuum of '%s'", table_name.identifier)
+        logger.info("Dry-run: Skipping vacuum of '%s'", table_name.identifier)
     else:
-        logging.getLogger(__name__).info("Running vacuum step on table '%s'", table_name.identifier)
+        logger.info("Running vacuum step on table '%s'", table_name.identifier)
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
@@ -447,8 +447,19 @@ def load_or_update_redshift_relation(conn, description, credentials, schema,
 def verify_constraints(conn, description, dry_run=False) -> None:
     """
     Raises a FailedConstraintError if :description's target table doesn't obey its declared unique constraints.
+
+    Note that NULL in SQL is never equal to another value. This means for unique constraints that
+    rows where (at least) one column is null are not equal even if they have the same values in the
+    not-null columns.  See description of unique index in the PostgreSQL documentation:
+    https://www.postgresql.org/docs/8.1/static/indexes-unique.html
+
+    For constraints that check "key" values (like 'primary_key'), this warning does not apply since
+    the columns must be not null anyways.
+
+    > "Note that a unique constraint does not, by itself, provide a unique identifier because it
+    > does not exclude null values."
+    https://www.postgresql.org/docs/8.1/static/ddl-constraints.html
     """
-    logger = logging.getLogger(__name__)
     constraints = description.table_design.get("constraints")
     if constraints is None:
         logger.info("No constraints to verify for '%s'", description.identifier)
@@ -457,8 +468,10 @@ def verify_constraints(conn, description, dry_run=False) -> None:
     # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
     # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voila!
     statement_template = """
-        SELECT {columns}
+        SELECT DISTINCT
+               {columns}
           FROM {table}
+         WHERE {condition}
       GROUP BY {columns}
         HAVING COUNT(*) > 1
          LIMIT 5
@@ -468,9 +481,15 @@ def verify_constraints(conn, description, dry_run=False) -> None:
         if constraint_type in constraints:
             columns = constraints[constraint_type]
             quoted_columns = join_column_list(columns)
-            statement = statement_template.format(columns=quoted_columns, table=description.target_table_name)
+            if constraint_type == "unique":
+                condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
+            else:
+                condition = "TRUE"
+            statement = statement_template.format(columns=quoted_columns,
+                                                  table=description.target_table_name,
+                                                  condition=condition)
             if dry_run:
-                logger.info("Dry-run: Skipping checking %s constraint on '%s'", constraint_type, description.identifier)
+                logger.info("Dry-run: Skipping check of %s constraint on '%s'", constraint_type, description.identifier)
                 logger.debug("Skipped query:\n%s", statement)
             else:
                 logger.info("Checking %s constraint on '%s'", constraint_type, description.identifier)
@@ -493,8 +512,6 @@ def evaluate_execution_order(descriptions, selector, only_first=False, whole_sch
     If you select to widen the update to entire schemas, then, well, entire schemas
     are updated instead of surgically picking up tables.
     """
-    logger = logging.getLogger(__name__)
-
     complete_sequence = etl.relation.order_by_dependencies(descriptions)
 
     dirty = set()
@@ -537,8 +554,6 @@ def show_dependents(descriptions, selector):
     part of the fan-out of an update.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    logger = logging.getLogger(__name__)
-
     execution_order, involved_schema_names = evaluate_execution_order(descriptions, selector)
     if len(execution_order) == 0:
         logger.warning("Found no matching relations for: %s", selector)
@@ -595,10 +610,6 @@ def load_or_update_redshift(data_warehouse, descriptions, selector, drop=False, 
     should be a quick way to load data that is "under development" and may not have all dependencies or
     names / types correct.
     """
-    logger = logging.getLogger(__name__)
-
-    etl.relation.RelationDescription.load_in_parallel(descriptions)
-
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         descriptions, selector, only_first=stop_after_first, whole_schemas=whole_schemas)

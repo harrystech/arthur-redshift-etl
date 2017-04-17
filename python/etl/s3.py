@@ -17,6 +17,8 @@ from datetime import datetime
 from etl.json_encoder import FancyJsonEncoder
 from etl.errors import S3ServiceError
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 _resources_for_thread = threading.local()
 
@@ -45,7 +47,7 @@ class S3Uploader:
     the bucket resource is tied to the s3 resource of one thread.
     """
 
-    def __init__(self, bucket_name: str, dry_run: bool=False):
+    def __init__(self, bucket_name: str, dry_run=False) -> None:
         self.logger = logging.getLogger(__name__)
         self.bucket_name = bucket_name
         self._bucket = _get_s3_bucket(self.bucket_name)
@@ -74,7 +76,6 @@ def upload_empty_object(bucket_name: str, object_key: str) -> None:
     """
     Create a key in an S3 bucket with no content
     """
-    logger = logging.getLogger(__name__)
     try:
         logger.debug("Creating empty 's3://%s/%s'", bucket_name, object_key)
         bucket = _get_s3_bucket(bucket_name)
@@ -96,16 +97,15 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
     uploader = S3Uploader(bucket_name)
     with tempfile.NamedTemporaryFile(mode="w+") as local_file:
         json.dump(data, local_file, indent="    ", sort_keys=True, cls=FancyJsonEncoder)
-        local_file.write('\n')
+        local_file.write('\n')  # type: ignore
         local_file.flush()
         uploader(local_file.name, object_key)
 
 
-def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) -> None:
+def delete_objects(bucket_name: str, object_keys: List[str], _retry=True) -> None:
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
     """
-    logger = logging.getLogger(__name__)
     bucket = _get_s3_bucket(bucket_name)
     keys = [{'Key': key} for key in object_keys]
     failed = []
@@ -128,12 +128,11 @@ def delete_objects(bucket_name: str, object_keys: List[str], _retry: bool=True) 
             raise S3ServiceError("Failed to delete %d file(s)" % len(failed))
 
 
-def get_s3_object_last_modified(bucket_name: str, object_key: str, wait: bool=True) -> Union[datetime, None]:
+def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) -> Union[datetime, None]:
     """
     Return the last_modified datetime timestamp for an S3 Object.
     If the call errors out, return None.
     """
-    logger = logging.getLogger(__name__)
     try:
         bucket = _get_s3_bucket(bucket_name)
         s3_object = bucket.Object(object_key)
@@ -172,7 +171,6 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
 
     You must close the stream when you're done with it.
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Downloading 's3://%s/%s'", bucket_name, object_key)
     bucket = _get_s3_bucket(bucket_name)
     try:
@@ -192,7 +190,6 @@ def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> Iterator[str]:
     List all the files in "s3://{bucket_name}/{prefix}" for each given prefix
     (where prefix is probably a path and not an object key).
     """
-    logger = logging.getLogger(__name__)
     if not prefixes:
         raise ValueError("List of prefixes may not be empty")
     bucket = _get_s3_bucket(bucket_name)

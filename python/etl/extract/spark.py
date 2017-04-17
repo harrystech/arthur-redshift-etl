@@ -1,9 +1,9 @@
 import logging
 import os.path
 from contextlib import closing
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
-from psycopg2.extensions import connection  # For type annotation
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
@@ -21,7 +21,7 @@ class SparkExtractor(Extractor):
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
-                 keep_going: bool, dry_run: bool):
+                 keep_going: bool, dry_run: bool) -> None:
         super().__init__("spark", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self._sql_context = None
@@ -95,16 +95,16 @@ class SparkExtractor(Extractor):
         Guesstimate number of partitions based on actual table size and create list of predicates to split
         up table into that number of partitions.
 
-        This requires for one column to be marked as the primary key.  If there's no primary
+        This requires for one numeric column to be marked as the primary key.  If there's no primary
         key in the table, the number of partitions is always one.
         (This requirement doesn't come from the table size but the need to split the table
         when reading it in.)
         """
-        primary_key = description.find_primary_key()
-        if "primary_key" is None:
-            self.logger.info("No primary key defined for '%s', skipping partitioning", source_table_name.identifier)
+        partition_key = description.find_partition_key()  # type: Optional[str]
+        if partition_key is None:
+            self.logger.info("No partition key found for '%s', skipping partitioning", source_table_name.identifier)
             return []
-        self.logger.debug("Primary key for table '%s' is '%s'", source_table_name.identifier, primary_key)
+        self.logger.debug("Partition key for table '%s' is '%s'", source_table_name.identifier, partition_key)
 
         predicates = []
         with closing(etl.pg.connection(read_access, readonly=True)) as conn:
@@ -112,13 +112,13 @@ class SparkExtractor(Extractor):
 
             table_size = self._fetch_table_size(conn, source_table_name)
             num_partitions = suggest_best_partition_number(table_size)
-            self.logger.info("Picked %d partition(s) for table '%s' (primary key: '%s')",
-                             num_partitions, source_table_name.identifier, primary_key)
+            self.logger.info("Picked %d partition(s) for table '%s' (partition key: '%s')",
+                             num_partitions, source_table_name.identifier, partition_key)
 
             if num_partitions > 1:
-                boundaries = self._fetch_partition_boundaries(conn, source_table_name, primary_key, num_partitions)
+                boundaries = self._fetch_partition_boundaries(conn, source_table_name, partition_key, num_partitions)
                 for low, high in boundaries:
-                    predicates.append('({} <= "{}" AND "{}" < {})'.format(low, primary_key, primary_key, high))
+                    predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
                 self.logger.debug("Predicates to split '%s':\n    %s", source_table_name.identifier,
                                   "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)))
 
@@ -140,10 +140,10 @@ class SparkExtractor(Extractor):
                          timer)
         return table_size
 
-    def _fetch_partition_boundaries(self, conn: connection, table_name: TableName, primary_key: str,
+    def _fetch_partition_boundaries(self, conn: connection, table_name: TableName, partition_key: str,
                                     num_partitions: int) -> List[Tuple[int, int]]:
         """
-        Fetch ranges for the primary key that partitions the table nicely.
+        Fetch ranges for the partition key that partitions the table nicely.
         """
         with Timer() as timer:
             rows = etl.pg.query(conn, """SELECT MIN(pkey) AS lower_bound
@@ -156,10 +156,10 @@ class SparkExtractor(Extractor):
                                                  ) t
                                           GROUP BY part
                                           ORDER BY part
-                                      """.format(primary_key, num_partitions, primary_key, table_name))
+                                      """.format(partition_key, num_partitions, partition_key, table_name))
         row_count = sum(row["count"] for row in rows)
-        self.logger.info("Calculated %d partition boundaries for '%s' (%d rows) with primary key '%s' (%s)",
-                         num_partitions, table_name.identifier, row_count, primary_key, timer)
+        self.logger.info("Calculated %d partition boundaries for '%s' (%d rows) with partition key '%s' (%s)",
+                         num_partitions, table_name.identifier, row_count, partition_key, timer)
         lower_bounds = (row["lower_bound"] for row in rows)
         upper_bounds = (row["upper_bound"] for row in rows)
         return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
