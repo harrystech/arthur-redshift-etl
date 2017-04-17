@@ -401,7 +401,7 @@ def vacuum(conn, table_name, dry_run=False):
         etl.pg.execute(conn, "VACUUM {}".format(table_name))
 
 
-def load_or_update_redshift_relation(conn, relation, credentials, schema,
+def load_or_update_redshift_relation(conn, relation, credentials, schema, index,
                                      drop=False, skip_copy=False, dry_run=False):
     """
     Load single table from CSV or using a SQL query or create new view.
@@ -417,13 +417,14 @@ def load_or_update_redshift_relation(conn, relation, credentials, schema,
     modified = False
     with etl.monitor.Monitor(table_name.identifier,
                              "load",
-                             dry_run=dry_run,
                              options=["skip_copy"] if skip_copy else [],
                              source={'bucket_name': relation.bucket_name,
                                      'object_key': object_key},
                              destination={'name': etl.pg.dbname(conn),
                                           'schema': table_name.schema,
-                                          'table': table_name.table}):
+                                          'table': table_name.table},
+                             index=index,
+                             dry_run=dry_run):
         if relation.is_view_relation:
             create_view(conn, relation, drop_view=drop, dry_run=dry_run)
             grant_access(conn, table_name, owner, reader_groups, writer_groups, dry_run=dry_run)
@@ -635,14 +636,15 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
     conn = etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)
     with closing(conn) as conn, conn as conn:
         try:
-            for relation in execution_order:
+            for i, relation in enumerate(execution_order):
+                index = {"current": i+1, "final": len(execution_order)}
                 if relation.identifier in failed:
                     logger.info("Skipping load for relation '%s' due to failed dependencies", relation.identifier)
                     continue
                 target_schema = schema_config_lookup[relation.target_table_name.schema]
                 try:
                     modified = load_or_update_redshift_relation(
-                        conn, relation, data_warehouse.iam_role, target_schema,
+                        conn, relation, data_warehouse.iam_role, target_schema, index,
                         drop=drop, skip_copy=skip_copy, dry_run=dry_run)
                     if modified:
                         vacuumable.append(relation.target_table_name)

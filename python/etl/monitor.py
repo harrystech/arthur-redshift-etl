@@ -7,27 +7,27 @@ unsuccessful completion.  Events for start, finish or failure
 may be emitted to a persistence layer.
 """
 
-from contextlib import closing
-from copy import deepcopy
-from decimal import Decimal
 import logging
 import os
 import random
+import re
 import threading
 import time
 import traceback
-from typing import List
 import uuid
-import re
+from contextlib import closing
+from copy import deepcopy
+from decimal import Decimal
+from typing import List
 
 import boto3
 import botocore.exceptions
 import simplejson as json
 
 import etl.config.env
+import etl.pg
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds
-import etl.pg
 
 
 def trace_key():
@@ -152,6 +152,7 @@ class Monitor(metaclass=MetaMonitor):
         self._dry_run = dry_run
         # Create a deep copy so that changes that the caller might make later do not alter our payload
         self._extra = deepcopy(dict(**kwargs))
+        self._index = self._extra.get("index")
 
     # Read-only properties (in order of cardinality)
 
@@ -180,7 +181,11 @@ class Monitor(metaclass=MetaMonitor):
         return self._monitor_id
 
     def __enter__(self):
-        self._logger.info("Starting %s step for '%s'", self.step, self.target)
+        if self._index:
+            self._logger.info("Starting %s step for '%s' (%d/%d)",
+                              self.step, self.target, self._index["current"], self._index["final"])
+        else:
+            self._logger.info("Starting %s step for '%s'", self.step, self.target)
         self._start_time = utc_now()
         payload = MonitorPayload(self, 'start', self._start_time, extra=self._extra)
         payload.emit(dry_run=self._dry_run)

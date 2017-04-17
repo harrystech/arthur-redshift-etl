@@ -67,7 +67,7 @@ def restore_schemas(conn, schemas):
         logger.info("Renaming schema '%s' from backup '%s'", schema.name, schema.backup_name)
         etl.pg.execute(conn, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(schema.name))
         etl.pg.alter_schema_rename(conn, schema.backup_name, schema.name)
-        logger.info("Granting reader access to schema '%s' after backup", schema.name)
+        logger.info("Granting reader access to schema '%s' after restore", schema.name)
         for reader_group in schema.reader_groups:
             etl.pg.grant_usage(conn, schema.name, reader_group)
             etl.pg.grant_select_in_schema(conn, schema.name, reader_group)

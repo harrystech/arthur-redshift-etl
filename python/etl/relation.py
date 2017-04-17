@@ -315,7 +315,6 @@ def order_by_dependencies(relation_descriptions):
             has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
-        # TODO In a "strict" or "pedantic" mode, if known_unknowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        join_with_quotes(known_unknowns))

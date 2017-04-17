@@ -1,5 +1,5 @@
 """
-Unload data from Redshift to S3.
+Unload data from data warehouse to S3.
 
 A "unload" refers to the wholesale dumping of data from any schema or table involved into
 some number of gzipped CSV files to a given S3 destination.
@@ -38,7 +38,7 @@ logger.addHandler(logging.NullHandler())
 def run_redshift_unload(conn: connection, relation: RelationDescription, unload_path: str, aws_iam_role: str,
                         allow_overwrite=False) -> None:
     """
-    Execute the UNLOAD command for  the given :relation (via a select statement).
+    Execute the UNLOAD command for the given :relation (via a select statement).
     Optionally allow users to overwrite previously unloaded data within the same keyspace.
     """
     select_statement = """
@@ -57,6 +57,7 @@ def run_redshift_unload(conn: connection, relation: RelationDescription, unload_
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
 
+    logger.info("Unloading data from '%s' to '%s'", relation.identifier, unload_path)
     with etl.pg.log_error():
         etl.pg.execute(conn, unload_statement)
 
@@ -65,10 +66,8 @@ def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: 
     """
     Write out a YAML file into the same folder as the CSV files to document the columns of the relation
     """
-
     data = {"columns": relation.unquoted_columns}
     object_key = os.path.join(prefix, "columns.yaml")
-
     if dry_run:
         logger.info("Dry-run: Skipping writing columns file to 's3://%s/%s'", bucket_name, object_key)
     else:
@@ -79,7 +78,7 @@ def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: 
 def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
     """
     Write out a "_SUCCESS" file into the same folder as the CSV files to mark
-    the unload as complete.  The dump insists on this file before writing a manifest for load.
+    the unload as complete. The dump insists on this file before writing a manifest for load.
     """
     object_key = os.path.join(prefix, "_SUCCESS")
     if dry_run:
@@ -90,7 +89,8 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
 
 
 def unload_relation(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema,
-                    aws_iam_role: str, prefix: str, allow_overwrite=False, dry_run=False) -> None:
+                    aws_iam_role: str, prefix: str, index: dict,
+                    allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
@@ -100,22 +100,21 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
 
-    if dry_run:
-        logger.info("Dry-run: Skipping unload for '%s' to '%s'", relation.identifier, unload_path)
-    else:
-        try:
-            logger.info("Unloading data from '%s' to '%s'", relation.identifier, unload_path)
-            with etl.monitor.Monitor(relation.identifier, 'unload', dry_run=dry_run,
-                                     source={'schema': relation.target_table_name.schema,
-                                             'table': relation.target_table_name.table},
-                                     destination={'name': schema.name,
-                                                  'bucket_name': schema.s3_bucket,
-                                                  'prefix': s3_key_prefix}):
-                run_redshift_unload(conn, relation, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
-        except Exception as exc:
-            raise DataUnloadError(exc) from exc
-    write_columns_file(relation, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
-    write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
+    with etl.monitor.Monitor(relation.identifier,
+                             "unload",
+                             source={'schema': relation.target_table_name.schema,
+                                     'table': relation.target_table_name.table},
+                             destination={'name': schema.name,
+                                          'bucket_name': schema.s3_bucket,
+                                          'prefix': s3_key_prefix},
+                             index=index,
+                             dry_run=dry_run):
+        if dry_run:
+            logger.info("Dry-run: Skipping unload of '%s' to '%s'", relation.identifier, unload_path)
+        else:
+            run_redshift_unload(conn, relation, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
+            write_columns_file(relation, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
+            write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
 def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescription], prefix: str,
@@ -140,17 +139,18 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
     error_occurred = False
     conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
-        for relation, unload_schema in relation_target_tuples:
+        for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
-                unload_relation(conn, relation, unload_schema, config.iam_role, prefix,
+                index = {"current": i+1, "final": len(relation_target_tuples)}
+                unload_relation(conn, relation, unload_schema, config.iam_role, prefix, index,
                                 allow_overwrite=allow_overwrite, dry_run=dry_run)
-            except DataUnloadError:
+            except Exception as exc:
                 if keep_going:
                     error_occurred = True
                     logger.warning("Unload failure for '%s'", relation.identifier)
                     logger.exception("Ignoring this exception and proceeding as requested:")
                 else:
-                    raise
+                    raise DataUnloadError(exc) from exc
 
     if error_occurred:
         raise ETLDelayedExit("At least one error occurred while unloading with 'keep going' option")

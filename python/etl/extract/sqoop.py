@@ -43,7 +43,7 @@ class SqoopExtractor(Extractor):
 
         password_file_path = self.write_password_file(dsn_properties["password"])
         args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, relation)
-        self.logger.info("Sqoop options are:\n%s", " ".join(args))
+        self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
 
         self._delete_directory_before_write(relation)
@@ -147,10 +147,11 @@ class SqoopExtractor(Extractor):
         Run Sqoop in a sub-process with the help of the given options file.
         """
         args = [self.sqoop_executable, "--options-file", options_file_path]
+        cmdline = " ".join(map(shlex.quote, args))
         if self.dry_run:
-            self.logger.info("Dry-run: Skipping Sqoop run")
+            self.logger.info("Dry-run: Skipping Sqoop run '%s'", cmdline)
         else:
-            self.logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
+            self.logger.debug("Starting: %s", cmdline)
             sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      universal_newlines=True)
             self.logger.debug("Sqoop is running with pid %d", sqoop.pid)

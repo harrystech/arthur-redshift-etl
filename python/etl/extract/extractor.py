@@ -56,7 +56,7 @@ class Extractor:
         failed = []
 
         with Timer() as timer:
-            for relation in relations:
+            for i, relation in enumerate(relations):
                 try:
                     with etl.monitor.Monitor(relation.identifier,
                                              "extract",
@@ -64,6 +64,7 @@ class Extractor:
                                              source=self.source_info(source, relation),
                                              destination={'bucket_name': relation.bucket_name,
                                                           'object_key': relation.manifest_file_name},
+                                             index={"current": i+1, "final": len(relations), "name": source.name},
                                              dry_run=self.dry_run):
                         self.extract_table(source, relation)
                 except ETLRuntimeError:

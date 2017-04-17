@@ -6,19 +6,18 @@ so that they can be leveraged by utilities in addition to the top-level script.
 """
 
 import argparse
-from contextlib import contextmanager
 import getpass
 import logging
 import os
 import sys
 import traceback
+from contextlib import contextmanager
 
 import boto3
 import simplejson as json
 
 import etl.config
 import etl.design.bootstrap
-from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
 import etl.explain
 import etl.extract
 import etl.dw
@@ -32,9 +31,10 @@ import etl.pipeline
 import etl.relation
 import etl.selftest
 import etl.sync
-from etl.timer import Timer
 import etl.unload
 import etl.validate
+from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
+from etl.timer import Timer
 
 
 def croak(error, exit_code):
@@ -531,8 +531,8 @@ class UnloadDataToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("unload",
-                         "unload data from Redshift to files in S3",
-                         "Unload data from Redshift into files in S3 (along with files of column names).")
+                         "unload data from data warehouse to files in S3",
+                         "Unload data from data warehouse into files in S3 (along with files of column names).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
