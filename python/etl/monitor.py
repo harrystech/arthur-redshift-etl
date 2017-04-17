@@ -7,17 +7,22 @@ unsuccessful completion.  Events for start, finish or failure
 may be emitted to a persistence layer.
 """
 
+import datetime
+import http.server
 import logging
 import os
+import queue
 import random
 import re
 import threading
 import time
 import traceback
+import urllib.parse
 import uuid
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
+from http import HTTPStatus
 from typing import List
 
 import boto3
@@ -28,6 +33,9 @@ import etl.config.env
 import etl.pg
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def trace_key():
@@ -145,7 +153,6 @@ class Monitor(metaclass=MetaMonitor):
     _cluster_info = None
 
     def __init__(self, target: str, step: str, dry_run: bool=False, **kwargs) -> None:
-        self._logger = logging.getLogger(__name__)
         self._monitor_id = trace_key()
         self._target = target
         self._step = step
@@ -182,12 +189,12 @@ class Monitor(metaclass=MetaMonitor):
 
     def __enter__(self):
         if self._index:
-            self._logger.info("Starting %s step for '%s' (%d/%d)",
-                              self.step, self.target, self._index["current"], self._index["final"])
+            logger.info("Starting %s step for '%s' (%d/%d)",
+                        self.step, self.target, self._index["current"], self._index["final"])
         else:
-            self._logger.info("Starting %s step for '%s'", self.step, self.target)
+            logger.info("Starting %s step for '%s'", self.step, self.target)
         self._start_time = utc_now()
-        payload = MonitorPayload(self, 'start', self._start_time, extra=self._extra)
+        payload = MonitorPayload(self, "start", self._start_time, extra=self._extra)
         payload.emit(dry_run=self._dry_run)
         return self
 
@@ -195,11 +202,11 @@ class Monitor(metaclass=MetaMonitor):
         self._end_time = utc_now()
         seconds = elapsed_seconds(self._start_time, self._end_time)
         if exc_type is None:
-            self._logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
+            logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
             payload = MonitorPayload(self, 'finish', self._end_time, elapsed=seconds, extra=self._extra)
         else:
-            self._logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, 'fail', self._end_time, extra=self._extra)
+            logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
+            payload = MonitorPayload(self, "fail", self._end_time, extra=self._extra)
             payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
@@ -231,7 +238,6 @@ class MonitorPayload:
         self.errors = None
 
     def emit(self, dry_run=False):
-        logger = logging.getLogger(__name__)
         payload = vars(self)
         # Delete entries that are often not present:
         for key in ['cluster_info', 'elapsed', 'extra', 'errors']:
@@ -274,7 +280,6 @@ class DynamoDBStorage(PayloadDispatcher):
         """
         Fetch table or create it (within a new session)
         """
-        logger = logging.getLogger(__name__)
         session = boto3.session.Session(region_name=self.region_name)
         dynamodb = session.resource('dynamodb')
         try:
@@ -333,7 +338,6 @@ class DynamoDBStorage(PayloadDispatcher):
         except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
-                logger = logging.getLogger(__name__)
                 logger.exception("Trying to store payload a second time after this mishap:")
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
@@ -352,7 +356,6 @@ class RelationalStorage(PayloadDispatcher):
     """
 
     def __init__(self, table_name, write_access):
-        logger = logging.getLogger(__name__)
         self.table_name = table_name
         self.dsn = etl.config.env.get(write_access)
         logger.info("Creating table '%s' (unless it already exists)", table_name)
@@ -383,6 +386,157 @@ class RelationalStorage(PayloadDispatcher):
                                (column_values,))
 
 
+class MemoryStorage(PayloadDispatcher):
+    """
+    Store ETL events in memory and make the events accessible via HTTP
+
+    When the ETL is running for extract, load, or unload, connect to port 8080.
+    """
+    SERVER_ADDRESS = ('', 8080)
+
+    HEADER = """<!DOCTYPE html>
+        <html>
+        <head>
+        <!-- <meta http-equiv="refresh" content="5"> -->
+        <style>
+        table {
+            font-family: arial, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        td, th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+        .events tr:nth-child(even) {
+            background-color: #dddddd;
+        }
+        #progress th {
+            width: 200px;
+        }
+        #progress {
+            background-color: CornflowerBlue;
+            display: block;
+            height: 1em;
+            border: 1px solid black;
+        }
+        </style>
+        </head>
+        <body>
+        """
+    FOOTER = """
+        </body>
+        </html>"""
+
+    def __init__(self):
+        self.queue = queue.Queue()
+        self.buffer = []
+        self.index = {"current": 0, "final": 1}
+        self.last_modified = "(empty)"
+        handler_class = self.create_handler()
+        self.start_daemon(handler_class)
+
+    def store(self, payload: dict):
+        self.update_last_modified()
+        self.queue.put(payload)
+        self.index.update(payload.get("extra", {}).get("index", {}))
+
+    def update_last_modified(self):
+        now = datetime.datetime.now()
+        self.last_modified = now.strftime("%a, %d %b %Y %H:%M:%S %Z")
+
+    def get_content(self):
+        """
+        Return all events stored so far as a giant blob of text.
+        """
+        try:
+            while True:
+                event = self.queue.get_nowait()
+                line = """
+                    <tr><td>{etl_id}</td><td>{target}</td><td>{step}</td><td>{event}</td></tr>
+                    """.format(**event)
+                self.buffer.append(line)
+        except queue.Empty:
+            pass
+        text = self.HEADER
+        # Add a table with the current progress meter
+        percentage = (100.0 * self.index["current"])/self.index["final"]
+        text += """
+            <table>
+              <tr><th>Current Index</th><th>Final Index</th><th>Progress</th></tr>
+              <tr><td>{}</td><td>{}</td><td><div id="progress" style="width: {:.0f}px"></div></td></tr>
+            </table><br /><br />
+            """.format(self.index["current"], self.index["final"], 2 * percentage)
+        # Add a table with all the events
+        text += """
+            <table class="events">
+            <tr><th>ETL ID</th><th>Target</th><th>Step</th><th>Event</th></tr>
+            """
+        text += '\n'.join(self.buffer)
+        text += """</table>"""
+        text += "<pre>Last modified: {}</pre>".format(self.last_modified)
+        text += self.FOOTER
+        return text
+
+    def create_handler(self):
+        """
+        Factory method to create a handler that serves our storage content.
+        """
+        # Don't get lost in too much self.
+        this_content = self.get_content
+        this_last_modified = self.last_modified
+
+        class MonitorHTTPHandler(http.server.BaseHTTPRequestHandler):
+
+            server_version = "MonitorHTTPServer/1.0"
+
+            def do_GET(self):
+                """
+                Serve a GET (or HEAD) request.
+
+                If any page other than / is requested, the user is redirected (301) there first.
+                Otherwise this first sends the response code and headers.
+                If the command is GET (and not HEAD), the body is then sent.
+                """
+                path = self.path.rstrip('/') + '/'
+                if path != '/':
+                    self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+                    parts = urllib.parse.urlsplit(self.path)
+                    new_parts = (parts[0], parts[1], '/', None, parts[4])
+                    new_url = urllib.parse.urlunsplit(new_parts)
+                    self.send_header("Location", new_url)
+                    self.end_headers()
+                    return
+
+                content = this_content().encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/html; charset=UTF-8")
+                self.send_header("Content-Length", len(content))
+                self.send_header("Last-Modified", this_last_modified)
+                self.end_headers()
+                if self.command == "GET":
+                    self.wfile.write(content)
+            do_HEAD = do_GET
+
+        return MonitorHTTPHandler
+
+    def start_daemon(self, handler_class):
+        """
+        Start background daemon to serve our events.
+        """
+        class BackgroundServer(threading.Thread):
+            def run(self):
+                logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
+                httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
+                httpd.serve_forever()
+        try:
+            thread = BackgroundServer(daemon=True)
+            thread.start()
+        except Exception:
+            logger.exception("Failed to start background server:")
+
+
 class InsertTraceKey(logging.Filter):
     """
     Called as a logging filter, insert the ETL id into the logging record for the log's trace key.
@@ -394,6 +548,8 @@ class InsertTraceKey(logging.Filter):
 
 def set_environment(environment, dynamodb_settings, postgresql_settings):
     Monitor.environment = environment
+    memory = MemoryStorage()
+    MonitorPayload.dispatchers.append(memory)
     if dynamodb_settings:
         ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + Monitor.dynamo_sanitized_environment,
                               dynamodb_settings["capacity"],
@@ -406,6 +562,16 @@ def set_environment(environment, dynamodb_settings, postgresql_settings):
 
 
 def query_for(target_list, etl_id=None):
-    logger = logging.getLogger(__name__)
     logger.info("Querying for: etl_id=%s target=%s", etl_id, target_list)
     # Left for the reader as an exercise.
+
+
+if __name__ == "__main__":
+    Monitor.environment = "test"
+    memory = MemoryStorage()
+    MonitorPayload.dispatchers.append(memory)
+    monitor = Monitor("some_schema.some_table", "do")
+    payload = MonitorPayload(monitor, "start", utc_now(), extra={"index": {"current": 1, "final": 2}})
+    payload = MonitorPayload(monitor, "finish", utc_now(), extra={"index": {"current": 1, "final": 2}})
+    payload.emit()
+    print(memory.get_content())
