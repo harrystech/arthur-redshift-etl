@@ -302,7 +302,7 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
     design_uniques = [frozenset(c.get("unique")) for c in design_constraint if "unique" in c]
 
     # not_used will be true at the beginning if we have something to check, turns false if design has match
-    not_used = {"primary_key": list(current_primary_key), "unique": list(current_uniques)}
+    not_used = {"primary_key": current_primary_key, "unique": list(current_uniques)}
 
     if design_primary_key:
         if current_primary_key == design_primary_key:

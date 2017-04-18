@@ -218,7 +218,8 @@ class RelationDescription:
 
         If no partition key can be found, returns None.
         """
-        primary_keys = self.table_design.get("constraints", {}).get("primary_key", [])
+        constraints = self.table_design.get("constraints", [])
+        primary_keys = [col for constraint_type, cols in constraints.items() for col in cols if constraint_type == 'primary_key']
         if len(primary_keys) == 1:
             pk = primary_keys[0]
             for column in self.table_design["columns"]:
