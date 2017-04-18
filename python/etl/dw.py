@@ -28,6 +28,8 @@ from etl.errors import ETLError
 from etl.names import join_with_quotes
 import etl.pg
 
+import psycopg2
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -160,7 +162,12 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                     logger.info("Dry-run: Skipping creating user '%s' in group '%s'", user.name, user.group)
                 else:
                     logger.info("Creating user '%s' in group '%s'", user.name, user.group)
-                    etl.pg.create_user(conn, user.name, user.group)
+                    try:
+                        etl.pg.create_user(conn, user.name, user.group)
+                    except psycopg2.ProgrammingError:
+                        etl.pg.create_group(conn, user.group)
+                        etl.pg.create_user(conn, user.name, user.group)
+
             if group is not None:
                 if group not in config.groups:
                     raise ValueError("Specified group ('%s') not present in DataWarehouseConfig" % group)
