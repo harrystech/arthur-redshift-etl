@@ -6,8 +6,7 @@ initial_setup: Create groups, users; (re-)create database and schemas in the dat
 Note that it is important that the admin access to the ETL is using the `dev` database
 and not the data warehouse.
 
-Requires entering the password for the ETL on the command
-line or having a password in the .pgpass file.
+Requires having the password for all declared users in a ~/.pgpass file.
 
 If you need to re-run this (after adding available schemas in the
 configuration), you should skip the user and group creation.
@@ -136,9 +135,9 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
 
 def create_new_user(config, new_user, group=None, add_user_schema=False, skip_user_creation=False, dry_run=False):
     """
-    Add new user to database within default user group and with new password.
-    If so advised, creates a schema for the user.
-    If so advised, adds the user to the ETL group, giving R/W access. Use wisely.
+    Add new user to database, with provided or default group.
+    If so advised, creates a schema for the user. (Making sure that the ETL user keeps read access).
+    If the group was not initialized initially, then we create the user's group here.
 
     This is safe to re-run as long as you skip creating users and groups the second time around.
     """
@@ -169,6 +168,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                         etl.pg.create_user(conn, user.name, user.group)
 
             if group is not None:
+                # FIXME This check should come before creating the user
                 if group not in config.groups:
                     raise ValueError("Specified group ('%s') not present in DataWarehouseConfig" % group)
                 if dry_run:
