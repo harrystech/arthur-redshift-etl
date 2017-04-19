@@ -20,9 +20,9 @@ class SparkExtractor(Extractor):
     Use Apache Spark to download data from upstream databases.
     """
 
-    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
+    def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
                  keep_going: bool, dry_run: bool) -> None:
-        super().__init__("spark", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
+        super().__init__("spark", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self._sql_context = None
 
@@ -56,28 +56,29 @@ class SparkExtractor(Extractor):
         sc = SparkContext(conf=conf)
         return SQLContext(sc)
 
-    def extract_table(self, source: DataWarehouseSchema, description: RelationDescription):
+    def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
         """
         Using Spark's dataframe API, read the table in as a dataframe before writing it
         out to CSV.
         """
-        df = self._read_table_as_dataframe(source, description)
-        self._write_dataframe_as_csv(df, description)
-        prefix = os.path.join(description.prefix, description.csv_path_name)
-        self.write_manifest_file(description, description.bucket_name, prefix)
+        with etl.pg.log_error():
+            df = self.read_table_as_dataframe(source, relation)
+            self.write_dataframe_as_csv(df, relation)
+            prefix = os.path.join(relation.prefix, relation.csv_path_name)
+            self.write_manifest_file(relation, relation.bucket_name, prefix)
 
-    def _read_table_as_dataframe(self, source: DataWarehouseSchema, description: RelationDescription):
+    def read_table_as_dataframe(self, source: DataWarehouseSchema, relation: RelationDescription):
         """
         Read dataframe (with partitions) by contacting upstream JDBC-reachable source.
         """
         jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
 
-        source_table_name = description.source_table_name
-        selected_columns = description.get_columns_with_casts()
+        source_table_name = relation.source_table_name
+        selected_columns = relation.get_columns_with_casts()
         select_statement = """(SELECT {} FROM {}) AS t""".format(", ".join(selected_columns), source_table_name)
         self.logger.debug("Table query: SELECT * FROM %s", select_statement)
 
-        predicates = self._determine_partitioning(source_table_name, description, source.dsn)
+        predicates = self.determine_partitioning(source_table_name, relation, source.dsn)
         if predicates:
             df = self.sql_context.read.jdbc(url=jdbc_url,
                                             properties=dsn_properties,
@@ -89,8 +90,8 @@ class SparkExtractor(Extractor):
                                             table=select_statement)
         return df
 
-    def _determine_partitioning(self, source_table_name: TableName, description: RelationDescription,
-                                read_access: Dict[str, str]) -> List[str]:
+    def determine_partitioning(self, source_table_name: TableName, description: RelationDescription,
+                               read_access: Dict[str, str]) -> List[str]:
         """
         Guesstimate number of partitions based on actual table size and create list of predicates to split
         up table into that number of partitions.
@@ -110,13 +111,13 @@ class SparkExtractor(Extractor):
         with closing(etl.pg.connection(read_access, readonly=True)) as conn:
             self.logger.debug("Determining predicates for table '%s'", source_table_name.identifier)
 
-            table_size = self._fetch_table_size(conn, source_table_name)
+            table_size = self.fetch_table_size(conn, source_table_name)
             num_partitions = suggest_best_partition_number(table_size)
             self.logger.info("Picked %d partition(s) for table '%s' (partition key: '%s')",
                              num_partitions, source_table_name.identifier, partition_key)
 
             if num_partitions > 1:
-                boundaries = self._fetch_partition_boundaries(conn, source_table_name, partition_key, num_partitions)
+                boundaries = self.fetch_partition_boundaries(conn, source_table_name, partition_key, num_partitions)
                 for low, high in boundaries:
                     predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
                 self.logger.debug("Predicates to split '%s':\n    %s", source_table_name.identifier,
@@ -124,15 +125,17 @@ class SparkExtractor(Extractor):
 
         return predicates
 
-    def _fetch_table_size(self, conn: connection, table_name: TableName) -> int:
+    def fetch_table_size(self, conn: connection, table_name: TableName) -> int:
         """
         Fetch table size in bytes.
         """
+        # TODO move this into pg.py
+        stmt = """
+            SELECT pg_catalog.pg_table_size('{}') AS table_size
+                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
+        """
         with Timer() as timer:
-            rows = etl.pg.query(conn,
-                                """SELECT pg_catalog.pg_table_size('{}') AS table_size
-                                        , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
-                                """.format(table_name, table_name))
+            rows = etl.pg.query(conn, stmt.format(table_name, table_name))
         if len(rows) != 1:
             raise UnknownTableSizeError("Failed to determine size of table")
         table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
@@ -140,23 +143,26 @@ class SparkExtractor(Extractor):
                          timer)
         return table_size
 
-    def _fetch_partition_boundaries(self, conn: connection, table_name: TableName, partition_key: str,
-                                    num_partitions: int) -> List[Tuple[int, int]]:
+    def fetch_partition_boundaries(self, conn: connection, table_name: TableName, partition_key: str,
+                                   num_partitions: int) -> List[Tuple[int, int]]:
         """
         Fetch ranges for the partition key that partitions the table nicely.
         """
+        # TODO move this into pg.py
+        stmt = """
+            SELECT MIN(pkey) AS lower_bound
+                 , MAX(pkey) AS upper_bound
+                 , COUNT(pkey) AS count
+              FROM (
+                      SELECT "{}" AS pkey
+                           , NTILE({}) OVER (ORDER BY "{}") AS part
+                        FROM {}
+                   ) t
+             GROUP BY part
+             ORDER BY part
+        """
         with Timer() as timer:
-            rows = etl.pg.query(conn, """SELECT MIN(pkey) AS lower_bound
-                                              , MAX(pkey) AS upper_bound
-                                              , COUNT(pkey) AS count
-                                           FROM (
-                                               SELECT "{}" AS pkey
-                                                    , NTILE({}) OVER (ORDER BY "{}") AS part
-                                                 FROM {}
-                                                 ) t
-                                          GROUP BY part
-                                          ORDER BY part
-                                      """.format(partition_key, num_partitions, partition_key, table_name))
+            rows = etl.pg.query(conn, stmt.format(partition_key, num_partitions, partition_key, table_name))
         row_count = sum(row["count"] for row in rows)
         self.logger.info("Calculated %d partition boundaries for '%s' (%d rows) with partition key '%s' (%s)",
                          num_partitions, table_name.identifier, row_count, partition_key, timer)
@@ -164,15 +170,15 @@ class SparkExtractor(Extractor):
         upper_bounds = (row["upper_bound"] for row in rows)
         return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
 
-    def _write_dataframe_as_csv(self, df, description: RelationDescription) -> None:
+    def write_dataframe_as_csv(self, df, relation: RelationDescription) -> None:
         """
         Write (partitioned) dataframe to CSV file(s)
         """
-        s3_uri = "s3a://{0.bucket_name}/{0.prefix}/{0.csv_path_name}".format(description)
+        s3_uri = "s3a://{0.bucket_name}/{0.prefix}/{0.csv_path_name}".format(relation)
         if self.dry_run:
             self.logger.info("Dry-run: Skipping upload to '%s'", s3_uri)
         else:
-            self.logger.info("Writing dataframe for '%s' to '%s'", description.source_path_name, s3_uri)
+            self.logger.info("Writing dataframe for '%s' to '%s'", relation.source_path_name, s3_uri)
             # N.B. This must match the Sqoop (import) and Redshift (COPY) options
             # BROKEN Uses double quotes to escape double quotes ("Hello" becomes """Hello""")
             # BROKEN Does not escape newlines ('\n' does not become '\\n' so is read as 'n' in Redshift)

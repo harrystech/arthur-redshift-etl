@@ -6,13 +6,13 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List
 
 import etl.config
+import etl.monitor
+import etl.pg
+import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
 from etl.extract.extractor import Extractor
-import etl.monitor
-import etl.pg
 from etl.relation import RelationDescription
-import etl.s3
 
 
 class SqoopExtractor(Extractor):
@@ -22,9 +22,9 @@ class SqoopExtractor(Extractor):
     upstream sources using Sqoop, http://sqoop.apache.org/
     """
 
-    def __init__(self, schemas: Dict[str, DataWarehouseSchema], descriptions: List[RelationDescription],
+    def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
                  keep_going: bool, max_partitions: int, dry_run: bool) -> None:
-        super().__init__("sqoop", schemas, descriptions, keep_going, needs_to_wait=True, dry_run=dry_run)
+        super().__init__("sqoop", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self.max_partitions = max_partitions
         self.sqoop_executable = "sqoop"
@@ -35,23 +35,23 @@ class SqoopExtractor(Extractor):
             self.logger.info("Creating directory '%s' (with mode 750)", self._sqoop_options_dir)
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
 
-    def extract_table(self, source: DataWarehouseSchema, description: RelationDescription) -> None:
+    def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
         jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
 
-        password_file_path = self._write_password_file(dsn_properties["password"])
-        args = self._build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, description)
-        self.logger.info("Sqoop options are:\n%s", " ".join(args))
-        options_file = self._write_options_file(args)
+        password_file_path = self.write_password_file(dsn_properties["password"])
+        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, relation)
+        self.logger.debug("Sqoop options are:\n%s", " ".join(args))
+        options_file = self.write_options_file(args)
 
-        self._delete_directory_before_write(description)
-        self._run_sqoop(options_file)
-        prefix = os.path.join(description.prefix, description.csv_path_name)
-        self.write_manifest_file(description, description.bucket_name, prefix)
+        self._delete_directory_before_write(relation)
+        self.run_sqoop(options_file)
+        prefix = os.path.join(relation.prefix, relation.csv_path_name)
+        self.write_manifest_file(relation, relation.bucket_name, prefix)
 
-    def _write_password_file(self, password: str) -> str:
+    def write_password_file(self, password: str) -> str:
         """
         Write password to a (temporary) file, return name of file created.
         """
@@ -66,18 +66,18 @@ class SqoopExtractor(Extractor):
             self.logger.info("Wrote password to '%s'", password_file_path)
         return password_file_path
 
-    def _build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str,
-                             description: RelationDescription) -> List[str]:
+    def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str,
+                            relation: RelationDescription) -> List[str]:
         """
         Create set of Sqoop options.
 
         Starts with the command (import), then continues with generic options,
         tool specific options, and child-process options.
         """
-        source_table_name = description.source_table_name
-        columns = description.get_columns_with_casts()
+        source_table_name = relation.source_table_name
+        columns = relation.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
-        partition_key = description.find_partition_key()
+        partition_key = relation.find_partition_key()
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -98,9 +98,9 @@ class SqoopExtractor(Extractor):
                 "--null-string", r"'\\N'",
                 "--null-non-string", r"'\\N'",
                 # NOTE Does not work with s3n:  "--delete-target-dir",
-                "--target-dir", '"s3n://{}/{}/{}"'.format(description.bucket_name,
-                                                          description.prefix,
-                                                          description.csv_path_name),
+                "--target-dir", '"s3n://{}/{}/{}"'.format(relation.bucket_name,
+                                                          relation.prefix,
+                                                          relation.csv_path_name),
                 # NOTE Quoting the select statement (e.g. with shlex.quote) breaks the select in an unSQLy way.
                 "--query", select_statement,
                 # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
@@ -113,7 +113,7 @@ class SqoopExtractor(Extractor):
             args.extend(["--num-mappers", "1"])
         return args
 
-    def _write_options_file(self, args: List[str]) -> str:
+    def write_options_file(self, args: List[str]) -> str:
         """
         Write options to a (temporary) file, return name of file created.
         """
@@ -129,28 +129,29 @@ class SqoopExtractor(Extractor):
             self.logger.info("Wrote Sqoop options to '%s'", options_file_path)
         return options_file_path
 
-    def _delete_directory_before_write(self, description: RelationDescription) -> None:
+    def _delete_directory_before_write(self, relation: RelationDescription) -> None:
         """
         Need to first delete data directory since Sqoop won't overwrite (and can't delete).
         """
-        csv_prefix = os.path.join(description.prefix, description.csv_path_name)
-        deletable = sorted(etl.s3.list_objects_for_prefix(description.bucket_name, csv_prefix))
+        csv_prefix = os.path.join(relation.prefix, relation.csv_path_name)
+        deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
         if deletable:
             if self.dry_run:
-                self.logger.info("Dry-run: Skipping deletion of existing CSV files 's3://%s/%s'",
-                                 description.bucket_name, csv_prefix)
+                self.logger.info("Dry-run: Skipping deletion of existing CSV files in 's3://%s/%s'",
+                                 relation.bucket_name, csv_prefix)
             else:
-                etl.s3.delete_objects(description.bucket_name, deletable)
+                etl.s3.delete_objects(relation.bucket_name, deletable)
 
-    def _run_sqoop(self, options_file_path: str):
+    def run_sqoop(self, options_file_path: str):
         """
         Run Sqoop in a sub-process with the help of the given options file.
         """
         args = [self.sqoop_executable, "--options-file", options_file_path]
+        cmdline = " ".join(map(shlex.quote, args))
         if self.dry_run:
-            self.logger.info("Dry-run: Skipping Sqoop run")
+            self.logger.info("Dry-run: Skipping Sqoop run '%s'", cmdline)
         else:
-            self.logger.debug("Starting: %s", " ".join(map(shlex.quote, args)))
+            self.logger.debug("Starting: %s", cmdline)
             sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      universal_newlines=True)
             self.logger.debug("Sqoop is running with pid %d", sqoop.pid)
