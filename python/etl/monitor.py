@@ -22,7 +22,7 @@ import uuid
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
-from http import HTTPStatus
+# requires Python 3.5: from http import HTTPStatus
 from typing import List
 
 import boto3
@@ -460,14 +460,14 @@ class MemoryStorage(PayloadDispatcher):
         except queue.Empty:
             pass
         text = self.HEADER
-        # Add a table with the current progress meter
+        # Add a table with the current progress meter (200px * percentage = 2 * percentage points)
         percentage = (100.0 * self.index["current"])/self.index["final"]
         text += """
             <table>
-              <tr><th>Current Index</th><th>Final Index</th><th>Progress</th></tr>
-              <tr><td>{}</td><td>{}</td><td><div id="progress" style="width: {:.0f}px"></div></td></tr>
+              <tr><th>Current Index</th><th>Final Index</th><th colspan="2">Progress</th></tr>
+              <tr><td>{}</td><td>{}</td><td>{:.0f}%</td><td><div id="progress" style="width: {:.0f}px"></div></td></tr>
             </table><br /><br />
-            """.format(self.index["current"], self.index["final"], 2 * percentage)
+            """.format(self.index["current"], self.index["final"], percentage, 2 * percentage)
         # Add a table with all the events
         text += """
             <table class="events">
@@ -501,7 +501,8 @@ class MemoryStorage(PayloadDispatcher):
                 """
                 path = self.path.rstrip('/') + '/'
                 if path != '/':
-                    self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+                    # self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+                    self.send_response(301)
                     parts = urllib.parse.urlsplit(self.path)
                     new_parts = (parts[0], parts[1], '/', None, parts[4])
                     new_url = urllib.parse.urlunsplit(new_parts)
@@ -510,7 +511,8 @@ class MemoryStorage(PayloadDispatcher):
                     return
 
                 content = this_content().encode("utf-8")
-                self.send_response(HTTPStatus.OK)
+                # self.send_response(HTTPStatus.OK)
+                self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=UTF-8")
                 self.send_header("Content-Length", len(content))
                 self.send_header("Last-Modified", this_last_modified)
@@ -567,7 +569,7 @@ def query_for(target_list, etl_id=None):
 
 
 if __name__ == "__main__":
-    Monitor.environment = "test"
+    Monitor.environment = "test"  # type: ignore
     memory = MemoryStorage()
     MonitorPayload.dispatchers.append(memory)
     monitor = Monitor("some_schema.some_table", "do")
