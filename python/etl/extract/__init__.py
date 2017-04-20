@@ -29,20 +29,23 @@ of upstream sources. The data is stored in gzipped CSV form, into a specified ke
 import logging
 from typing import List, Dict
 
+import etl.pg
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
 from etl.names import join_with_quotes
-import etl.pg
 from etl.relation import RelationDescription
 
 __all__ = ["extract_upstream_sources"]
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
 
 def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchema],
-                             descriptions: List[RelationDescription], max_partitions: int,
+                             relations: List[RelationDescription], max_partitions: int,
                              keep_going: bool, dry_run: bool) -> None:
     """
     Extract data from upstream sources to S3.
@@ -50,10 +53,8 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
     This is the entry point. Static sources are processed first, followed by database
     sources for which we determine the extraction technology here.
     """
-    logger = logging.getLogger(__name__)
-
     static_sources = {source.name: source for source in schemas if source.is_static_source}
-    applicable = filter_relations_for_sources(static_sources, descriptions)
+    applicable = filter_relations_for_sources(static_sources, relations)
     if applicable:
         static_extractor = StaticExtractor(static_sources, applicable, keep_going, dry_run)
         static_extractor.extract_sources()
@@ -61,28 +62,26 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
         logger.info("No static sources were selected")
 
     database_sources = {source.name: source for source in schemas if source.is_database_source}
-    applicable = filter_relations_for_sources(database_sources, descriptions)
+    applicable = filter_relations_for_sources(database_sources, relations)
     if not applicable:
         logger.info("No database sources were selected")
         return
 
-    with etl.pg.log_error():
-        if extract_type == "spark":
-            database_extractor = SparkExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
-        else:
-            database_extractor = SqoopExtractor(database_sources, applicable, keep_going,
-                                                max_partitions=max_partitions, dry_run=dry_run)
-        database_extractor.extract_sources()
+    if extract_type == "spark":
+        database_extractor = SparkExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
+    else:
+        database_extractor = SqoopExtractor(database_sources, applicable, keep_going,
+                                            max_partitions=max_partitions, dry_run=dry_run)
+    database_extractor.extract_sources()
 
 
 def filter_relations_for_sources(source_lookup: Dict[str, DataWarehouseSchema],
-                                 descriptions: List[RelationDescription]) -> List[RelationDescription]:
+                                 relations: List[RelationDescription]) -> List[RelationDescription]:
     """
     Filter for the relations that a given "extract" stage cares about.
     """
-    logger = logging.getLogger(__name__)
-    selected = [d for d in descriptions if d.source_name in source_lookup]
+    selected = [relation for relation in relations if relation.source_name in source_lookup]
     if selected:
-        sources = set(d.source_name for d in selected)
+        sources = frozenset(relation.source_name for relation in selected)
         logger.info("Selected %d relation(s) from source(s): %s", len(selected), join_with_quotes(sources))
     return selected

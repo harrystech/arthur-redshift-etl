@@ -6,19 +6,18 @@ so that they can be leveraged by utilities in addition to the top-level script.
 """
 
 import argparse
-from contextlib import contextmanager
 import getpass
 import logging
 import os
 import sys
 import traceback
+from contextlib import closing, contextmanager
 
 import boto3
 import simplejson as json
 
 import etl.config
 import etl.design.bootstrap
-from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
 import etl.explain
 import etl.extract
 import etl.dw
@@ -32,9 +31,13 @@ import etl.pipeline
 import etl.relation
 import etl.selftest
 import etl.sync
-from etl.timer import Timer
 import etl.unload
 import etl.validate
+from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
+from etl.timer import Timer
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def croak(error, exit_code):
@@ -61,7 +64,6 @@ def execute_or_bail():
 
     Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
     """
-    logger = logging.getLogger(__name__)
     timer = Timer()
     try:
         yield
@@ -151,7 +153,7 @@ def submit_step(cluster_id, sub_command):
         json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder)
         sys.stdout.write('\n')
     except Exception as exc:
-        logging.getLogger(__name__).exception("Adding step to job flow failed:")
+        logger.exception("Adding step to job flow failed:")
         croak(exc, 1)
 
 
@@ -210,6 +212,7 @@ def build_full_parser(prog_name):
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
+            RestoreSchemasCommand,
             ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
@@ -531,8 +534,8 @@ class UnloadDataToS3Command(SubCommand):
 
     def __init__(self):
         super().__init__("unload",
-                         "unload data from Redshift to files in S3",
-                         "Unload data from Redshift into files in S3 (along with files of column names).")
+                         "unload data from data warehouse to files in S3",
+                         "Unload data from data warehouse into files in S3 (along with files of column names).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
@@ -548,6 +551,28 @@ class UnloadDataToS3Command(SubCommand):
         with etl.pg.log_error():
             etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
                                     keep_going=args.keep_going, dry_run=args.dry_run)
+
+
+class RestoreSchemasCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("restore_schemas",
+                         "restore schemas from their backup (after an interrupted load)",
+                         "Restore schemas from their backup which should only be useful or used after killing a load.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "dry-run"])
+
+    def callback(self, args, config):
+        schemas = [schema for schema in config.schemas if args.pattern.match_schema(schema.name)]
+        pretty_names = etl.names.join_with_quotes(schema.name for schema in schemas)
+        if args.dry_run:
+            logger.info("Dry-run: Skipping restore from backup for %s", pretty_names)
+        else:
+            logger.info("Restoring schemas from backup: %s", pretty_names)
+            with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
+                with etl.pg.log_error():
+                    etl.dw.restore_schemas(conn, schemas)
 
 
 class ValidateDesignsCommand(SubCommand):
