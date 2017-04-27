@@ -196,28 +196,29 @@ def create_table_design_for_view(conn, table_name):
     return table_design
 
 
-def make_key_sorter():
+def make_item_sorter():
     """
     Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict)
     so that the resulting order of keys is easier to digest by humans.
 
-    That "some value" is a tuple of (preferred order, key name).
+    Input to the sorter is a tuple of (key, value) from turning a dict into a list of items.
+    Output (return value) of the sorter is a tuple of (preferred order, key name).
+    If a key is not known, it's sorted alphabetically (ignoring case) after all known ones.
     """
     preferred_order = [
         "name", "description",  # always (tables, columns, etc.)
         "source_name", "unload_target", "columns", "constraints", "attributes", "depends_on",  # only tables
         "primary_key", "surrogate_key", "natural_key", "unique",  # only table constraints
-        "sql_type", "type", "expression"  # only columns
+        "sql_type", "type", "expression", "source_sql_type", "not_null", "identity"  # only columns
     ]
-    # The ".lower()" calls are here to stay compatible with default implementation.
     order_lookup = {key: (i, key.lower()) for i, key in enumerate(preferred_order)}
     max_index = len(preferred_order)
 
-    def sorter(item):
+    def sort_key(item):
         key, value = item
         return order_lookup.get(key, (max_index, key.lower()))
 
-    return sorter
+    return sort_key
 
 
 def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False) -> None:
@@ -243,7 +244,7 @@ def save_table_design(local_dir, source_name, source_table_name, table_design, d
         logger.info("Writing new table design file for '%s' to '%s'", table, filename)
         # We use JSON pretty printing because it is prettier than YAML printing.
         with open(filename, 'w') as o:
-            json.dump(table_design, o, indent="    ", item_sort_key=make_key_sorter())
+            json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
             o.write('\n')
         logger.debug("Completed writing '%s'", filename)
 
