@@ -15,21 +15,21 @@ The descriptions of relations contain access to:
 """
 
 import concurrent.futures
+import logging
+import os.path
 from contextlib import closing, contextmanager
 from functools import partial
-import logging
 from operator import attrgetter
-import os.path
 from queue import PriorityQueue
 from typing import Any, Dict, Optional, Union, List
 
 import etl.design.load
-from etl.errors import CyclicDependencyError, MissingQueryError
 import etl.file_sets
-from etl.names import join_with_quotes, TableName
 import etl.pg
 import etl.s3
 import etl.timer
+from etl.errors import CyclicDependencyError, MissingQueryError
+from etl.names import join_with_quotes, TableName
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -219,18 +219,23 @@ class RelationDescription:
         If no partition key can be found, returns None.
         """
         constraints = self.table_design.get("constraints", [])
-        primary_keys = [col for constraint_type, cols in constraints.items() for col in cols if constraint_type == 'primary_key']
-        if len(primary_keys) == 1:
-            pk = primary_keys[0]
-            for column in self.table_design["columns"]:
-                if column["name"] == pk:
-                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
-                    if column["type"] in ("int", "long"):
-                        return pk
-                    else:
-                        logger.warning("Primary key '%s' is not a number and is not usable as a partition key", pk)
+        primary_key = None
+        for constraint in constraints:
+            for constraint_type, columns in constraint.items():
+                if constraint_type == "primary_key":
+                    if len(columns) == 1:
+                        primary_key = columns[0]
                         break
-        return None
+        if not primary_key:
+            return None
+        for column in self.table_design["columns"]:
+            if column["name"] == primary_key:
+                # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+                if column["type"] in ("int", "long"):
+                    break
+                logger.warning("Primary key '%s' is not a number and is not usable as a partition key", primary_key)
+                return None
+        return primary_key
 
     @contextmanager
     def matching_temporary_view(self, conn):
@@ -316,7 +321,6 @@ def order_by_dependencies(relation_descriptions):
             has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
-        # TODO In a "strict" or "pedantic" mode, if known_unknowns is not an empty set, this should error out.
         logger.warning('These relations have unknown dependencies: %s', join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        join_with_quotes(known_unknowns))
