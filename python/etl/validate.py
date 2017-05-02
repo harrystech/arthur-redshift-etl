@@ -293,16 +293,16 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
     Note that "natural_key" or "surrogate_key" constraints are not valid in upstream tables.
     """
     current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
-    design_constraint = table.table_design.get("constraints", {})
+    design_constraint = table.table_design.get("constraints", [])
 
-    current_primary_key = frozenset(current_constraint.get("primary_key", []))
-    current_unique = frozenset(current_constraint.get("unique", []))
+    current_primary_key = frozenset([col for c in current_constraint for col in c.get("primary_key", [])])
+    current_uniques = [frozenset(c.get("unique")) for c in current_constraint if "unique" in c]
 
-    design_primary_key = frozenset(design_constraint.get("primary_key", []))
-    design_unique = frozenset(design_constraint.get("unique", []))
+    design_primary_key = frozenset([col for c in design_constraint for col in c.get("primary_key", [])])
+    design_uniques = [frozenset(c.get("unique")) for c in design_constraint if "unique" in c]
 
     # not_used will be true at the beginning if we have something to check, turns false if design has match
-    not_used = {"primary_key": current_primary_key, "unique": current_unique}
+    not_used = {"primary_key": current_primary_key, "unique": list(current_uniques)}
 
     if design_primary_key:
         if current_primary_key == design_primary_key:
@@ -316,12 +316,14 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
             raise TableDesignValidationError("the primary key constraint in '%s' (%s) is not enforced upstream" %
                                              (table.identifier, join_with_quotes(design_primary_key)))
 
-    if design_unique:
+    for design_unique in design_uniques:
         if current_primary_key == design_unique:
             del not_used["primary_key"]
-        if current_unique == design_unique:
-            del not_used["unique"]
-        if current_primary_key != design_unique and current_unique != design_unique:
+        if design_unique in current_uniques:
+            not_used["unique"].remove(design_unique)
+            if not not_used["unique"]:
+                del not_used["unique"]
+        if current_primary_key != design_unique and design_unique not in current_uniques:
             raise TableDesignValidationError("the unique constraint in '%s' (%s) is not enforced upstream" %
                                              (table.identifier, join_with_quotes(design_unique)))
 

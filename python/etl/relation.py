@@ -15,21 +15,21 @@ The descriptions of relations contain access to:
 """
 
 import concurrent.futures
+import logging
+import os.path
 from contextlib import closing, contextmanager
 from functools import partial
-import logging
 from operator import attrgetter
-import os.path
 from queue import PriorityQueue
 from typing import Any, Dict, Optional, Union, List
 
 import etl.design.load
-from etl.errors import CyclicDependencyError, MissingQueryError
 import etl.file_sets
-from etl.names import join_with_quotes, TableName
 import etl.pg
 import etl.s3
 import etl.timer
+from etl.errors import CyclicDependencyError, MissingQueryError
+from etl.names import join_with_quotes, TableName
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -218,18 +218,25 @@ class RelationDescription:
 
         If no partition key can be found, returns None.
         """
-        primary_keys = self.table_design.get("constraints", {}).get("primary_key", [])
-        if len(primary_keys) == 1:
-            pk = primary_keys[0]
-            for column in self.table_design["columns"]:
-                if column["name"] == pk:
-                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
-                    if column["type"] in ("int", "long"):
-                        return pk
-                    else:
-                        logger.warning("Primary key '%s' is not a number and is not usable as a partition key", pk)
+        constraints = self.table_design.get("constraints", [])
+        primary_key = None
+        for constraint in constraints:
+            for constraint_type, columns in constraint.items():
+                if constraint_type == "primary_key":
+                    if len(columns) == 1:
+                        primary_key = columns[0]
                         break
-        return None
+        if not primary_key:
+            return None
+        for column in self.table_design["columns"]:
+            if column["name"] == primary_key:
+                # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+                if column["type"] in ("int", "long"):
+                    break
+                logger.warning("Primary key '%s' is not a number and is not usable as a partition key", primary_key)
+                return None
+        logger.debug("Picked '%s' as partition key for '%s'", primary_key, self.identifier)
+        return primary_key
 
     @contextmanager
     def matching_temporary_view(self, conn):

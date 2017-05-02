@@ -56,20 +56,16 @@ logger.addHandler(logging.NullHandler())
 
 
 def _build_constraints(table_design, exclude_foreign_keys=False):
-    constraints = table_design.get("constraints", {})
+    constraints = table_design.get("constraints", [])
     ddl_constraints = []
     for pk in ("primary_key", "surrogate_key"):
-        if pk in constraints:
-            ddl_constraints.append('PRIMARY KEY ( {} )'.format(join_column_list(constraints[pk])))
+        for constraint in constraints:
+            if pk in constraint:
+                ddl_constraints.append('PRIMARY KEY ( {} )'.format(join_column_list(constraint[pk])))
     for nk in ("unique", "natural_key"):
-        if nk in constraints:
-            ddl_constraints.append('UNIQUE ( {} )'.format(join_column_list(constraints[nk])))
-    if "foreign_key" in constraints and not exclude_foreign_keys:
-        local_columns, reference, reference_columns = constraints["foreign_key"]
-        reference_table = TableName(*reference.split('.', 1))
-        ddl_constraints.append('FOREIGN KEY ( {} ) REFERENCES {} ( {} )'.format(join_column_list(local_columns),
-                                                                                reference_table,
-                                                                                join_column_list(reference_columns)))
+        for constraint in constraints:
+            if nk in constraint:
+                ddl_constraints.append('UNIQUE ( {} )'.format(join_column_list(constraint[nk])))
     return ddl_constraints
 
 
@@ -481,24 +477,24 @@ def verify_constraints(conn, relation, dry_run=False) -> None:
     """
 
     for constraint_type in ["primary_key", "natural_key", "surrogate_key", "unique"]:
-        if constraint_type in constraints:
-            columns = constraints[constraint_type]
-            quoted_columns = join_column_list(columns)
-            if constraint_type == "unique":
-                condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
-            else:
-                condition = "TRUE"
-            statement = statement_template.format(columns=quoted_columns,
-                                                  table=relation.target_table_name,
-                                                  condition=condition)
-            if dry_run:
-                logger.info("Dry-run: Skipping check of %s constraint on '%s'", constraint_type, relation.identifier)
-                logger.debug("Skipped query:\n%s", statement)
-            else:
-                logger.info("Checking %s constraint on '%s'", constraint_type, relation.identifier)
-                results = etl.pg.query(conn, statement)
-                if results:
-                    raise FailedConstraintError(relation, constraint_type, columns, results)
+        for constraint in constraints:
+            if constraint_type in constraint:
+                columns = constraint[constraint_type]
+                quoted_columns = join_column_list(columns)
+                if constraint_type == "unique":
+                    condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
+                else:
+                    condition = "TRUE"
+                statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition)
+                if dry_run:
+                    logger.info("Dry-run: Skipping check of %s constraint on '%s'",
+                                constraint_type, relation.identifier)
+                    logger.debug("Skipped query:\n%s", statement)
+                else:
+                    logger.info("Checking %s constraint on '%s'", constraint_type, relation.identifier)
+                    results = etl.pg.query(conn, statement)
+                    if results:
+                        raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
 def evaluate_execution_order(relations, selector, only_first=False, whole_schemas=False):
