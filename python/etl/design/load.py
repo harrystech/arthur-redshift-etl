@@ -31,6 +31,16 @@ def load_table_design(stream, table_name):
         table_design = yaml.safe_load(stream)
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError(exc) from exc
+
+    # BEGIN -- Support of DEPRECATED format of specifying constraints
+    # This rewrites the format from v0.23.1 and earlier to v0.24.0 -- I would prefer to drop this soon.
+    etl.config.validate_with_schema(table_design, "table_design.schema")
+    constraints = table_design.get("constraints")
+    if isinstance(constraints, dict):
+        table_design["constraints"] = [{constraint_type: constraints[constraint_type]}
+                                       for constraint_type in sorted(constraints)]
+    # END -- Support of DEPRECATED format of specifying constraints
+
     return validate_table_design(table_design, table_name)
 
 
