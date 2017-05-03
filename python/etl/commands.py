@@ -393,13 +393,8 @@ class BootstrapSourcesCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
-        parser.add_argument("-a", "--auto",
-                            help="DEPRECATED use 'auto_design' instead",
-                            action="store_true")
 
     def callback(self, args, config):
-        if args.auto:
-            raise InvalidArgumentsError("Option --auto is no longer supported.  Use 'auto_design' instead.")
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
         etl.design.bootstrap.bootstrap_sources(config.schemas, args.pattern, args.table_design_dir, local_files,
                                                config.type_maps, dry_run=args.dry_run)
