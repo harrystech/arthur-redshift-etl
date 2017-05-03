@@ -219,24 +219,20 @@ class RelationDescription:
         If no partition key can be found, returns None.
         """
         constraints = self.table_design.get("constraints", [])
-        primary_key = None
-        for constraint in constraints:
-            for constraint_type, columns in constraint.items():
-                if constraint_type == "primary_key":
-                    if len(columns) == 1:
-                        primary_key = columns[0]
-                        break
-        if not primary_key:
+        primary_keys = [col for constraint in constraints for col in constraint.get("primary_key", [])]
+        if len(primary_keys) != 1:
             return None
+
+        primary_key = primary_keys[0]
         for column in self.table_design["columns"]:
             if column["name"] == primary_key:
                 # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
                 if column["type"] in ("int", "long"):
-                    break
-                logger.warning("Primary key '%s' is not a number and is not usable as a partition key", primary_key)
-                return None
-        logger.debug("Picked '%s' as partition key for '%s'", primary_key, self.identifier)
-        return primary_key
+                    return primary_key
+                logger.warning("Primary key '%s' is not a number and is not usable as a partition key for '%s'",
+                               primary_key, self.identifier)
+                break
+        return None
 
     @contextmanager
     def matching_temporary_view(self, conn):

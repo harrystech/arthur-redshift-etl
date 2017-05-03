@@ -299,6 +299,24 @@ class TableSelector:
                     return True
             return False
 
+    def selected_schemas(self):
+        """
+        Return list of schemas from base schemas that match the selection.
+        It is an error if a pattern tries to select a specific table instead of a schema.
+
+        >>> ts = TableSelector(["www.*", "marketing"], ["factory", "marketing", "www"])
+        >>> ts.selected_schemas()
+        ['marketing', 'www']
+        >>> tx = TableSelector(["www.orders"], ["www"])
+        >>> tx.selected_schemas()
+        Traceback (most recent call last):
+        ValueError: pattern selects table, not schema: '"www"."orders"'
+        """
+        for pattern in self._patterns:
+            if pattern.table != '*':
+                raise ValueError("pattern selects table, not schema: '%s'" % pattern)
+        return list(filter(self.match_schema, self._base_schemas))
+
     def match(self, table_name):
         """
         Match names of schema and table against known patterns, return true if any pattern matches

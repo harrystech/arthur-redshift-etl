@@ -390,9 +390,9 @@ class MemoryStorage(PayloadDispatcher):
     """
     Store ETL events in memory and make the events accessible via HTTP
 
-    When the ETL is running for extract, load, or unload, connect to port 8080.
+    When the ETL is running for extract, load, or unload, connect to port 8086.
     """
-    SERVER_ADDRESS = ('', 8080)
+    SERVER_ADDRESS = ('', 8086)
 
     HEADER = """<!DOCTYPE html>
         <html>

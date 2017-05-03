@@ -15,25 +15,26 @@ Validating the warehouse schemas (definition of upstream tables and their transf
 """
 
 import concurrent.futures
-from contextlib import closing
 import difflib
-from itertools import groupby
 import logging
-from operator import attrgetter
 import threading
+from contextlib import closing
+from copy import deepcopy
+from itertools import groupby
+from operator import attrgetter
 from typing import Iterable, List, Optional
 
 import psycopg2
-from psycopg2.extensions import connection  # only for type annotation
 import simplejson as json
+from psycopg2.extensions import connection  # only for type annotation
 
-from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 import etl.design.bootstrap
+import etl.pg
+import etl.relation
+from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLRuntimeError  # Exception classes that we might catch
 from etl.errors import TableDesignValidationError, UpstreamValidationError  # Exception classes that we might raise
 from etl.names import join_with_quotes, TableName
-import etl.pg
-import etl.relation
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -290,23 +291,27 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
     """
     Compare table constraints between database and table design file.
 
-    Note that "natural_key" or "surrogate_key" constraints are not valid in upstream tables.
+    Note that "natural_key" or "surrogate_key" constraints are not valid in upstream (source) tables.
+    Also, a "primary_key" in upstream may be used as a "unique" constraint in the design (but not vice versa).
     """
     current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
     design_constraint = table.table_design.get("constraints", [])
 
     current_primary_key = frozenset([col for c in current_constraint for col in c.get("primary_key", [])])
-    current_uniques = [frozenset(c.get("unique")) for c in current_constraint if "unique" in c]
+    current_uniques = [frozenset(c["unique"]) for c in current_constraint if "unique" in c]
 
     design_primary_key = frozenset([col for c in design_constraint for col in c.get("primary_key", [])])
-    design_uniques = [frozenset(c.get("unique")) for c in design_constraint if "unique" in c]
+    design_uniques = [frozenset(c["unique"]) for c in design_constraint if "unique" in c]
 
-    # not_used will be true at the beginning if we have something to check, turns false if design has match
-    not_used = {"primary_key": current_primary_key, "unique": list(current_uniques)}
+    # We'll pluck from the not_used info and report if anything wasn't used in the design at the end.
+    not_used = deepcopy(current_constraint)
 
     if design_primary_key:
         if current_primary_key == design_primary_key:
-            del not_used["primary_key"]
+            for i in range(len(not_used)):
+                if "primary_key" in not_used[i]:
+                    del not_used[i]
+                    break
         elif current_primary_key:
             raise TableDesignValidationError("the primary_key constraint in '%s' (%s) does not match upstream (%s)" %
                                              (table.identifier,
@@ -318,20 +323,23 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
 
     for design_unique in design_uniques:
         if current_primary_key == design_unique:
-            del not_used["primary_key"]
+            for i in range(len(not_used)):
+                if "primary_key" in not_used[i]:
+                    del not_used[i]
+                    break
         if design_unique in current_uniques:
-            not_used["unique"].remove(design_unique)
-            if not not_used["unique"]:
-                del not_used["unique"]
+            for i in range(len(not_used)):
+                if "unique" in not_used[i] and frozenset(not_used[i]["unique"]) == design_unique:
+                    del not_used[i]
+                    break
         if current_primary_key != design_unique and design_unique not in current_uniques:
             raise TableDesignValidationError("the unique constraint in '%s' (%s) is not enforced upstream" %
                                              (table.identifier, join_with_quotes(design_unique)))
 
-    for constraint_type in not_used:
-        if not_used[constraint_type]:
-            logger.info("Upstream source '%s' has additional %s constraint (%s) for '%s'",
-                        table.source_name, constraint_type,
-                        join_with_quotes(not_used[constraint_type]), table.identifier)
+    for constraint in not_used:
+        for constraint_type, columns in constraint.items():
+            logger.warning("Upstream source '%s' has additional %s constraint (%s) for '%s'",
+                           table.source_name, constraint_type, join_with_quotes(columns), table.identifier)
 
 
 def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool=False) -> None:

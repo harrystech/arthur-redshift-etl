@@ -58,6 +58,7 @@ def run_doctest(log_level: str="INFO") -> None:
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
+    print("Running doctests...")
     test_program = unittest.main(module="etl", verbosity=verbosity, exit=False, argv=sys.argv[:2])
     test_result = test_program.result
     if not test_result.wasSuccessful():
@@ -66,6 +67,7 @@ def run_doctest(log_level: str="INFO") -> None:
 
 
 def run_type_checker() -> None:
+    print("Running type checker...")
     normal_report, error_report, exit_status = mypy.api.run(["python",  # Should match setup.py's package_dir
                                                              "--strict-optional",
                                                              "--ignore-missing-imports"])

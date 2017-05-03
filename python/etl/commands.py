@@ -212,7 +212,7 @@ def build_full_parser(prog_name):
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
-            RestoreSchemasCommand,
+            CreateSchemasCommand, RestoreSchemasCommand,
             ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
@@ -553,6 +553,29 @@ class UnloadDataToS3Command(SubCommand):
                                     keep_going=args.keep_going, dry_run=args.dry_run)
 
 
+class CreateSchemasCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("create_schemas",
+                         "create schemas from data warehouse config",
+                         "Create schemas as configured and set (or add) permissions")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "dry-run"])
+
+    def callback(self, args, config):
+        schema_names = args.pattern.selected_schemas()
+        pretty_names = etl.names.join_with_quotes(schema_names)
+        schemas = [schema for schema in config.schemas if schema.name in schema_names]
+        if args.dry_run:
+            logger.info("Dry-run: Skipping creating schema(s): %s", pretty_names)
+        else:
+            logger.info("Creating schema(s): %s", pretty_names)
+            with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
+                with etl.pg.log_error():
+                    etl.dw.create_schemas(conn, schemas)
+
+
 class RestoreSchemasCommand(SubCommand):
 
     def __init__(self):
@@ -564,12 +587,13 @@ class RestoreSchemasCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
-        schemas = [schema for schema in config.schemas if args.pattern.match_schema(schema.name)]
-        pretty_names = etl.names.join_with_quotes(schema.name for schema in schemas)
+        schema_names = args.pattern.selected_schemas()
+        pretty_names = etl.names.join_with_quotes(schema_names)
+        schemas = [schema for schema in config.schemas if schema.name in schema_names]
         if args.dry_run:
-            logger.info("Dry-run: Skipping restore from backup for %s", pretty_names)
+            logger.info("Dry-run: Skipping restore from backup for schema(s): %s", pretty_names)
         else:
-            logger.info("Restoring schemas from backup: %s", pretty_names)
+            logger.info("Restoring schema(s) from backup: %s", pretty_names)
             with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
                 with etl.pg.log_error():
                     etl.dw.restore_schemas(conn, schemas)
@@ -718,7 +742,7 @@ class SelfTestCommand(SubCommand):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument("test_family", help="select which family of tests to run",
-                            nargs='?', choices=["doctest", "typecheck", "all"], default="doctest")
+                            nargs='?', choices=["doctest", "typecheck", "all"], default="all")
 
     def callback(self, args, config):
         if args.test_family in ("doctest", "all"):

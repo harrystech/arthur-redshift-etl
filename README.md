@@ -274,7 +274,7 @@ arthur.py extract
 arthur.py load  # This will automatically create schemas as necessary
 ```
 
-### Running unit tests
+### Running unit tests on ETL code
 
 | Sub-command   | Goal |
 | ---- | ---- |
@@ -283,6 +283,14 @@ arthur.py load  # This will automatically create schemas as necessary
 ```shell
 arthur.py selftest
 ```
+
+### Dealing with schemas (create, restore)
+
+| Sub-command   | Goal |
+| ---- | ---- |
+| `create_schemas`  | Create schemas; normally `load` will do that for you |
+| `restore_schemas`  | Bring back schemas from backup if `load` was aborted |
+
 
 ## Working with a staging environment
 

@@ -49,7 +49,7 @@ import etl.monitor
 import etl.pg
 import etl.relation
 from etl.errors import MissingManifestError, RequiredRelationFailed, FailedConstraintError
-from etl.names import join_column_list, join_with_quotes, TableName
+from etl.names import join_column_list, join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -476,25 +476,24 @@ def verify_constraints(conn, relation, dry_run=False) -> None:
          LIMIT 5
     """
 
-    for constraint_type in ["primary_key", "natural_key", "surrogate_key", "unique"]:
-        for constraint in constraints:
-            if constraint_type in constraint:
-                columns = constraint[constraint_type]
-                quoted_columns = join_column_list(columns)
-                if constraint_type == "unique":
-                    condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
-                else:
-                    condition = "TRUE"
-                statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition)
-                if dry_run:
-                    logger.info("Dry-run: Skipping check of %s constraint on '%s'",
-                                constraint_type, relation.identifier)
-                    logger.debug("Skipped query:\n%s", statement)
-                else:
-                    logger.info("Checking %s constraint on '%s'", constraint_type, relation.identifier)
-                    results = etl.pg.query(conn, statement)
-                    if results:
-                        raise FailedConstraintError(relation, constraint_type, columns, results)
+    for constraint in constraints:
+        for constraint_type, columns in constraint.items():
+            quoted_columns = join_column_list(columns)
+            if constraint_type == "unique":
+                condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
+            else:
+                condition = "TRUE"
+            statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition)
+            if dry_run:
+                logger.info("Dry-run: Skipping check of %s constraint in '%s' on [%s]",
+                            constraint_type, relation.identifier, join_with_quotes(columns))
+                logger.debug("Skipped query:\n%s", statement)
+            else:
+                logger.info("Checking %s constraint in '%s' on [%s]",
+                            constraint_type, relation.identifier, join_with_quotes(columns))
+                results = etl.pg.query(conn, statement)
+                if results:
+                    raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
 def evaluate_execution_order(relations, selector, only_first=False, whole_schemas=False):

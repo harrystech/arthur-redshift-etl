@@ -68,7 +68,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     Retrieve table definition (column names and types).
     """
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
-    attributes = etl.pg.query(cx, """
+    stmt = """
         SELECT a.attname AS "name"
              , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
              , a.attnotnull AS "not_null"
@@ -80,23 +80,25 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
            AND NOT a.attisdropped
            AND ns.nspname = %s
            AND cls.relname = %s
-         ORDER BY a.attnum
-         """, (table_name.schema, table_name.table))
+         ORDER BY a.attnum"""
+    attributes = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
     return [Attribute(**att) for att in attributes]
 
 
-def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, List[str]]:
+def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str, List[str]]]:
     """
     Retrieve table constraints from database by looking up indices.
 
-    We will only check primary key constraints and unique constraints.
+    We will only check primary key constraints and unique constraints. Also, if constraints
+    use functions we'll probably miss them.
+
     (To recreate the constraint, we could use `pg_get_indexdef`.)
     """
     # We need to make two trips to the database because Redshift doesn't support functions on int2vector types.
     # So we find out which indices exist (with unique constraints) and how many attributes are related to each,
     # then we look up the attribute names with our exquisitely hand-rolled "where" clause.
     # See http://www.postgresql.org/message-id/10279.1124395722@sss.pgh.pa.us for further explanations.
-    indices = etl.pg.query(cx, """
+    stmt_index = """
         SELECT i.indexrelid AS index_id
              , ic.relname AS index_name
              , CASE
@@ -111,23 +113,26 @@ def fetch_constraints(cx: connection, table_name: TableName) -> Mapping[str, Lis
          WHERE i.indisunique
            AND ns.nspname = %s
            AND cls.relname = %s
-         ORDER BY ic.relname
-        """, (table_name.schema, table_name.table))
+         ORDER BY "constraint_type", ic.relname"""
+    indices = etl.pg.query(cx, stmt_index, (table_name.schema, table_name.table))
+
+    stmt_att = """
+        SELECT a.attname AS "name"
+          FROM pg_catalog.pg_attribute AS a
+          JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
+          WHERE i.indexrelid = %%s
+            AND (%s)
+          ORDER BY a.attname"""
     found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
         cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(2))
-        attributes = etl.pg.query(cx, """
-            SELECT a.attname AS "name"
-              FROM pg_catalog.pg_attribute AS a
-              JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
-              WHERE i.indexrelid = %%s
-                AND (%s)
-              ORDER BY a.attname
-              """ % cond, (index_id,))
-        columns = list(att["name"] for att in attributes)
-        logger.info("Index '%s' of '%s' adds constraint %s",
-                    index_name, table_name.identifier, json.dumps({constraint_type: columns}))
-        found.append({constraint_type: columns})
+        attributes = etl.pg.query(cx, stmt_att % cond, (index_id,))
+        if attributes:
+            columns = list(att["name"] for att in attributes)
+            constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
+            logger.info("Index '%s' of '%s' adds constraint %s",
+                        index_name, table_name.identifier, json.dumps(constraint))
+            found.append(constraint)
     return found
 
 
@@ -135,7 +140,7 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
     """
     Lookup dependencies (other tables)
     """
-    # See from https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
+    # See https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
     stmt = """
         SELECT DISTINCT
                target_ns.nspname AS "schema"
@@ -148,6 +153,7 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
           JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
          WHERE ns.nspname = %s
            AND cls.relname = %s
+         ORDER BY "schema", "table"
         """
     dependencies = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
     return [TableName(**row).identifier for row in dependencies]
@@ -178,7 +184,9 @@ def create_table_design_for_ctas(conn, table_name, type_maps):
     """
     table_design = create_table_design(conn, table_name, table_name, type_maps)
     table_design["source_name"] = "CTAS"
-    table_design["depends_on"] = fetch_dependencies(conn, table_name)
+    dependencies = fetch_dependencies(conn, table_name)
+    if dependencies:
+        table_design["depends_on"] = dependencies
     return table_design
 
 
@@ -211,12 +219,12 @@ def make_item_sorter():
         "primary_key", "surrogate_key", "natural_key", "unique",  # only table constraints
         "sql_type", "type", "expression", "source_sql_type", "not_null", "identity"  # only columns
     ]
-    order_lookup = {key: (i, key.lower()) for i, key in enumerate(preferred_order)}
+    order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
     max_index = len(preferred_order)
 
     def sort_key(item):
         key, value = item
-        return order_lookup.get(key, (max_index, key.lower()))
+        return order_lookup.get(key, (max_index, key))
 
     return sort_key
 
