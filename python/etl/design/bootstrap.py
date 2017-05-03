@@ -1,20 +1,20 @@
-from contextlib import closing
 import logging
 import os.path
+from contextlib import closing
 from typing import List, Mapping
 
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
-from etl.config.dw import DataWarehouseSchema
-from etl.design import Attribute, ColumnDefinition
 import etl.design.load
 import etl.file_sets
-from etl.names import TableName, TableSelector, join_with_quotes
 import etl.pg
-from etl.relation import RelationDescription
 import etl.s3
+from etl.config.dw import DataWarehouseSchema
+from etl.design import Attribute, ColumnDefinition
+from etl.names import TableName, TableSelector, join_with_quotes
+from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -159,7 +159,7 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
     return [TableName(**row).identifier for row in dependencies]
 
 
-def create_table_design(conn, source_table_name, target_table_name, type_maps):
+def create_table_design(conn: connection, source_table_name, target_table_name, type_maps):
     """
     Create (and return) new table design
     """
@@ -178,28 +178,28 @@ def create_table_design(conn, source_table_name, target_table_name, type_maps):
     return table_design
 
 
-def create_table_design_for_ctas(conn, table_name, type_maps):
+def create_table_design_for_ctas(conn: connection, tmp_view_name, relation, type_maps):
     """
     Create (and return) new table design for a CTAS
     """
-    table_design = create_table_design(conn, table_name, table_name, type_maps)
+    table_design = create_table_design(conn, tmp_view_name, relation.target_table_name, type_maps)
     table_design["source_name"] = "CTAS"
-    dependencies = fetch_dependencies(conn, table_name)
+    dependencies = fetch_dependencies(conn, tmp_view_name)
     if dependencies:
         table_design["depends_on"] = dependencies
     return table_design
 
 
-def create_table_design_for_view(conn, table_name):
+def create_table_design_for_view(conn: connection, tmp_view_name: TableName, relation: RelationDescription):
     """
     Create (and return) new table design suited for a view
     """
-    columns = fetch_attributes(conn, table_name)
+    columns = fetch_attributes(conn, tmp_view_name)
     table_design = {
-        "name": "%s" % table_name.identifier,
+        "name": "%s" % relation.identifier,
         "source_name": "VIEW",
         "columns": [{"name": column.name} for column in columns],
-        "depends_on": fetch_dependencies(conn, table_name)
+        "depends_on": fetch_dependencies(conn, tmp_view_name)
     }
     return table_design
 
@@ -216,7 +216,6 @@ def make_item_sorter():
     preferred_order = [
         "name", "description",  # always (tables, columns, etc.)
         "source_name", "unload_target", "columns", "constraints", "attributes", "depends_on",  # only tables
-        "primary_key", "surrogate_key", "natural_key", "unique",  # only table constraints
         "sql_type", "type", "expression", "source_sql_type", "not_null", "identity"  # only columns
     ]
     order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
@@ -311,40 +310,6 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     return len(source_tables)
 
 
-def create_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=False):
-    """
-    Create views for queries that do not already have a table design.
-
-    To avoid modifying the data warehouse by accident, this will fail if any of the relations already exist.
-    """
-    with closing(etl.pg.connection(dsn_etl)) as conn:
-        with conn:
-            for relation in relations:
-                ddl_stmt = """CREATE VIEW {} AS\n{}""".format(relation, relation.query_stmt)
-                if dry_run:
-                    logger.info("Dry-run: Skipping creation of view '%s'", relation.identifier)
-                    logger.debug("Testing query for '%s' (syntax, dependencies, ...)", relation.identifier)
-                    etl.pg.explain(conn, relation.query_stmt)
-                else:
-                    logger.info("Creating view for '%s' which has no design file", relation.identifier)
-                    etl.pg.execute(conn, ddl_stmt)
-
-
-def drop_views(dsn_etl: dict, relations: List[RelationDescription], dry_run=False):
-    """
-    Delete views that were created at the beginning of bootstrap.
-    """
-    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-        for relation in relations:
-            # Since this mirrors the all-or-nothing create_views we recklessly call "DROP VIEW" without "IF EXISTS".
-            ddl_stmt = """DROP VIEW {}""".format(relation)
-            if dry_run:
-                logger.info("Dry-run: Skipping deletion of view '%s'", relation.identifier)
-            else:
-                logger.info("Dropping view for '%s'", relation.identifier)
-                etl.pg.execute(conn, ddl_stmt)
-
-
 def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_maps, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
@@ -376,16 +341,12 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_map
         return
 
     transforms = [RelationDescription(file_set) for file_set in new_files]
-
-    create_views(dsn_etl, transforms, dry_run=dry_run)
-    try:
-        with closing(etl.pg.connection(dsn_etl, readonly=True)) as conn:
-            for relation in transforms:
-                table_name = relation.target_table_name
+    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
+        for relation in transforms:
+            with relation.matching_temporary_view(conn) as tmp_view_name:
                 if as_view:
-                    table_design = create_table_design_for_view(conn, table_name)
+                    table_design = create_table_design_for_view(conn, tmp_view_name, relation)
                 else:
-                    table_design = create_table_design_for_ctas(conn, table_name, type_maps)
-                save_table_design(local_dir, table_name.schema, table_name, table_design, dry_run=dry_run)
-    finally:
-        drop_views(dsn_etl, transforms, dry_run=dry_run)
+                    table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, type_maps)
+                save_table_design(local_dir, relation.source_name, relation.target_table_name, table_design,
+                                  dry_run=dry_run)

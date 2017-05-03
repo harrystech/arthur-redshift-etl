@@ -44,33 +44,33 @@ logger.addHandler(logging.NullHandler())
 _error_occurred = threading.Event()
 
 
-def validate_relation_description(description: RelationDescription, keep_going=False) -> Optional[RelationDescription]:
+def validate_relation_description(relation: RelationDescription, keep_going=False) -> Optional[RelationDescription]:
     """
     Load table design (which always also validates against the schema).
     If we try to keep_going, then we don't fail but return None for invalid table designs.
     """
-    logger.info("Loading and validating file '%s'", description.design_file_name)
+    logger.info("Loading and validating file '%s'", relation.design_file_name)
     try:
-        description.load()
+        relation.load()
     except ETLConfigError:
         if keep_going:
             _error_occurred.set()
-            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", description.identifier)
+            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier)
             return None
         else:
             raise
-    return description
+    return relation
 
 
-def validate_semantics(descriptions: List[RelationDescription], keep_going=False) -> List[RelationDescription]:
+def validate_semantics(relations: List[RelationDescription], keep_going=False) -> List[RelationDescription]:
     """
     Load local design files and validate them along the way against schemas and semantics.
 
-    Return list of successfully validated description or raise exception on validation error.
+    Return list of successfully validated relations or raise exception on validation error.
     """
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        result = executor.map(lambda description: validate_relation_description(description, keep_going), descriptions)
-    # Drop all descriptions from the result which returned None (meaning they failed validation).
+        result = executor.map(lambda relation: validate_relation_description(relation, keep_going), relations)
+    # Drop all relations from the result which returned None (meaning they failed validation).
     return list(filter(None, result))
 
 
@@ -102,23 +102,23 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
         return None
 
 
-def validate_dependencies(conn: connection, description: RelationDescription, tmp_view_name: TableName) -> None:
+def validate_dependencies(conn: connection, relation: RelationDescription, tmp_view_name: TableName) -> None:
     """
     Download the dependencies (usually, based on the temporary view) and compare with table design.
     """
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
     # We break with tradition and show the list of dependencies such that they can be copied into a design file.
-    logger.info("Dependencies of '%s' per catalog: %s", description.identifier, json.dumps(dependencies))
+    logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, json.dumps(dependencies))
 
-    difference = compare_query_to_design(dependencies, description.table_design.get("depends_on", []))
+    difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
-        logger.error("Mismatch in dependencies of '{}': {}".format(description.identifier, difference))
-        raise TableDesignValidationError("mismatched dependencies in '%s'" % description.identifier)
+        logger.error("Mismatch in dependencies of '{}': {}".format(relation.identifier, difference))
+        raise TableDesignValidationError("mismatched dependencies in '%s'" % relation.identifier)
     else:
         logger.info('Dependencies listing in design file matches SQL')
 
 
-def validate_column_ordering(conn: connection, description: RelationDescription, tmp_view_name: TableName) -> None:
+def validate_column_ordering(conn: connection, relation: RelationDescription, tmp_view_name: TableName) -> None:
     """
     Download the column order (using the temporary view) and compare with table design.
     """
@@ -126,21 +126,21 @@ def validate_column_ordering(conn: connection, description: RelationDescription,
     actual_columns = [attribute.name for attribute in attributes]
 
     # Identity columns are inserted after the query has been run, so skip them here.
-    expected_columns = [column["name"] for column in description.table_design["columns"]
+    expected_columns = [column["name"] for column in relation.table_design["columns"]
                         if not (column.get("skipped") or column.get("identity"))]
 
     diff = get_list_difference(expected_columns, actual_columns)
     if diff:
         logger.error("Order of columns in design of '%s' does not match result of running its query",
-                     description.identifier)
+                     relation.identifier)
         logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                     description.identifier, join_with_quotes(diff))
-        raise TableDesignValidationError("invalid columns or column order in '%s'" % description.identifier)
+                     relation.identifier, join_with_quotes(diff))
+        raise TableDesignValidationError("invalid columns or column order in '%s'" % relation.identifier)
     else:
-        logger.info("Order of columns in design of '%s' matches result of running SQL query", description.identifier)
+        logger.info("Order of columns in design of '%s' matches result of running SQL query", relation.identifier)
 
 
-def validate_single_transform(conn: connection, description: RelationDescription, keep_going: bool= False) -> None:
+def validate_single_transform(conn: connection, relation: RelationDescription, keep_going: bool= False) -> None:
     """
     Test-run a relation (CTAS or VIEW) by creating a temporary view.
 
@@ -148,33 +148,32 @@ def validate_single_transform(conn: connection, description: RelationDescription
     to make sure table design and query match up.
     """
     try:
-        with description.matching_temporary_view(conn) as tmp_view_name:
-            validate_dependencies(conn, description, tmp_view_name)
-            validate_column_ordering(conn, description, tmp_view_name)
+        with relation.matching_temporary_view(conn) as tmp_view_name:
+            validate_dependencies(conn, relation, tmp_view_name)
+            validate_column_ordering(conn, relation, tmp_view_name)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if keep_going:
             _error_occurred.set()
             logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
-                             description.identifier)
+                             relation.identifier)
         else:
             raise
 
 
-def validate_transforms(dsn: dict, descriptions: List[RelationDescription], keep_going: bool=False) -> None:
+def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool=False) -> None:
     """
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
     This allows us to check their syntax, their dependencies, etc.
     """
-    transforms = [description for description in descriptions
-                  if description.is_ctas_relation or description.is_view_relation]
+    transforms = [relation for relation in relations if relation.is_ctas_relation or relation.is_view_relation]
     if not transforms:
         logger.info("No transforms found or selected, skipping CTAS or VIEW validation")
         return
 
     # FIXME Parallelize but use separate connections per thread
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
-        for description in transforms:
-            validate_single_transform(conn, description, keep_going=keep_going)
+        for relation in transforms:
+            validate_single_transform(conn, relation, keep_going=keep_going)
 
 
 def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
@@ -200,7 +199,7 @@ def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     return sorted(diff)
 
 
-def validate_reload(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription], keep_going: bool):
+def validate_reload(schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
 
@@ -210,11 +209,11 @@ def validate_reload(schemas: List[DataWarehouseSchema], descriptions: List[Relat
     Note that the order matters for these lists of columns.  (Which is also why we can't take
     the (symmetric) difference between columns but must be careful checking the column lists.)
     """
-    unloaded_descriptions = [d for d in descriptions if d.is_unloadable]
+    unloaded_relations = [d for d in relations if d.is_unloadable]
     target_lookup = {schema.name for schema in schemas if schema.is_an_unload_target}
-    descriptions_lookup = {d.identifier: d for d in descriptions}
+    relations_lookup = {d.identifier: d for d in relations}
 
-    for unloaded in unloaded_descriptions:
+    for unloaded in unloaded_relations:
         try:
             if unloaded.unload_target not in target_lookup:
                 raise TableDesignValidationError("invalid target '%s' in unloadable relation '%s'" %
@@ -222,18 +221,18 @@ def validate_reload(schemas: List[DataWarehouseSchema], descriptions: List[Relat
             else:
                 logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
                 reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
-                if reloaded.identifier in descriptions_lookup:
-                    description = descriptions_lookup[reloaded.identifier]
+                if reloaded.identifier in relations_lookup:
+                    relation = relations_lookup[reloaded.identifier]
                     logger.info("Checking for consistency between '%s' and '%s'",
-                                unloaded.identifier, description.identifier)
+                                unloaded.identifier, relation.identifier)
                     unloaded_columns = unloaded.unquoted_columns
-                    reloaded_columns = description.unquoted_columns
+                    reloaded_columns = relation.unquoted_columns
                     if unloaded_columns != reloaded_columns:
                         diff = get_list_difference(reloaded_columns, unloaded_columns)
                         logger.error("Column difference detected between '%s' and '%s'",
-                                     unloaded.identifier, description.identifier)
+                                     unloaded.identifier, relation.identifier)
                         logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                                     description.identifier, join_with_quotes(diff))
+                                     relation.identifier, join_with_quotes(diff))
                         raise TableDesignValidationError("unloaded relation '%s' failed to match counterpart" %
                                                          unloaded.identifier)
         except TableDesignValidationError:
@@ -360,7 +359,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
             raise
 
 
-def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: List[RelationDescription],
+def validate_upstream_sources(schemas: List[DataWarehouseSchema], relations: List[RelationDescription],
                               keep_going: bool=False) -> None:
     """
     Validate the designs (and the current configuration) in comparison to upstream databases.
@@ -374,8 +373,8 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
     """
     source_lookup = {schema.name: schema for schema in schemas if schema.is_database_source}
 
-    # Re-sort descriptions by source so that we need to only connect once to each source
-    upstream_tables = [description for description in descriptions if description.source_name in source_lookup]
+    # Re-sort relations by source so that we need to only connect once to each source
+    upstream_tables = [relation for relation in relations if relation.source_name in source_lookup]
     if not upstream_tables:
         logger.info("No upstream tables found or selected, skipping source validation")
         return
@@ -391,23 +390,23 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], descriptions: 
                 validate_upstream_table(conn, table, keep_going=keep_going)
 
 
-def validate_execution_order(descriptions: List[RelationDescription], keep_going=False):
+def validate_execution_order(relations: List[RelationDescription], keep_going=False):
     """
     Wrapper around order_by_dependencies to deal with our keep_going predilection.
     """
     try:
-        ordered_descriptions = etl.relation.order_by_dependencies(descriptions)
+        ordered_relations = etl.relation.order_by_dependencies(relations)
     except ETLConfigError:
         if keep_going:
             _error_occurred.set()
             logger.exception("Failed to determine evaluation order, proceeding as requested:")
-            return descriptions
+            return relations
         else:
             raise
-    return ordered_descriptions
+    return ordered_relations
 
 
-def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDescription], keep_going=False,
+def validate_designs(config: DataWarehouseConfig, relations: List[RelationDescription], keep_going=False,
                      skip_sources=False, skip_dependencies=False) -> None:
     """
     Make sure that all table design files pass the validation checks.
@@ -416,7 +415,7 @@ def validate_designs(config: DataWarehouseConfig, descriptions: List[RelationDes
     """
     _error_occurred.clear()
 
-    valid_descriptions = validate_semantics(descriptions, keep_going=keep_going)
+    valid_descriptions = validate_semantics(relations, keep_going=keep_going)
     ordered_descriptions = validate_execution_order(valid_descriptions, keep_going=keep_going)
 
     validate_reload(config.schemas, valid_descriptions, keep_going=keep_going)
