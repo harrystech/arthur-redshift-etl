@@ -235,10 +235,6 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-p", "--prefix",
                             help="select prefix in S3 bucket (default is your user name: '%(default)s')",
                             default=getpass.getuser())
-    if "table-design-dir" in options:
-        parser.add_argument("-t", "--table-design-dir",
-                            help="set path to directory with table design files (default: '%(default)s')",
-                            default="./schemas")
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",
@@ -255,6 +251,8 @@ def add_standard_arguments(parser, options):
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
+    # Cannot be set on the command line since changing it is not supported by file sets.
+    parser.set_defaults(table_design_dir="./schemas")
 
 
 class StorePatternAsSelector(argparse.Action):
@@ -394,7 +392,7 @@ class BootstrapSourcesCommand(SubCommand):
                          " If there is no current design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "dry-run"])
         parser.add_argument("-a", "--auto",
                             help="DEPRECATED use 'auto_design' instead",
                             action="store_true")
@@ -418,7 +416,7 @@ class BootstrapTransformationsCommand(SubCommand):
     def add_arguments(self, parser):
         parser.add_argument('type', choices=['CTAS', 'VIEW'],
                             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
@@ -438,7 +436,7 @@ class SyncWithS3Command(SubCommand):
                          " (*.yaml in config directories).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
                             default=False, action="store_true")
         parser.add_argument("-d", "--deploy-config",
@@ -608,7 +606,7 @@ class ValidateDesignsCommand(SubCommand):
                          " (use '-nskq' to see only errors or warnings, without connecting to a database).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
         parser.add_argument("-s", "--skip-sources-check",
@@ -634,7 +632,7 @@ class ExplainQueryCommand(SubCommand):
                          "Run EXPLAIN on queries (for CTAS or VIEW), check query plan for distributions.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
     def callback(self, args, config):
         if args.scheme == "file":
@@ -656,7 +654,7 @@ class ListFilesCommand(SubCommand):
                          "List files in the S3 bucket and starting with prefix by source, table, and file type.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
                             action="store_true")
 
@@ -693,7 +691,7 @@ class ShowDependentsCommand(SubCommand):
                          "Show relations in execution order (includes selected and all dependent relations).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args,
