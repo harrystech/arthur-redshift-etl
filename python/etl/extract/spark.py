@@ -90,7 +90,7 @@ class SparkExtractor(Extractor):
                                             table=select_statement)
         return df
 
-    def determine_partitioning(self, source_table_name: TableName, description: RelationDescription,
+    def determine_partitioning(self, source_table_name: TableName, relation: RelationDescription,
                                read_access: Dict[str, str]) -> List[str]:
         """
         Guesstimate number of partitions based on actual table size and create list of predicates to split
@@ -101,11 +101,10 @@ class SparkExtractor(Extractor):
         (This requirement doesn't come from the table size but the need to split the table
         when reading it in.)
         """
-        partition_key = description.find_partition_key()  # type: Optional[str]
+        partition_key = relation.find_partition_key()  # type: Optional[str]
         if partition_key is None:
             self.logger.info("No partition key found for '%s', skipping partitioning", source_table_name.identifier)
             return []
-        self.logger.debug("Partition key for table '%s' is '%s'", source_table_name.identifier, partition_key)
 
         predicates = []
         with closing(etl.pg.connection(read_access, readonly=True)) as conn:

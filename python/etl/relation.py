@@ -220,18 +220,18 @@ class RelationDescription:
         """
         constraints = self.table_design.get("constraints", [])
         primary_keys = [col for constraint in constraints for col in constraint.get("primary_key", [])]
-        if len(primary_keys) != 1:
-            return None
-
-        primary_key = primary_keys[0]
-        for column in self.table_design["columns"]:
-            if column["name"] == primary_key:
-                # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
-                if column["type"] in ("int", "long"):
-                    return primary_key
-                logger.warning("Primary key '%s' is not a number and is not usable as a partition key for '%s'",
-                               primary_key, self.identifier)
-                break
+        if len(primary_keys) == 1:
+            primary_key = primary_keys[0]
+            for column in self.table_design["columns"]:
+                if column["name"] == primary_key:
+                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+                    if column["type"] in ("int", "long"):
+                        logger.debug("Partition key for table '%s' is '%s'", self.identifier, primary_key)
+                        return primary_key
+                    logger.warning("Primary key '%s' is not a number and is not usable as a partition key for '%s'",
+                                   primary_key, self.identifier)
+                    break
+        logger.debug("Found no partition key for table '%s'", self.identifier)
         return None
 
     @contextmanager
