@@ -393,6 +393,10 @@ class MemoryStorage(PayloadDispatcher):
     Store ETL events in memory and make the events accessible via HTTP
 
     When the ETL is running for extract, load, or unload, connect to port 8086.
+
+    When the ETL is running on a host other than your local computer, say in EC2, then use
+    port forwarding, to send requests from your host to an address seen on the other host:
+        ssh -L 8086:localhost:8086 <hostname>
     """
     SERVER_ADDRESS = ('', 8086)
 
