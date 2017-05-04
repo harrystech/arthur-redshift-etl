@@ -14,11 +14,13 @@ import os
 import queue
 import random
 import re
+import textwrap
 import threading
 import time
 import traceback
 import urllib.parse
 import uuid
+from collections import defaultdict, OrderedDict
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
@@ -390,11 +392,16 @@ class MemoryStorage(PayloadDispatcher):
     """
     Store ETL events in memory and make the events accessible via HTTP
 
-    When the ETL is running for extract, load, or unload, connect to port 8080.
-    """
-    SERVER_ADDRESS = ('', 8080)
+    When the ETL is running for extract, load, or unload, connect to port 8086.
 
-    HEADER = """<!DOCTYPE html>
+    When the ETL is running on a host other than your local computer, say in EC2, then use
+    port forwarding, to send requests from your host to an address seen on the other host:
+        ssh -L 8086:localhost:8086 <hostname>
+    """
+    SERVER_ADDRESS = ('', 8086)
+
+    HEADER = """
+        <!DOCTYPE html>
         <html>
         <head>
         <!-- <meta http-equiv="refresh" content="5"> -->
@@ -423,61 +430,71 @@ class MemoryStorage(PayloadDispatcher):
         }
         </style>
         </head>
-        <body>
-        """
+        <body>"""
     FOOTER = """
         </body>
         </html>"""
 
     def __init__(self):
         self.queue = queue.Queue()
-        self.buffer = []
-        self.index = {"current": 0, "final": 1}
-        self.last_modified = "(empty)"
+        self.events = OrderedDict()
+        self.index = defaultdict(dict)
+        self.last_modified = "(unknown)"
         handler_class = self.create_handler()
         self.start_daemon(handler_class)
 
     def store(self, payload: dict):
         self.update_last_modified()
         self.queue.put(payload)
-        self.index.update(payload.get("extra", {}).get("index", {}))
 
     def update_last_modified(self):
         now = datetime.datetime.now()
         self.last_modified = now.strftime("%a, %d %b %Y %H:%M:%S %Z")
 
+    def drain_queue(self):
+        try:
+            while True:
+                payload = self.queue.get_nowait()
+                key = payload["target"], payload["step"]
+                self.events[key] = payload
+                index = payload.get("extra", {}).get("index", {})
+                name = index.get("name", "N/A")
+                self.index[name].update(index)
+        except queue.Empty:
+            pass
+
     def get_content(self):
         """
         Return all events stored so far as a giant blob of text.
         """
-        try:
-            while True:
-                event = self.queue.get_nowait()
-                line = """
-                    <tr><td>{etl_id}</td><td>{target}</td><td>{step}</td><td>{event}</td></tr>
-                    """.format(**event)
-                self.buffer.append(line)
-        except queue.Empty:
-            pass
+        self.drain_queue()
         text = self.HEADER
-        # Add a table with the current progress meter (200px * percentage = 2 * percentage points)
-        percentage = (100.0 * self.index["current"])/self.index["final"]
         text += """
             <table>
-              <tr><th>Current Index</th><th>Final Index</th><th colspan="2">Progress</th></tr>
-              <tr><td>{}</td><td>{}</td><td>{:.0f}%</td><td><div id="progress" style="width: {:.0f}px"></div></td></tr>
-            </table><br /><br />
-            """.format(self.index["current"], self.index["final"], percentage, 2 * percentage)
-        # Add a table with all the events
+            <tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan="2">Progress</th></tr>"""
+        # Add a table with the current progress meter (200px * percentage = 2 * percentage points)
+        for name in sorted(self.index):
+            index = self.index[name]
+            percentage = (100.0 * index["current"])/index["final"]
+            text += """
+                <tr>
+                    <td>{}</td><td>{}</td><td>{}</td>
+                    <td>{:.0f}%</td><td style="width:200px"><div id="progress" style="width:{:.0f}px"></div></td>
+                </tr>""".format(name, index["current"], index["final"], percentage, 2 * percentage)
+        text += """</table><br /><br />"""
+        # Add a table with all the latest events
         text += """
             <table class="events">
-            <tr><th>ETL ID</th><th>Target</th><th>Step</th><th>Event</th></tr>
-            """
-        text += '\n'.join(self.buffer)
+            <tr><th>ETL ID</th><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th></tr>"""
+        buffer = [
+            """<tr><td>{etl_id}</td><td>{target}</td><td>{step}</td><td>{event}</td><td>{timestamp}</td></tr>
+            """.format(**self.events[key]) for key in self.events
+        ]
+        text += '\n'.join(buffer)
         text += """</table>"""
-        text += "<pre>Last modified: {}</pre>".format(self.last_modified)
+        text += "<br /><hr />Last modified: {}".format(self.last_modified)
         text += self.FOOTER
-        return text
+        return textwrap.dedent(text).strip()
 
     def create_handler(self):
         """

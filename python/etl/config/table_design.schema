@@ -134,38 +134,54 @@
             ]
         },
         "constraints": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "oneOf": [
-                    {   
-                        "properties": {
-                            "primary_key": { "$ref": "#/definitions/column_list" }
-                        },
-                        "additionalProperties": false
+            "oneOf": [
+                {
+                    "type": "object",
+                    "description": "DEPRECATED format from v0.23.0 and earlier",
+                    "properties": {
+                        "primary_key": { "$ref": "#/definitions/column_list" },
+                        "natural_key": { "$ref": "#/definitions/column_list" },
+                        "surrogate_key": { "$ref": "#/definitions/one_column_as_list" },
+                        "unique": { "$ref": "#/definitions/column_list" }
                     },
-                    {
-                        "properties": {
-                            "natural_key": { "$ref": "#/definitions/column_list" }
-                        },
-                        "additionalProperties": false
+                    "additionalProperties": false
+                },
+                {
+                    "type": "array",
+                    "description": "List of constraints where only unique constraints may appear multiple times",
+                    "items": {
+                        "type": "object",
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "primary_key": { "$ref": "#/definitions/column_list" }
+                                },
+                                "additionalProperties": false
+                            },
+                            {
+                                "properties": {
+                                    "natural_key": { "$ref": "#/definitions/column_list" }
+                                },
+                                "additionalProperties": false
+                            },
+                            {
+                                "properties": {
+                                    "surrogate_key": { "$ref": "#/definitions/one_column_as_list" }
+                                },
+                                "additionalProperties": false
+                            },
+                            {
+                                "properties": {
+                                    "unique": { "$ref": "#/definitions/column_list" }
+                                },
+                                "additionalProperties": false
+                            }
+                        ]
                     },
-                    {
-                        "properties": { 
-                            "surrogate_key": { "$ref": "#/definitions/one_column_as_list" }
-                        },
-                        "additionalProperties": false
-                    },
-                    {
-                        "properties": {
-                            "unique": { "$ref": "#/definitions/column_list" }
-                        },
-                        "additionalProperties": false
-                    }
-                ]
-            },
-            "uniqueItems": true,
-            "minItems": 1
+                    "uniqueItems": true,
+                    "minItems": 1
+                }
+            ]
         },
         "attributes": {
             "type": "object",

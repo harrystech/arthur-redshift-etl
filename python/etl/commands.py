@@ -212,7 +212,7 @@ def build_full_parser(prog_name):
             ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
             UnloadDataToS3Command,
             # Helper commands
-            RestoreSchemasCommand,
+            CreateSchemasCommand, RestoreSchemasCommand,
             ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
@@ -235,10 +235,6 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-p", "--prefix",
                             help="select prefix in S3 bucket (default is your user name: '%(default)s')",
                             default=getpass.getuser())
-    if "table-design-dir" in options:
-        parser.add_argument("-t", "--table-design-dir",
-                            help="set path to directory with table design files (default: '%(default)s')",
-                            default="./schemas")
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",
@@ -255,6 +251,8 @@ def add_standard_arguments(parser, options):
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
+    # Cannot be set on the command line since changing it is not supported by file sets.
+    parser.set_defaults(table_design_dir="./schemas")
 
 
 class StorePatternAsSelector(argparse.Action):
@@ -394,14 +392,9 @@ class BootstrapSourcesCommand(SubCommand):
                          " If there is no current design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
-        parser.add_argument("-a", "--auto",
-                            help="DEPRECATED use 'auto_design' instead",
-                            action="store_true")
+        add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
-        if args.auto:
-            raise InvalidArgumentsError("Option --auto is no longer supported.  Use 'auto_design' instead.")
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
         etl.design.bootstrap.bootstrap_sources(config.schemas, args.pattern, args.table_design_dir, local_files,
                                                config.type_maps, dry_run=args.dry_run)
@@ -418,7 +411,7 @@ class BootstrapTransformationsCommand(SubCommand):
     def add_arguments(self, parser):
         parser.add_argument('type', choices=['CTAS', 'VIEW'],
                             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
@@ -438,7 +431,7 @@ class SyncWithS3Command(SubCommand):
                          " (*.yaml in config directories).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
                             default=False, action="store_true")
         parser.add_argument("-d", "--deploy-config",
@@ -553,6 +546,29 @@ class UnloadDataToS3Command(SubCommand):
                                     keep_going=args.keep_going, dry_run=args.dry_run)
 
 
+class CreateSchemasCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("create_schemas",
+                         "create schemas from data warehouse config",
+                         "Create schemas as configured and set (or add) permissions")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "dry-run"])
+
+    def callback(self, args, config):
+        schema_names = args.pattern.selected_schemas()
+        pretty_names = etl.names.join_with_quotes(schema_names)
+        schemas = [schema for schema in config.schemas if schema.name in schema_names]
+        if args.dry_run:
+            logger.info("Dry-run: Skipping creating schema(s): %s", pretty_names)
+        else:
+            logger.info("Creating schema(s): %s", pretty_names)
+            with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
+                with etl.pg.log_error():
+                    etl.dw.create_schemas(conn, schemas)
+
+
 class RestoreSchemasCommand(SubCommand):
 
     def __init__(self):
@@ -564,12 +580,13 @@ class RestoreSchemasCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
-        schemas = [schema for schema in config.schemas if args.pattern.match_schema(schema.name)]
-        pretty_names = etl.names.join_with_quotes(schema.name for schema in schemas)
+        schema_names = args.pattern.selected_schemas()
+        pretty_names = etl.names.join_with_quotes(schema_names)
+        schemas = [schema for schema in config.schemas if schema.name in schema_names]
         if args.dry_run:
-            logger.info("Dry-run: Skipping restore from backup for %s", pretty_names)
+            logger.info("Dry-run: Skipping restore from backup for schema(s): %s", pretty_names)
         else:
-            logger.info("Restoring schemas from backup: %s", pretty_names)
+            logger.info("Restoring schema(s) from backup: %s", pretty_names)
             with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
                 with etl.pg.log_error():
                     etl.dw.restore_schemas(conn, schemas)
@@ -584,7 +601,7 @@ class ValidateDesignsCommand(SubCommand):
                          " (use '-nskq' to see only errors or warnings, without connecting to a database).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
                             default=False, action="store_true")
         parser.add_argument("-s", "--skip-sources-check",
@@ -610,7 +627,7 @@ class ExplainQueryCommand(SubCommand):
                          "Run EXPLAIN on queries (for CTAS or VIEW), check query plan for distributions.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
     def callback(self, args, config):
         if args.scheme == "file":
@@ -632,7 +649,7 @@ class ListFilesCommand(SubCommand):
                          "List files in the S3 bucket and starting with prefix by source, table, and file type.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
                             action="store_true")
 
@@ -669,7 +686,7 @@ class ShowDependentsCommand(SubCommand):
                          "Show relations in execution order (includes selected and all dependent relations).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "table-design-dir", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args,
@@ -718,7 +735,7 @@ class SelfTestCommand(SubCommand):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument("test_family", help="select which family of tests to run",
-                            nargs='?', choices=["doctest", "typecheck", "all"], default="doctest")
+                            nargs='?', choices=["doctest", "typecheck", "all"], default="all")
 
     def callback(self, args, config):
         if args.test_family in ("doctest", "all"):

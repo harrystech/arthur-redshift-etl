@@ -208,6 +208,9 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
                     file_sets = []
                 else:
                     raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
+        elif allow_empty:
+            logger.warning("Failed to find directory: '%s'", path)
+            file_sets = []
         else:
             raise FileNotFoundError("Failed to find directory: '%s'" % path)
     # Bind the files that were found to where they were found
