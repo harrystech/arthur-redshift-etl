@@ -64,7 +64,7 @@ RELEASE_FILE="/tmp/setup_env_release_${USER}_$$.txt"
 > "$RELEASE_FILE"
 trap "rm \"$RELEASE_FILE\"" EXIT
 
-python3 setup.py --fullname >> "$RELEASE_FILE"
+# python3 setup.py --fullname >> "$RELEASE_FILE"
 git rev-parse --show-toplevel >> "$RELEASE_FILE"
 git rev-parse HEAD >> "$RELEASE_FILE"
 date "+%Y-%m-%d %H:%M:%S%z" >> "$RELEASE_FILE"
@@ -99,4 +99,5 @@ fi
 
 set +x
 echo
-echo "You should *now* run: arthur.py sync --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
+echo "You should *now* run:"
+echo "arthur.py sync --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
