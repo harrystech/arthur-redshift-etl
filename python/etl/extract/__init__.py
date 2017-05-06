@@ -29,7 +29,6 @@ of upstream sources. The data is stored in gzipped CSV form, into a specified ke
 import logging
 from typing import List, Dict
 
-import etl.pg
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
 from etl.extract.spark import SparkExtractor

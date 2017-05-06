@@ -156,8 +156,7 @@ class SqoopExtractor(Extractor):
                                      universal_newlines=True)
             self.logger.debug("Sqoop is running with pid %d", sqoop.pid)
             out, err = sqoop.communicate()
-            # Thanks to universal_newlines, out and err are str not bytes (even if PyCharm thinks differently)
-            nice_out, nice_err = ('\n' + out).rstrip(), ('\n' + err).rstrip()
+            nice_out, nice_err = ('\n' + str(out)).rstrip(), ('\n' + str(err)).rstrip()  # using str() for type check
             self.logger.debug("Sqoop finished with return code %d", sqoop.returncode)
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
