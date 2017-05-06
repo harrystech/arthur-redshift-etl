@@ -65,8 +65,8 @@
             # CAVEAT EMPTOR This only works if your database is running in UTC.
             "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            # N.B. Newer versions of PostgreSQL have a more useful hstore_to_json function but this works for 9.2
-            "hstore": ["varchar(65535)", "public.hstore_to_matrix(%s)::varchar(65535)", "string"],
+            # N.B. This requires a PostgreSQL version of 9.3 or better.
+            "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
             "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
             # The numeric data type without precision and scale should not be used upstream!
             "numeric": ["decimal(12,4)", "%s::decimal(12,4)", "string"],
