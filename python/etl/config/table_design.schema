@@ -196,10 +196,9 @@
                 "compound_sort": { "$ref": "#/definitions/column_list" },
                 "interleaved_sort": { "$ref": "#/definitions/column_list" }
             },
-            "oneOf": [
-                { "required": [ "distribution", "compound_sort" ] },
-                { "required": [ "distribution", "interleaved_sort" ] }
-            ],
+            "not": {
+                "required": [ "compound_sort", "interleaved_sort" ]
+            },
             "additionalProperties": false
         },
         "depends_on": {
