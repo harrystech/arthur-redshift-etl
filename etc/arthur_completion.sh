@@ -29,12 +29,12 @@ _arthur_completion()
         *)
             case "$cur" in
                 *.*)
-                    opts=$(find -L schemas -type f -name '*.yaml' 2>/dev/null |
-                           sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1.\2:')
+                    opts=$(find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
+                           sed -n -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\)\..*:\1.\2:p' | uniq)
                     ;;
                 *)
-                    opts=$(find -L schemas -type f -name '*.yaml' 2>/dev/null |
-                           sed -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\).yaml:\1:' | uniq)
+                    opts=$(find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
+                           sed -n -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\)\..*:\1:p' | uniq)
                     ;;
             esac
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )

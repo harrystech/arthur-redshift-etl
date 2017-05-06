@@ -1,6 +1,7 @@
 import logging
 import os.path
 from contextlib import closing
+from datetime import datetime
 from typing import List, Mapping
 
 import simplejson as json
@@ -159,30 +160,43 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
     return [TableName(**row).identifier for row in dependencies]
 
 
-def create_table_design(conn: connection, source_table_name, target_table_name, type_maps):
+def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
     """
-    Create (and return) new table design
+    Return partial table design with full column information
     """
+    type_maps = etl.config.get_dw_config().type_maps
+    as_is_attribute_type = type_maps["as_is_att_type"]  # source tables and CTAS
+    cast_needed_attribute_type = type_maps["cast_needed_att_type"]  # only source tables
+
     source_attributes = fetch_attributes(conn, source_table_name)
-    target_columns = [ColumnDefinition.from_attribute(att,
-                                                      type_maps["as_is_att_type"],
-                                                      type_maps["cast_needed_att_type"]) for att in source_attributes]
+    target_columns = [ColumnDefinition.from_attribute(attribute,
+                                                      as_is_attribute_type,
+                                                      cast_needed_attribute_type) for attribute in source_attributes]
     table_design = {
         "name": "%s" % target_table_name.identifier,
-        "source_name": "%s.%s" % (target_table_name.schema, source_table_name.identifier),
+        "description": "Automatically generated at {}".format(datetime.utcnow()),
         "columns": [column.to_dict() for column in target_columns]
     }
+    return table_design
+
+
+def create_table_design_for_source(conn: connection, source_table_name: TableName, target_table_name: TableName):
+    """
+    Create new table design for a table in an upstream source. If present, we gather the constraints from the source.
+    """
+    table_design = create_partial_table_design(conn, source_table_name, target_table_name)
+    table_design["source_name"] = "%s.%s" % (target_table_name.schema, source_table_name.identifier)
     constraints = fetch_constraints(conn, source_table_name)
     if constraints:
         table_design["constraints"] = constraints
     return table_design
 
 
-def create_table_design_for_ctas(conn: connection, tmp_view_name, relation, type_maps):
+def create_table_design_for_ctas(conn: connection, tmp_view_name: TableName, target_table_name: TableName):
     """
-    Create (and return) new table design for a CTAS
+    Create new table design for a CTAS. If tables are referenced, they are added in the dependencies list.
     """
-    table_design = create_table_design(conn, tmp_view_name, relation.target_table_name, type_maps)
+    table_design = create_partial_table_design(conn, tmp_view_name, target_table_name)
     table_design["source_name"] = "CTAS"
     dependencies = fetch_dependencies(conn, tmp_view_name)
     if dependencies:
@@ -190,17 +204,16 @@ def create_table_design_for_ctas(conn: connection, tmp_view_name, relation, type
     return table_design
 
 
-def create_table_design_for_view(conn: connection, tmp_view_name: TableName, relation: RelationDescription):
+def create_table_design_for_view(conn: connection, tmp_view_name: TableName, target_table_name: TableName):
     """
-    Create (and return) new table design suited for a view
+    Create (and return) new table design suited for a view. Views are expected to always depend on some
+    other relations. (Also, we only keep the names for columns.)
     """
-    columns = fetch_attributes(conn, tmp_view_name)
-    table_design = {
-        "name": "%s" % relation.identifier,
-        "source_name": "VIEW",
-        "columns": [{"name": column.name} for column in columns],
-        "depends_on": fetch_dependencies(conn, tmp_view_name)
-    }
+    # This creates a full column description with types (testing the type-maps), then drop all of it but their names.
+    table_design = create_partial_table_design(conn, tmp_view_name, target_table_name)
+    table_design["source_name"] = "VIEW"
+    table_design["columns"] = [{"name": column["name"]} for column in table_design["columns"]]
+    table_design["depends_on"] = fetch_dependencies(conn, tmp_view_name)
     return table_design
 
 
@@ -215,7 +228,7 @@ def make_item_sorter():
     """
     preferred_order = [
         "name", "description",  # always (tables, columns, etc.)
-        "source_name", "unload_target", "columns", "constraints", "attributes", "depends_on",  # only tables
+        "source_name", "unload_target", "depends_on", "columns", "constraints", "attributes",  # only tables
         "sql_type", "type", "expression", "source_sql_type", "not_null", "identity"  # only columns
     ]
     order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
@@ -228,27 +241,27 @@ def make_item_sorter():
     return sort_key
 
 
-def save_table_design(local_dir, source_name, source_table_name, table_design, dry_run=False) -> None:
+def save_table_design(source_dir: str, source_table_name: TableName, target_table_name: TableName,
+                      table_design: dict, overwrite=False, dry_run=False) -> None:
     """
     Write new table design file to disk.
 
-    Although this files are generated by computers, they get read by humans. So we try to be nice
+    Although these files are generated by computers, they get read by humans. So we try to be nice
     here and write them out with a specific order of the keys, like have name and description towards
     the top.
     """
-    target_table_name = TableName(source_name, source_table_name.table)
-    table = target_table_name.identifier
     # FIXME Move this logic into file sets (note that "source_name" is in table_design)
-    filename = os.path.join(local_dir, source_name, "{}-{}.yaml".format(source_table_name.schema,
-                                                                        source_table_name.table))
+    filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema,
+                                                            source_table_name.table))
+    this_table = target_table_name.identifier
     if dry_run:
-        logger.info("Dry-run: Skipping writing new table design file for '%s'", table)
-    elif os.path.exists(filename):
-        logger.warning("Skipping writing new table design for '%s' since '%s' already exists", table, filename)
+        logger.info("Dry-run: Skipping writing new table design file for '%s'", this_table)
+    elif os.path.exists(filename) and not overwrite:
+        logger.warning("Skipping writing new table design for '%s' since '%s' already exists", this_table, filename)
     else:
         # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
         etl.design.load.validate_table_design(table_design, target_table_name)
-        logger.info("Writing new table design file for '%s' to '%s'", table, filename)
+        logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
         # We use JSON pretty printing because it is prettier than YAML printing.
         with open(filename, 'w') as o:
             json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
@@ -272,11 +285,14 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
     return name
 
 
-def create_table_designs_from_source(source, selector, local_dir, local_files, type_maps, dry_run=False):
+def create_table_designs_from_source(source, selector, local_dir, local_files, dry_run=False):
     """
     Create table design files for tables from a single source to local directory.
     Whenever some table designs already exist locally, validate them against the information found from upstream.
     """
+    source_dir = os.path.join(local_dir, source.name)
+    normalize_and_create(source_dir, dry_run=dry_run)
+
     source_files = {file_set.source_table_name: file_set
                     for file_set in local_files
                     if file_set.source_name == source.name and file_set.design_file_name}
@@ -291,8 +307,8 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
                                 source_files[source_table_name].design_file_name)
                 else:
                     target_table_name = TableName(source.name, source_table_name.table)
-                    table_design = create_table_design(conn, source_table_name, target_table_name, type_maps)
-                    save_table_design(local_dir, source.name, source_table_name, table_design, dry_run=dry_run)
+                    table_design = create_table_design_for_source(conn, source_table_name, target_table_name)
+                    save_table_design(source_dir, source_table_name, target_table_name, table_design, dry_run=dry_run)
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
         logger.critical("Error while processing source '%s'", source.name)
@@ -310,7 +326,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, t
     return len(source_tables)
 
 
-def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_maps, dry_run=False):
+def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
     This will create new design files locally if they don't already exist for any relations tied
@@ -322,31 +338,34 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, type_map
             if not schema.is_database_source:
                 logger.info("Skipping schema which is not an upstream database source: '%s'", schema.name)
             else:
-                normalize_and_create(os.path.join(table_design_dir, schema.name), dry_run=dry_run)
                 total += create_table_designs_from_source(schema, selector, table_design_dir, local_files,
-                                                          type_maps, dry_run=dry_run)
+                                                          dry_run=dry_run)
     if not total:
         logger.warning("Found no matching tables in any upstream source for '%s'", selector)
 
 
-def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, type_maps, as_view, dry_run=False):
+def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view, overwrite=False, dry_run=False):
     """
-    Download design information for transformations.
+    Download design information for transformations by test-running them in the data warehouse.
     """
-    is_upstream = {schema.name for schema in schemas if schema.is_upstream_source}
-    new_files = [file_set for file_set in local_files
-                 if not file_set.design_file_name and file_set.source_name not in is_upstream]
-    if not new_files:
-        logger.info("Found no queries without matching design files")
+    transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
+    transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
+    if not overwrite:
+        transforms = [file_set for file_set in transforms if not file_set.design_file_name]
+    if not transforms:
+        logger.warning("Found no new queries without matching design files")
         return
+    relations = [RelationDescription(file_set) for file_set in transforms]
 
-    transforms = [RelationDescription(file_set) for file_set in new_files]
+    if as_view:
+        create_func = create_table_design_for_view
+    else:
+        create_func = create_table_design_for_ctas
+
     with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-        for relation in transforms:
+        for relation in relations:
             with relation.matching_temporary_view(conn) as tmp_view_name:
-                if as_view:
-                    table_design = create_table_design_for_view(conn, tmp_view_name, relation)
-                else:
-                    table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, type_maps)
-                save_table_design(local_dir, relation.source_name, relation.target_table_name, table_design,
-                                  dry_run=dry_run)
+                table_design = create_func(conn, tmp_view_name, relation.target_table_name)
+                source_dir = os.path.join(local_dir, relation.source_name)
+                save_table_design(source_dir, relation.target_table_name, relation.target_table_name, table_design,
+                                  overwrite=overwrite, dry_run=dry_run)

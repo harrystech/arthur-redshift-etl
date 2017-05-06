@@ -397,7 +397,7 @@ class BootstrapSourcesCommand(SubCommand):
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
         etl.design.bootstrap.bootstrap_sources(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                               config.type_maps, dry_run=args.dry_run)
+                                               dry_run=args.dry_run)
 
 
 class BootstrapTransformationsCommand(SubCommand):
@@ -409,6 +409,8 @@ class BootstrapTransformationsCommand(SubCommand):
                          " If there is no local design file, then create one as a starting point.")
 
     def add_arguments(self, parser):
+        parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",
+                            default=False, action="store_true")
         parser.add_argument('type', choices=['CTAS', 'VIEW'],
                             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
         add_standard_arguments(parser, ["pattern", "dry-run"])
@@ -417,7 +419,7 @@ class BootstrapTransformationsCommand(SubCommand):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(config.dsn_etl, config.schemas,
                                                        args.table_design_dir, local_files,
-                                                       config.type_maps, args.type == "VIEW", dry_run=args.dry_run)
+                                                       args.type == "VIEW", overwrite=args.force, dry_run=args.dry_run)
 
 
 class SyncWithS3Command(SubCommand):
