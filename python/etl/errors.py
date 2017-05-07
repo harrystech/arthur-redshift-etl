@@ -154,15 +154,17 @@ class MissingManifestError(ETLRuntimeError):
     pass
 
 
-class RequiredRelationFailed(ETLRuntimeError):
-    def __init__(self, failed_description, illegal_failures, required_selector):
-        self.failed_description = failed_description
-        self.illegal_failures = illegal_failures
-        self.required_selector = required_selector
+class RequiredRelationLoadError(ETLRuntimeError):
+
+    def __init__(self, failed, failed_and_required):
+        implied_failures = ", ".join(identifier for identifier in failed_and_required if identifier != failed)
+        if implied_failures:
+            self.message = "Failure of {} implies failure of required relation(s): {}".format(failed, implied_failures)
+        else:
+            self.message = "Failure occurred for required {} relation".format(failed)
 
     def __str__(self):
-        return "Failure of {d} implies failures of {f}, which are required by selector {r}".format(
-            d=self.failed_description.identifier, f=', '.join(self.illegal_failures), r=self.required_selector)
+        return self.message
 
 
 class DataUnloadError(ETLRuntimeError):

@@ -21,7 +21,7 @@ from contextlib import closing, contextmanager
 from functools import partial
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Iterable, Optional, Union, List
 
 import etl.design.load
 import etl.file_sets
@@ -29,7 +29,7 @@ import etl.pg
 import etl.s3
 import etl.timer
 from etl.errors import CyclicDependencyError, MissingQueryError
-from etl.names import join_with_quotes, TableName
+from etl.names import join_with_quotes, TableName, TableSelector
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -94,15 +94,15 @@ class RelationDescription:
             self._table_design = loader(self.design_file_name, self.target_table_name)
 
     @staticmethod
-    def load_in_parallel(descriptions: List["RelationDescription"]) -> None:
+    def load_in_parallel(relations: List["RelationDescription"]) -> None:
         """
-        Load all descriptions' table design file in parallel.
+        Load all relations' table design file in parallel.
         """
-        logger.info("Loading table design for %d relation(s)", len(descriptions))
+        logger.info("Loading table design for %d relation(s)", len(relations))
         with etl.timer.Timer() as timer:
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                executor.map(lambda description: description.load(), descriptions)
-        logger.info("Finished loading %d table design file(s) (%s)", len(descriptions), timer)
+                executor.map(lambda relation: relation.load(), relations)
+        logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
 
     @property  # This property is lazily loaded
     def table_design(self) -> Dict[str, Any]:
@@ -180,18 +180,18 @@ class RelationDescription:
         If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
         to dump or load in these relations will end the ETL run.
         """
-        descriptions = []
+        relations = []
         for file_set in file_sets:
             if file_set.design_file_name is not None:
-                descriptions.append(cls(file_set))
+                relations.append(cls(file_set))
             else:
                 logger.warning("Found file(s) without matching table design: %s",
                                join_with_quotes(file_set.files))
 
         if required_relation_selector:
-            set_required_relations(descriptions, required_relation_selector)
+            set_required_relations(relations, required_relation_selector)
 
-        return descriptions
+        return relations
 
     def get_columns_with_casts(self) -> List[str]:
         """
@@ -347,12 +347,12 @@ def order_by_dependencies(relation_descriptions):
     return [description.original_description for description in sorted(descriptions, key=attrgetter("order"))]
 
 
-def set_required_relations(descriptions, required_selector) -> None:
+def set_required_relations(relations: List[RelationDescription], required_selector: TableSelector) -> None:
     """
-    Set the required property of the descriptions if they are directly or indirectly feeding
+    Set the required property of the relations if they are directly or indirectly feeding
     into relations selected by the :required_selector.
     """
-    ordered_descriptions = order_by_dependencies(descriptions)
+    ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
     required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
     # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
@@ -364,3 +364,25 @@ def set_required_relations(descriptions, required_selector) -> None:
         relation._is_required = False
     for relation in required_relations:
         relation._is_required = True
+
+    logger.info("Marked %d relation(s) as required based on selector: %s", len(required_relations), required_selector)
+
+
+def find_matches(relations: List[RelationDescription], selector: TableSelector):
+    """
+    Return list of matching relations.
+    """
+    return [relation for relation in relations if selector.match(relation.target_table_name)]
+
+
+def find_radius(relations: List[RelationDescription], seed_relations: List[RelationDescription]):
+    """
+    Return list of relations that includes seed relations and any relations that depend on them
+    (directly or transitively).
+    For this to really work, the list of relations should be sorted in "execution order"!
+    """
+    affected = set(relation.identifier for relation in seed_relations)
+    for relation in relations:
+        if any(dependency in affected for dependency in relation.dependencies):
+            affected.add(relation.identifier)
+    return [relation for relation in relations if relation.identifier in affected]

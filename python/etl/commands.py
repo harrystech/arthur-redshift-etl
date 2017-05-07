@@ -193,7 +193,7 @@ def build_full_parser(prog_name):
     :param prog_name: Name that should show up as command name in help
     :return: instance of ArgumentParser that is ready to parse and run sub-commands
     """
-    parser = build_basic_parser(prog_name, description="This command allows to drive the Redshift ETL.")
+    parser = build_basic_parser(prog_name, description="This command allows to drive the ETL steps.")
 
     package = etl.config.package_version()
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
@@ -209,7 +209,7 @@ def build_full_parser(prog_name):
             BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
             SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
-            ExtractToS3Command, LoadRedshiftCommand, UpdateRedshiftCommand,
+            ExtractToS3Command, LoadDataWarehouseCommand, UpdateDataWarehouseCommand,
             UnloadDataToS3Command,
             # Helper commands
             CreateSchemasCommand, RestoreSchemasCommand,
@@ -487,28 +487,32 @@ class ExtractToS3Command(SubCommand):
                                              dry_run=args.dry_run)
 
 
-class LoadRedshiftCommand(SubCommand):
+class LoadDataWarehouseCommand(SubCommand):
 
     def __init__(self):
         super().__init__("load",
-                         "load data into Redshift from files in S3",
-                         "Load data into Redshift from files in S3 (as a forced reload).")
+                         "load data into source tables and forcefully update all dependencies",
+                         "Load data into the data warehouse from files in S3, which will *rebuild* the data warehouse."
+                         " This will operate on entire schemas at once, which will be backed up as necessary."
+                         " It is an error to try to select tables unless they are all the tables in the schema.")
         self.use_force = True
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-y", "--skip-copy",
-                            help="skip the COPY command (for debugging)",
+                            help="skip the COPY command (leaves tables empty, for debugging)",
                             action="store_true")
         parser.add_argument("--stop-after-first",
-                            help="stop after first relation, do not follow dependency fan-out (for debugging)",
+                            help="stop after selected relation, do not follow to dependents (for debugging)",
                             action="store_true")
         parser.add_argument("--no-rollback",
                             help="in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
 
     def callback(self, args, config):
-        descriptions = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        descriptions = self.find_relation_descriptions(args, default_scheme="s3",
+                                                       required_relation_selector=config.required_in_full_load_selector,
+                                                       return_all=True)
         with etl.pg.log_error():
             etl.load.load_or_update_redshift(config, descriptions, args.pattern,
                                              drop=self.use_force,
@@ -518,12 +522,12 @@ class LoadRedshiftCommand(SubCommand):
                                              dry_run=args.dry_run)
 
 
-class UpdateRedshiftCommand(LoadRedshiftCommand):
+class UpdateDataWarehouseCommand(LoadDataWarehouseCommand):
 
     def __init__(self):
         SubCommand.__init__(self, "update",
                             "update data in Redshift",
-                            "Update data in Redshift from files in S3."
+                            "Load data into data warehouse from files in S3 and then into all dependent CTAS relations."
                             " Tables and views are loaded given their existing schema.")
         self.use_force = False
 
@@ -643,7 +647,8 @@ class ExplainQueryCommand(SubCommand):
         else:
             # When running with S3, we expect full sets of files (SQL plus table design)
             descriptions = self.find_relation_descriptions(args)
-        etl.explain.explain_queries(config.dsn_etl, descriptions)
+        with etl.pg.log_error():
+            etl.explain.explain_queries(config.dsn_etl, descriptions)
 
 
 class ListFilesCommand(SubCommand):

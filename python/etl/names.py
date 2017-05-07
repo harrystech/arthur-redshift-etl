@@ -87,6 +87,17 @@ class TableName:
     def table(self):
         return self._table
 
+    def to_tuple(self):
+        """
+        Return schema name and table name as a handy tuple.
+
+        >>> tn = TableName("weather", "temp")
+        >>> schema_name, table_name = tn.to_tuple()
+        >>> schema_name, table_name
+        ('weather', 'temp')
+        """
+        return self._schema, self._table
+
     @property
     def identifier(self):
         """
@@ -148,7 +159,7 @@ class TableName:
             raise ValueError("Unknown format code '{}' for TableName".format(code))
 
     def __eq__(self, other):
-        return self._schema == other._schema and self._table == other._table
+        return self.to_tuple() == other.to_tuple()
 
     def __hash__(self):
         return hash((self._schema, self._table))
