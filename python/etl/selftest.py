@@ -8,6 +8,7 @@ We can run
 
 import doctest
 import logging
+import os.path
 import sys
 import unittest
 
@@ -68,6 +69,8 @@ def run_doctest(log_level: str="INFO") -> None:
 
 def run_type_checker() -> None:
     print("Running type checker...")
+    if not os.path.isdir("python"):
+        raise etl.errors.ETLRuntimeError("Cannot find source directory: 'python'")
     normal_report, error_report, exit_status = mypy.api.run(["python",  # Should match setup.py's package_dir
                                                              "--strict-optional",
                                                              "--ignore-missing-imports"])

@@ -5,18 +5,19 @@ should be organized once loaded into Redshift, like the distribution style or so
 Table designs are dictionaries of dictionaries or lists etc.
 """
 
-from contextlib import closing
 import logging
+from contextlib import closing
 
 import yaml
 import yaml.parser
 
 import etl
 import etl.config
-from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
 import etl.pg
 import etl.file_sets
 import etl.s3
+from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
+from etl.names import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -105,26 +106,31 @@ def validate_semantics_of_view(table_design):
             raise TableDesignSemanticError("Too much information for column of a VIEW: %s" % list(column))
 
 
-def validate_semantics_of_table(table_design):
+def validate_identity_as_surrogate_key(table_design):
     """
-    Check for semantics that apply to tables only ... either upstream sources or CTAS.
+    Check whether specification of our identity column is valid and whether it matches surrogate key
     """
+    identity_columns = []
     for column in table_design["columns"]:
-        if column.get("identity", False) and not column.get("not_null", False):
-            # NULL columns may not be primary key (identity)
-            raise TableDesignSemanticError("identity column must be set to not null")
-
-    identity_columns = [column["name"] for column in table_design["columns"] if column.get("identity", False)]
-    if len(identity_columns) > 1:
-        raise TableDesignSemanticError("only one column should have identity")
+        if column.get("identity"):
+            if not column.get("not_null"):
+                # NULL columns may not be primary key (identity)
+                raise TableDesignSemanticError("identity column must be set to not null")
+            if identity_columns:
+                raise TableDesignSemanticError("only one column should have identity")
+            identity_columns.append(column["name"])
 
     constraints = table_design.get("constraints", [])
-    surrogate_keys = [col for c in constraints for col in c.get('surrogate_key', [])]
+    surrogate_keys = [col for constraint in constraints for col in constraint.get('surrogate_key', [])]
     if len(surrogate_keys) and not surrogate_keys == identity_columns:
-        raise TableDesignSemanticError("surrogate key must be identity")
+        raise TableDesignSemanticError("surrogate key must be identity column")
+    # TODO Complain if surrogate_key is missing but identity is present
 
-    # Make sure that whenever we reference a column that that column is actually part of the table's columns
-    column_set = frozenset(column["name"] for column in table_design["columns"] if not column.get("skipped"))
+
+def validate_column_references(table_design):
+    """
+    Make sure that table attributes and constraints only reference columns that actually exist
+    """
     column_list_references = [
         ('constraints', 'primary_key'),
         ('constraints', 'natural_key'),
@@ -133,22 +139,36 @@ def validate_semantics_of_table(table_design):
         ('attributes', 'interleaved_sort'),
         ('attributes', 'compound_sort')
     ]
+    valid_columns = frozenset(column["name"] for column in table_design["columns"] if not column.get("skipped"))
 
-    invalid_col_list_template = "{key} columns in {obj} contains unknown columns"
+    constraints = table_design.get("constraints", [])
     for obj, key in column_list_references:
         if obj == 'constraints':
+            # This evaluates all unique constraints at once by concatenating all of the columns.
             cols = [col for constraint in constraints for col in constraint.get(key, [])]
         elif obj == 'attributes':
             cols = table_design.get(obj, {}).get(key, [])
-        if not column_list_has_columns(column_set, cols):
-            raise TableDesignSemanticError(invalid_col_list_template.format(obj=obj, key=key))
+        unknown = join_with_quotes(frozenset(cols).difference(valid_columns))
+        if unknown:
+            raise TableDesignSemanticError(
+                "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key,
+                                                                                     unknown=unknown))
+
+
+def validate_semantics_of_table(table_design):
+    """
+    Check for semantics that apply to tables only ... either upstream sources or CTAS.
+    """
+    validate_identity_as_surrogate_key(table_design)
+    validate_column_references(table_design)
 
     # Make sure that no constraints other than unique have multiple values
+    constraints = table_design.get("constraints", [])
     seen_constraint_types = set()
     for constraint in constraints:
         for constraint_type in constraint:
             if constraint_type in seen_constraint_types and constraint_type != "unique":
-                raise TableDesignSemanticError("Multiple constraints of type %s" % constraint_type)
+                raise TableDesignSemanticError("multiple constraints of type %s" % constraint_type)
             seen_constraint_types.add(constraint_type)
 
 
@@ -190,27 +210,3 @@ def validate_table_design_semantics(table_design, table_name, _memoize_is_upstre
             if constraint_type in constraint_types_in_design:
                     raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
                                                    (table_name.identifier, constraint_type))
-
-
-def column_list_has_columns(valid_columns, candidate_columns):
-    """
-    Accepts a set of known columns and a list of strings that may be columns (or a string that should be a column)
-    Returns True if the possible column list is found within column_set and False otherwise
-
-    >>> column_list_has_columns({'a'}, 'a')
-    True
-    >>> column_list_has_columns({'fish'}, 'a')
-    False
-    >>> column_list_has_columns({'a', 'b'}, ['b', 'a'])
-    True
-    >>> column_list_has_columns({'a', 'b'}, ['b', 'c'])
-    False
-    """
-    if not candidate_columns:
-        return True
-    if not isinstance(candidate_columns, list):
-        candidate_columns = [candidate_columns]
-    for column in candidate_columns:
-        if column not in valid_columns:
-            return False
-    return True
