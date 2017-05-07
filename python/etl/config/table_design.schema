@@ -74,7 +74,7 @@
             "description": "Description of the table (may start with qualifier such as 'DEPRECATED')"
         },
         "source_name" : {
-            "description": "Either <source name>.<schema name>.<table name>, CTAS, or VIEW",
+            "description": "Either <source name>.<schema name>.<table name> or literals CTAS or VIEW",
             "type" : "string",
             "pattern": "^(CTAS|VIEW|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },

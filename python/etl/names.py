@@ -121,6 +121,32 @@ class TableName:
         """
         return '"{0}"."{1}"'.format(self._schema, self._table)
 
+    def __format__(self, code):
+        """
+        Format name as delimited identifier (by default, or 's') or just as identifier (using 'x').
+
+        >>> pu = TableName("public", "users")
+        >>> format(pu)
+        '"public"."users"'
+        >>> format(pu, 'x')
+        'public.users'
+        >>> "SELECT * FROM {:s}".format(pu)
+        'SELECT * FROM "public"."users"'
+        >>> "Table '{:x}' contains users".format(pu)  # new style with using formatting code
+        "Table 'public.users' contains users"
+        >>> "Table '{}' contains users".format(pu.identifier)  # old style by accessing property
+        "Table 'public.users' contains users"
+        >>> "Oops: {:y}".format(pu)
+        Traceback (most recent call last):
+        ValueError: Unknown format code 'y' for TableName
+        """
+        if (not code) or (code == 's'):
+            return str(self)
+        elif code == 'x':
+            return self.identifier
+        else:
+            raise ValueError("Unknown format code '{}' for TableName".format(code))
+
     def __eq__(self, other):
         return self._schema == other._schema and self._table == other._table
 

@@ -411,6 +411,9 @@ class BootstrapTransformationsCommand(SubCommand):
     def add_arguments(self, parser):
         parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",
                             default=False, action="store_true")
+        # FIXME Switch to '[--update|--as-ctas|--as-view]'
+        parser.add_argument("-u", "--update", help="EXPERIMENTAL merge with existing table design if available",
+                            default=False, action="store_true")
         parser.add_argument('type', choices=['CTAS', 'VIEW'],
                             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
         add_standard_arguments(parser, ["pattern", "dry-run"])
@@ -418,8 +421,8 @@ class BootstrapTransformationsCommand(SubCommand):
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(config.dsn_etl, config.schemas,
-                                                       args.table_design_dir, local_files,
-                                                       args.type == "VIEW", overwrite=args.force, dry_run=args.dry_run)
+                                                       args.table_design_dir, local_files, args.type == "VIEW",
+                                                       update=args.update, replace=args.force, dry_run=args.dry_run)
 
 
 class SyncWithS3Command(SubCommand):

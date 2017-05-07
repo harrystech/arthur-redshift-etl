@@ -90,7 +90,7 @@ def validate_table_design_syntax(table_design, table_name):
     try:
         etl.config.validate_with_schema(table_design, "table_design.schema")
     except SchemaValidationError as exc:
-        raise TableDesignSyntaxError("Failed to validate table design for '%s'" % table_name.identifier) from exc
+        raise TableDesignSyntaxError("failed to validate table design for '{}'".format(table_name.identifier)) from exc
 
 
 def validate_semantics_of_view(table_design):
@@ -103,7 +103,10 @@ def validate_semantics_of_view(table_design):
     # for the columns, like type, sql_type.
     for column in table_design["columns"]:
         if len(column) != 1:
-            raise TableDesignSemanticError("Too much information for column of a VIEW: %s" % list(column))
+            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(list(column)))
+    for obj in ("constraints", "attributes"):
+        if obj in table_design:
+            raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
 
 
 def validate_identity_as_surrogate_key(table_design):
@@ -168,7 +171,7 @@ def validate_semantics_of_table(table_design):
     for constraint in constraints:
         for constraint_type in constraint:
             if constraint_type in seen_constraint_types and constraint_type != "unique":
-                raise TableDesignSemanticError("multiple constraints of type %s" % constraint_type)
+                raise TableDesignSemanticError("multiple constraints of type {}".format(constraint_type))
             seen_constraint_types.add(constraint_type)
 
 
@@ -178,8 +181,7 @@ def validate_table_design_semantics(table_design, table_name, _memoize_is_upstre
     Raise an exception if anything is amiss.
     """
     if table_design["name"] != table_name.identifier:
-        raise TableDesignSemanticError("Name of table (%s) must match target (%s)" % (table_design["name"],
-                                                                                      table_name.identifier))
+        raise TableDesignSemanticError("name in table design must match target '{}'".format(table_name.identifier))
     if table_name.schema not in _memoize_is_upstream_source:
         dw_config = etl.config.get_dw_config()
         for schema in dw_config.schemas:
