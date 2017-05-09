@@ -25,8 +25,13 @@ from collections import defaultdict, OrderedDict
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
-# requires Python 3.5: from http import HTTPStatus
 from typing import List
+try:
+    from http import HTTPStatus  # type: ignore
+except ImportError:
+    class HTTPStatus:  # type: ignore
+        OK = 200
+        MOVED_PERMANENTLY = 301
 
 import boto3
 import botocore.exceptions
@@ -444,14 +449,10 @@ class MemoryStorage(PayloadDispatcher):
         self.events = OrderedDict()
         self.indices = defaultdict(dict)
         self.last_modified = "(unknown)"
-        handler_class = self.create_handler()
-        self.start_daemon(handler_class)
+        self.start_daemon()
 
     def store(self, payload: dict):
-        self.update_last_modified()
         self.queue.put(payload)
-
-    def update_last_modified(self):
         now = datetime.datetime.now()
         self.last_modified = now.strftime("%a, %d %b %Y %H:%M:%S %Z")
 
@@ -530,8 +531,7 @@ class MemoryStorage(PayloadDispatcher):
                 """
                 path = self.path.rstrip('/') + '/'
                 if path != '/':
-                    # self.send_response(HTTPStatus.MOVED_PERMANENTLY)
-                    self.send_response(301)
+                    self.send_response(HTTPStatus.MOVED_PERMANENTLY)
                     parts = urllib.parse.urlsplit(self.path)
                     new_parts = (parts[0], parts[1], '/', None, parts[4])
                     new_url = urllib.parse.urlunsplit(new_parts)
@@ -540,8 +540,7 @@ class MemoryStorage(PayloadDispatcher):
                     return
 
                 content = this_content().encode("utf-8")
-                # self.send_response(HTTPStatus.OK)
-                self.send_response(200)
+                self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/html; charset=UTF-8")
                 self.send_header("Content-Length", len(content))
                 self.send_header("Last-Modified", this_last_modified)
@@ -552,15 +551,18 @@ class MemoryStorage(PayloadDispatcher):
 
         return MonitorHTTPHandler
 
-    def start_daemon(self, handler_class):
+    def start_daemon(self):
         """
         Start background daemon to serve our events.
         """
+        handler_class = self.create_handler()
+
         class BackgroundServer(threading.Thread):
             def run(self):
                 logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
                 httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
                 httpd.serve_forever()
+
         try:
             thread = BackgroundServer(daemon=True)
             thread.start()
@@ -599,16 +601,16 @@ def query_for(target_list, etl_id=None):
 
 if __name__ == "__main__":
     Monitor.environment = "test"  # type: ignore
-    memory = MemoryStorage()
-    MonitorPayload.dispatchers.append(memory)
+    ms = MemoryStorage()
+    MonitorPayload.dispatchers.append(ms)
 
     monitor = Monitor("first_schema.first_table", "verb")
-    payload = MonitorPayload(monitor, "start", utc_now(), extra={"index": {"current": 1, "final": 2, "name": "first"}})
-    payload.emit()
+    example = MonitorPayload(monitor, "start", utc_now(), extra={"index": {"current": 1, "final": 2, "name": "first"}})
+    example.emit()
 
     with Monitor("first_schema.second_table", "verb", index={"current": 2, "final": 2, "name": "first"}):
         pass
     with Monitor("second_schema.other_table", "verb", index={"current": 1, "final": 3, "name": "second"}):
         pass
 
-    print(memory.get_content())
+    print(ms.get_content())
