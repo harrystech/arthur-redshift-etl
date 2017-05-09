@@ -1,3 +1,4 @@
+import getpass
 import os
 from typing import Union
 
@@ -15,6 +16,20 @@ def get(name: str, default: Union[str, None]=None) -> str:
     return value
 
 
+def getuser() -> str:
+    """
+    Find user's name, normally by looking up the value of the USER environment
+    variable. This is used, for example, to select the default prefix in the S3 bucket.
+
+    If the lookup for the environment variable fails, we fall back to a more
+    exhaustive search using getuser.
+    """
+    user = os.environ.get("USER", "")
+    if len(user) == 0:
+        user = getpass.getuser()
+    return user
+
+
 if __name__ == "__main__":
-    user_name = get("USER")
+    user_name = getuser()
     print("Hello {}!".format(user_name))

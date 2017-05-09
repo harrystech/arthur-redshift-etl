@@ -6,7 +6,6 @@ so that they can be leveraged by utilities in addition to the top-level script.
 """
 
 import argparse
-import getpass
 import logging
 import os
 import sys
@@ -17,6 +16,7 @@ import boto3
 import simplejson as json
 
 import etl.config
+import etl.config.env
 import etl.design.bootstrap
 import etl.explain
 import etl.extract
@@ -234,7 +234,7 @@ def add_standard_arguments(parser, options):
     if "prefix" in options:
         parser.add_argument("-p", "--prefix",
                             help="select prefix in S3 bucket (default is your user name: '%(default)s')",
-                            default=getpass.getuser())
+                            default=etl.config.env.getuser())
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",
