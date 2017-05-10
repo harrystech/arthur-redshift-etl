@@ -164,7 +164,11 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
 
 def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
     """
-    Return partial table design with full column information
+    Return partial table design that contains
+        - the name (identifier of our target table)
+        - full column information (extracted from database source or data warehouse)
+        - a description (with a timestamp)
+    What is missing then to make it a valid table design is at least the "source_name".
     """
     type_maps = etl.config.get_dw_config().type_maps
     as_is_attribute_type = type_maps["as_is_att_type"]  # source tables and CTAS
@@ -199,9 +203,10 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
 def create_partial_table_design_for_transformation(conn: connection, tmp_view_name: TableName,
                                                    relation: RelationDescription, update_keys: Union[List, None]=None):
     """
-    Create a partial design that's applicable to transformations (CTAS or VIEW)
-
-    (Note that only transformations can have dependencies.)
+    Create a partial design that's applicable to transformations, which
+        - cleans up the column information (dropping accidental expressions)
+        - adds dependencies (which only transformations can have)
+        - and optionally updates from the existing table design
     """
     table_design = create_partial_table_design(conn, tmp_view_name, relation.target_table_name)
     # TODO When working with CTAS or VIEW, the type casting doesn't make sense but sometimes sneaks in.
@@ -216,7 +221,6 @@ def create_partial_table_design_for_transformation(conn: connection, tmp_view_na
 
     if update_keys is not None and relation.design_file_name:
         logger.info("Experimental update of existing table design file in progress...")
-        table_design["description"] = table_design["description"].replace("generated", "updated", 1)
         existing_table_design = relation.table_design
         if "columns" in update_keys:
             column_lookup = {column["name"]: column for column in existing_table_design["columns"]}
@@ -226,6 +230,8 @@ def create_partial_table_design_for_transformation(conn: connection, tmp_view_na
             if identity:
                 table_design["columns"][:0] = identity
                 table_design["columns"][0]["encoding"] = "raw"
+        # In case we're updating from an auto-designed file, fix the description to reflect the update.
+        table_design["description"] = table_design["description"].replace("generated", "updated", 1)
         if "description" in update_keys and "description" in existing_table_design:
             old_description = existing_table_design["description"]
             if not old_description.startswith(("Automatically generated on", "Automatically updated on")):
