@@ -170,7 +170,7 @@ def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_go
         logger.info("No transforms found or selected, skipping CTAS or VIEW validation")
         return
 
-    # FIXME Parallelize but use separate connections per thread
+    # TODO Parallelize but use separate connections per thread
     with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
         for relation in transforms:
             validate_single_transform(conn, relation, keep_going=keep_going)
@@ -337,8 +337,8 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
 
     for constraint in not_used:
         for constraint_type, columns in constraint.items():
-            logger.warning("Upstream source '%s' has additional %s constraint (%s) for '%s'",
-                           table.source_name, constraint_type, join_with_quotes(columns), table.identifier)
+            logger.warning("Upstream source has additional %s constraint (%s) for '%s'",
+                           constraint_type, join_with_quotes(columns), table.table_design["source_name"])
 
 
 def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool=False) -> None:
@@ -380,7 +380,7 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], relations: Lis
         return
     upstream_tables.sort(key=attrgetter("source_name"))
 
-    # FIXME Parallelize around sources (like extract)
+    # TODO Parallelize around sources (like extract)
     for source_name, table_group in groupby(upstream_tables, attrgetter("source_name")):
         tables = list(table_group)
         source = source_lookup[source_name]

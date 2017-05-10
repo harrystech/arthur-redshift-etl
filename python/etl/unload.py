@@ -15,10 +15,10 @@ Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP ALLOWOVERWRITE
 schema or table from which the data was dumped to CSV.
 """
 
-from contextlib import closing
-from typing import List
 import logging
 import os
+from contextlib import closing
+from typing import List
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -41,19 +41,19 @@ def run_redshift_unload(conn: connection, relation: RelationDescription, unload_
     Execute the UNLOAD command for the given :relation (via a select statement).
     Optionally allow users to overwrite previously unloaded data within the same keyspace.
     """
-    select_statement = """
-        SELECT {}
-        FROM {}
-    """.format(", ".join(relation.columns), relation)
     credentials = "aws_iam_role={}".format(aws_iam_role)
     # TODO Need to review why we can't use r"\N"
     null_string = "\\\\N"
+    columns = ", ".join(relation.columns)
     unload_statement = """
-        UNLOAD ('{}')
+        UNLOAD ('
+            SELECT {}
+            FROM {}
+        ')
         TO '{}'
         CREDENTIALS '{}' MANIFEST
         DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS '{}'
-        """.format(select_statement, unload_path, credentials, null_string)
+        """.format(columns, relation, unload_path, credentials, null_string)
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
 
@@ -96,7 +96,7 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
     """
     # TODO Move the "{}-{}" logic into the TableFileSet
     rendered_prefix = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
-    schema_table_name = "{}-{}".format(relation.target_table_name.schema, relation.target_table_name.table)
+    schema_table_name = "{0.schema}-{0.table}".format(relation.target_table_name)
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
 
@@ -128,6 +128,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")
         return
+    logger.info("Starting to unload %s relation(s)", len(unloadable_relations))
 
     target_lookup = {schema.name: schema for schema in config.schemas if schema.is_an_unload_target}
     relation_target_tuples = []
@@ -147,7 +148,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
             except Exception as exc:
                 if keep_going:
                     error_occurred = True
-                    logger.warning("Unload failure for '%s'", relation.identifier)
+                    logger.warning("Unload failed for '%s'", relation.identifier)
                     logger.exception("Ignoring this exception and proceeding as requested:")
                 else:
                     raise DataUnloadError(exc) from exc

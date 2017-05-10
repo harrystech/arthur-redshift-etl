@@ -36,8 +36,8 @@ class Thyme:
         """
         Render the template using the given values and also "yesterday" and "today".
 
-        Note that you should pass in a string as "template" and we'll take care of
-        the templating.
+        Note that you should pass in a string as the "template" and we'll take care of
+        the actual creation of a template.
 
         >>> Thyme.render_template("Hello ${name}", {"name": "world!"})
         'Hello world!'

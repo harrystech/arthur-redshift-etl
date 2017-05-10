@@ -42,12 +42,12 @@
             "bigint": "long",
             "real": "double",
             "double precision": "double",
+            "numeric\\(\\d+,\\d+\\)": "string",
             "boolean": "boolean",
             "character\\(\\d+\\)": "string",
             "character varying\\(\\d+\\)": "string",
             "date": "string",
-            "timestamp without time zone": "string",
-            "numeric\\(\\d+,\\d+\\)": "string"
+            "timestamp without time zone": "string"
         },
         # Map of known PostgreSQL attribute types to usable types in Redshift.  Missing types will cause an exception
         # The first element in the list is the new type, the second element is the necessary cast expression,
@@ -58,18 +58,18 @@
             "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
             "bigint\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
             # NOTE varchar counts characters but Redshift is byte limitations.
-            # We are setting the max here to 10k ... need to evaluate on live table what that limit should be.
+            # We are setting the max here to 10k ... you need to evaluate on live table what that the limit should be.
             "character varying": ["varchar(10000)", "%s::varchar(10000)", "string"],
             "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
             # CAVEAT EMPTOR This only works if your database is running in UTC.
             "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            # N.B. Newer versions of PostgreSQL have a more useful hstore_to_json function but this works for 9.2
-            "hstore": ["varchar(65535)", "public.hstore_to_matrix(%s)::varchar(65535)", "string"],
+            # N.B. This requires a PostgreSQL version of 9.3 or better.
+            "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
             "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
             # The numeric data type without precision and scale should not be used upstream!
-            "numeric": ["decimal(12,4)", "%s::decimal(12,4)", "string"],
+            "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
             # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
             "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"]
         }

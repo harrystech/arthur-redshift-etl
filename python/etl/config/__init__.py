@@ -7,12 +7,12 @@ We use "config" files to refer to all files that may reside in the "config" dire
 This module provides global access to settings.  Always treat them nicely and read-only.
 """
 
-from functools import lru_cache
 import logging
 import logging.config
 import os
 import os.path
 import sys
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 import pkg_resources
@@ -24,8 +24,12 @@ import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import SchemaInvalidError, SchemaValidationError
 
-__all__ = ["package_version", "get_dw_config", "get_data_lake_config", "etl_tmp_dir", "configure_logging",
-           "validate_with_schema"]
+__all__ = [
+    "package_version",  # retrieve ETL version from package information
+    "configure_logging", "load_config",  # should be called once at app start
+    "get_dw_config", "get_data_lake_config", "etl_tmp_dir",  # retrieve config after load
+    "validate_with_schema"  # utility to validate schema
+]
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

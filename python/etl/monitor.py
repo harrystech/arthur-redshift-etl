@@ -9,6 +9,7 @@ may be emitted to a persistence layer.
 
 import datetime
 import http.server
+import io
 import logging
 import os
 import queue
@@ -397,38 +398,41 @@ class MemoryStorage(PayloadDispatcher):
     When the ETL is running on a host other than your local computer, say in EC2, then use
     port forwarding, to send requests from your host to an address seen on the other host:
         ssh -L 8086:localhost:8086 <hostname>
+
+    The output should pass validator at https://validator.w3.org/#validate_by_input+with_options
     """
     SERVER_ADDRESS = ('', 8086)
 
     HEADER = """
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
-        <!-- <meta http-equiv="refresh" content="5"> -->
-        <style>
-        table {
-            font-family: arial, sans-serif;
-            border-collapse: collapse;
-            width: 100%;
-        }
-        td, th {
-            border: 1px solid #dddddd;
-            text-align: left;
-            padding: 8px;
-        }
-        .events tr:nth-child(even) {
-            background-color: #dddddd;
-        }
-        #progress th {
-            width: 200px;
-        }
-        #progress {
-            background-color: CornflowerBlue;
-            display: block;
-            height: 1em;
-            border: 1px solid black;
-        }
-        </style>
+          <title>Arthur :: ETL Progress Monitor</title>
+          <meta http-equiv="refresh" content="5" />
+          <style type="text/css">
+            table {
+                font-family: arial, sans-serif;
+                border-collapse: collapse;
+                width: 100%;
+            }
+            td, th {
+                border: 1px solid #dddddd;
+                text-align: left;
+                padding: 8px;
+            }
+            .events tr:nth-child(even) {
+                background-color: #dddddd;
+            }
+            td.progress {
+                width: 200px;
+            }
+            td.progress > div {
+                background-color: CornflowerBlue;
+                display: block;
+                height: 1em;
+                border: 1px solid black;
+            }
+          </style>
         </head>
         <body>"""
     FOOTER = """
@@ -438,7 +442,7 @@ class MemoryStorage(PayloadDispatcher):
     def __init__(self):
         self.queue = queue.Queue()
         self.events = OrderedDict()
-        self.index = defaultdict(dict)
+        self.indices = defaultdict(dict)
         self.last_modified = "(unknown)"
         handler_class = self.create_handler()
         self.start_daemon(handler_class)
@@ -455,11 +459,13 @@ class MemoryStorage(PayloadDispatcher):
         try:
             while True:
                 payload = self.queue.get_nowait()
+                if "elapsed" not in payload:
+                    payload["elapsed"] = "running"
                 key = payload["target"], payload["step"]
                 self.events[key] = payload
                 index = payload.get("extra", {}).get("index", {})
                 name = index.get("name", "N/A")
-                self.index[name].update(index)
+                self.indices[name].update(index)
         except queue.Empty:
             pass
 
@@ -468,32 +474,38 @@ class MemoryStorage(PayloadDispatcher):
         Return all events stored so far as a giant blob of text.
         """
         self.drain_queue()
-        text = self.HEADER
-        text += """
+        buffer = io.StringIO()
+        buffer.write(self.HEADER)
+        buffer.write("""
             <table>
-            <tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan="2">Progress</th></tr>"""
+            <tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan="2">Progress</th></tr>""")
         # Add a table with the current progress meter (200px * percentage = 2 * percentage points)
-        for name in sorted(self.index):
-            index = self.index[name]
+        for name in sorted(self.indices):
+            index = self.indices[name]
             percentage = (100.0 * index["current"])/index["final"]
-            text += """
+            buffer.write("""
                 <tr>
                     <td>{}</td><td>{}</td><td>{}</td>
-                    <td>{:.0f}%</td><td style="width:200px"><div id="progress" style="width:{:.0f}px"></div></td>
-                </tr>""".format(name, index["current"], index["final"], percentage, 2 * percentage)
-        text += """</table><br /><br />"""
+                    <td>{:.0f}%</td><td class="progress"><div style="width:{:.0f}px"></div></td>
+                </tr>""".format(name, index["current"], index["final"], percentage, 2 * percentage))
+        buffer.write("""</table><br /><br />""")
         # Add a table with all the latest events
-        text += """
+        buffer.write("""
             <table class="events">
-            <tr><th>ETL ID</th><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th></tr>"""
-        buffer = [
-            """<tr><td>{etl_id}</td><td>{target}</td><td>{step}</td><td>{event}</td><td>{timestamp}</td></tr>
-            """.format(**self.events[key]) for key in self.events
-        ]
-        text += '\n'.join(buffer)
-        text += """</table>"""
-        text += "<br /><hr />Last modified: {}".format(self.last_modified)
-        text += self.FOOTER
+              <tr>
+                <th>ETL ID</th><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th>
+              </tr>""")
+        for key in self.events:
+            buffer.write("""
+                <tr>
+                  <td>{etl_id}</td><td>{target}</td><td>{step}</td><td>{event}</td>
+                  <td>{timestamp!s:.19}</td><td>{elapsed}</td>
+                </tr>""".format(**self.events[key]))
+        buffer.write("""</table>""")
+        buffer.write("<br /><hr />Last modified: {}".format(self.last_modified))
+        buffer.write(self.FOOTER)
+        text = buffer.getvalue()
+        buffer.close()
         return textwrap.dedent(text).strip()
 
     def create_handler(self):
@@ -589,8 +601,14 @@ if __name__ == "__main__":
     Monitor.environment = "test"  # type: ignore
     memory = MemoryStorage()
     MonitorPayload.dispatchers.append(memory)
-    monitor = Monitor("some_schema.some_table", "do")
-    payload = MonitorPayload(monitor, "start", utc_now(), extra={"index": {"current": 1, "final": 2}})
-    payload = MonitorPayload(monitor, "finish", utc_now(), extra={"index": {"current": 1, "final": 2}})
+
+    monitor = Monitor("first_schema.first_table", "verb")
+    payload = MonitorPayload(monitor, "start", utc_now(), extra={"index": {"current": 1, "final": 2, "name": "first"}})
     payload.emit()
+
+    with Monitor("first_schema.second_table", "verb", index={"current": 2, "final": 2, "name": "first"}):
+        pass
+    with Monitor("second_schema.other_table", "verb", index={"current": 1, "final": 3, "name": "second"}):
+        pass
+
     print(memory.get_content())

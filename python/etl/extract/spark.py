@@ -105,14 +105,13 @@ class SparkExtractor(Extractor):
         if partition_key is None:
             self.logger.info("No partition key found for '%s', skipping partitioning", source_table_name.identifier)
             return []
+        self.logger.debug("Determining partitioning for table '%s'", source_table_name.identifier)
 
         predicates = []
         with closing(etl.pg.connection(read_access, readonly=True)) as conn:
-            self.logger.debug("Determining predicates for table '%s'", source_table_name.identifier)
-
             table_size = self.fetch_table_size(conn, source_table_name)
             num_partitions = suggest_best_partition_number(table_size)
-            self.logger.info("Picked %d partition(s) for table '%s' (partition key: '%s')",
+            self.logger.info("Decided on using %d partition(s) for table '%s' with partition key: '%s'",
                              num_partitions, source_table_name.identifier, partition_key)
 
             if num_partitions > 1:
@@ -153,18 +152,19 @@ class SparkExtractor(Extractor):
                  , MAX(pkey) AS upper_bound
                  , COUNT(pkey) AS count
               FROM (
-                      SELECT "{}" AS pkey
-                           , NTILE({}) OVER (ORDER BY "{}") AS part
-                        FROM {}
+                      SELECT "{partition_key}" AS pkey
+                           , NTILE({num_partitions}) OVER (ORDER BY "{partition_key}") AS part
+                        FROM {table_name}
                    ) t
              GROUP BY part
              ORDER BY part
         """
         with Timer() as timer:
-            rows = etl.pg.query(conn, stmt.format(partition_key, num_partitions, partition_key, table_name))
+            rows = etl.pg.query(conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions,
+                                                  table_name=table_name))
         row_count = sum(row["count"] for row in rows)
-        self.logger.info("Calculated %d partition boundaries for '%s' (%d rows) with partition key '%s' (%s)",
-                         num_partitions, table_name.identifier, row_count, partition_key, timer)
+        self.logger.info("Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",
+                         num_partitions, row_count, table_name.identifier, row_count, partition_key, timer)
         lower_bounds = (row["lower_bound"] for row in rows)
         upper_bounds = (row["upper_bound"] for row in rows)
         return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
@@ -231,7 +231,7 @@ def suggest_best_partition_number(table_size: int) -> int:
     num_partitions = 1
     partition_size = table_size
     # Keep the partition sizes above the target value:
-    while partition_size >= target * 2:
+    while partition_size >= target * 2 and num_partitions < 1024:
         num_partitions *= 2
         partition_size //= 2
 
