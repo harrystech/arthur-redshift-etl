@@ -318,9 +318,10 @@ def order_by_dependencies(relation_descriptions):
             has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
-        logger.warning('These relations have unknown dependencies: %s', join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        join_with_quotes(known_unknowns))
+        logger.warning('This caused these relations to have dependencies that are not known: %s',
+                       join_with_quotes(has_unknown_dependencies))
     has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
         if description.identifier in has_internal_dependencies:
