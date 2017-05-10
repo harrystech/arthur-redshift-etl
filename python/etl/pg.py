@@ -179,8 +179,7 @@ def explain(cx, stmt, args=()):
 
     We sometimes use this just to test out a query syntax so we are heavy on the logging.
     """
-    with log_error():
-        rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
+    rows = execute(cx, "EXPLAIN\n" + stmt, args, return_result=True)
     lines = [row[0] for row in rows]
     logger.debug("Query plan:\n | " + "\n | ".join(lines))
     return lines

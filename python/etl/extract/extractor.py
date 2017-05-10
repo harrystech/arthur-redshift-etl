@@ -86,6 +86,7 @@ class Extractor:
         """
         Iterate over sources to be extracted and parallelize extraction at the source level
         """
+        self.logger.info("Starting to extract %d relation(s)", len(self.relations))
         self.failed_sources.clear()
         # FIXME We need to evaluate whether extracting from multiple sources in parallel works with Spark!
         max_workers = len(self.schemas)

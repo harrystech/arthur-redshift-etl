@@ -74,7 +74,7 @@
             "description": "Description of the table (may start with qualifier such as 'DEPRECATED')"
         },
         "source_name" : {
-            "description": "Either <source name>.<schema name>.<table name>, CTAS, or VIEW",
+            "description": "Either <source name>.<schema name>.<table name> or literals CTAS or VIEW",
             "type" : "string",
             "pattern": "^(CTAS|VIEW|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },
@@ -196,10 +196,9 @@
                 "compound_sort": { "$ref": "#/definitions/column_list" },
                 "interleaved_sort": { "$ref": "#/definitions/column_list" }
             },
-            "oneOf": [
-                { "required": [ "distribution", "compound_sort" ] },
-                { "required": [ "distribution", "interleaved_sort" ] }
-            ],
+            "not": {
+                "required": [ "compound_sort", "interleaved_sort" ]
+            },
             "additionalProperties": false
         },
         "depends_on": {
