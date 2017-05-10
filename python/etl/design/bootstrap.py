@@ -125,7 +125,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           ORDER BY a.attname"""
     found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
-        cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(2))
+        cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
         attributes = etl.pg.query(cx, stmt_att % cond, (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
