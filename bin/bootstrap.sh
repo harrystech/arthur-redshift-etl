@@ -47,7 +47,7 @@ umask 0027
 
 # Install dependencies for Psycopg2, Arthur, and AWS shell commands we may run via datapipeline
 if [[ "$RUNNING_LOCAL" = "no" ]]; then
-    sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc libyaml-devel
+    sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc libyaml-devel tmux
 fi
 
 # Send all files to temp directory
