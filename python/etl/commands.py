@@ -233,8 +233,8 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
         parser.add_argument("-p", "--prefix",
-                            help="select prefix in S3 bucket (default is your user name: '%(default)s')",
-                            default=etl.config.env.getuser())
+                            help="select prefix in S3 bucket (default: '%(default)s')",
+                            default=etl.config.env.get_default_prefix())
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",

@@ -186,23 +186,31 @@ a description of configurations.
 
 ### General notes about the CLI
 
-* Commands expect a config file but will default to picking up all files in a local `./config` directory.
+* Commands expect a config file and will start by picking up all files in a local `./config` directory.
 * Commands accept `--dry-run` command line flag to test without modifying the environment.
-* Commands allow to specify glob patterns to select specific schema(s) or table(s).
-* Commands use `--prefix` to select a folder in the S3 bucket (and default to the user's name).
-* Log files are by default in `arthur.log`.  They are managed so that your disk doesn't fill up too much.
-* To see more log lines, use `--verbose`.
+* Most commands allow to specify glob patterns to select specific schema(s) or table(s).
+* Most commands use `--prefix` to select a folder in the S3 bucket (but you may also have to use the `--remote` option).
+* To pick a prefix without specifying it every time, set the environment variable `ARTHUR_DEFAULT_PREFIX`.
+* Log files are by default in `arthur.log`.  They are rotated and deleted so that your disk doesn't fill up too much.
+* To see more log information, use `--verbose`. To see less, use `--quiet`.
 * To see them formatted in the console the same way as they are formatted in the log files, use `--prolix`.
-* To copy data manually, use `aws s3 --recursive`.  But you probably shouldn't and let `arthur.py` manage files.
+* You could copy data manually, but you probably shouldn't and let `arthur.py sync` manage files.
+* You can use environment variables to pass in credentials for database access, but you should probably use a file for that.
 
 ### Prerequisites for running the ETL in a cluster
 
-All commands below will assume that you run `arthur.py` locally.  But if you want to
-run the ETL in an EMR cluster instead, then you need to create a file with the
-credentials that the cluster will need (a list of environment variables), then copy files needed in
-the cluster and launch the cluster.
-
 #### Creating a credentials file
+
+All credentials can be picked up from environment variables by the ETL. Instead of setting these
+variables before starting the ETL, you can also add a file with credentials to the `config` directory
+where the ETL will pick them up for you. The credentials file should be formatted just like a shell
+file used to setting variables, meaning lines should have the forms:
+```
+# Lines with '#' are ignored.
+NAME=value
+# Although not meaningful within the ETL code, you can use the "export" syntax from Bash
+export NAME=value
+```
 
 The minimal credentials file contains the login information for the ETL user that Arthur will use
 to execute in Redshift.  Make sure this file exists in your data warehouse repo as `config/credentials.sh`:
@@ -226,7 +234,11 @@ Start a cluster (which needs to know about your S3 bucket where the bootstrap co
 bin/aws_emr_cluster.sh -i "<your S3 bucket>"
 ```
 
-Now check for the output and pick up the cluster ID.
+Now check for the output and pick up the cluster ID. There will be a line that looks something like this:
+```
++ CLUSER_ID=j-12345678
+```
+
 You can then use `arthur.py --submit "<cluster ID>"` instead of `arthur.py` in the examples below.
 Note that the `--submit` option must be between `arthur.py` and the sub-command in use, e.g.
 ```shell

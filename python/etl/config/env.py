@@ -16,20 +16,26 @@ def get(name: str, default: Union[str, None]=None) -> str:
     return value
 
 
-def getuser() -> str:
+def get_default_prefix() -> str:
     """
-    Find user's name, normally by looking up the value of the USER environment
-    variable. This is used, for example, to select the default prefix in the S3 bucket.
+    Return default prefix which is the first non-emtpy value of:
+      - the environment variable ARTHUR_DEFAULT_PREFIX
+      - the environment variable USER
+      - the "user name" as determined by the getpass module
 
-    If the lookup for the environment variable fails, we fall back to a more
-    exhaustive search using getuser.
+    >>> os.environ["ARTHUR_DEFAULT_PREFIX"] = "doctest"
+    >>> get_default_prefix()
+    'doctest'
     """
-    user = os.environ.get("USER", "")
-    if len(user) == 0:
-        user = getpass.getuser()
-    return user
+    try:
+        default_prefix = get("ARTHUR_DEFAULT_PREFIX")
+    except (KeyError, ValueError):
+        default_prefix = os.environ.get("USER", "")
+        if len(default_prefix) == 0:
+            default_prefix = getpass.getuser()
+    return default_prefix
 
 
 if __name__ == "__main__":
-    user_name = getuser()
-    print("Hello {}!".format(user_name))
+    prefix = get_default_prefix()
+    print("Default prefix = {}".format(prefix))
