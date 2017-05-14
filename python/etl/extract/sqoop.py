@@ -42,7 +42,9 @@ class SqoopExtractor(Extractor):
         jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
 
         password_file_path = self.write_password_file(dsn_properties["password"])
-        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, relation)
+        params_file_path = self.write_connection_params()
+        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
+                                        relation)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
 
@@ -66,7 +68,23 @@ class SqoopExtractor(Extractor):
             self.logger.info("Wrote password to '%s'", password_file_path)
         return password_file_path
 
-    def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str,
+    def write_connection_params(self) -> str:
+        """
+        Write a (temporary) file for connection parameters, return name of file created.
+        """
+        if self.dry_run:
+            self.logger.info("Dry-run: Skipping writing of connection params file")
+            params_file_path = "/tmp/never_used"
+        else:
+            with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="cp_", delete=False) as fp:
+                fp.write("ssl = true\n".encode())
+                fp.write("sslfactory = org.postgresql.ssl.NonValidatingFactory\n".encode())
+                fp.close()
+            params_file_path = fp.name
+            self.logger.info("Wrote connection params to '%s'", params_file_path)
+        return params_file_path
+
+    def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str, params_file_path: str,
                             relation: RelationDescription) -> List[str]:
         """
         Create set of Sqoop options.
@@ -87,7 +105,7 @@ class SqoopExtractor(Extractor):
         args = ["import",
                 "--connect", q(jdbc_url),
                 "--driver", q("org.postgresql.Driver"),
-                "--connection-param-file", q(os.path.join(self._sqoop_options_dir, "ssl.props")),
+                "--connection-param-file", q(params_file_path),
                 "--username", q(username),
                 "--password-file", '"file://{}"'.format(password_file_path),
                 "--verbose",
