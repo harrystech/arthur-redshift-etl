@@ -7,10 +7,15 @@
 #   CRONUT_BASE_URL - location of the CRONUT service
 #   CRONUT_API_TOKEN - identify this project
 #   CRONUT_PUBLIC_KEY - encrypt the public id in transit
+# We usually keep this information in the credentials.sh file.
 #
 # To identify the desired schedule (using its public ID), the environment variables
 # must contain one that looks like "CRONUT_<command line arg>".
 # For example,  "ping_cronut.sh WAKEUP" will look for the public ID in CRONUT_WAKEUP.
+# We keep this information in the cronut_public_ids.sh file.
+#
+# If the public ID cannot be found, this script will not create an error. (Since the
+# dead-man switch itself will detect the missing ping.)
 #
 # Note that the "name" here simply refers to the command line argument and
 # need not be related to the name chosen in the Cronut service.
@@ -22,18 +27,29 @@ fi
 
 set -e
 
-for CREDENTIALS in credentials.sh cronut_env.sh cronut_public_ids.sh; do
-    if [ -r "/tmp/redshift_etl/config/$CREDENTIALS" ]; then
-        source "/tmp/redshift_etl/config/$CREDENTIALS"
+for CREDENTIALS in credentials.sh cronut_public_ids.sh; do
+    FILENAME="/tmp/redshift_etl/config/$CREDENTIALS"
+    if [ -r "$FILENAME" ]; then
+        echo "Reading '$FILENAME'"
+        source "$FILENAME"
+    else
+        echo "Failed to find '$FILENAME'"
     fi
 done
 
 NAME="CRONUT_$1"
 CRONUT_PUBLIC_ID=${!NAME}
 
-if [ -z $CRONUT_PUBLIC_ID ]; then
-    echo "Could not find value for \"$1\" (checked \$$NAME)"
-    exit 1
+for ENV_NAME in CRONUT_BASE_URL CRONUT_API_TOKEN CRONUT_PUBLIC_KEY; do
+    ENV_VALUE=${!ENV_NAME}
+    if [ -z "$ENV_VALUE" ]; then
+        echo "Failed to find value for $ENV_NAME"
+        exit 0
+    fi
+done
+if [ -z "$CRONUT_PUBLIC_ID" ]; then
+    echo "Could not find public id for '$1' (checked variable \$$NAME)"
+    exit 0
 fi
 
 CURRENT_TIME=`date '+%s'`

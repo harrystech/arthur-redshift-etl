@@ -87,6 +87,7 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     logging.captureWarnings(True)  # type: ignore
     logger.info('Starting log for "%s" (%s)', ' '.join(sys.argv), package_version())
     logger.debug("Current working directory: '%s'", os.getcwd())
+    logger.info(get_release_info())
 
 
 def load_environ_file(filename: str) -> None:
@@ -122,15 +123,15 @@ def load_settings_file(filename: str, settings: dict) -> None:
                 settings[key] = new_settings[key]
 
 
-def read_release_file(filename: str) -> None:
+def get_release_info() -> str:
     """
-    Read the release file and echo its contents to the log.
+    Read the release file and return all lines bunched into one comma-separated value.
     Life's exciting. And short. But mostly exciting.
     """
-    logger.debug("Loading release information from '%s'", filename)
-    with open(filename) as f:
-        lines = [line.strip() for line in f]
-    logger.info("Release information: %s", ', '.join(lines))
+    release = pkg_resources.resource_string(__name__, "release.txt")
+    text = release.decode(errors='ignore').strip()
+    lines = [line.strip() for line in text.split('\n')]
+    return "Release information: " + ", ".join(lines)
 
 
 def yield_config_files(config_files: Sequence[str], default_file: str=None) -> Iterable[str]:
@@ -171,8 +172,6 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
         elif filename.endswith((".yaml", ".yml")):
             load_settings_file(filename, settings)
             count_settings += 1
-        elif filename.endswith("release.txt"):
-            read_release_file(filename)
         else:
             logger.info("Skipping unknown config file '%s'", filename)
 
@@ -220,7 +219,7 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
 
 def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     """
-    Gather all settings files (*.yaml files) -- this drops any hierarchy in the config files (!).
+    Gather all settings files (*.yaml and *.sh files) -- this drops any hierarchy in the config files (!).
 
     It is an error if we detect that there are settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
@@ -229,12 +228,15 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     settings_with_path = []
 
     for fullname in yield_config_files(config_files):
-        if fullname.endswith(('.yaml', '.yml')):
-            filename = os.path.basename(fullname)
+        filename = os.path.basename(fullname)
+        if filename.startswith("credentials") and filename.endswith(".sh"):
+            continue
+        # TODO Once we have route53 setup, drop support of .hosts file
+        if filename.endswith((".yaml", ".yml", ".sh", ".hosts")):
             if filename not in settings_found:
                 settings_found.add(filename)
             else:
-                raise KeyError("Found configuration file in multiple locations: '%s'" % filename)
+                raise KeyError("found configuration file in multiple locations: '%s'" % filename)
             settings_with_path.append(fullname)
     return sorted(settings_with_path)
 
@@ -242,3 +244,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
 @lru_cache()
 def load_json(filename: str):
     return json.loads(pkg_resources.resource_string(__name__, filename))
+
+
+if __name__ == "__main__":
+    print(get_release_info())

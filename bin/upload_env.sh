@@ -36,20 +36,6 @@ ask_to_confirm () {
 
 ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'?"
 
-if [[ -z "$DATA_WAREHOUSE_CONFIG" ]]; then
-    echo "Cannot find configuration files.  Please set DATA_WAREHOUSE_CONFIG to a directory."
-    exit 2
-elif [[ ! -d "$DATA_WAREHOUSE_CONFIG" ]]; then
-    echo "Expected DATA_WAREHOUSE_CONFIG to point to a directory"
-    exit 2
-elif [[ -d "$DATA_WAREHOUSE_CONFIG/config" ]]; then
-    echo "Expected DATA_WAREHOUSE_CONFIG to point to a config directory, not the root directory."
-    echo "(Found directory $DATA_WAREHOUSE_CONFIG/config which is unexpected.)"
-    exit 2
-fi
-
-set -u
-
 if ! aws s3 ls "s3://$CLUSTER_BUCKET/" > /dev/null; then
     echo "Check whether the bucket \"$CLUSTER_BUCKET\" exists and you have access to it!"
     exit 2
@@ -61,7 +47,8 @@ if [[ ! -r setup.py ]]; then
 fi
 
 echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to S3"
-set -x
+
+set -x -u
 
 # Collect release information
 RELEASE_FILE="/tmp/setup_env_release_${USER}$$.txt"
@@ -72,7 +59,7 @@ trap "rm \"$RELEASE_FILE\"" EXIT
 git rev-parse --show-toplevel >> "$RELEASE_FILE"
 git rev-parse HEAD >> "$RELEASE_FILE"
 date "+%Y-%m-%d %H:%M:%S%z" >> "$RELEASE_FILE"
-aws s3 cp "$RELEASE_FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config/release.txt"
+cat "$RELEASE_FILE" > "python/etl/config/release.txt"
 
 python3 setup.py sdist
 LATEST_TAR_FILE=`ls -1t dist/redshift-etl*tar.gz | head -1`
@@ -82,14 +69,7 @@ do
 done
 
 aws s3 sync --delete bin "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/bin"
-aws s3 sync --delete \
-    --exclude "*" \
-    --include "*.yaml" \
-    --include "*.sh" \
-    --include "*.hosts" \
-    --exclude "release.txt" \
-    --exclude "credentials*.sh" \
-    "$DATA_WAREHOUSE_CONFIG" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
+
 # Users who don't intend to use Spark may not have the jars directory.
 if [[ -d "jars" ]]; then
     aws s3 sync --delete \
@@ -102,4 +82,4 @@ fi
 set +x
 echo
 echo "You should *now* run:"
-echo "arthur.py sync --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
+echo "arthur.py sync --deploy --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
