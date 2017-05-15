@@ -1,0 +1,40 @@
+.sub-header {
+    font-size: large;
+}
+
+.boxed-id {
+    font-family: 'Lucida Console', monospace;
+    border: 1px solid darkgray;
+    padding: 2px 4px 2px 4px;
+}
+
+table {
+    font-family: arial, sans-serif;
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th, td {
+    border: 1px solid darkgray;
+    text-align: left;
+    padding: 8px;
+}
+
+th {
+    background-color: lightgray;
+}
+
+td.progress {
+    width: 200px;
+}
+
+td.progress > div {
+    background-color: CornflowerBlue;
+    display: block;
+    height: 1em;
+    border: 1px solid darkblue;
+}
+
+.events tr:nth-child(odd) > td {
+    background-color: lightgray;
+}
