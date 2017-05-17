@@ -67,7 +67,7 @@ PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 if [[ -z "$PIPELINE_ID" ]]; then
     set +x
-    echo "Failed to find pipeline id in output -- cluster probably didn't start. Check your VPN etc."
+    echo "Failed to find pipeline id in output -- pipeline probably wasn't created. Check your VPN etc."
     exit 1
 fi
 

@@ -44,7 +44,7 @@ PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OC
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
 aws datapipeline create-pipeline \
-    --unique-id rebuild_etl_pipeline \
+    --unique-id rebuild-etl-pipeline \
     --name "$PIPELINE_NAME" \
     --tags "$PIPELINE_TAGS" \
     | tee "$PIPELINE_ID_FILE"
@@ -53,7 +53,7 @@ PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
 if [[ -z "$PIPELINE_ID" ]]; then
     set +x
-    echo "Failed to find pipeline id in output -- cluster probably didn't start. Check your VPN etc."
+    echo "Failed to find pipeline id in output -- pipeline probably wasn't created. Check your VPN etc."
     exit 1
 fi
 

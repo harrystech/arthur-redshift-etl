@@ -48,14 +48,14 @@ set -x
 PROJ_BUCKET="$1"
 PROJ_ENVIRONMENT="${2-$DEFAULT_PREFIX}"
 
-CLUSTER_RELEASE_LABEL="emr-5.0.0"
+CLUSTER_RELEASE_LABEL="emr-5.3.0"
 CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
 CLUSTER_REGION="us-east-1"
 
 # === Derived configuration ===
 
 CLUSTER_LOGS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/logs/"
-CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT) `date +'%Y-%m-%d %H:%M'`"
+CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, `date +'%Y-%m-%d %H:%M'`)"
 
 
 if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then

@@ -70,7 +70,7 @@ fi
 
 set -x
 
-for FOLDER in bin config data jars schemas; do
+for FOLDER in bin config jars schemas data; do
     aws s3 sync --delete --exclude 'credentials*.sh' \
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"

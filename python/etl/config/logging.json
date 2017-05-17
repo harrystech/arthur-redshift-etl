@@ -45,6 +45,12 @@
             "level": "INFO",
             "propagate": 0
         },
+        "botocore.credentials": {
+            "qualname": "botocore.credentials",
+            "handlers": [ "file" ],
+            "level": "DEBUG",
+            "propagate": 0
+        },
         "boto3": {
             "qualname": "boto3",
             "handlers": [ "file" ],
