@@ -1,3 +1,4 @@
+import getpass
 import os
 from typing import Union
 
@@ -15,6 +16,26 @@ def get(name: str, default: Union[str, None]=None) -> str:
     return value
 
 
+def get_default_prefix() -> str:
+    """
+    Return default prefix which is the first non-emtpy value of:
+      - the environment variable ARTHUR_DEFAULT_PREFIX
+      - the environment variable USER
+      - the "user name" as determined by the getpass module
+
+    >>> os.environ["ARTHUR_DEFAULT_PREFIX"] = "doctest"
+    >>> get_default_prefix()
+    'doctest'
+    """
+    try:
+        default_prefix = get("ARTHUR_DEFAULT_PREFIX")
+    except (KeyError, ValueError):
+        default_prefix = os.environ.get("USER", "")
+        if len(default_prefix) == 0:
+            default_prefix = getpass.getuser()
+    return default_prefix
+
+
 if __name__ == "__main__":
-    user_name = get("USER")
-    print("Hello {}!".format(user_name))
+    prefix = get_default_prefix()
+    print("Default prefix = {}".format(prefix))

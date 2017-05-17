@@ -7,10 +7,13 @@ if [[ $# -lt 5 || "$1" = "-h" ]]; then
     exit 0
 fi
 
+set -e -u
+
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
-CLUSTER_BUCKET="$1"
-CLUSTER_ENVIRONMENT="$2"
+PROJ_BUCKET="$1"
+PROJ_ENVIRONMENT="$2"
+
 START_DATE_TIME="$3"
 OCCURRENCES="$4"
 
@@ -30,35 +33,42 @@ SELECTION="$@"
 C_S_SELECTION="$(join_by ',' $SELECTION)"
 
 # Verify that this bucket/environment pair is set up on s3
-BOOTSTRAP="s3://$CLUSTER_BUCKET/$CLUSTER_ENVIRONMENT/current/bin/bootstrap.sh"
+BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/current/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Check whether the bucket \"$CLUSTER_BUCKET\" and folder \"$CLUSTER_ENVIRONMENT\" exist!"
+    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
     exit 1
 fi
 
-if [[ "$CLUSTER_ENVIRONMENT" =~ "production" ]]; then
+set -x
+
+if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
     PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Production"
 else
     PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Development"
 fi
+PIPELINE_NAME="ETL Refresh Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
-set -e -u -x
-
 aws datapipeline create-pipeline \
     --unique-id refresh_etl_pipeline \
-    --name "ETL Refresh Pipeline ($CLUSTER_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)" \
+    --name "$PIPELINE_NAME" \
     --tags "$PIPELINE_TAGS" \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
 
+if [[ -z "$PIPELINE_ID" ]]; then
+    set +x
+    echo "Failed to find pipeline id in output -- cluster probably didn't start. Check your VPN etc."
+    exit 1
+fi
+
 aws datapipeline put-pipeline-definition \
     --pipeline-definition file://${CONFIG_SOURCE}/refresh_pipeline.json \
     --parameter-values \
-        myS3Bucket="$CLUSTER_BUCKET" \
-        myEtlEnvironment="$CLUSTER_ENVIRONMENT" \
+        myS3Bucket="$PROJ_BUCKET" \
+        myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
         mySelection="$SELECTION" \
