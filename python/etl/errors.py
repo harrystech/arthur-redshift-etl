@@ -157,9 +157,9 @@ class MissingManifestError(ETLRuntimeError):
 class RequiredRelationLoadError(ETLRuntimeError):
 
     def __init__(self, failed, failed_and_required):
-        implied_failures = ", ".join(identifier for identifier in failed_and_required if identifier != failed)
-        if implied_failures:
-            self.message = "Failure of {} implies failure of required relation(s): {}".format(failed, implied_failures)
+        if failed_and_required:
+            self.message = "Failure of {} implies failure of required relation(s): {}".format(failed,
+                                                                                              failed_and_required)
         else:
             self.message = "Failure occurred for required {} relation".format(failed)
 
