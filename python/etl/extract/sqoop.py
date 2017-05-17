@@ -61,7 +61,7 @@ class SqoopExtractor(Extractor):
             self.logger.info("Dry-run: Skipping writing of password file")
             password_file_path = "/tmp/never_used"
         else:
-            with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="pw_", delete=False) as fp:
+            with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="pw_", delete=False) as fp:
                 fp.write(password)  # type: ignore
                 fp.close()
             password_file_path = fp.name
@@ -76,9 +76,9 @@ class SqoopExtractor(Extractor):
             self.logger.info("Dry-run: Skipping writing of connection params file")
             params_file_path = "/tmp/never_used"
         else:
-            with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="cp_", delete=False) as fp:
-                fp.write("ssl = true\n".encode())
-                fp.write("sslfactory = org.postgresql.ssl.NonValidatingFactory\n".encode())
+            with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="cp_", delete=False) as fp:
+                fp.write("ssl = true\n")  # type: ignore
+                fp.write("sslfactory = org.postgresql.ssl.NonValidatingFactory\n")  # type: ignore
                 fp.close()
             params_file_path = fp.name
             self.logger.info("Wrote connection params to '%s'", params_file_path)
@@ -139,7 +139,7 @@ class SqoopExtractor(Extractor):
             self.logger.info("Dry-run: Skipping creation of Sqoop options file")
             options_file_path = "/tmp/never_used"
         else:
-            with NamedTemporaryFile('w+', dir=self._sqoop_options_dir, prefix="so_", delete=False) as fp:
+            with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="so_", delete=False) as fp:
                 fp.write('\n'.join(args))  # type: ignore
                 fp.write('\n')  # type: ignore
                 fp.close()
