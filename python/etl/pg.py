@@ -29,46 +29,47 @@ def parse_connection_string(dsn: str) -> dict:
     """
     Extract connection value from JDBC-style connection string.
 
-    The fields "user", "host", "database" will be set.
-    The fields "password", "port" and "sslmode" may be set.
+    The fields ""host" and "database" will be set.
+    The fields "user", "password", "port" and "sslmode" may be set.
 
-    >>> dsn = parse_connection_string("postgresql://john_doe:secret@pg.example.com/xyzzy")
-    >>> unparse_connection(dsn)
-    'host=pg.example.com dbname=xyzzy user=john_doe password=***'
+    >>> dsn_min = parse_connection_string("postgres://example.com/xyzzy")
+    >>> unparse_connection(dsn_min)
+    'host=example.com port=<default> dbname=xyzzy user=<default> password=***'
+    >>> dsn_max = parse_connection_string("postgresql://john.doe:secret@pg.example.com:5432/xyzzy")
+    >>> unparse_connection(dsn_max)
+    'host=pg.example.com port=5432 dbname=xyzzy user=john.doe password=***'
     """
     # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
     # Now they have two problems.
     dsn_re = re.compile(r"""(?:jdbc:)?(redshift|postgresql|postgres)://  # be nice and accept either connection type
-                            (?P<user>\w+)(?::(?P<password>[-\w]+))?@  # user information with optional password
-                            (?P<host>[-\w.]+)(:?:(?P<port>\d+))?/  # host and optional port information
+                            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
+                            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
                             (?P<database>\w+)  # database (and not dbname)
                             (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
                         re.VERBOSE)
-    match = dsn_re.match(os.path.expandvars(dsn))
+    dsn_after_expansion = os.path.expandvars(dsn)  # Supports stuff like $USER
+    match = dsn_re.match(dsn_after_expansion)
     if match is None:
-        raise ValueError("Value of connection string does not conform to expected format.")
+        raise ValueError("value of connection string does not conform to expected format.")
     values = match.groupdict()
-    # Remove optional key/value pairs
-    for key in ["password", "port", "sslmode"]:
-        if values[key] is None:
-            del values[key]
-    return values
+    return {key: values[key] for key in values if values[key] is not None}
 
 
 def unparse_connection(dsn: dict) -> str:
     """
     Return connection string for pretty printing or copying when starting psql
     """
-    if "port" in dsn:
-        return "host={host} port={port} dbname={database} user={user} password=***".format(**dsn)
-    else:
-        return "host={host} dbname={database} user={user} password=***".format(**dsn)
+    values = dict(dsn)
+    for key in ("user", "port"):
+        if key not in values:
+            values[key] = "<default>"
+    return "host={host} port={port} dbname={database} user={user} password=***".format(**values)
 
 
 def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
-    Open a connection to the database described by dsn_string which needs to
-    be of the format "postgresql://user:password@host:port/database"
+    Open a connection to the database described by dsn_string which looks something like
+    "postgresql://user:password@host:port/database" (see parse_connection_string).
 
     Caveat Emptor: By default, this turns off autocommit on the connection. This means that you
     have to explicitly commit on the connection object or run your SQL within a transaction context!
@@ -357,5 +358,4 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG)
     with log_error():
-        dsn = parse_connection_string(sys.argv[1])
-        ping(dsn)
+        ping(parse_connection_string(sys.argv[1]))
