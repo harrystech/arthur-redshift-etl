@@ -40,7 +40,7 @@ constraints, attributes, and encodings.
 import logging
 from contextlib import closing
 from itertools import chain
-from typing import List
+from typing import List, Set
 
 import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
@@ -489,7 +489,7 @@ def evaluate_execution_order(relations, selector, only_first=False, whole_schema
         if whole_schemas:
             raise ValueError("Cannot elect to pick both, entire schemas and only first relation")
     else:
-        dirty.update(relation.identifier for relation in etl.relation.find_radius(complete_sequence, selected))
+        dirty.update(relation.identifier for relation in etl.relation.find_dependents(complete_sequence, selected))
 
     dirty_schemas = {relation.target_table_name.schema
                      for relation in complete_sequence if relation.identifier in dirty}
@@ -535,7 +535,7 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
         create_schemas_after_backup(data_warehouse.dsn_etl, involved_schemas, dry_run=dry_run)
 
     vacuum_ready = []
-    failed = set()
+    skip_after_fail = set()  # type: Set[str]
 
     # TODO Add retry here in case we're doing a full reload.
     conn = etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas)
@@ -543,8 +543,8 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
         try:
             for i, relation in enumerate(execution_order):
                 index = {"current": i+1, "final": len(execution_order)}
-                if relation.identifier in failed:
-                    logger.info("Skipping load for relation '%s' due to failed dependencies", relation.identifier)
+                if relation.identifier in skip_after_fail:
+                    logger.warning("Skipping load for relation '%s' due to failed dependencies", relation.identifier)
                     continue
                 target_schema = schema_config_lookup[relation.target_table_name.schema]
                 try:
@@ -555,17 +555,19 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
                         vacuum_ready.append(relation.target_table_name)
                 except Exception as exc:
                     if whole_schemas:
-                        blast_zone = etl.relation.find_radius(execution_order, [relation])
-                        failed_and_required = [relation.identifier for relation in blast_zone if relation.is_required]
-                        if failed_and_required:
+                        dependent_relations = etl.relation.find_dependents(execution_order, [relation])
+                        failed_and_required = [relation.identifier for relation in dependent_relations
+                                               if relation.is_required]
+                        if relation.is_required or failed_and_required:
                             raise RequiredRelationLoadError(relation.identifier, failed_and_required) from exc
-                        logger.exception("This failure for '%s' does not harm any relations required by selector '%s':",
-                                         relation.identifier, required_selector)
-                        subtree = set(relation.identifier for relation in blast_zone)
-                        failed.update(subtree)
-                        downstream = join_with_quotes(subtree.difference({relation.identifier}))
-                        if downstream:
-                            logger.info("Continuing load omitting these dependent relations: %s", downstream)
+                        logger.warning("This failure for '%s' does not harm any relations required by selector '%s':",
+                                       relation.identifier, required_selector, exc_info=True)
+                        # Make sure we don't try to load any of the dependents
+                        dependents = frozenset(relation.identifier for relation in dependent_relations)
+                        if dependents:
+                            skip_after_fail.update(dependents)
+                            logger.warning("Continuing load omitting these dependent relations: %s",
+                                           join_with_quotes(dependents))
                     else:
                         raise
 

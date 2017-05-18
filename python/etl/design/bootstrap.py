@@ -223,13 +223,14 @@ def create_partial_table_design_for_transformation(conn: connection, tmp_view_na
         logger.info("Experimental update of existing table design file in progress...")
         existing_table_design = relation.table_design
         if "columns" in update_keys:
-            column_lookup = {column["name"]: column for column in existing_table_design["columns"]}
-            for column in table_design["columns"]:
-                update_column_definition(column, column_lookup.get(column["name"], {}))
+            # If the old design had added an identity column, we carry it forward here (and always as the first column).
             identity = [column for column in existing_table_design["columns"] if column.get("identity")]
             if identity:
                 table_design["columns"][:0] = identity
                 table_design["columns"][0]["encoding"] = "raw"
+            column_lookup = {column["name"]: column for column in existing_table_design["columns"]}
+            for column in table_design["columns"]:
+                update_column_definition(column, column_lookup.get(column["name"], {}))
         # In case we're updating from an auto-designed file, fix the description to reflect the update.
         table_design["description"] = table_design["description"].replace("generated", "updated", 1)
         if "description" in update_keys and "description" in existing_table_design:
@@ -336,17 +337,17 @@ def save_table_design(source_dir: str, source_table_name: TableName, target_tabl
     here and write them out with a specific order of the keys, like have name and description towards
     the top.
     """
+    # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
+    etl.design.load.validate_table_design(table_design, target_table_name)
+
     # FIXME Move this logic into file sets (note that "source_name" is in table_design)
-    filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema,
-                                                            source_table_name.table))
+    filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
     this_table = target_table_name.identifier
     if dry_run:
         logger.info("Dry-run: Skipping writing new table design file for '%s'", this_table)
     elif os.path.exists(filename) and not overwrite:
         logger.warning("Skipping writing new table design for '%s' since '%s' already exists", this_table, filename)
     else:
-        # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
-        etl.design.load.validate_table_design(table_design, target_table_name)
         logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
         # We use JSON pretty printing because it is prettier than YAML printing.
         with open(filename, 'w') as o:
@@ -404,10 +405,10 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
     upstream = frozenset(name.identifier for name in source_tables)
     not_found = upstream.difference(existent)
     if not_found:
-        logger.warning("New table(s) in '%s' without local design: %s", source.name, join_with_quotes(not_found))
+        logger.warning("New table(s) in source '%s' without local design: %s", source.name, join_with_quotes(not_found))
     too_many = existent.difference(upstream)
     if too_many:
-        logger.error("Table design(s) without upstream table in '%s': %s", source.name, join_with_quotes(too_many))
+        logger.error("Local table design(s) without table in source '%s': %s", source.name, join_with_quotes(too_many))
 
     return len(source_tables)
 

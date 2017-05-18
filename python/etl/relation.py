@@ -21,7 +21,7 @@ from contextlib import closing, contextmanager
 from functools import partial
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, Iterable, Optional, Union, List
+from typing import Any, Dict, FrozenSet, Optional, Union, List
 
 import etl.design.load
 import etl.file_sets
@@ -62,12 +62,10 @@ class RelationDescription:
         # Note the subtle difference to TableFileSet--here the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
-        # Lazy-loading of table design, query statement, etc.
+        # Lazy-loading of table design and query statement and any derived information from the table design
         self._table_design = None  # type: Optional[Dict[str, Any]]
         self._query_stmt = None  # type: Optional[str]
-        self._unload_target = None  # type: Optional[str]
-        self._dependencies = None  # type: Optional[List[str]]
-        # Deferred evaluation whether this relation is required
+        self._dependencies = None  # type: Optional[FrozenSet[str]]
         self._is_required = None  # type: Union[None, bool]
 
     @property
@@ -143,12 +141,12 @@ class RelationDescription:
                 with open(self.sql_file_name) as f:
                     query_stmt = f.read()
             self._query_stmt = query_stmt.strip().rstrip(';')
-        return self._query_stmt  # type: ignore
+        return str(self._query_stmt)  # The str(...) shuts up the type checker.
 
     @property
-    def dependencies(self):
+    def dependencies(self) -> FrozenSet[str]:
         if self._dependencies is None:
-            self._dependencies = set(self.table_design.get("depends_on", []))
+            self._dependencies = frozenset(self.table_design.get("depends_on", []))
         return self._dependencies
 
     @property
@@ -318,9 +316,10 @@ def order_by_dependencies(relation_descriptions):
             has_internal_dependencies.add(description.identifier)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
-        logger.warning('These relations have unknown dependencies: %s', join_with_quotes(has_unknown_dependencies))
         logger.warning("These relations were unknown during dependency ordering: %s",
                        join_with_quotes(known_unknowns))
+        logger.warning('This caused these relations to have dependencies that are not known: %s',
+                       join_with_quotes(has_unknown_dependencies))
     has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
         if description.identifier in has_internal_dependencies:
@@ -375,14 +374,15 @@ def find_matches(relations: List[RelationDescription], selector: TableSelector):
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
-def find_radius(relations: List[RelationDescription], seed_relations: List[RelationDescription]):
+def find_dependents(relations: List[RelationDescription], seed_relations: List[RelationDescription]):
     """
-    Return list of relations that includes seed relations and any relations that depend on them
-    (directly or transitively).
+    Return list of relations that depend on the seed relations (directly or transitively).
     For this to really work, the list of relations should be sorted in "execution order"!
     """
-    affected = set(relation.identifier for relation in seed_relations)
+    seeds = frozenset(relation.identifier for relation in seed_relations)
+    in_dependency_path = set(seeds)
     for relation in relations:
-        if any(dependency in affected for dependency in relation.dependencies):
-            affected.add(relation.identifier)
-    return [relation for relation in relations if relation.identifier in affected]
+        if any(dependency in in_dependency_path for dependency in relation.dependencies):
+            in_dependency_path.add(relation.identifier)
+    dependents = in_dependency_path - seeds
+    return [relation for relation in relations if relation.identifier in dependents]

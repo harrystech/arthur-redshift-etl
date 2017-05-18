@@ -71,32 +71,47 @@ brew install python3
 brew install virtualenv
 ```
 
-Feel free to use [`virtualenv-wrapper`](https://virtualenvwrapper.readthedocs.io/en/latest/) to make
-your life switching in and out of virtual environments easier but this README will stay with vanilla `virtualenv`.
-
 To run code locally, you'll need to create a virtual environment with additional packages.
 These packages are listed (with their expected versions) in the `requirements.txt` file.
+The most prominent packages are:
 * [Psycopg2](http://initd.org/psycopg/docs/) to connect to PostgreSQL and Redshift easily
 * [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
 * [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
-* [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
 * [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
+* [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
+* [mypy](http://mypy-lang.org/) for static type checking
 
-For running the ETL remotely (in EC2), the `bin/bootstrap.sh` script will take care of the creation
+For running the ETL remotely in EC2, the `bin/bootstrap.sh` script will take care of the creation
 of the virtual environment.
 
+#### Using vanilla virtualenv
+
 **Note** this assumes you are in the **top-level** directory of the Redshift ETL.
+
 ```shell
 mkdir venv
 virtualenv --python=python3 venv
+venv/bin/pip install pip --upgrade --disable-pip-version-check
 source venv/bin/activate
-pip3 install --upgrade pip
-pip3 install -r requirements.txt
+pip3 install --requirement ./requirements.txt
 python3 setup.py develop
 ```
 
 _Hint_: Don't worry if you get assertion violations while building a wheel for PyYAML.
 
+#### Using virtualenv wrapper
+
+Feel free to use [`virtualenv-wrapper`](https://virtualenvwrapper.readthedocs.io/en/latest/) to make
+your life switching in and out of virtual environments easier.
+
+* Creating virtual env for the ETL
+```shell
+mkvirtualenv --python=python3 redshift-etl
+workon redshift-etl
+pip install pip --upgrade --disable-pip-version-check
+pip3 install --requirement ./requirements.txt
+python3 setup.py develop
+```
 
 ## Additional pre-requisites for developers
 
@@ -121,9 +136,7 @@ to be able to connect to PostgreSQL databases and write CSV files for a Datafram
 | Software | Version | JAR file  |
 |---|---|---|
 | [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver | 9.4 | [postgresql-9.4.1208.jar](https://jdbc.postgresql.org/download/postgresql-9.4.1208.jar) |
-| [Spark-CSV package](https://spark-packages.org/) | 1.5 | [spark-csv_2.10-1.5.0.jar](http://repo1.maven.org/maven2/com/databricks/spark-csv_2.10/1.5.0/spark-csv_2.10-1.5.0.jar) |
-| [Apache Commons CSV](https://commons.apache.org/proper/commons-csv/) | 1.4 | [commons-csv-1.4.jar](http://central.maven.org/maven2/org/apache/commons/commons-csv/1.4/commons-csv-1.4.jar) |
-| [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.1.10 | [RedshiftJDBC41-1.1.10.1010.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.1.10.1010.jar) |
+| [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.2.1 | [RedshiftJDBC41-1.2.1.1001.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.2.1.1001.jar) |
 
 Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to push files into S3:
 
@@ -141,8 +154,6 @@ _Hint_: There is a download script in `bin/download_jars.sh` to pull the version
 
 The EMR releases 4.5 and later include python3 so there's no need to install Python 3 using a bootstrap action.
 
-**TODO** The above steps for a virtual environment should be merged with `bin/bootstrap.sh`.
-
 #### Adding PySpark to your IDE
 
 The easiest way to add PySpark so that code completion and type checking works while working on ETL code
@@ -150,11 +161,11 @@ might be to just add a pointer in the virtual environment.
 
 First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set.
 
-Then, with Spark 2.0.0, try this for example:
+Then, with Spark 2.1.1, try this for example:
 ```shell
 cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
-/usr/local/Cellar/apache-spark/2.0.0/libexec/python
-/usr/local/Cellar/apache-spark/2.0.0/libexec/python/lib/py4j-0.10.1-src.zip
+/usr/local/Cellar/apache-spark/2.1.1/libexec/python
+/usr/local/Cellar/apache-spark/2.1.1/libexec/python/lib/py4j-0.10.4-src.zip
 EOF
 ```
 
@@ -186,23 +197,31 @@ a description of configurations.
 
 ### General notes about the CLI
 
-* Commands expect a config file but will default to picking up all files in a local `./config` directory.
+* Commands expect a config file and will start by picking up all files in a local `./config` directory.
 * Commands accept `--dry-run` command line flag to test without modifying the environment.
-* Commands allow to specify glob patterns to select specific schema(s) or table(s).
-* Commands use `--prefix` to select a folder in the S3 bucket (and default to the user's name).
-* Log files are by default in `arthur.log`.  They are managed so that your disk doesn't fill up too much.
-* To see more log lines, use `--verbose`.
+* Most commands allow to specify glob patterns to select specific schema(s) or table(s).
+* Most commands use `--prefix` to select a folder in the S3 bucket (but you may also have to use the `--remote` option).
+* To pick a prefix without specifying it every time, set the environment variable `ARTHUR_DEFAULT_PREFIX`.
+* Log files are by default in `arthur.log`.  They are rotated and deleted so that your disk doesn't fill up too much.
+* To see more log information, use `--verbose`. To see less, use `--quiet`.
 * To see them formatted in the console the same way as they are formatted in the log files, use `--prolix`.
-* To copy data manually, use `aws s3 --recursive`.  But you probably shouldn't and let `arthur.py` manage files.
+* You could copy data manually, but you probably shouldn't and let `arthur.py sync` manage files.
+* You can use environment variables to pass in credentials for database access, but you should probably use a file for that.
 
 ### Prerequisites for running the ETL in a cluster
 
-All commands below will assume that you run `arthur.py` locally.  But if you want to
-run the ETL in an EMR cluster instead, then you need to create a file with the
-credentials that the cluster will need (a list of environment variables), then copy files needed in
-the cluster and launch the cluster.
-
 #### Creating a credentials file
+
+All credentials can be picked up from environment variables by the ETL. Instead of setting these
+variables before starting the ETL, you can also add a file with credentials to the `config` directory
+where the ETL will pick them up for you. The credentials file should be formatted just like a shell
+file used to setting variables, meaning lines should have the forms:
+```
+# Lines with '#' are ignored.
+NAME=value
+# Although not meaningful within the ETL code, you can use the "export" syntax from Bash
+export NAME=value
+```
 
 The minimal credentials file contains the login information for the ETL user that Arthur will use
 to execute in Redshift.  Make sure this file exists in your data warehouse repo as `config/credentials.sh`:
@@ -216,7 +235,7 @@ Copy the ETL code (including bootstrap scripts and configuration):
 ```shell
 export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentials>"
 # export DATA_WAREHOUSE_CONFIG="\cd ./config && \pwd`
-bin/setup_env.sh "<your S3 bucket>" $USER
+bin/upload_env.sh "<your S3 bucket>" $USER
 ```
 
 #### Starting a cluster and submitting commands
@@ -226,7 +245,11 @@ Start a cluster (which needs to know about your S3 bucket where the bootstrap co
 bin/aws_emr_cluster.sh -i "<your S3 bucket>"
 ```
 
-Now check for the output and pick up the cluster ID.
+Now check for the output and pick up the cluster ID. There will be a line that looks something like this:
+```
++ CLUSER_ID=j-12345678
+```
+
 You can then use `arthur.py --submit "<cluster ID>"` instead of `arthur.py` in the examples below.
 Note that the `--submit` option must be between `arthur.py` and the sub-command in use, e.g.
 ```shell
@@ -350,7 +373,7 @@ Here are the basic steps to release a new version. Appropriate as you deem appro
     * Copy the comments from the PR where you collected all the changes into the release notes.
     * Save the release which will add the tag of the release.
 
-* Ship the new version using `setup_env.sh`.
+* Ship the new version using `upload_env.sh`.
 
 # Tips & Tricks
 

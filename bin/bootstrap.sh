@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
+PROJ_TEMP="/tmp/redshift_etl"
+
 if [[ ${1-"-h"} = "-h" ]]; then
     echo "Usage: $0 <bucket_name> <environment> [--local]"
     echo
-    echo "Download files from the S3 bucket into /tmp/redshift_etl on the instance"
+    echo "Download files from the S3 bucket into $PROJ_TEMP on the instance"
     echo "and install the Python code in a virtual environment."
     echo "Unless the option --local is used, this also runs yum and updates hosts file."
     exit 0
@@ -18,8 +20,7 @@ fi
 set -e
 
 BUCKET_NAME="$1"
-ETL_ENVIRONMENT="$2"
-REDSHIFT_ETL_HOME="/tmp/redshift_etl"
+ENVIRONMENT="$2"
 
 case ${3-"--ec2"} in
     --local)
@@ -39,7 +40,7 @@ log () {
     echo "`date '+%Y-%m-%d %H:%M:%S %Z'`: $*"
 }
 
-log "Starting \"$0 $BUCKET_NAME $ETL_ENVIRONMENT\""
+log "Starting \"$0 $BUCKET_NAME $ENVIRONMENT\""
 set -x
 
 # Set creation mask to: u=rwx,g=rx,o=
@@ -51,20 +52,20 @@ if [[ "$RUNNING_LOCAL" = "no" ]]; then
 fi
 
 # Send all files to temp directory
-test -d "$REDSHIFT_ETL_HOME" || mkdir -p "$REDSHIFT_ETL_HOME"
-cd "$REDSHIFT_ETL_HOME"
+test -d "$PROJ_TEMP" || mkdir -p "$PROJ_TEMP"
+cd "$PROJ_TEMP"
 
 # Download code to all nodes, this includes Python code and its requirements.txt
-aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/jars/" ./jars/
+aws s3 cp --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
 aws s3 cp --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
-    --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/bin/" ./bin/
+    --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh
 
 # Download configuration (except for credentials when not in EC2)
 if [[ "$RUNNING_LOCAL" = "no" ]]; then
-    aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/
+    aws s3 cp --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/
 else
-    aws s3 cp --recursive "s3://$BUCKET_NAME/$ETL_ENVIRONMENT/config/" ./config/ --exclude credentials*.sh
+    aws s3 cp --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/ --exclude credentials*.sh
 fi
 
 # Add custom hosts to EMR
@@ -75,13 +76,6 @@ if [[ "$RUNNING_LOCAL" = "no" ]]; then
     fi
 fi
 
-# Write file for Sqoop to be able to connect using SSL to upstream sources
-test -d sqoop || mkdir sqoop
-cat > ./sqoop/ssl.props <<EOF
-ssl=true
-sslfactory=org.postgresql.ssl.NonValidatingFactory
-EOF
-
 # Create virtual env for ETL
 test -d venv || mkdir venv
 for VIRTUALENV in "virtualenv-3.4" "virtualenv"; do
@@ -90,8 +84,9 @@ for VIRTUALENV in "virtualenv-3.4" "virtualenv"; do
     fi
 done
 
+# Make sure these steps match the description in the README!
 $VIRTUALENV --python=python3 venv
-
+# venv/bin/pip install pip --upgrade --disable-pip-version-check
 source venv/bin/activate
 pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
 
@@ -106,4 +101,4 @@ LATEST_TAR_FILE=`ls -1 ./jars/redshift-etl*tar.gz |
 pip3 install --upgrade "$LATEST_TAR_FILE" --disable-pip-version-check
 
 set +x
-log "Finished \"$0 $BUCKET_NAME $ETL_ENVIRONMENT\""
+log "Finished \"$0 $BUCKET_NAME $ENVIRONMENT\""
