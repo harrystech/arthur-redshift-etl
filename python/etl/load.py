@@ -319,7 +319,8 @@ def create_temp_table_as_and_copy(conn, relation, skip_copy=False, dry_run=False
                                      for column in table_design["columns"]
                                      if not (column.get("identity", False) or column.get("skipped", False)))
         dml_temp_stmt = "INSERT INTO {} (\n{}\n) (\n{}\n)".format(temp_name, s_columns, query_stmt)
-        dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name, add_row_for_key_0=True)
+        dml_stmt = assemble_insert_into_dml(table_design, table_name, temp_name,
+                                            add_row_for_key_0=table_name.table.startswith("dim_"))
     else:
         ddl_temp_stmt = assemble_ctas_ddl(table_design, temp_name, query_stmt)
         dml_temp_stmt = None
