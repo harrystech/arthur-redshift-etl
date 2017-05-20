@@ -1,9 +1,22 @@
 #! /usr/bin/env python3
 
 import sys
+from operator import itemgetter
 
 import boto3
 import jmespath
+
+
+def get_etl_pipeline_ids(client):
+    """
+    Return a dict mapping pipeline ids to their names, filtering on ETL pipelines.
+    """
+    paginator = client.get_paginator('list_pipelines')
+    response_iterator = paginator.paginate()
+    filtered_iterator = response_iterator.search(
+        "pipelineIdList[?contains(@.name, 'ETL') == `true`].id"
+    )
+    return list(filtered_iterator)
 
 
 def get_pipeline_status(client, pipeline_id):
@@ -49,8 +62,8 @@ def get_shell_activity_status(client, pipeline_id, object_ids):
     paginator = client.get_paginator('describe_objects')
     response_iterator = paginator.paginate(pipelineId=pipeline_id, objectIds=object_ids)
     filtered_iterator = response_iterator.search(
-        "pipelineObjects[?fields[?key == 'type'].stringValue|[0] == 'ShellCommandActivity']")
-
+        "pipelineObjects[?fields[?key == 'type'].stringValue|[0] == 'ShellCommandActivity']"
+    )
     names = ["id", "name", "@healthStatus", "@healthStatusFromInstanceId"]
     statuses = []
     for response in filtered_iterator:
@@ -103,8 +116,27 @@ def change_status_to_rerun(pipeline_id):
         instance_ids = [status["@healthStatusFromInstanceId"] for status in object_statuses]
         set_status_to_rerun(client, pipeline_id, instance_ids)
 
+
+def list_pipelines():
+    """
+    List all ETL pipelines that are currently scheduled.
+    """
+    client = boto3.client("datapipeline")
+    pipeline_ids = get_etl_pipeline_ids(client)
+    statuses = []
+    for pipeline_id in pipeline_ids:
+        status = get_pipeline_status(client, pipeline_id)
+        if status["@pipelineState"] == "SCHEDULED":
+            statuses.append(status)
+    for status in sorted(statuses, key=itemgetter("name")):
+        print("{pipelineId:24s} - {name} - ({@healthStatus}, {@latestRunTime})".format(**status))
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] == "-h":
-        print("Usage: {} '<pipeline-id>'".format(sys.argv[0]))
+        print("Usage: {} [-l | '<pipeline-id>']".format(sys.argv[0]))
         sys.exit(0)
-    change_status_to_rerun(sys.argv[1])
+    if sys.argv[1] == "-l":
+        list_pipelines()
+    else:
+        change_status_to_rerun(sys.argv[1])
