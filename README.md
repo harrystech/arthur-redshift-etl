@@ -11,15 +11,12 @@
                          |___/
 ```
 
-This README outlines how to get started with the ETL. If you are not a developer of ETL code (e.g.
-in your data engineering team), then you should probably head on over to the Wiki pages that
-are maintained by your analytics team.
+This README outlines how to get started with the ETL.
+This includes information about setting up _Arthur_ which is the driver for ETL activities.
 
 You are probably (also) looking for the [Wiki](https://github.com/harrystech/harrys-redshift-etl/wiki) pages,
 which include a lot more information about the ETL and what it does (and why it does what it does).
 And if something appears amiss, check out the [issues page](https://github.com/harrystech/harrys-redshift-etl/issues).
-
-And if you're looking for changes, check out the [NEWS](./NEWS.md).
 
 # Getting ready to run ETLs
 
@@ -36,7 +33,8 @@ Should be obvious ... but you need to `git clone` this repo using the handy link
 
 ### AWS CLI
 
-You will need to interact with AWS via the CLI to start a cluster or an instance in EC2:
+We are using some shell scripts that use the AWS CLI and so this must be installed. We strongly suggest
+that you use a packaging tool, like [Homebrew](https://brew.sh/) on macOS.
 ```shell
 brew install awscli
 aws --version
@@ -50,10 +48,12 @@ aws configure
 ```
 * If you have to work with multiple access keys, check out the support of profiles in the CLI.
 * It is important to setup a **default region** since the start scripts do not specify one.
-* To test, try to list the contents of your company's data lake
+* To test, try to list the contents of your company's data lake:
 ```shell
 aws s3 ls 's3://<your s3 bucket>'
 ```
+
+### Other commands
 
 We also use a tool called [jq](https://stedolan.github.io/jq/manual/v1.5/) to help parse responses
 from AWS CLI commands.
@@ -65,10 +65,16 @@ brew install jq
 
 Our ETL code is using [Python3](https://docs.python.org/3/) so you may have to install that first.
 On a Mac, simply use [Homebrew](http://brew.sh/) for an easy installation.
-We strongly suggest that you work within a virtual environment.
+We strongly suggest that you always work within a virtual environment.
 ```shell
 brew install python3
-brew install virtualenv
+# Using the newly installed pip3
+pip3 install virtualenv
+```
+
+For new versions of pip, make sure to run this **outside** the virtual environment:
+```
+pip3 install pip --upgrade --disable-pip-version-check
 ```
 
 To run code locally, you'll need to create a virtual environment with additional packages.
@@ -91,9 +97,8 @@ of the virtual environment.
 ```shell
 mkdir venv
 virtualenv --python=python3 venv
-venv/bin/pip install pip --upgrade --disable-pip-version-check
 source venv/bin/activate
-pip3 install --requirement ./requirements.txt
+pip3 install --requirement ./requirements.txt --disable-pip-version-check
 python3 setup.py develop
 ```
 
@@ -104,13 +109,46 @@ _Hint_: Don't worry if you get assertion violations while building a wheel for P
 Feel free to use [`virtualenv-wrapper`](https://virtualenvwrapper.readthedocs.io/en/latest/) to make
 your life switching in and out of virtual environments easier.
 
-* Creating virtual env for the ETL
+Assuming you already have setup your environment to take advantage of the virtualenv wrapper tool
+by
+* setting the environment variable `WORKON_HOME`
+* setting the environment variable `VIRTUALENVWRAPPER_PYTHON` to `/usr/local/bin/python3`
+* making sure that `/usr/local/bin/virtualenvwrapper.sh` is _source_d in your shell profile.
+
+**Creating virtual env if you don't plan on changing the ETL code**
+
+First, change into the directory where your data warehouse setup will live, then:
 ```shell
-mkvirtualenv --python=python3 redshift-etl
-workon redshift-etl
-pip install pip --upgrade --disable-pip-version-check
+mkvirtualenv --python=python3 -a `pwd` dw
+```
+The option `-a` will send you into this directory everytime you run:
+```
+workon dw
+```
+
+**Creating virtual env as an ETL developer**
+
+Use the same name for the virtual env that is the name of the repo:
+```shell
+mkvirtualenv --python=python3 harrys-redshift-etl
+```
+This will make it easier later when you're in the directory to say:
+```
+workon .
+```
+
+**Updating the environment (under either scenario)**
+```
 pip3 install --requirement ./requirements.txt
 python3 setup.py develop
+
+# Make sure to check the path below
+echo "source `\cd ../harrys-redshift-etl/etc && \pwd`/arthur_completion.sh" >> $VIRTUAL_ENV/bin/postactivate
+```
+
+Jumping ahead bit, if you want to use a default environment other than your login name, use _something like` this:
+```
+echo "export ARTHUR_DEFAULT_PREFIX=experimental" >> $VIRTUAL_ENV/bin/postactivate
 ```
 
 ## Additional pre-requisites for developers
