@@ -429,7 +429,8 @@ class MemoryStorage(PayloadDispatcher):
 
     def get_events(self):
         self.drain_queue()
-        events_as_list = [self.events[key] for key in self.events]
+        events_as_list = list(self.events[key] for key in self.events)
+        events_as_list.reverse()
         return etl.assets.Content(json=events_as_list)
 
     def create_handler(self):

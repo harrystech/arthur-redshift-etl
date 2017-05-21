@@ -4,7 +4,7 @@ function apiCall(path, handler) {
         if (this.readyState === 4) {
             // console.log(path + ": " + this.statusText);
             if (this.status === 200) {
-                handler(JSON.parse(this.responseText));
+                handler(JSON.parse(this.responseText), this.getResponseHeader("Last-Modified"));
             } else {
                 console.log("There was an error retrieving data from " + path);
             }
@@ -15,7 +15,7 @@ function apiCall(path, handler) {
 }
 
 function fetchEtlId() {
-    apiCall("/api/etl-id", function setEtlId(obj) {
+    apiCall("/api/etl-id", function setEtlId(obj, ignored) {
         document.getElementById("etl-id").innerHTML = obj.id
     });
 }
@@ -24,7 +24,7 @@ function fetchEtlIndices() {
     apiCall("/api/indices", updateEtlIndices);
 }
 
-function updateEtlIndices(etlIndices) {
+function updateEtlIndices(etlIndices, lastModified) {
     // Update table with the current progress meter (200px * percentage = 2 * percentage points)
     var table = "<tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan='2'>Progress</th></tr>";
     var len = etlIndices.length;
@@ -48,6 +48,7 @@ function updateEtlIndices(etlIndices) {
             "</tr>";
     }
     document.getElementById("indices-table").innerHTML = table;
+    document.getElementById("indices-table-last-modified").innerText = lastModified;
     if (done < 1 || done < len) {
         setTimeout(fetchEtlIndices, 1000);
     }
@@ -57,7 +58,7 @@ function fetchEtlEvents() {
     apiCall("/api/events", updateEtlEvents);
 }
 
-function updateEtlEvents(etlEvents) {
+function updateEtlEvents(etlEvents, lastModified) {
     var table = "<tr><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th></tr>";
     var len = etlEvents.length;
     if (len === 0) {
@@ -67,15 +68,17 @@ function updateEtlEvents(etlEvents) {
         var e = etlEvents[i];
         var elapsed = e.elapsed || 0.0; // should be: timestamp - now
         var elapsedLabel = (elapsed > 10.0) ? elapsed.toFixed(1) : elapsed.toFixed(2);
+        var eventClass = "event-" + e.event;
         table += "<tr>" +
-            "<td>" + e.target + "</td>" +
+            "<td class='" + eventClass + "'>" + e.target + "</td>" +
             "<td>" + e.step + "</td>" +
             "<td>" + e.event + "</td>" +
-            "<td>" + e.timestamp.substring(0, 19) + "</td>" +
-            "<td>" + elapsedLabel + "</td>" +
+            "<td>" + e.timestamp.substring(0, 19) + " UTC </td>" +
+            "<td>" + elapsedLabel + " s </td>" +
             "</tr>";
     }
     document.getElementById("events-table").innerHTML = table;
+    document.getElementById("events-table-last-modified").innerText = lastModified;
     setTimeout(fetchEtlEvents, 1000);
 }
 

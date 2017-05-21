@@ -38,3 +38,15 @@ td.progress > div {
 .events tr:nth-child(odd) > td {
     background-color: lightgray;
 }
+
+.events .event-start {
+    background-color: lightskyblue;
+}
+
+.events .event-fail {
+    background-color: orangered;
+}
+
+.last-modified {
+    font-size: x-small;
+}
