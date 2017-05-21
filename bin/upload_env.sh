@@ -7,16 +7,18 @@ if [[ "$0" =~ "setup_env" ]]; then
     echo
 fi
 
+DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
+
 set -e
 
 if [[ $# -lt 1 || $# -gt 2 || $1 = "-h" ]]; then
     echo "Usage: `basename $0` <bucket_name> [<target_env>]"
-    echo "    The <target_env> defaults to your user name ($USER)."
+    echo "    The <target_env> defaults to $DEFAULT_PREFIX."
     exit 0
 fi
 
 CLUSTER_BUCKET="$1"
-CLUSTER_TARGET_ENVIRONMENT="${2-$USER}"
+CLUSTER_TARGET_ENVIRONMENT="${2-$DEFAULT_PREFIX}"
 
 ask_to_confirm () {
     while true; do
