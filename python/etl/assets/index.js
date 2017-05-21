@@ -59,22 +59,27 @@ function fetchEtlEvents() {
 }
 
 function updateEtlEvents(etlEvents, lastModified) {
-    var table = "<tr><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th></tr>";
+    var table = "<tr>" +
+        "<th>Index</th><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th>" +
+        "</tr>";
     var len = etlEvents.length;
     if (len === 0) {
         table += "<tr><td colspan='6'>(waiting...)</td></tr>";
     } /* else */
     for (var i = 0; i < len; i++) {
         var e = etlEvents[i];
+        var name = e.extra.index.name || "";
+        var current = e.extra.index.current || "?";
         var elapsed = e.elapsed || 0.0; // should be: timestamp - now
         var elapsedLabel = (elapsed > 10.0) ? elapsed.toFixed(1) : elapsed.toFixed(2);
         var eventClass = "event-" + e.event;
         table += "<tr>" +
+            "<td>" + name + " #" + current + "</td>" +
             "<td class='" + eventClass + "'>" + e.target + "</td>" +
             "<td>" + e.step + "</td>" +
-            "<td>" + e.event + "</td>" +
+            "<td class='" + eventClass + "'>" + e.event + "</td>" +
             "<td>" + e.timestamp.substring(0, 19) + " UTC </td>" +
-            "<td>" + elapsedLabel + " s </td>" +
+            "<td class='" + eventClass + "'>" + elapsedLabel + "s </td>" +
             "</tr>";
     }
     document.getElementById("events-table").innerHTML = table;

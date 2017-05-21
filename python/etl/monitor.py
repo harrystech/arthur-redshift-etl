@@ -216,6 +216,7 @@ class MonitorPayload:
     Simple class to encapsulate data for Monitor events which knows how to morph itself for JSON etc.
     You should consider all attributes to be read-only with the possible exception of 'errors'
     that may be set to a list of objects (in JSON-terminology) with 'code' and 'message' fields.
+    (Which is to say: do not modify the payload object!)
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
@@ -416,7 +417,7 @@ class MemoryStorage(PayloadDispatcher):
                 key = payload["target"], payload["step"]
                 self.events[key] = payload
                 if payload["event"] != "start":
-                    index = payload.get("extra", {}).get("index", {})
+                    index = dict(payload.get("extra", {}).get("index", {}))
                     name = index.setdefault("name", "N/A")
                     self.indices[name].update(index)
         except queue.Empty:
@@ -557,5 +558,7 @@ def test_run():
     input("Press return (or Ctrl-c) to stop server\n")
 
 if __name__ == "__main__":
+    # import etl.config
+    # etl.config.configure_logging()
     logging.basicConfig(level=logging.DEBUG)
     test_run()

@@ -40,7 +40,7 @@
             "filename": "monitor_http.log",
             "mode": "a",
             "maxBytes": 10000,
-            "backupCount": 0,
+            "backupCount": 1,
             "delay": 1
         }
     },
