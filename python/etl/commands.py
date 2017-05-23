@@ -480,6 +480,8 @@ class ExtractToS3Command(SubCommand):
         parser.add_argument("-k", "--keep-going",
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
+        parser.add_argument("--with-sampling", help="(Sqoop only) Use only 10%% of rows in extracted tables",
+                            default=False, action="store_true")
 
     def callback(self, args, config):
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
@@ -497,7 +499,7 @@ class ExtractToS3Command(SubCommand):
                                                        required_relation_selector=config.required_in_full_load_selector)
         etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
                                              max_partitions=args.max_partitions, keep_going=args.keep_going,
-                                             dry_run=args.dry_run)
+                                             with_sampling=args.with_sampling, dry_run=args.dry_run)
 
 
 class LoadDataWarehouseCommand(SubCommand):

@@ -23,10 +23,11 @@ class SqoopExtractor(Extractor):
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 keep_going: bool, max_partitions: int, dry_run: bool) -> None:
+                 keep_going: bool, max_partitions: int, with_sampling: bool, dry_run: bool) -> None:
         super().__init__("sqoop", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self.max_partitions = max_partitions
+        self.with_sampling = with_sampling
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
@@ -93,9 +94,14 @@ class SqoopExtractor(Extractor):
         tool specific options, and child-process options.
         """
         source_table_name = relation.source_table_name
-        columns = relation.get_columns_with_casts()
-        select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
+        columns = ", ".join(relation.get_columns_with_casts())
         partition_key = relation.find_partition_key()
+
+        if not self.with_sampling:
+            conditions = "$CONDITIONS"  # per sqoop documentation
+        else:
+            conditions = """(("{}" % 10) = 1) AND $CONDITIONS""".format(partition_key)
+        select_statement = """SELECT {} FROM {} WHERE {}""".format(columns, source_table_name, conditions)
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -127,7 +133,6 @@ class SqoopExtractor(Extractor):
         if partition_key:
             args.extend(["--split-by", q(partition_key), "--num-mappers", str(self.max_partitions)])
         else:
-            # TODO use "--autoreset-to-one-mapper" ?
             args.extend(["--num-mappers", "1"])
         return args
 

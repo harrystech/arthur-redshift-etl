@@ -46,7 +46,7 @@ logger.addHandler(logging.NullHandler())
 
 def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchema],
                              relations: List[RelationDescription], max_partitions: int,
-                             keep_going: bool, dry_run: bool) -> None:
+                             keep_going: bool, with_sampling: bool, dry_run: bool) -> None:
     """
     Extract data from upstream sources to S3.
 
@@ -77,7 +77,7 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
         database_extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)
     else:
         database_extractor = SqoopExtractor(database_sources, applicable, keep_going,
-                                            max_partitions=max_partitions, dry_run=dry_run)
+                                            max_partitions=max_partitions, with_sampling=with_sampling, dry_run=dry_run)
     database_extractor.extract_sources()
 
 
