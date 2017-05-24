@@ -350,9 +350,9 @@ def list_files(file_sets, long_format=False) -> None:
         print("Schema: '{}'".format(schema_name))
         for file_set in file_group:
             if file_set.manifest_file_name is None:
-                print("    Table: '{}'".format(file_set.target_table_name.table))
+                print("    Table: '{}'".format(file_set.target_table_name.identifier))
             else:
-                print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.table,
+                print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.identifier,
                                                                      file_set.source_table_name.identifier))
             for filename in file_set.files:
                 if long_format:
