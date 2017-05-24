@@ -365,7 +365,10 @@ class CreateUserCommand(SubCommand):
     def __init__(self):
         super().__init__("create_user",
                          "add new user",
-                         "Add new user and set group membership, optionally add a personal schema.")
+                         "Add new user and set group membership, optionally add a personal schema."
+                         " Note that you have to set a password for the user in your .pgpass file"
+                         " before invoking this command. The password must be valid in Redshift,"
+                         " so must contain upper case and lower case characters as well as numbers.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
