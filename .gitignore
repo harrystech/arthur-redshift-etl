@@ -5,6 +5,9 @@
 *.pyc
 *.RData
 
+# release information is created by upload_env.sh
+release.txt
+
 # temp data
 /data/
 /config
