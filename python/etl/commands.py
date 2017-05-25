@@ -365,7 +365,10 @@ class CreateUserCommand(SubCommand):
     def __init__(self):
         super().__init__("create_user",
                          "add new user",
-                         "Add new user and set group membership, optionally add a personal schema.")
+                         "Add new user and set group membership, optionally add a personal schema."
+                         " Note that you have to set a password for the user in your .pgpass file"
+                         " before invoking this command. The password must be valid in Redshift,"
+                         " so must contain upper case and lower case characters as well as numbers.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
@@ -433,20 +436,24 @@ class SyncWithS3Command(SubCommand):
                          "Copy table design files from local directory to S3."
                          " If using the '--force' option, this will delete schema and *data* files."
                          " If using the '--deploy' option, this will also upload files with warehouse settings"
-                         " (*.yaml in config directories).")
+                         " (*.yaml or *.sh files in config directories, excluding credentials*.sh).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
                             default=False, action="store_true")
         parser.add_argument("-d", "--deploy-config",
-                            help="sync local settings files (*.yaml) to <prefix>/config folder",
+                            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
                             default=False, action="store_true")
 
     def callback(self, args, config):
+        if args.deploy_config:
+            etl.sync.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        if args.force:
+            etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
+
         descriptions = self.find_relation_descriptions(args, default_scheme="file")
-        etl.sync.sync_with_s3(args.config, descriptions, args.bucket_name, args.prefix, args.pattern,
-                              force=args.force, deploy_config=args.deploy_config, dry_run=args.dry_run)
+        etl.sync.sync_with_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class ExtractToS3Command(SubCommand):

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
-# Start a EMR cluster in AWS for a running ETL steps.
-#   Non-interactive jobs will run the steps and then quit.
-#   Interactive jobs will run the steps and then wait for additional work.
+# Start an EMR cluster in AWS for running ETL steps.
 #
-# Checkout the setup_env.sh and sync_env.sh scripts to have files ready in S3 for the EMR cluster.
+# Checkout the upload_env.sh and sync_env.sh scripts to have files ready in S3 for the EMR cluster.
+# Then use something like `arthur.py --submit <cluster id> extract ...`
 #
 # TODO Find a better way to parameterize cluster, check out cloud formation?
 
@@ -20,14 +19,13 @@ show_usage_and_exit() {
     exit ${1-0}
 }
 
-CLUSTER_IS_INTERACTIVE=no
 while getopts ":hi" opt; do
   case $opt in
     h)
       show_usage_and_exit
       ;;
     i)
-      CLUSTER_IS_INTERACTIVE=yes
+      echo "\nThe option '-i' is now default and need no longer be supplied.\n"
       shift
       ;;
     \?)
@@ -56,15 +54,6 @@ CLUSTER_REGION="us-east-1"
 
 CLUSTER_LOGS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, `date +'%Y-%m-%d %H:%M'`)"
-
-
-if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then
-    CLUSTER_TERMINATE="--no-auto-terminate"
-    CLUSTER_TERMINATION_PROTECTION="--termination-protected"
-else
-    CLUSTER_TERMINATE="--auto-terminate"
-    CLUSTER_TERMINATION_PROTECTION="--no-termination-protected"
-fi
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
     AWS_TAGS="DataWarehouseEnvironment=Production"
@@ -95,8 +84,7 @@ else
 fi
 
 for JSON_IN_FILE in "$CONFIG_SOURCE/application_env.json" \
-                 "$CONFIG_SOURCE/bootstrap_actions.json" \
-                 "$CONFIG_SOURCE"/steps_*.json
+                 "$CONFIG_SOURCE/bootstrap_actions.json"
 do
     JSON_OUT_FILE="$CONFIG_DIR"/`basename $JSON_IN_FILE`
     sed -e "s,#{bucket_name},$PROJ_BUCKET,g" \
@@ -121,9 +109,9 @@ aws emr create-cluster \
         --configurations "file://$CONFIG_DIR/application_env.json" \
         --ec2-attributes "file://$CONFIG_SOURCE/ec2_attributes.json" \
         --bootstrap-actions "file://$CONFIG_DIR/bootstrap_actions.json" \
-        $CLUSTER_TERMINATE \
-        $CLUSTER_TERMINATION_PROTECTION \
+        --no-auto-terminate --termination-protected \
         | tee "$CLUSTER_ID_FILE"
+
 CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
 
 if [[ -z "$CLUSTER_ID" ]]; then
@@ -135,21 +123,24 @@ fi
 aws emr describe-cluster --cluster-id "$CLUSTER_ID" |
     jq '.Cluster.Status | {"State": .State}, .Timeline, .StateChangeReason | if has("CreationDateTime") then map_values(todate) else . end'
 
-if [[ "$CLUSTER_IS_INTERACTIVE" = "yes" ]]; then
-    sleep 10
-    aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
+sleep 10
+aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
 
-    set +x
-    say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
-else
-    if [[ -r "$CONFIG_DIR/steps_$PROJ_ENVIRONMENT.json" ]]; then
-        STEPS_FILE="file://$CONFIG_DIR/steps_$PROJ_ENVIRONMENT.json"
-    else
-        STEPS_FILE="file://$CONFIG_DIR/steps_default.json"
-    fi
-    aws emr add-steps --cluster-id "$CLUSTER_ID" --steps "$STEPS_FILE"
-fi
+set +x +v
+say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
 
-set +x
-echo "If you need to proxy into the cluster, use:"
-echo "aws emr socks --cluster-id \"$CLUSTER_ID\" --key-pair-file \"<location of your key file>\""
+cat <<EOF
+If you need to proxy into the cluster, use:
+
+aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "<location of your key file>"
+
+If you want to submit steps, use:
+
+arthur.py --submit "$CLUSTER_ID" [command] --prolix --prefix $DEFAULT_PREFIX [options ...]
+
+To easily reference this cluster, user:
+
+export CLUSTER_ID="$CLUSTER_ID"
+
+Do not forget to shutdown the cluster when you no longer need it.
+EOF

@@ -7,15 +7,13 @@ unsuccessful completion.  Events for start, finish or failure
 may be emitted to a persistence layer.
 """
 
-import datetime
 import http.server
-import io
+import itertools
 import logging
 import os
 import queue
 import random
 import re
-import textwrap
 import threading
 import time
 import traceback
@@ -25,13 +23,20 @@ from collections import defaultdict, OrderedDict
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
-# requires Python 3.5: from http import HTTPStatus
 from typing import List
+try:
+    from http import HTTPStatus  # type: ignore
+except ImportError:
+    class HTTPStatus:  # type: ignore
+        OK = 200
+        MOVED_PERMANENTLY = 301
+        NOT_FOUND = 404
 
 import boto3
 import botocore.exceptions
 import simplejson as json
 
+import etl.assets
 import etl.config.env
 import etl.pg
 from etl.json_encoder import FancyJsonEncoder
@@ -75,15 +80,6 @@ class MetaMonitor(type):
     @environment.setter
     def environment(cls, value):
         cls._environment = value
-
-    @property
-    def dynamo_sanitized_environment(cls):
-        """
-        Access the environment, replacing any unpermitted characters with '-'
-        DynamoDB tables must match this pattern: [a-zA-Z0-9_.-]+
-        """
-        pat = re.compile('[a-zA-Z0-9_.-]+')
-        return '-'.join(pat.findall(cls.environment))
 
     @property
     def cluster_info(cls):
@@ -206,7 +202,7 @@ class Monitor(metaclass=MetaMonitor):
         seconds = elapsed_seconds(self._start_time, self._end_time)
         if exc_type is None:
             logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, 'finish', self._end_time, elapsed=seconds, extra=self._extra)
+            payload = MonitorPayload(self, "finish", self._end_time, elapsed=seconds, extra=self._extra)
         else:
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
             payload = MonitorPayload(self, "fail", self._end_time, extra=self._extra)
@@ -220,6 +216,7 @@ class MonitorPayload:
     Simple class to encapsulate data for Monitor events which knows how to morph itself for JSON etc.
     You should consider all attributes to be read-only with the possible exception of 'errors'
     that may be set to a list of objects (in JSON-terminology) with 'code' and 'message' fields.
+    (Which is to say: do not modify the payload object!)
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
@@ -273,8 +270,9 @@ class DynamoDBStorage(PayloadDispatcher):
     """
 
     def __init__(self, table_name, capacity, region_name):
-        self.table_name = table_name
-        self.capacity = capacity
+        # We need to make sure here that the table name is valid for DynamoDb.
+        self.table_name = '-'.join(re.findall('[a-zA-Z0-9_.-]+', table_name))
+        self.initial_capacity = capacity
         self.region_name = region_name
         # Avoid default sessions and have one table reference per thread
         self._thread_local_table = threading.local()
@@ -296,7 +294,6 @@ class DynamoDBStorage(PayloadDispatcher):
             # Nullify assignment and start over
             table = None
             status = None
-        # TODO Should we readjust the capacity if a new number is passed in?
         if table is None:
             logger.info("Creating DynamoDB table: '%s'", self.table_name)
             table = dynamodb.create_table(
@@ -309,7 +306,8 @@ class DynamoDBStorage(PayloadDispatcher):
                     {'AttributeName': 'target', 'AttributeType': 'S'},
                     {'AttributeName': 'timestamp', 'AttributeType': 'N'}
                 ],
-                ProvisionedThroughput={'ReadCapacityUnits': self.capacity, 'WriteCapacityUnits': self.capacity}
+                ProvisionedThroughput={'ReadCapacityUnits': self.initial_capacity,
+                                       'WriteCapacityUnits': self.initial_capacity}
             )
             status = table.table_status
         if status != "ACTIVE":
@@ -401,170 +399,116 @@ class MemoryStorage(PayloadDispatcher):
 
     The output should pass validator at https://validator.w3.org/#validate_by_input+with_options
     """
-    SERVER_ADDRESS = ('', 8086)
-
-    HEADER = """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <title>Arthur :: ETL Progress Monitor</title>
-          <meta http-equiv="refresh" content="5" />
-          <style type="text/css">
-            table {
-                font-family: arial, sans-serif;
-                border-collapse: collapse;
-                width: 100%;
-            }
-            td, th {
-                border: 1px solid #dddddd;
-                text-align: left;
-                padding: 8px;
-            }
-            .events tr:nth-child(even) {
-                background-color: #dddddd;
-            }
-            td.progress {
-                width: 200px;
-            }
-            td.progress > div {
-                background-color: CornflowerBlue;
-                display: block;
-                height: 1em;
-                border: 1px solid black;
-            }
-          </style>
-        </head>
-        <body>"""
-    FOOTER = """
-        </body>
-        </html>"""
+    SERVER_ADDRESS = ('localhost', 8086)
 
     def __init__(self):
         self.queue = queue.Queue()
         self.events = OrderedDict()
         self.indices = defaultdict(dict)
-        self.last_modified = "(unknown)"
-        handler_class = self.create_handler()
-        self.start_daemon(handler_class)
+        self.start_server()
 
     def store(self, payload: dict):
-        self.update_last_modified()
         self.queue.put(payload)
-
-    def update_last_modified(self):
-        now = datetime.datetime.now()
-        self.last_modified = now.strftime("%a, %d %b %Y %H:%M:%S %Z")
 
     def drain_queue(self):
         try:
             while True:
                 payload = self.queue.get_nowait()
-                if "elapsed" not in payload:
-                    payload["elapsed"] = "running"
                 key = payload["target"], payload["step"]
                 self.events[key] = payload
-                index = payload.get("extra", {}).get("index", {})
-                name = index.get("name", "N/A")
-                self.indices[name].update(index)
+                if payload["event"] != "start":
+                    index = dict(payload.get("extra", {}).get("index", {}))
+                    name = index.setdefault("name", "N/A")
+                    self.indices[name].update(index)
         except queue.Empty:
             pass
 
-    def get_content(self):
-        """
-        Return all events stored so far as a giant blob of text.
-        """
+    def get_indices(self):
         self.drain_queue()
-        buffer = io.StringIO()
-        buffer.write(self.HEADER)
-        buffer.write("""
-            <table>
-            <tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan="2">Progress</th></tr>""")
-        # Add a table with the current progress meter (200px * percentage = 2 * percentage points)
-        for name in sorted(self.indices):
-            index = self.indices[name]
-            percentage = (100.0 * index["current"])/index["final"]
-            buffer.write("""
-                <tr>
-                    <td>{}</td><td>{}</td><td>{}</td>
-                    <td>{:.0f}%</td><td class="progress"><div style="width:{:.0f}px"></div></td>
-                </tr>""".format(name, index["current"], index["final"], percentage, 2 * percentage))
-        buffer.write("""</table><br /><br />""")
-        # Add a table with all the latest events
-        buffer.write("""
-            <table class="events">
-              <tr>
-                <th>ETL ID</th><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th>
-              </tr>""")
-        for key in self.events:
-            buffer.write("""
-                <tr>
-                  <td>{etl_id}</td><td>{target}</td><td>{step}</td><td>{event}</td>
-                  <td>{timestamp!s:.19}</td><td>{elapsed}</td>
-                </tr>""".format(**self.events[key]))
-        buffer.write("""</table>""")
-        buffer.write("<br /><hr />Last modified: {}".format(self.last_modified))
-        buffer.write(self.FOOTER)
-        text = buffer.getvalue()
-        buffer.close()
-        return textwrap.dedent(text).strip()
+        indices_as_list = [self.indices[name] for name in sorted(self.indices)]
+        return etl.assets.Content(json=indices_as_list)
+
+    def get_events(self):
+        self.drain_queue()
+        events_as_list = list(self.events[key] for key in self.events)
+        events_as_list.reverse()
+        return etl.assets.Content(json=events_as_list)
 
     def create_handler(self):
         """
         Factory method to create a handler that serves our storage content.
         """
-        # Don't get lost in too much self.
-        this_content = self.get_content
-        this_last_modified = self.last_modified
+        storage = self
+        http_logger = logging.getLogger("monitor_http")
 
         class MonitorHTTPHandler(http.server.BaseHTTPRequestHandler):
 
             server_version = "MonitorHTTPServer/1.0"
 
+            log_error = http_logger.error
+
+            log_message = http_logger.info
+
             def do_GET(self):
                 """
                 Serve a GET (or HEAD) request.
 
-                If any page other than / is requested, the user is redirected (301) there first.
-                Otherwise this first sends the response code and headers.
-                If the command is GET (and not HEAD), the body is then sent.
+                We serve assets or JSON via the API.
+                If the command is HEAD (and not GET), only the header is sent. Duh.
                 """
-                path = self.path.rstrip('/') + '/'
-                if path != '/':
-                    # self.send_response(HTTPStatus.MOVED_PERMANENTLY)
-                    self.send_response(301)
-                    parts = urllib.parse.urlsplit(self.path)
-                    new_parts = (parts[0], parts[1], '/', None, parts[4])
+                parts = urllib.parse.urlparse(self.path.rstrip('/'))
+                path = parts.path or "/index.html"
+                if path == "/api/etl-id":
+                    result = etl.assets.Content(json={"id": Monitor.etl_id})
+                elif path == "/api/indices":
+                    result = storage.get_indices()
+                elif path == "/api/events":
+                    result = storage.get_events()
+                elif path.startswith("/api"):
+                    self.send_response(HTTPStatus.NOT_FOUND)
+                    self.end_headers()
+                    return
+                elif not etl.assets.asset_exists(path.lstrip('/')):
+                    self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+                    new_parts = (parts.scheme, parts.netloc, '/', None, None)
                     new_url = urllib.parse.urlunsplit(new_parts)
                     self.send_header("Location", new_url)
                     self.end_headers()
                     return
+                else:
+                    result = etl.assets.get_asset(path.lstrip('/'))
 
-                content = this_content().encode("utf-8")
-                # self.send_response(HTTPStatus.OK)
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=UTF-8")
-                self.send_header("Content-Length", len(content))
-                self.send_header("Last-Modified", this_last_modified)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", result.content_type)
+                self.send_header("Content-Length", result.content_length)
+                if result.content_encoding is not None:
+                    self.send_header("Content-Encoding", result.content_encoding)
+                self.send_header("Last-Modified", result.last_modified)
+                if result.cache_control is not None:
+                    self.send_header("Cache-Control", result.cache_control)
                 self.end_headers()
                 if self.command == "GET":
-                    self.wfile.write(content)
+                    self.wfile.write(result.content)
             do_HEAD = do_GET
 
         return MonitorHTTPHandler
 
-    def start_daemon(self, handler_class):
+    def start_server(self):
         """
         Start background daemon to serve our events.
         """
+        handler_class = self.create_handler()
+
         class BackgroundServer(threading.Thread):
             def run(self):
                 logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
                 httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
                 httpd.serve_forever()
+
         try:
             thread = BackgroundServer(daemon=True)
             thread.start()
-        except Exception:
+        except RuntimeError:
             logger.exception("Failed to start background server:")
 
 
@@ -582,7 +526,7 @@ def set_environment(environment, dynamodb_settings, postgresql_settings):
     memory = MemoryStorage()
     MonitorPayload.dispatchers.append(memory)
     if dynamodb_settings:
-        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + Monitor.dynamo_sanitized_environment,
+        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
                               dynamodb_settings["capacity"],
                               dynamodb_settings["region"])
         MonitorPayload.dispatchers.append(ddb)
@@ -597,18 +541,24 @@ def query_for(target_list, etl_id=None):
     # Left for the reader as an exercise.
 
 
-if __name__ == "__main__":
+def test_run():
     Monitor.environment = "test"  # type: ignore
     memory = MemoryStorage()
     MonitorPayload.dispatchers.append(memory)
 
-    monitor = Monitor("first_schema.first_table", "verb")
-    payload = MonitorPayload(monitor, "start", utc_now(), extra={"index": {"current": 1, "final": 2, "name": "first"}})
-    payload.emit()
+    schema_names = ["auburn", "burgundy", "cardinal", "flame", "fuchsia"]
+    table_names = ["apple", "banana", "cantaloupe", "durian", "fig"]
+    index = {"current": 0, "final": len(schema_names) * len(table_names)}
 
-    with Monitor("first_schema.second_table", "verb", index={"current": 2, "final": 2, "name": "first"}):
-        pass
-    with Monitor("second_schema.other_table", "verb", index={"current": 1, "final": 3, "name": "second"}):
-        pass
+    print("Creating events ... follow along at http://{0}:{1}/".format(*MemoryStorage.SERVER_ADDRESS))
+    for i, names in enumerate(itertools.product(schema_names, table_names)):
+        with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
+            time.sleep(random.uniform(0.5, 2.0))
 
-    print(memory.get_content())
+    input("Press return (or Ctrl-c) to stop server\n")
+
+if __name__ == "__main__":
+    # import etl.config
+    # etl.config.configure_logging()
+    logging.basicConfig(level=logging.DEBUG)
+    test_run()
