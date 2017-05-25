@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ETL Progress Monitor (Arthur)</title>
+    <link rel="stylesheet" type="text/css" href="index.css">
+    <link rel="icon" type="image/png" href="index.png"/>
+    <script defer="defer" src="index.js" type="text/javascript"></script>
+</head>
+<body>
+<h1>ETL Progress Monitor</h1>
+<div class="sub-header">
+    You are currently experiencing the ETL with
+    <span class="boxed-id">ID = <span id="etl-id">(fetching...)</span></span>
+</div>
+
+<h2>By Index (latest completion)</h2>
+<table id="indices-table">
+    <tr>
+        <th>Name</th>
+        <th>Current Index</th>
+        <th>Final Index</th>
+        <th colspan="2">Progress</th>
+    </tr>
+    <tr>
+        <td colspan="5">(fetching...)</td>
+    </tr>
+</table>
+<div class="last-modified">Last Modified: <span id="indices-table-last-modified">???</span></div>
+
+<h2>By Events (in reverse order)</h2>
+<table id="events-table" class="events">
+    <tr>
+        <th>Index</th>
+        <th>Target</th>
+        <th>Step</th>
+        <th>Last Event</th>
+        <th>Timestamp</th>
+        <th>Elapsed</th>
+    </tr>
+    <tr>
+        <td colspan="6">(fetching...)</td>
+    </tr>
+</table>
+<div class="last-modified">Last Modified: <span id="events-table-last-modified">???</span></div>
+</body>
+</html>

@@ -32,6 +32,16 @@
             "maxBytes": 5000000,
             "backupCount": 5,
             "filters": [ "insert_trace_key" ]
+        },
+        "monitor_http": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "console",
+            "level": "DEBUG",
+            "filename": "monitor_http.log",
+            "mode": "a",
+            "maxBytes": 10000,
+            "backupCount": 1,
+            "delay": 1
         }
     },
     "root": {
@@ -54,6 +64,12 @@
         "boto3": {
             "qualname": "boto3",
             "handlers": [ "file" ],
+            "level": "INFO",
+            "propagate": 0
+        },
+        "monitor_http": {
+            "qualname": "monitor_http",
+            "handlers": ["monitor_http"],
             "level": "INFO",
             "propagate": 0
         },
