@@ -6,11 +6,11 @@
 *.RData
 
 # release information is created by upload_env.sh
-release.txt
+/python/etl/config/release.txt
 
-# temp data
-/data/
+# temp data (including generated files)
 /config
+/data/
 /schemas
 /tmp/
 
@@ -19,9 +19,10 @@ release.txt
 /dist/
 /build/
 *.egg-info
+/.mypy_cache
 
 # In case you accidentally download your credentials here
-credentials.*
+credentials*
 
 # ignore jars
 jars/
