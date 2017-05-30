@@ -31,6 +31,7 @@ from typing import List, Dict
 
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
+from etl.extract.manifest_only import ManifestOnlyExtractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
@@ -68,6 +69,8 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
 
     if extract_type == "spark":
         database_extractor = SparkExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
+    elif extract_type == "manifest-only":
+        database_extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)
     else:
         database_extractor = SqoopExtractor(database_sources, applicable, keep_going,
                                             max_partitions=max_partitions, dry_run=dry_run)

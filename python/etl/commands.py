@@ -471,6 +471,8 @@ class ExtractToS3Command(SubCommand):
                            const="sqoop", action="store_const", dest="extractor", default="sqoop")
         group.add_argument("--with-spark", help="extract data using Spark Dataframe (using submit_arthur.sh)",
                            const="spark", action="store_const", dest="extractor")
+        group.add_argument("--with-manifest-only", help="only create manifest files for already-extracted data",
+                           const="manifest-only", action="store_const", dest="extractor")
         parser.add_argument("-k", "--keep-going",
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
