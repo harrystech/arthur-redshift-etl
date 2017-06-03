@@ -353,7 +353,7 @@ def fetch_table_size(cx: psycopg2.extensions.connection, table_name: str) -> int
         raise UnknownTableSizeError("Failed to determine size of table")
     table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
     logger.info("Size of table '%s': %s (%d bytes) (%s)",
-                table_name.identifier, pretty_table_size, table_size, timer)
+                table_name, pretty_table_size, table_size, timer)
     return table_size
 
 
@@ -381,7 +381,7 @@ def fetch_partition_boundaries(cx: psycopg2.extensions.connection, table_name: s
                                      table_name=table_name))
     row_count = sum(row["count"] for row in rows)
     logger.info("Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",
-                num_partitions, row_count, table_name.identifier, row_count, partition_key, timer)
+                num_partitions, row_count, table_name, row_count, partition_key, timer)
     lower_bounds = (row["lower_bound"] for row in rows)
     upper_bounds = (row["upper_bound"] for row in rows)
     return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]

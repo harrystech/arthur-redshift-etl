@@ -31,7 +31,7 @@ class DefaultPartitioningStrategy:
     64
     """
 
-    def __init__(self, table_size: int, max_partitions: int):
+    def __init__(self, table_size: int, max_partitions: int) -> None:
         self.table_size = table_size
         self.max_partitions = max_partitions
 

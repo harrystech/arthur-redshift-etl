@@ -1,7 +1,7 @@
 import logging
 import os.path
 from contextlib import closing
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
