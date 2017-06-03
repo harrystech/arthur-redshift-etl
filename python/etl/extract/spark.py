@@ -3,6 +3,7 @@ import os.path
 from contextlib import closing
 from typing import List, Dict, Tuple, Optional
 
+import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
@@ -49,11 +50,18 @@ class SparkExtractor(Extractor):
             self.logger.warning("SPARK_ENV_LOADED is not set")
 
         self.logger.info("Starting SparkSQL context")
-        conf = SparkConf()
-        conf.setAppName(__name__)
-        conf.set("spark.logConf", "true")
-        # TODO Add spark.jars here? spark.submit.pyFiles?
+        conf = SparkConf() \
+            .setAppName(__name__) \
+            .set("spark.logConf", "true")
         sc = SparkContext(conf=conf)
+
+        # Copy the credentials from the session into hadoop for access to S3
+        session = boto3.Session()
+        credentials = session.get_credentials()
+        hadoopConf = sc._jsc.hadoopConfiguration()
+        hadoopConf.set("fs.s3a.access.key", credentials.access_key)
+        hadoopConf.set("fs.s3a.secret.key", credentials.secret_key)
+
         return SQLContext(sc)
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
@@ -127,7 +135,6 @@ class SparkExtractor(Extractor):
         """
         Fetch table size in bytes.
         """
-        # TODO move this into pg.py
         stmt = """
             SELECT pg_catalog.pg_table_size('{}') AS table_size
                  , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
@@ -146,7 +153,6 @@ class SparkExtractor(Extractor):
         """
         Fetch ranges for the partition key that partitions the table nicely.
         """
-        # TODO move this into pg.py
         stmt = """
             SELECT MIN(pkey) AS lower_bound
                  , MAX(pkey) AS upper_bound
@@ -181,18 +187,16 @@ class SparkExtractor(Extractor):
             # N.B. This must match the Sqoop (import) and Redshift (COPY) options
             # BROKEN Uses double quotes to escape double quotes ("Hello" becomes """Hello""")
             # BROKEN Does not escape newlines ('\n' does not become '\\n' so is read as 'n' in Redshift)
-            # TODO Patch the com.databricks.spark.csv format to match Sqoop output
             write_options = {
                 "header": "false",
                 "nullValue": r"\N",
-                "quoteMode": "ALL",  # Thanks to a bug in Apache commons, this is ignored.
+                "quoteAll": "true",
                 "codec": "gzip"
             }
             df.write \
-                .format('com.databricks.spark.csv') \
-                .options(**write_options) \
                 .mode('overwrite') \
-                .save(s3_uri)
+                .options(**write_options) \
+                .csv(s3_uri)
 
 
 def suggest_best_partition_number(table_size: int) -> int:
