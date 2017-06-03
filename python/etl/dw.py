@@ -33,19 +33,31 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def create_schemas(conn, schemas, owner=None):
-
+def create_schemas(conn, schemas, owner=None, staging=False, after_backup=True):
+    """
+    Create schemas where relations will be built
+    """
+    if after_backup:
+        logger.info("Backing up schemas before creation")
+        backup_schemas(conn, schemas)
     for schema in schemas:
-        logger.info("Creating schema '%s', granting access to %s", schema.name, join_with_quotes(schema.groups))
-        etl.pg.create_schema(conn, schema.name, owner)
-        etl.pg.grant_all_on_schema_to_user(conn, schema.name, schema.owner)
+        name = schema.staging_name if staging else schema.name
+        logger.info("Creating schema '%s'", name)
+        etl.pg.create_schema(conn, name, owner)
+        etl.pg.grant_all_on_schema_to_user(conn, name, schema.owner)
+        if staging:
+            # Don't grant usage on staging schemas to readers/writers
+            continue
+        logger.info("Granting access to %s", join_with_quotes(schema.groups))
         for group in schema.groups:
             # Readers/writers are differentiated in table permissions, not schema permissions
-            etl.pg.grant_usage(conn, schema.name, group)
+            etl.pg.grant_usage(conn, name, group)
 
 
 def backup_schemas(conn, schemas):
-
+    """
+    Rename schemas from their standard names to their backup_names
+    """
     for schema in schemas:
         if not etl.pg.schema_exists(conn, schema.name):
             logger.info("Skipping backup of '%s' as it does not exist", schema.name)
@@ -59,19 +71,41 @@ def backup_schemas(conn, schemas):
         etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
-def restore_schemas(conn, schemas):
-
+def _promote_schemas(conn, schemas, from_name_attr):
+    """
+    Promote (staging or backup) schemas into their standard names and permissions
+    Changes schema.from_name_attr -> schema.name; expects 'backup_name' or 'staging_name'
+    """
     for schema in schemas:
-        if not etl.pg.schema_exists(conn, schema.backup_name):
-            logger.warning("Could not restore backup of '%s' as the backup does not exist", schema.name)
+        from_name = getattr(schema, from_name_attr)
+        if not etl.pg.schema_exists(conn, from_name):
+            logger.warning("Could not promote of '%s' as the %s does not exist",
+                           schema.name, from_name_attr)
             continue
-        logger.info("Renaming schema '%s' from backup '%s'", schema.name, schema.backup_name)
+        logger.info("Renaming schema '%s' from %s '%s'", schema.name, from_name_attr, from_name)
         etl.pg.execute(conn, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(schema.name))
-        etl.pg.alter_schema_rename(conn, schema.backup_name, schema.name)
-        logger.info("Granting reader access to schema '%s' after restore", schema.name)
+        etl.pg.alter_schema_rename(conn, from_name, schema.name)
+        logger.info("Granting reader access to schema '%s' after rename", schema.name)
         for reader_group in schema.reader_groups:
             etl.pg.grant_usage(conn, schema.name, reader_group)
             etl.pg.grant_select_in_schema(conn, schema.name, reader_group)
+
+
+def restore_schemas(conn, schemas):
+    """
+    Put backed-up schemas into their standard configuration
+    Useful if bad data is in standard schemas
+    """
+    _promote_schemas(conn, schemas, 'backup_name')
+
+
+def publish_schemas(conn, schemas):
+    """
+    Put staging schemas into their standard configuration
+    (First backs up current occupants of standard position)
+    """
+    backup_schemas(conn, schemas)
+    _promote_schemas(conn, schemas, 'staging_name')
 
 
 def initial_setup(config, with_user_creation=False, force=False, dry_run=False):

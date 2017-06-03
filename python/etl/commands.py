@@ -515,6 +515,9 @@ class LoadDataWarehouseCommand(SubCommand):
         parser.add_argument("--no-rollback",
                             help="in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
+        parser.add_argument("--use-staging-schemas",
+                            help="do all the work in hidden schemas that are published to standard names on successful completion",
+                            action="store_true")
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
@@ -524,6 +527,7 @@ class LoadDataWarehouseCommand(SubCommand):
             etl.load.load_or_update_redshift(config, descriptions, args.pattern,
                                              drop=self.use_force,
                                              stop_after_first=args.stop_after_first,
+                                             use_staging=args.use_staging_schemas,
                                              no_rollback=args.no_rollback,
                                              skip_copy=args.skip_copy,
                                              dry_run=args.dry_run)

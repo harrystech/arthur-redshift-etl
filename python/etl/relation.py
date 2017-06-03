@@ -43,6 +43,8 @@ class RelationDescription:
     Modified by other functions in relations module to set attributes related to dependency graph.
     """
 
+    _lazy_slots = ('_table_design', '_query_stmt', '_dependencies', '_is_required')
+
     def __getattr__(self, attr):
         """
         Pass-through access to file set -- if the relation doesn't know about an attribute
@@ -67,6 +69,14 @@ class RelationDescription:
         self._query_stmt = None  # type: Optional[str]
         self._dependencies = None  # type: Optional[FrozenSet[str]]
         self._is_required = None  # type: Union[None, bool]
+        self.staging = False
+
+    @property
+    def target_table_name(self):
+        if self.staging:
+            return self._fileset.target_table_name.as_staging_table_name()
+        else:
+            return self._fileset.target_table_name
 
     @property
     def identifier(self):
@@ -140,6 +150,12 @@ class RelationDescription:
             else:
                 with open(self.sql_file_name) as f:
                     query_stmt = f.read()
+            if self.staging:
+                # Rewrite the query to use staging schemas:
+                for dependency in self.dependencies:
+                    staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
+                    query_stmt = query_stmt.replace(dependency, staging_dependency.identifier)
+
             self._query_stmt = query_stmt.strip().rstrip(';')
         return str(self._query_stmt)  # The str(...) shuts up the type checker.
 
@@ -262,6 +278,13 @@ class RelationDescription:
                 yield view_name
             finally:
                 etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))
+
+    def as_staging_relation(self):
+        relation = RelationDescription(self._fileset)
+        for slot in self._lazy_slots:
+            setattr(relation, slot, getattr(self, slot))
+        relation.staging = True
+        return relation
 
 
 class SortableRelationDescription:

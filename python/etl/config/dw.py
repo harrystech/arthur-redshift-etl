@@ -173,3 +173,7 @@ class DataWarehouseSchema:
     @property
     def backup_name(self):
         return '$'.join(("arthur_temp", self.name))
+
+    @property
+    def staging_name(self):
+        return etl.names.as_staging_name(self.name)

@@ -41,6 +41,13 @@ def join_column_list(columns):
     return ", ".join('"{}"'.format(column) for column in columns)
 
 
+def as_staging_name(name):
+    """
+    The canonical transformation of a (schema) name to its staging position
+    """
+    return '$'.join(("arthur_staging", name))
+
+
 class TableName:
     """
     Class to automatically create delimited identifiers for tables.
@@ -73,15 +80,19 @@ class TableName:
     True
     """
 
-    __slots__ = ("_schema", "_table")
+    __slots__ = ("_schema", "_table", "staging")
 
     def __init__(self, schema, table):
         self._schema = schema.lower()
+        self.staging = False
         self._table = table.lower()
 
     @property
     def schema(self):
-        return self._schema
+        if self.staging:
+            return as_staging_name(self._schema)
+        else:
+            return self._schema
 
     @property
     def table(self):
@@ -130,7 +141,7 @@ class TableName:
         >>> str(tn)
         '"hello"."world"'
         """
-        return '"{0}"."{1}"'.format(self._schema, self._table)
+        return '"{0}"."{1}"'.format(self.schema, self.table)
 
     def __format__(self, code):
         """
@@ -205,6 +216,11 @@ class TableName:
         False
         """
         return fnmatch.fnmatch(self.identifier, pattern)
+
+    def as_staging_table_name(self):
+        tn = TableName(self.schema, self.table)
+        tn.staging = True
+        return tn
 
 
 class TableSelector:

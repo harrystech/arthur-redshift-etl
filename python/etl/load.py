@@ -347,16 +347,22 @@ def create_temp_table_as_and_copy(conn, relation, skip_copy=False, dry_run=False
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_name))
 
 
-def create_schemas_after_backup(dsn_etl: dict, schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def create_schemas(dsn_etl: dict, schemas: List[DataWarehouseSchema],
+                   use_staging: bool, dry_run=False) -> None:
     """
-    Move schemas out of the way by renaming them. Then create new ones.
+    Create schemas necessary for this load or update
+    If `use_staging`, create new staging schemas
+
+    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
     """
+    dry_run_message = ("Skipping staging schema creation"
+                       if use_staging else
+                       "Skipping backup of schemas and creation")
     with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
         if dry_run:
-            logger.info("Dry-run: Skipping backup of schemas and creation")
+            logger.info("Dry-run: %s", dry_run_message)
         else:
-            etl.dw.backup_schemas(conn, schemas)
-            etl.dw.create_schemas(conn, schemas)
+            etl.dw.create_schemas(conn, schemas, staging=use_staging, after_backup=(not use_staging))
 
 
 def grant_access(conn: connection, relation: RelationDescription, schema_config: DataWarehouseSchema, dry_run=False):
@@ -445,22 +451,22 @@ def load_or_update_redshift_relation(conn, relation, credentials, schema, index,
                              dry_run=dry_run):
         if relation.is_view_relation:
             create_view(conn, relation, drop_view=drop, dry_run=dry_run)
-            grant_access(conn, relation, schema, dry_run=dry_run)
+            grant_access(conn, relation, schema, dry_run=(dry_run or relation.staging))
         elif relation.is_ctas_relation:
             create_table(conn, relation, drop_table=drop, dry_run=dry_run)
             create_temp_table_as_and_copy(conn, relation, skip_copy=skip_copy, dry_run=dry_run)
-            analyze(conn, relation, dry_run=dry_run)
+            analyze(conn, relation, dry_run=(dry_run or skip_copy))
             # TODO What should we do with table data if a constraint violation is detected? Delete it?
-            verify_constraints(conn, relation, dry_run=dry_run)
-            grant_access(conn, relation, schema, dry_run=dry_run)
+            verify_constraints(conn, relation, dry_run=(dry_run or skip_copy))
+            grant_access(conn, relation, schema, dry_run=(dry_run or relation.staging))
             modified = True
         else:
             create_table(conn, relation, drop_table=drop, dry_run=dry_run)
             # Grant access to data source regardless of loading errors (writers may fix load problem outside of ETL)
-            grant_access(conn, relation, schema, dry_run=dry_run)
+            grant_access(conn, relation, schema, dry_run=(dry_run or relation.staging))
             copy_data(conn, relation, credentials, skip_copy=skip_copy, dry_run=dry_run)
-            analyze(conn, relation, dry_run=dry_run)
-            verify_constraints(conn, relation, dry_run=dry_run)
+            analyze(conn, relation, dry_run=(dry_run or skip_copy))
+            verify_constraints(conn, relation, dry_run=(dry_run or skip_copy))
             modified = True
         return modified
 
@@ -510,7 +516,7 @@ def evaluate_execution_order(relations, selector, only_first=False, whole_schema
 
 
 def load_or_update_redshift(data_warehouse, relations, selector, drop=False, stop_after_first=False,
-                            no_rollback=False, skip_copy=False, dry_run=False):
+                            use_staging=False, no_rollback=False, skip_copy=False, dry_run=False):
     """
     Load table from CSV file or based on SQL query or install new view.
 
@@ -533,7 +539,7 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
     involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
     if whole_schemas:
-        create_schemas_after_backup(data_warehouse.dsn_etl, involved_schemas, dry_run=dry_run)
+        create_schemas(data_warehouse.dsn_etl, involved_schemas, use_staging, dry_run=dry_run)
 
     vacuum_ready = []
     skip_after_fail = set()  # type: Set[str]
@@ -543,14 +549,15 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
     with closing(conn) as conn, conn as conn:
         try:
             for i, relation in enumerate(execution_order):
-                index = {"current": i+1, "final": len(execution_order)}
+                index = {"current": i + 1, "final": len(execution_order)}
                 if relation.identifier in skip_after_fail:
                     logger.warning("Skipping load for relation '%s' due to failed dependencies", relation.identifier)
                     continue
                 target_schema = schema_config_lookup[relation.target_table_name.schema]
                 try:
+                    loadable_relation = relation.as_staging_relation() if use_staging else relation
                     modified = load_or_update_redshift_relation(
-                        conn, relation, data_warehouse.iam_role, target_schema, index,
+                        conn, loadable_relation, data_warehouse.iam_role, target_schema, index,
                         drop=drop, skip_copy=skip_copy, dry_run=dry_run)
                     if modified:
                         vacuum_ready.append(relation.target_table_name)
@@ -581,6 +588,11 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
                     etl.dw.restore_schemas(etl.pg.connection(data_warehouse.dsn_etl, autocommit=whole_schemas),
                                            involved_schemas)
             raise
+
+    if use_staging:
+        # We've successfully built staging schemas, so roll them out in one transaction
+        with etl.pg.connection(data_warehouse.dsn_etl, autocommit=False) as conn:
+            etl.dw.publish_schemas(conn, involved_schemas)
 
     # Reconnect to run vacuum outside transaction block
     if vacuum_ready and not drop:
