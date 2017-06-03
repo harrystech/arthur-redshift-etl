@@ -96,6 +96,7 @@ class SqoopExtractor(Extractor):
         columns = relation.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
         partition_key = relation.find_partition_key()
+        num_mappers = relation.num_mappers or self.max_partitions
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -125,7 +126,7 @@ class SqoopExtractor(Extractor):
                 "--hive-drop-import-delims",
                 "--compress"]  # The default compression codec is gzip.
         if partition_key:
-            args.extend(["--split-by", q(partition_key), "--num-mappers", str(self.max_partitions)])
+            args.extend(["--split-by", q(partition_key), "--num-mappers", str(num_mappers)])
         else:
             # TODO use "--autoreset-to-one-mapper" ?
             args.extend(["--num-mappers", "1"])

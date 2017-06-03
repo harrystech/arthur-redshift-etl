@@ -201,6 +201,14 @@
             },
             "additionalProperties": false
         },
+        "extract_settings":  {
+            "type": "object",
+            "properties": {
+                "split_by": { "$ref": "#/definitions/one_column_as_list" },
+                "num_mappers": { "type": "integer" }
+            },
+            "additionalProperties": false
+        },
         "depends_on": {
             "description": "List of all dependency tables of this transformation",
             "type": "array",
