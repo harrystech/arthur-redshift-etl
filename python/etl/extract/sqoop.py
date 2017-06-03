@@ -2,8 +2,9 @@ import logging
 import os.path
 import shlex
 import subprocess
+from contextlib import closing
 from tempfile import NamedTemporaryFile
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import etl.config
 import etl.monitor
@@ -12,6 +13,8 @@ import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
 from etl.extract.extractor import Extractor
+from etl.extract.partition import DefaultPartitioningStrategy
+from etl.names import TableName
 from etl.relation import RelationDescription
 
 
@@ -39,12 +42,7 @@ class SqoopExtractor(Extractor):
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
-        jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
-
-        password_file_path = self.write_password_file(dsn_properties["password"])
-        params_file_path = self.write_connection_params()
-        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
-                                        relation)
+        args = self.build_sqoop_options(source.dsn, relation)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
 
@@ -84,18 +82,21 @@ class SqoopExtractor(Extractor):
             self.logger.info("Wrote connection params to '%s'", params_file_path)
         return params_file_path
 
-    def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str, params_file_path: str,
-                            relation: RelationDescription) -> List[str]:
+    def build_sqoop_options(self, source_dsn: Dict[str, str], relation: RelationDescription) -> List[str]:
         """
         Create set of Sqoop options.
 
         Starts with the command (import), then continues with generic options,
         tool specific options, and child-process options.
         """
+        jdbc_url, dsn_properties = etl.pg.extract_dsn(source_dsn)
+
+        password_file_path = self.write_password_file(dsn_properties["password"])
+        params_file_path = self.write_connection_params()
+
         source_table_name = relation.source_table_name
         columns = relation.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
-        partition_key = relation.find_partition_key()
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -106,7 +107,7 @@ class SqoopExtractor(Extractor):
                 "--connect", q(jdbc_url),
                 "--driver", q("org.postgresql.Driver"),
                 "--connection-param-file", q(params_file_path),
-                "--username", q(username),
+                "--username", q(dsn_properties["user"]),
                 "--password-file", '"file://{}"'.format(password_file_path),
                 "--verbose",
                 "--fields-terminated-by", q(","),
@@ -124,12 +125,30 @@ class SqoopExtractor(Extractor):
                 # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
                 "--hive-drop-import-delims",
                 "--compress"]  # The default compression codec is gzip.
+
+        args.extend(self.build_sqoop_partition_options(source_dsn, relation))
+
+        return args
+
+    def build_sqoop_partition_options(self, source_dsn: Dict[str, str], relation: RelationDescription) -> List[str]:
+        """
+        Build the partitioning-related arguments for Sqoop.
+        """
+        partition_key = relation.find_partition_key()
         if partition_key:
-            args.extend(["--split-by", q(partition_key), "--num-mappers", str(self.max_partitions)])
+            quoted_key_arg = '"{}"'.format(partition_key)
+            num_mappers = self.determine_partitioning(source_dsn, relation.source_table_name)
+            return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
         else:
             # TODO use "--autoreset-to-one-mapper" ?
-            args.extend(["--num-mappers", "1"])
-        return args
+            return ["--num-mappers", "1"]
+
+    def determine_partitioning(self, source_dsn: Dict[str, str], source_table_name: TableName) -> int:
+        with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
+            table_size = etl.pg.fetch_table_size(conn, source_table_name.identifier)
+            num_partitions = DefaultPartitioningStrategy(table_size, self.max_partitions).num_partitions()
+
+        return num_partitions
 
     def write_options_file(self, args: List[str]) -> str:
         """
