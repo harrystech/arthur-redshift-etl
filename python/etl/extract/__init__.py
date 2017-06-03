@@ -54,6 +54,7 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
     """
     static_sources = {source.name: source for source in schemas if source.is_static_source}
     applicable = filter_relations_for_sources(static_sources, relations)
+    total_relations = len(applicable)
     if applicable:
         static_extractor = StaticExtractor(static_sources, applicable, keep_going, dry_run)
         static_extractor.extract_sources()
@@ -62,8 +63,11 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
 
     database_sources = {source.name: source for source in schemas if source.is_database_source}
     applicable = filter_relations_for_sources(database_sources, relations)
+    total_relations += len(applicable)
     if not applicable:
         logger.info("No database sources were selected")
+        if total_relations == 0:
+            logger.warning("Found no matching relations for your selection")
         return
 
     if extract_type == "spark":
