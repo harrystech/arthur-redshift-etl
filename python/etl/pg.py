@@ -14,11 +14,13 @@ import logging
 import os
 import re
 import textwrap
+from typing import List, Tuple
 
 import psycopg2
 import psycopg2.extras
 import pgpasslib
 
+from etl.errors import UnknownTableSizeError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -335,6 +337,54 @@ def log_sql_error(exc):
         value = getattr(exc.diag, name)
         if value:
             logger.debug("DIAG %s: %s", name.upper(), value)
+
+
+def fetch_table_size(cx: psycopg2.extensions.connection, table_name: str) -> int:
+    """
+    Fetch table size in bytes.
+    """
+    stmt = """
+        SELECT pg_catalog.pg_table_size('{}') AS table_size
+             , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
+    """
+    with Timer() as timer:
+        rows = query(cx, stmt.format(table_name, table_name))
+    if len(rows) != 1:
+        raise UnknownTableSizeError("Failed to determine size of table")
+    table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
+    logger.info("Size of table '%s': %s (%d bytes) (%s)",
+                table_name.identifier, pretty_table_size, table_size, timer)
+    return table_size
+
+
+def fetch_partition_boundaries(cx: psycopg2.extensions.connection, table_name: str, partition_key: str,
+                               num_partitions: int) -> List[Tuple[int, int]]:
+    """
+    Fetch ranges for the partition key that partitions the table nicely.
+
+    Used to divide the rows of a table into smaller chunks that can each be queried in parallel.
+    """
+    stmt = """
+        SELECT MIN(pkey) AS lower_bound
+             , MAX(pkey) AS upper_bound
+             , COUNT(pkey) AS count
+          FROM (
+                  SELECT "{partition_key}" AS pkey
+                       , NTILE({num_partitions}) OVER (ORDER BY "{partition_key}") AS part
+                    FROM {table_name}
+               ) t
+         GROUP BY part
+         ORDER BY part
+    """
+    with Timer() as timer:
+        rows = query(cx, stmt.format(partition_key=partition_key, num_partitions=num_partitions,
+                                     table_name=table_name))
+    row_count = sum(row["count"] for row in rows)
+    logger.info("Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",
+                num_partitions, row_count, table_name.identifier, row_count, partition_key, timer)
+    lower_bounds = (row["lower_bound"] for row in rows)
+    upper_bounds = (row["upper_bound"] for row in rows)
+    return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
 
 
 @contextmanager

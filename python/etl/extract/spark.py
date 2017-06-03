@@ -1,18 +1,14 @@
 import logging
 import os.path
 from contextlib import closing
-from typing import List, Dict, Tuple, Optional
-
-from psycopg2.extensions import connection  # only for type annotation
+from typing import List, Dict
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import UnknownTableSizeError
 from etl.extract.extractor import Extractor
 from etl.extract.partition import DefaultPartitioningStrategy
 from etl.names import TableName
 from etl.relation import RelationDescription
-from etl.timer import Timer
 
 
 class SparkExtractor(Extractor):
@@ -110,65 +106,20 @@ class SparkExtractor(Extractor):
 
         predicates = []
         with closing(etl.pg.connection(read_access, readonly=True)) as conn:
-            table_size = self.fetch_table_size(conn, source_table_name)
+            table_size = etl.pg.fetch_table_size(conn, source_table_name.identifier)
             num_partitions = DefaultPartitioningStrategy(table_size, 1024).num_partitions()
             self.logger.info("Decided on using %d partition(s) for table '%s' with partition key: '%s'",
                              num_partitions, source_table_name.identifier, partition_key)
 
             if num_partitions > 1:
-                boundaries = self.fetch_partition_boundaries(conn, source_table_name, partition_key, num_partitions)
+                boundaries = etl.pg.fetch_partition_boundaries(conn, source_table_name.identifier, partition_key,
+                                                               num_partitions)
                 for low, high in boundaries:
                     predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
                 self.logger.debug("Predicates to split '%s':\n    %s", source_table_name.identifier,
                                   "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)))
 
         return predicates
-
-    def fetch_table_size(self, conn: connection, table_name: TableName) -> int:
-        """
-        Fetch table size in bytes.
-        """
-        # TODO move this into pg.py
-        stmt = """
-            SELECT pg_catalog.pg_table_size('{}') AS table_size
-                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
-        """
-        with Timer() as timer:
-            rows = etl.pg.query(conn, stmt.format(table_name, table_name))
-        if len(rows) != 1:
-            raise UnknownTableSizeError("Failed to determine size of table")
-        table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
-        self.logger.info("Size of table '%s': %s (%d bytes) (%s)", table_name.identifier, pretty_table_size, table_size,
-                         timer)
-        return table_size
-
-    def fetch_partition_boundaries(self, conn: connection, table_name: TableName, partition_key: str,
-                                   num_partitions: int) -> List[Tuple[int, int]]:
-        """
-        Fetch ranges for the partition key that partitions the table nicely.
-        """
-        # TODO move this into pg.py
-        stmt = """
-            SELECT MIN(pkey) AS lower_bound
-                 , MAX(pkey) AS upper_bound
-                 , COUNT(pkey) AS count
-              FROM (
-                      SELECT "{partition_key}" AS pkey
-                           , NTILE({num_partitions}) OVER (ORDER BY "{partition_key}") AS part
-                        FROM {table_name}
-                   ) t
-             GROUP BY part
-             ORDER BY part
-        """
-        with Timer() as timer:
-            rows = etl.pg.query(conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions,
-                                                  table_name=table_name))
-        row_count = sum(row["count"] for row in rows)
-        self.logger.info("Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",
-                         num_partitions, row_count, table_name.identifier, row_count, partition_key, timer)
-        lower_bounds = (row["lower_bound"] for row in rows)
-        upper_bounds = (row["upper_bound"] for row in rows)
-        return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
 
     def write_dataframe_as_csv(self, df, relation: RelationDescription) -> None:
         """
