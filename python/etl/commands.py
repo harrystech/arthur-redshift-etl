@@ -243,7 +243,7 @@ def add_standard_arguments(parser, options):
                            action="store_const", const="s3", dest="scheme")
     if "max-partitions" in options:
         parser.add_argument("-m", "--max-partitions", metavar="N",
-                            help="set max number of partitions to write to N (default: %(default)s)", default=4)
+                            help="limit max number of partitions to write to N (default: %(default)s)", default=64)
     if "drop" in options:
         parser.add_argument("-d", "--drop",
                             help="first drop table or view to force update of definition", default=False,

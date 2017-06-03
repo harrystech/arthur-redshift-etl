@@ -47,7 +47,7 @@ class DefaultPartitioningStrategy:
         num_partitions = 1
         partition_size = self.table_size
         # Keep the partition sizes above the target value:
-        while partition_size >= target * 2 and num_partitions < 1024:
+        while partition_size >= target * 2 and num_partitions < self.max_partitions:
             num_partitions *= 2
             partition_size //= 2
 
