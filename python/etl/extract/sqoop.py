@@ -146,7 +146,7 @@ class SqoopExtractor(Extractor):
     def determine_partitioning(self, source_dsn: Dict[str, str], source_table_name: TableName) -> int:
         with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
             table_size = etl.pg.fetch_table_size(conn, source_table_name.identifier)
-            num_partitions = DefaultPartitioningStrategy(table_size, self.max_partitions).num_partitions()
+            num_partitions = DefaultPartitioningStrategy(table_size, self.max_partitions).calculate()
 
         return num_partitions
 

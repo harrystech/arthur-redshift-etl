@@ -15,19 +15,19 @@ class DefaultPartitioningStrategy:
       Medium tables (<= 1G): Use partitions around 10MB.
       Huge tables (> 1G): Use partitions around 20MB.
 
-    >>> DefaultPartitioningStrategy(100, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(100, 1024).calculate()
     1
-    >>> DefaultPartitioningStrategy(1048576, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(1048576, 1024).calculate()
     1
-    >>> DefaultPartitioningStrategy(3 * 1048576, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(3 * 1048576, 1024).calculate()
     2
-    >>> DefaultPartitioningStrategy(10 * 1048576, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(10 * 1048576, 1024).calculate()
     8
-    >>> DefaultPartitioningStrategy(100 * 1048576, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(100 * 1048576, 1024).calculate()
     8
-    >>> DefaultPartitioningStrategy(200 * 1048576, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(200 * 1048576, 1024).calculate()
     16
-    >>> DefaultPartitioningStrategy(2000 * 1048576, 1024).num_partitions()
+    >>> DefaultPartitioningStrategy(2000 * 1048576, 1024).calculate()
     64
     """
 
@@ -35,7 +35,7 @@ class DefaultPartitioningStrategy:
         self.table_size = table_size
         self.max_partitions = max_partitions
 
-    def num_partitions(self) -> int:
+    def calculate(self) -> int:
         meg = 1024 * 1024
         if self.table_size <= 10 * meg:
             target = 1 * meg

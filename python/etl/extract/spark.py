@@ -107,7 +107,7 @@ class SparkExtractor(Extractor):
         predicates = []
         with closing(etl.pg.connection(read_access, readonly=True)) as conn:
             table_size = etl.pg.fetch_table_size(conn, source_table_name.identifier)
-            num_partitions = DefaultPartitioningStrategy(table_size, 1024).num_partitions()
+            num_partitions = DefaultPartitioningStrategy(table_size, 1024).calculate()
             self.logger.info("Decided on using %d partition(s) for table '%s' with partition key: '%s'",
                              num_partitions, source_table_name.identifier, partition_key)
 
