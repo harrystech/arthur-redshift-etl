@@ -3,7 +3,7 @@ import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import etl.config
 import etl.monitor
@@ -11,15 +11,14 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract.extractor import Extractor
+from etl.extract.extractor import DBExtractor
 from etl.relation import RelationDescription
 
 
-class SqoopExtractor(Extractor):
-
+class SqoopExtractor(DBExtractor):
     """
-    This extractor takes care of all the idiosyncrasies of extracting data from
-    upstream sources using Sqoop, http://sqoop.apache.org/
+    This extractor manages parallel SQL database extraction via MapReduce
+    using Sqoop (http://sqoop.apache.org/)
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
@@ -43,8 +42,10 @@ class SqoopExtractor(Extractor):
 
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
+        num_mappers = relation.num_mappers or self.suggest_num_partitions(relation.source_table_name, source.dsn)
+
         args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
-                                        relation)
+                                        relation, num_mappers=num_mappers)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
 
@@ -85,7 +86,7 @@ class SqoopExtractor(Extractor):
         return params_file_path
 
     def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str, params_file_path: str,
-                            relation: RelationDescription) -> List[str]:
+                            relation: RelationDescription, num_mappers: Optional[int] = None) -> List[str]:
         """
         Create set of Sqoop options.
 
@@ -96,7 +97,7 @@ class SqoopExtractor(Extractor):
         columns = relation.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
         partition_key = relation.find_partition_key()
-        num_mappers = relation.num_mappers or self.max_partitions
+        num_mappers = num_mappers if num_mappers is not None else self.max_partitions
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):

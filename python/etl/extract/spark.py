@@ -1,21 +1,19 @@
 import logging
 import os.path
-from contextlib import closing
 from typing import List, Dict, Tuple, Optional
+from contextlib import closing
 
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import UnknownTableSizeError
-from etl.extract.extractor import Extractor
+from etl.extract.extractor import DBExtractor
 from etl.names import TableName
 from etl.timer import Timer
 from etl.relation import RelationDescription
 
 
-class SparkExtractor(Extractor):
-
+class SparkExtractor(DBExtractor):
     """
     Use Apache Spark to download data from upstream databases.
     """
@@ -90,57 +88,6 @@ class SparkExtractor(Extractor):
                                             table=select_statement)
         return df
 
-    def determine_partitioning(self, source_table_name: TableName, relation: RelationDescription,
-                               read_access: Dict[str, str]) -> List[str]:
-        """
-        Guesstimate number of partitions based on actual table size and create list of predicates to split
-        up table into that number of partitions.
-
-        This requires for one numeric column to be marked as the primary key.  If there's no primary
-        key in the table, the number of partitions is always one.
-        (This requirement doesn't come from the table size but the need to split the table
-        when reading it in.)
-        """
-        partition_key = relation.find_partition_key()  # type: Optional[str]
-        if partition_key is None:
-            self.logger.info("No partition key found for '%s', skipping partitioning", source_table_name.identifier)
-            return []
-        self.logger.debug("Determining partitioning for table '%s'", source_table_name.identifier)
-
-        predicates = []
-        with closing(etl.pg.connection(read_access, readonly=True)) as conn:
-            table_size = self.fetch_table_size(conn, source_table_name)
-            num_partitions = suggest_best_partition_number(table_size)
-            self.logger.info("Decided on using %d partition(s) for table '%s' with partition key: '%s'",
-                             num_partitions, source_table_name.identifier, partition_key)
-
-            if num_partitions > 1:
-                boundaries = self.fetch_partition_boundaries(conn, source_table_name, partition_key, num_partitions)
-                for low, high in boundaries:
-                    predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
-                self.logger.debug("Predicates to split '%s':\n    %s", source_table_name.identifier,
-                                  "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)))
-
-        return predicates
-
-    def fetch_table_size(self, conn: connection, table_name: TableName) -> int:
-        """
-        Fetch table size in bytes.
-        """
-        # TODO move this into pg.py
-        stmt = """
-            SELECT pg_catalog.pg_table_size('{}') AS table_size
-                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
-        """
-        with Timer() as timer:
-            rows = etl.pg.query(conn, stmt.format(table_name, table_name))
-        if len(rows) != 1:
-            raise UnknownTableSizeError("Failed to determine size of table")
-        table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
-        self.logger.info("Size of table '%s': %s (%d bytes) (%s)", table_name.identifier, pretty_table_size, table_size,
-                         timer)
-        return table_size
-
     def fetch_partition_boundaries(self, conn: connection, table_name: TableName, partition_key: str,
                                    num_partitions: int) -> List[Tuple[int, int]]:
         """
@@ -194,45 +141,33 @@ class SparkExtractor(Extractor):
                 .mode('overwrite') \
                 .save(s3_uri)
 
+    def determine_partitioning(self, source_table_name: TableName, relation: RelationDescription,
+                               read_access: Dict[str, str]) -> List[str]:
+        """
+        Guesstimate number of partitions based on actual table size and create list of predicates to split
+        up table into that number of partitions.
 
-def suggest_best_partition_number(table_size: int) -> int:
-    """
-    Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
-    a factor of 2.
+        This requires for one numeric column to be marked as the primary key.  If there's no primary
+        key in the table, the number of partitions is always one.
+        (This requirement doesn't come from the table size but the need to split the table
+        when reading it in.)
+        """
+        partition_key = relation.find_partition_key()  # type: Optional[str]
+        if partition_key is None:
+            self.logger.info("No partition key found for '%s', skipping partitioning", source_table_name.identifier)
+            return []
 
-    The number of partitions is based on:
-      Small tables (<= 10M): Use partitions around 1MB.
-      Medium tables (<= 1G): Use partitions around 10MB.
-      Huge tables (> 1G): Use partitions around 20MB.
+        predicates = []
+        num_partitions = self.suggest_num_partitions(source_table_name, read_access)
 
-    >>> suggest_best_partition_number(100)
-    1
-    >>> suggest_best_partition_number(1048576)
-    1
-    >>> suggest_best_partition_number(3 * 1048576)
-    2
-    >>> suggest_best_partition_number(10 * 1048576)
-    8
-    >>> suggest_best_partition_number(100 * 1048576)
-    8
-    >>> suggest_best_partition_number(200 * 1048576)
-    16
-    >>> suggest_best_partition_number(2000 * 1048576)
-    64
-    """
-    meg = 1024 * 1024
-    if table_size <= 10 * meg:
-        target = 1 * meg
-    elif table_size <= 1024 * meg:
-        target = 10 * meg
-    else:
-        target = 20 * meg
+        if num_partitions > 1:
+            self.logger.info("Decided on using %d partition(s) for table '%s' with partition key: '%s'",
+                             num_partitions, source_table_name.identifier, partition_key)
+            with closing(etl.pg.connection(read_access, readonly=True)) as conn:
+                boundaries = self.fetch_partition_boundaries(conn, source_table_name, partition_key, num_partitions)
+                for low, high in boundaries:
+                    predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
+                self.logger.debug("Predicates to split '%s':\n    %s", source_table_name.identifier,
+                                  "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)))
 
-    num_partitions = 1
-    partition_size = table_size
-    # Keep the partition sizes above the target value:
-    while partition_size >= target * 2 and num_partitions < 1024:
-        num_partitions *= 2
-        partition_size //= 2
-
-    return num_partitions
+        return predicates

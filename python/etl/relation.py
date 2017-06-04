@@ -223,12 +223,19 @@ class RelationDescription:
         If no partition key can be found, returns None.
         """
         constraints = self.table_design.get("constraints", [])
-        primary_keys = [col for constraint in constraints for col in constraint.get("primary_key", [])]
-        if len(primary_keys) == 1:
-            primary_key = primary_keys[0]
         extract_settings = self.table_design.get("extract_settings", {})
-        split_by_key = extract_settings.get('split_by', [None])[0]
-        partition_key = split_by_key or primary_key
+        [split_by_key] = extract_settings.get('split_by', [None])
+
+        try:
+            [primary_key] = [col for constraint in constraints for col in constraint.get("primary_key", [])]
+            partition_key = split_by_key or primary_key
+        except ValueError:
+            logger.debug("Found no single-column primary key for table '%s'", self.identifier)
+            partition_key = split_by_key
+
+        if not partition_key:
+            logger.debug("Found no partition key for table '%s'", self.identifier)
+            return None
 
         for column in self.table_design["columns"]:
             if column["name"] == partition_key:
@@ -236,10 +243,9 @@ class RelationDescription:
                 if column["type"] in ("int", "long"):
                     logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
                     return partition_key
-                logger.warning("Primary key '%s' is not a number and is not usable as a partition key for '%s'",
+                logger.warning("Partition key '%s' is not a number and is not usable as a partition key for '%s'",
                                partition_key, self.identifier)
                 break
-        logger.debug("Found no partition key for table '%s'", self.identifier)
         return None
 
     @contextmanager
