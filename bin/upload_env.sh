@@ -87,5 +87,5 @@ fi
 
 set +x
 echo
-echo "You should *now* run:"
+echo "# You should *now* run:"
 echo "arthur.py sync --deploy --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""

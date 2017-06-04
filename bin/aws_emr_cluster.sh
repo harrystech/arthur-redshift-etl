@@ -130,17 +130,17 @@ set +x +v
 say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
 
 cat <<EOF
-If you need to proxy into the cluster, use:
+# If you need to proxy into the cluster, use:
 
-aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "<location of your key file>"
+  aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "<location of your key file>"
 
-If you want to submit steps, use:
+# If you want to submit steps, use:
 
-arthur.py --submit "$CLUSTER_ID" [command] --prolix --prefix $DEFAULT_PREFIX [options ...]
+  arthur.py --submit "$CLUSTER_ID" [command] --prolix --prefix $DEFAULT_PREFIX [options ...]
 
-To easily reference this cluster, user:
+# To easily reference this cluster, user:
 
-export CLUSTER_ID="$CLUSTER_ID"
+  export CLUSTER_ID="$CLUSTER_ID"
 
-Do not forget to shutdown the cluster when you no longer need it.
+# * Do not forget to shutdown the cluster when you no longer need it. *
 EOF
