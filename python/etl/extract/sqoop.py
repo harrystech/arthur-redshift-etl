@@ -2,6 +2,7 @@ import logging
 import os.path
 import shlex
 import subprocess
+from contextlib import closing
 from tempfile import NamedTemporaryFile
 from typing import Dict, List
 
@@ -11,11 +12,11 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract.extractor import Extractor
+from etl.extract.extractor import DatabaseExtractor
 from etl.relation import RelationDescription
 
 
-class SqoopExtractor(Extractor):
+class SqoopExtractor(DatabaseExtractor):
 
     """
     This extractor takes care of all the idiosyncrasies of extracting data from
@@ -23,11 +24,9 @@ class SqoopExtractor(Extractor):
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 keep_going: bool, max_partitions: int, with_sampling: bool, dry_run: bool) -> None:
-        super().__init__("sqoop", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
+                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+        super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
-        self.max_partitions = max_partitions
-        self.with_sampling = with_sampling
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
@@ -44,13 +43,24 @@ class SqoopExtractor(Extractor):
 
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
-        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
-                                        relation)
+
+        if self.use_sampling:
+            # Ugly but true ... only extract table size if sampling is on the table (bad pun)
+            with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
+                table_size = self.fetch_source_table_size(conn, relation)
+                add_sampling = self.use_sampling_with_table(table_size)
+        else:
+            add_sampling = False
+
+        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"],
+                                        password_file_path, params_file_path,
+                                        relation, add_sampling)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
-
         self._delete_directory_before_write(relation)
+
         self.run_sqoop(options_file)
+
         prefix = os.path.join(relation.prefix, relation.csv_path_name)
         self.write_manifest_file(relation, relation.bucket_name, prefix)
 
@@ -86,22 +96,20 @@ class SqoopExtractor(Extractor):
         return params_file_path
 
     def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str, params_file_path: str,
-                            relation: RelationDescription) -> List[str]:
+                            relation: RelationDescription, add_sampling=True) -> List[str]:
         """
         Create set of Sqoop options.
 
         Starts with the command (import), then continues with generic options,
         tool specific options, and child-process options.
         """
-        source_table_name = relation.source_table_name
-        columns = ", ".join(relation.get_columns_with_casts())
         partition_key = relation.find_partition_key()
-
-        if not self.with_sampling:
-            conditions = "$CONDITIONS"  # per sqoop documentation
+        if add_sampling:
+            select_statement = self.select_statement(relation, partition_key)
         else:
-            conditions = """(("{}" % 10) = 1) AND $CONDITIONS""".format(partition_key)
-        select_statement = """SELECT {} FROM {} WHERE {}""".format(columns, source_table_name, conditions)
+            select_statement = self.select_statement(relation, None)
+        # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
+        select_statement += " AND $CONDITIONS"
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):

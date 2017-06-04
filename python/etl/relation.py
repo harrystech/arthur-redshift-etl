@@ -98,6 +98,7 @@ class RelationDescription:
         """
         logger.info("Loading table design for %d relation(s)", len(relations))
         with etl.timer.Timer() as timer:
+            # TODO With Python 3.6, we should pass in a thread_name_prefix
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 executor.map(lambda relation: relation.load(), relations)
         logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
@@ -224,7 +225,7 @@ class RelationDescription:
                 if column["name"] == primary_key:
                     # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
                     if column["type"] in ("int", "long"):
-                        logger.debug("Partition key for table '%s' is '%s'", self.identifier, primary_key)
+                        logger.info("Partition key for table '%s' is '%s'", self.identifier, primary_key)
                         return primary_key
                     logger.warning("Primary key '%s' is not a number and is not usable as a partition key for '%s'",
                                    primary_key, self.identifier)

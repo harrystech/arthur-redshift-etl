@@ -68,6 +68,7 @@ def validate_semantics(relations: List[RelationDescription], keep_going=False) -
 
     Return list of successfully validated relations or raise exception on validation error.
     """
+    # TODO With Python 3.6, we should pass in a thread_name_prefix
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         result = executor.map(lambda relation: validate_relation_description(relation, keep_going), relations)
     # Drop all relations from the result which returned None (meaning they failed validation).
