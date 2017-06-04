@@ -558,7 +558,5 @@ def test_run():
     input("Press return (or Ctrl-c) to stop server\n")
 
 if __name__ == "__main__":
-    # import etl.config
-    # etl.config.configure_logging()
     logging.basicConfig(level=logging.DEBUG)
     test_run()

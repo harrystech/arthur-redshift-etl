@@ -155,10 +155,10 @@ class SqoopExtractor(Extractor):
         deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
         if deletable:
             if self.dry_run:
-                self.logger.info("Dry-run: Skipping deletion of existing CSV files in 's3://%s/%s'",
-                                 relation.bucket_name, csv_prefix)
+                self.logger.info("Dry-run: Skipping deletion of %d existing CSV file(s) in 's3://%s/%s'",
+                                 len(deletable), relation.bucket_name, csv_prefix)
             else:
-                etl.s3.delete_objects(relation.bucket_name, deletable)
+                etl.s3.delete_objects(relation.bucket_name, deletable, wait=True)
 
     def run_sqoop(self, options_file_path: str):
         """
