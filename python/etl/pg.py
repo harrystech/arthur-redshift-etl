@@ -9,11 +9,11 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
-from contextlib import closing, contextmanager
 import logging
 import os
 import re
 import textwrap
+from contextlib import closing, contextmanager
 
 import psycopg2
 import psycopg2.extras
@@ -367,5 +367,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
+    dsn_dict = parse_connection_string(sys.argv[1])
     with log_error():
-        ping(parse_connection_string(sys.argv[1]))
+        ping(dsn_dict)

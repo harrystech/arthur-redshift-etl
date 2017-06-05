@@ -241,9 +241,6 @@ def add_standard_arguments(parser, options):
                            action="store_const", const="file", dest="scheme", default="file")
         group.add_argument("-r", "--remote-files", help="use files in S3",
                            action="store_const", const="s3", dest="scheme")
-    if "max-partitions" in options:
-        parser.add_argument("-m", "--max-partitions", metavar="N",
-                            help="set max number of partitions to write to N (default: %(default)s)", default=4)
     if "drop" in options:
         parser.add_argument("-d", "--drop",
                             help="first drop table or view to force update of definition", default=False,
@@ -467,7 +464,7 @@ class ExtractToS3Command(SubCommand):
                          " outside the ETL.)")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--with-sqoop", help="extract data using Sqoop (using 'sqoop import', this is the default)",
                            const="sqoop", action="store_const", dest="extractor", default="sqoop")
@@ -480,8 +477,17 @@ class ExtractToS3Command(SubCommand):
         parser.add_argument("-k", "--keep-going",
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
+        parser.add_argument("-m", "--max-partitions", metavar="N", type=int,
+                            help="set max number of partitions to write to N (default: %(default)s)",
+                            default=4)
+        parser.add_argument("--use-sampling",
+                            help="use only 10%% of rows in extracted tables that are larger than 1MB",
+                            default=False, action="store_true")
 
     def callback(self, args, config):
+        if args.max_partitions < 1:
+            raise InvalidArgumentsError("max_partitions must be >= 1")
+
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
         # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
         if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
@@ -496,7 +502,9 @@ class ExtractToS3Command(SubCommand):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
                                                        required_relation_selector=config.required_in_full_load_selector)
         etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
-                                             max_partitions=args.max_partitions, keep_going=args.keep_going,
+                                             max_partitions=args.max_partitions,
+                                             use_sampling=args.use_sampling,
+                                             keep_going=args.keep_going,
                                              dry_run=args.dry_run)
 
 

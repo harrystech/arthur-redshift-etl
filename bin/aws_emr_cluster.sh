@@ -4,8 +4,6 @@
 #
 # Checkout the upload_env.sh and sync_env.sh scripts to have files ready in S3 for the EMR cluster.
 # Then use something like `arthur.py --submit <cluster id> extract ...`
-#
-# TODO Find a better way to parameterize cluster, check out cloud formation?
 
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 

@@ -98,6 +98,7 @@ class RelationDescription:
         """
         logger.info("Loading table design for %d relation(s)", len(relations))
         with etl.timer.Timer() as timer:
+            # TODO With Python 3.6, we should pass in a thread_name_prefix
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 executor.map(lambda relation: relation.load(), relations)
         logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
@@ -246,6 +247,7 @@ class RelationDescription:
                 logger.warning("Partition key '%s' is not a number and is not usable as a partition key for '%s'",
                                partition_key, self.identifier)
                 break
+
         return None
 
     @contextmanager

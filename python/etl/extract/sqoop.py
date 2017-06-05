@@ -2,6 +2,7 @@ import logging
 import os.path
 import shlex
 import subprocess
+from contextlib import closing
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional
 
@@ -11,21 +12,20 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract.extractor import DBExtractor
+from etl.extract.extractor import DatabaseExtractor, suggest_best_partition_number
 from etl.relation import RelationDescription
 
 
-class SqoopExtractor(DBExtractor):
+class SqoopExtractor(DatabaseExtractor):
     """
     This extractor manages parallel SQL database extraction via MapReduce
     using Sqoop (http://sqoop.apache.org/)
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 keep_going: bool, max_partitions: int, dry_run: bool) -> None:
-        super().__init__("sqoop", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
+                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+        super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
-        self.max_partitions = max_partitions
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
@@ -42,17 +42,27 @@ class SqoopExtractor(DBExtractor):
 
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
-        num_mappers = relation.num_partitions or self.suggest_num_partitions(relation.source_table_name, source.dsn)
-        if num_mappers > self.max_partitions:
-            num_mappers = self.max_partitions
+
+        with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
+            table_size = self.fetch_source_table_size(conn, relation)
+
+            if self.use_sampling:
+                add_sampling = self.use_sampling_with_table(table_size)
+            else:
+                add_sampling = False
+
+            num_mappers = relation.num_partitions or suggest_best_partition_number(table_size)
+            if num_mappers > self.max_partitions:
+                num_mappers = self.max_partitions
 
         args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
-                                        relation, num_mappers=num_mappers)
+                                        relation, add_sampling, num_mappers=num_mappers)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
-
         self._delete_directory_before_write(relation)
+
         self.run_sqoop(options_file)
+
         prefix = os.path.join(relation.prefix, relation.csv_path_name)
         self.write_manifest_file(relation, relation.bucket_name, prefix)
 
@@ -88,17 +98,21 @@ class SqoopExtractor(DBExtractor):
         return params_file_path
 
     def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str, params_file_path: str,
-                            relation: RelationDescription, num_mappers: Optional[int] = None) -> List[str]:
+                            relation: RelationDescription, add_sampling=True,
+                            num_mappers: Optional[int] = None) -> List[str]:
         """
         Create set of Sqoop options.
 
         Starts with the command (import), then continues with generic options,
         tool specific options, and child-process options.
         """
-        source_table_name = relation.source_table_name
-        columns = relation.get_columns_with_casts()
-        select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
         partition_key = relation.find_partition_key()
+        if add_sampling:
+            select_statement = self.select_statement(relation, partition_key)
+        else:
+            select_statement = self.select_statement(relation, None)
+        # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
+        select_statement += " AND $CONDITIONS"
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -130,7 +144,6 @@ class SqoopExtractor(DBExtractor):
         if partition_key:
             args.extend(["--split-by", q(partition_key), "--num-mappers", str(num_mappers)])
         else:
-            # TODO use "--autoreset-to-one-mapper" ?
             args.extend(["--num-mappers", "1"])
         return args
 
