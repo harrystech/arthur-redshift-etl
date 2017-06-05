@@ -29,9 +29,7 @@ class SqoopExtractor(DatabaseExtractor):
         super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
 
         self.logger = logging.getLogger(__name__)
-        self.use_sampling = use_sampling
-        self.max_partitions = max_partitions
-        self.min_parition_size = 1048576  # 1MB; TODO: Make configurable through CLI arg or settings
+        self.min_parition_size = 1048576  # 1MB is minimum size file recommended by AWS for Redshift copies
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
@@ -167,7 +165,6 @@ class SqoopExtractor(DatabaseExtractor):
                 return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
 
         # Use 1 mapper if either there is no partition key, or if the partitioner returns only one partition
-        # TODO use "--autoreset-to-one-mapper"?
         return ["--num-mappers", "1"]
 
     def write_options_file(self, args: List[str]) -> str:
