@@ -7,9 +7,9 @@ DBExtractors query upstream databases and save their data on S3 before writing m
 """
 
 import concurrent.futures
+import logging
 from contextlib import closing
 from itertools import groupby
-import logging
 from operator import attrgetter
 from typing import Dict, List, Set
 

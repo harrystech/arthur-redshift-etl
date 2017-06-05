@@ -205,7 +205,7 @@
             "type": "object",
             "properties": {
                 "split_by": { "$ref": "#/definitions/one_column_as_list" },
-                "num_mappers": { "type": "integer" }
+                "num_partitions": { "type": "integer" }
             },
             "additionalProperties": false
         },

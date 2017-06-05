@@ -168,8 +168,8 @@ class RelationDescription:
         return self.target_table_name.schema
 
     @property
-    def num_mappers(self):
-        return self.table_design.get('extract_settings', {}).get('num_mappers')
+    def num_partitions(self):
+        return self.table_design.get('extract_settings', {}).get('num_partitions')
 
     @classmethod
     def from_file_sets(cls, file_sets, required_relation_selector=None):

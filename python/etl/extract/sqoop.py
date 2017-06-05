@@ -42,7 +42,9 @@ class SqoopExtractor(DBExtractor):
 
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
-        num_mappers = relation.num_mappers or self.suggest_num_partitions(relation.source_table_name, source.dsn)
+        num_mappers = relation.num_partitions or self.suggest_num_partitions(relation.source_table_name, source.dsn)
+        if num_mappers > self.max_partitions:
+            num_mappers = self.max_partitions
 
         args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
                                         relation, num_mappers=num_mappers)
@@ -97,7 +99,6 @@ class SqoopExtractor(DBExtractor):
         columns = relation.get_columns_with_casts()
         select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
         partition_key = relation.find_partition_key()
-        num_mappers = num_mappers if num_mappers is not None else self.max_partitions
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
