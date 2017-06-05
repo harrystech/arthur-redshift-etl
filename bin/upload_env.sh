@@ -2,11 +2,6 @@
 
 # This will create a new distribution locally and upload everything into S3.
 
-if [[ "$0" =~ "setup_env" ]]; then
-    echo "DEPRECATED Use instead: upload_env.sh $*"
-    echo
-fi
-
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 set -e
@@ -36,16 +31,21 @@ ask_to_confirm () {
     done
 }
 
-ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'?"
-
-if ! aws s3 ls "s3://$CLUSTER_BUCKET/" > /dev/null; then
-    echo "Check whether the bucket \"$CLUSTER_BUCKET\" exists and you have access to it!"
+if [[ ! -r ./setup.py ]]; then
+    echo "Failed to find 'setup.py' file in the local directory."
     exit 2
 fi
 
-if [[ ! -r setup.py ]]; then
-    echo "Failed to find 'setup.py' file"
+if ! aws s3 ls "s3://$CLUSTER_BUCKET/" > /dev/null; then
+    echo "Check whether the bucket \"$CLUSTER_BUCKET\" exists and you have access to it!"
+    echo "(Hint: If you spelled the name correctly, is your VPN connected?)"
     exit 2
+fi
+
+if aws s3 ls "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars" > /dev/null; then
+    ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'?"
+else
+    ask_to_confirm "Are you sure you want to create '$CLUSTER_TARGET_ENVIRONMENT'?"
 fi
 
 echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to S3"
@@ -53,13 +53,17 @@ echo "Creating Python dist file, then uploading files (including configuration, 
 set -x -u
 
 # Collect release information
-RELEASE_FILE="/tmp/setup_env_release_${USER}$$.txt"
+RELEASE_FILE="/tmp/upload_env_release_${USER}$$.txt"
 > "$RELEASE_FILE"
 trap "rm \"$RELEASE_FILE\"" EXIT
 
-# python3 setup.py --fullname >> "$RELEASE_FILE"
 git rev-parse --show-toplevel >> "$RELEASE_FILE"
-git rev-parse HEAD >> "$RELEASE_FILE"
+GIT_COMMIT_HASH=$(git rev-parse HEAD)
+if GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
+    echo "$GIT_COMMIT_HASH ($GIT_BRANCH)" >> "$RELEASE_FILE"
+else
+    echo "$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
+fi
 date "+%Y-%m-%d %H:%M:%S%z" >> "$RELEASE_FILE"
 cat "$RELEASE_FILE" > "python/etl/config/release.txt"
 
@@ -83,5 +87,5 @@ fi
 
 set +x
 echo
-echo "You should *now* run:"
+echo "# You should *now* run:"
 echo "arthur.py sync --deploy --prefix \"$CLUSTER_TARGET_ENVIRONMENT\""
