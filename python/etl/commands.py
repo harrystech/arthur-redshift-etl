@@ -461,8 +461,10 @@ class ExtractToS3Command(SubCommand):
     def __init__(self):
         super().__init__("extract",
                          "extract data from upstream sources",
-                         "Extract table contents from upstream databases or gather references to existing CSV files"
-                         " in S3. This also creates fresh manifest files.")
+                         "Extract table contents from upstream databases (unless you decide to use existing"
+                         " CSV files) and then gather references to CSV files in S3 into manifests file."
+                         " (This last step is the only step needed for static sources where data is created"
+                         " outside the ETL.)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "max-partitions", "dry-run"])
@@ -471,6 +473,10 @@ class ExtractToS3Command(SubCommand):
                            const="sqoop", action="store_const", dest="extractor", default="sqoop")
         group.add_argument("--with-spark", help="extract data using Spark Dataframe (using submit_arthur.sh)",
                            const="spark", action="store_const", dest="extractor")
+        group.add_argument("--use-existing-csv-files",
+                           help="skip extraction and go straight to creating manifest files,"
+                           " implied default for static sources",
+                           const="use-existing-csv-files", action="store_const", dest="extractor")
         parser.add_argument("-k", "--keep-going",
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
