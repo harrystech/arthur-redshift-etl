@@ -567,22 +567,22 @@ class CreateSchemasCommand(SubCommand):
     def __init__(self):
         super().__init__("create_schemas",
                          "create schemas from data warehouse config",
-                         "Create schemas as configured and set (or add) permissions")
+                         "Create schemas as configured and set permissions."
+                         " Optionally move existing schemas to backup."
+                         " (Any patterns must be schema names.)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
+        parser.add_argument("-b", "--with-backup", help="backup any existing schemas",
+                            default=False, action="store_true")
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
-        pretty_names = etl.names.join_with_quotes(schema_names)
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
-        if args.dry_run:
-            logger.info("Dry-run: Skipping creating schema(s): %s", pretty_names)
-        else:
-            logger.info("Creating schema(s): %s", pretty_names)
-            with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
-                with etl.pg.log_error():
-                    etl.dw.create_schemas(conn, schemas)
+        with etl.pg.log_error():
+            if args.with_backup:
+                etl.dw.backup_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+            etl.dw.create_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
 
 
 class RestoreSchemasCommand(SubCommand):
@@ -597,15 +597,9 @@ class RestoreSchemasCommand(SubCommand):
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
-        pretty_names = etl.names.join_with_quotes(schema_names)
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
-        if args.dry_run:
-            logger.info("Dry-run: Skipping restore from backup for schema(s): %s", pretty_names)
-        else:
-            logger.info("Restoring schema(s) from backup: %s", pretty_names)
-            with closing(etl.pg.connection(config.dsn_etl, autocommit=True)) as conn:
-                with etl.pg.log_error():
-                    etl.dw.restore_schemas(conn, schemas)
+        with etl.pg.log_error():
+            etl.dw.restore_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
