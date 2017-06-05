@@ -1,8 +1,19 @@
+"""
+Base classes for preparing data to be loaded
+
+Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data files
+
+DBExtractors query upstream databases and save their data on S3 before writing manifests
+"""
+
 import concurrent.futures
 import logging
+from contextlib import closing
 from itertools import groupby
 from operator import attrgetter
 from typing import Dict, List, Set, Optional
+
+from psycopg2.extensions import connection  # only for type annotation
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -10,8 +21,8 @@ import etl.monitor
 import etl.s3
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
-from etl.names import join_with_quotes, TableName
+from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError, UnknownTableSizeError
+from etl.names import TableName, join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -24,6 +35,7 @@ class Extractor:
         * call a child's class extract for a single table
     It is that method (`extract_table`) that child classes must implement.
     """
+
     def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
                  keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
@@ -67,7 +79,7 @@ class Extractor:
                                              source=self.source_info(source, relation),
                                              destination={'bucket_name': relation.bucket_name,
                                                           'object_key': relation.manifest_file_name},
-                                             index={"current": i+1, "final": len(relations), "name": source.name},
+                                             index={"current": i + 1, "final": len(relations), "name": source.name},
                                              dry_run=self.dry_run):
                         self.extract_table(source, relation)
                 except ETLRuntimeError:
@@ -169,21 +181,6 @@ class DatabaseExtractor(Extractor):
         self.max_partitions = max_partitions
         self.use_sampling = use_sampling
 
-    def fetch_source_table_size(self, conn: connection, relation: RelationDescription) -> int:
-        """
-        Return size of source table for this relation in bytes
-        """
-        stmt = """
-            SELECT pg_catalog.pg_table_size(%s) AS "bytes"
-                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
-            """
-        table = relation.source_table_name
-        rows = etl.pg.query(conn, stmt, (str(table), str(table)))
-        bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
-        self.logger.info("Size of table '%s.%s': %s (%s)",
-                         relation.source_name, table.identifier, bytes_size, pretty_size)
-        return bytes_size
-
     def use_sampling_with_table(self, size: int) -> bool:
         """
         Return True iff option `--use-sampling` appeared and table is large enough (> 1MB).
@@ -206,3 +203,61 @@ class DatabaseExtractor(Extractor):
                              add_sampling_on_column, relation.source_name, relation.source_table_name.identifier)
             statement += """ WHERE (("{}" % 10) = 1)""".format(add_sampling_on_column)
         return statement
+
+    def fetch_source_table_size(self, conn: connection, relation: RelationDescription) -> int:
+        """
+        Return size of source table for this relation in bytes
+        """
+        stmt = """
+            SELECT pg_catalog.pg_table_size(%s) AS "bytes"
+                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
+            """
+        table = relation.source_table_name
+        rows = etl.pg.query(conn, stmt, (str(table), str(table)))
+        bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
+        self.logger.info("Size of table '%s.%s': %s (%s)",
+                         relation.source_name, table.identifier, bytes_size, pretty_size)
+        return bytes_size
+
+
+def suggest_best_partition_number(table_size: int) -> int:
+    """
+    Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
+    a factor of 2.
+
+    The number of partitions is based on:
+      Small tables (<= 10M): Use partitions around 1MB.
+      Medium tables (<= 1G): Use partitions around 10MB.
+      Huge tables (> 1G): Use partitions around 20MB.
+
+    >>> suggest_best_partition_number(100)
+    1
+    >>> suggest_best_partition_number(1048576)
+    1
+    >>> suggest_best_partition_number(3 * 1048576)
+    2
+    >>> suggest_best_partition_number(10 * 1048576)
+    8
+    >>> suggest_best_partition_number(100 * 1048576)
+    8
+    >>> suggest_best_partition_number(200 * 1048576)
+    16
+    >>> suggest_best_partition_number(2000 * 1048576)
+    64
+    """
+    meg = 1024 * 1024
+    if table_size <= 10 * meg:
+        target = 1 * meg
+    elif table_size <= 1024 * meg:
+        target = 10 * meg
+    else:
+        target = 20 * meg
+
+    num_partitions = 1
+    partition_size = table_size
+    # Keep the partition sizes above the target value:
+    while partition_size >= target * 2 and num_partitions < 1024:
+        num_partitions *= 2
+        partition_size //= 2
+
+    return num_partitions

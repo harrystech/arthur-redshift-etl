@@ -1,20 +1,21 @@
 import logging
 import os.path
+from typing import List, Dict, Tuple, Optional
 from contextlib import closing
-from typing import List, Dict, Tuple
 
 import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.extract.extractor import DatabaseExtractor
+from etl.extract.extractor import DatabaseExtractor, suggest_best_partition_number
 from etl.names import TableName
 from etl.timer import Timer
 from etl.relation import RelationDescription
 
 
 class SparkExtractor(DatabaseExtractor):
+#class SparkExtractor(DBExtractor):
     """
     Use Apache Spark to download data from upstream databases.
     """
@@ -167,46 +168,3 @@ class SparkExtractor(DatabaseExtractor):
                 .mode('overwrite') \
                 .options(**write_options) \
                 .csv(s3_uri)
-
-
-def suggest_best_partition_number(table_size: int) -> int:
-    """
-    Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
-    a factor of 2.
-
-    The number of partitions is based on:
-      Small tables (<= 10M): Use partitions around 1MB.
-      Medium tables (<= 1G): Use partitions around 10MB.
-      Huge tables (> 1G): Use partitions around 20MB.
-
-    >>> suggest_best_partition_number(100)
-    1
-    >>> suggest_best_partition_number(1048576)
-    1
-    >>> suggest_best_partition_number(3 * 1048576)
-    2
-    >>> suggest_best_partition_number(10 * 1048576)
-    8
-    >>> suggest_best_partition_number(100 * 1048576)
-    8
-    >>> suggest_best_partition_number(200 * 1048576)
-    16
-    >>> suggest_best_partition_number(2000 * 1048576)
-    64
-    """
-    meg = 1024 * 1024
-    if table_size <= 10 * meg:
-        target = 1 * meg
-    elif table_size <= 1024 * meg:
-        target = 10 * meg
-    else:
-        target = 20 * meg
-
-    num_partitions = 1
-    partition_size = table_size
-    # Keep the partition sizes above the target value:
-    while partition_size >= target * 2 and num_partitions < 1024:
-        num_partitions *= 2
-        partition_size //= 2
-
-    return num_partitions

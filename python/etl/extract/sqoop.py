@@ -4,7 +4,7 @@ import shlex
 import subprocess
 from contextlib import closing
 from tempfile import NamedTemporaryFile
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import etl.config
 import etl.monitor
@@ -12,15 +12,14 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract.extractor import DatabaseExtractor
+from etl.extract.extractor import DatabaseExtractor, suggest_best_partition_number
 from etl.relation import RelationDescription
 
 
 class SqoopExtractor(DatabaseExtractor):
-
     """
-    This extractor takes care of all the idiosyncrasies of extracting data from
-    upstream sources using Sqoop, http://sqoop.apache.org/
+    This extractor manages parallel SQL database extraction via MapReduce
+    using Sqoop (http://sqoop.apache.org/)
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
@@ -44,17 +43,20 @@ class SqoopExtractor(DatabaseExtractor):
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
 
-        if self.use_sampling:
-            # Ugly but true ... only extract table size if sampling is on the table (bad pun)
-            with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
-                table_size = self.fetch_source_table_size(conn, relation)
-                add_sampling = self.use_sampling_with_table(table_size)
-        else:
-            add_sampling = False
+        with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
+            table_size = self.fetch_source_table_size(conn, relation)
 
-        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"],
-                                        password_file_path, params_file_path,
-                                        relation, add_sampling)
+            if self.use_sampling:
+                add_sampling = self.use_sampling_with_table(table_size)
+            else:
+                add_sampling = False
+
+            num_mappers = relation.num_partitions or suggest_best_partition_number(table_size)
+            if num_mappers > self.max_partitions:
+                num_mappers = self.max_partitions
+
+        args = self.build_sqoop_options(jdbc_url, dsn_properties["user"], password_file_path, params_file_path,
+                                        relation, add_sampling, num_mappers=num_mappers)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
         self._delete_directory_before_write(relation)
@@ -96,7 +98,8 @@ class SqoopExtractor(DatabaseExtractor):
         return params_file_path
 
     def build_sqoop_options(self, jdbc_url: str, username: str, password_file_path: str, params_file_path: str,
-                            relation: RelationDescription, add_sampling=True) -> List[str]:
+                            relation: RelationDescription, add_sampling=True,
+                            num_mappers: Optional[int] = None) -> List[str]:
         """
         Create set of Sqoop options.
 
@@ -139,7 +142,7 @@ class SqoopExtractor(DatabaseExtractor):
                 "--hive-drop-import-delims",
                 "--compress"]  # The default compression codec is gzip.
         if partition_key:
-            args.extend(["--split-by", q(partition_key), "--num-mappers", str(self.max_partitions)])
+            args.extend(["--split-by", q(partition_key), "--num-mappers", str(num_mappers)])
         else:
             args.extend(["--num-mappers", "1"])
         return args
