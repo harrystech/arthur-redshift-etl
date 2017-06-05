@@ -8,7 +8,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.extract.extractor import DatabaseExtractor
+from etl.extract.database_extractor import DatabaseExtractor
 from etl.extract.partition import DefaultPartitioningStrategy
 from etl.names import TableName
 from etl.relation import RelationDescription

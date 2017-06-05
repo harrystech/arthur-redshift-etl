@@ -12,7 +12,7 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract.extractor import DatabaseExtractor
+from etl.extract.database_extractor import DatabaseExtractor
 from etl.extract.partition import MaximizePartitionCountStrategy
 from etl.relation import RelationDescription
 
