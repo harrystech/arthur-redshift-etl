@@ -479,7 +479,7 @@ class ExtractToS3Command(SubCommand):
                             default=False, action="store_true")
         parser.add_argument("-m", "--max-partitions", metavar="N", type=int,
                             help="set max number of partitions to write to N (default: %(default)s)",
-                            default=4)
+                            default=64)
         parser.add_argument("--use-sampling",
                             help="use only 10%% of rows in extracted tables that are larger than 1MB",
                             default=False, action="store_true")
