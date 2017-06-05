@@ -167,6 +167,10 @@ class RelationDescription:
     def source_name(self):
         return self.target_table_name.schema
 
+    @property
+    def num_partitions(self):
+        return self.table_design.get('extract_settings', {}).get('num_partitions')
+
     @classmethod
     def from_file_sets(cls, file_sets, required_relation_selector=None):
         """
@@ -214,22 +218,34 @@ class RelationDescription:
         (2) the table's primary key is a single column
         (3) the column has a numeric type.
 
+        If the table design provides extract_settings with a split_by column, provide that instead.
+
         If no partition key can be found, returns None.
         """
         constraints = self.table_design.get("constraints", [])
-        primary_keys = [col for constraint in constraints for col in constraint.get("primary_key", [])]
-        if len(primary_keys) == 1:
-            primary_key = primary_keys[0]
-            for column in self.table_design["columns"]:
-                if column["name"] == primary_key:
-                    # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
-                    if column["type"] in ("int", "long"):
-                        logger.debug("Partition key for table '%s' is '%s'", self.identifier, primary_key)
-                        return primary_key
-                    logger.warning("Primary key '%s' is not a number and is not usable as a partition key for '%s'",
-                                   primary_key, self.identifier)
-                    break
-        logger.debug("Found no partition key for table '%s'", self.identifier)
+        extract_settings = self.table_design.get("extract_settings", {})
+        [split_by_key] = extract_settings.get('split_by', [None])
+
+        try:
+            [primary_key] = [col for constraint in constraints for col in constraint.get("primary_key", [])]
+            partition_key = split_by_key or primary_key
+        except ValueError:
+            logger.debug("Found no single-column primary key for table '%s'", self.identifier)
+            partition_key = split_by_key
+
+        if not partition_key:
+            logger.debug("Found no partition key for table '%s'", self.identifier)
+            return None
+
+        for column in self.table_design["columns"]:
+            if column["name"] == partition_key:
+                # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+                if column["type"] in ("int", "long"):
+                    logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
+                    return partition_key
+                logger.warning("Partition key '%s' is not a number and is not usable as a partition key for '%s'",
+                               partition_key, self.identifier)
+                break
         return None
 
     @contextmanager

@@ -1,14 +1,25 @@
+"""
+Base classes for preparing data to be loaded
+
+Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data files
+
+DBExtractors query upstream databases and save their data on S3 before writing manifests
+"""
+
 import concurrent.futures
 import logging
+from contextlib import closing
 from itertools import groupby
 from operator import attrgetter
 from typing import Dict, List, Set
 
+from psycopg2.extensions import connection  # only for type annotation
+
 import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
-from etl.names import join_with_quotes
+from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError, UnknownTableSizeError
+from etl.names import TableName, join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -21,6 +32,7 @@ class Extractor:
         * call a child's class extract for a single table
     It is that method (`extract_table`) that child classes must implement.
     """
+
     def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
                  keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
@@ -64,7 +76,7 @@ class Extractor:
                                              source=self.source_info(source, relation),
                                              destination={'bucket_name': relation.bucket_name,
                                                           'object_key': relation.manifest_file_name},
-                                             index={"current": i+1, "final": len(relations), "name": source.name},
+                                             index={"current": i + 1, "final": len(relations), "name": source.name},
                                              dry_run=self.dry_run):
                         self.extract_table(source, relation)
                 except ETLRuntimeError:
@@ -151,3 +163,82 @@ class Extractor:
                 self.logger.info("Writing manifest file to 's3://%s/%s'",
                                  relation.bucket_name, relation.manifest_file_name)
                 etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
+
+
+class DBExtractor(Extractor):
+    """
+    Extend extractors with common functionality for dealing with upstream databases
+    """
+
+    def suggest_num_partitions(self, source_table_name: TableName, read_access: Dict[str, str]) -> int:
+        """
+        Guesstimate number of partitions based on actual table size
+        """
+        self.logger.debug("Determining partitioning for table '%s'", source_table_name.identifier)
+
+        with closing(etl.pg.connection(read_access, readonly=True)) as conn:
+            table_size = self.fetch_table_size(conn, source_table_name)
+
+        num_partitions = suggest_best_partition_number(table_size)
+        return num_partitions
+
+    def fetch_table_size(self, conn: connection, table_name: TableName) -> int:
+        """
+        Fetch table size in bytes.
+        """
+        # TODO move this into pg.py
+        stmt = """
+            SELECT pg_catalog.pg_table_size('{}') AS table_size
+                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size('{}')) AS pretty_table_size
+        """
+        with Timer() as timer:
+            rows = etl.pg.query(conn, stmt.format(table_name, table_name))
+        if len(rows) != 1:
+            raise UnknownTableSizeError("Failed to determine size of table")
+        table_size, pretty_table_size = rows[0]["table_size"], rows[0]["pretty_table_size"]
+        self.logger.info("Size of table '%s': %s (%d bytes) (%s)", table_name.identifier, pretty_table_size, table_size,
+                         timer)
+        return table_size
+
+
+def suggest_best_partition_number(table_size: int) -> int:
+    """
+    Suggest number of partitions based on the table size (in bytes).  Number of partitions is always
+    a factor of 2.
+
+    The number of partitions is based on:
+      Small tables (<= 10M): Use partitions around 1MB.
+      Medium tables (<= 1G): Use partitions around 10MB.
+      Huge tables (> 1G): Use partitions around 20MB.
+
+    >>> suggest_best_partition_number(100)
+    1
+    >>> suggest_best_partition_number(1048576)
+    1
+    >>> suggest_best_partition_number(3 * 1048576)
+    2
+    >>> suggest_best_partition_number(10 * 1048576)
+    8
+    >>> suggest_best_partition_number(100 * 1048576)
+    8
+    >>> suggest_best_partition_number(200 * 1048576)
+    16
+    >>> suggest_best_partition_number(2000 * 1048576)
+    64
+    """
+    meg = 1024 * 1024
+    if table_size <= 10 * meg:
+        target = 1 * meg
+    elif table_size <= 1024 * meg:
+        target = 10 * meg
+    else:
+        target = 20 * meg
+
+    num_partitions = 1
+    partition_size = table_size
+    # Keep the partition sizes above the target value:
+    while partition_size >= target * 2 and num_partitions < 1024:
+        num_partitions *= 2
+        partition_size //= 2
+
+    return num_partitions
