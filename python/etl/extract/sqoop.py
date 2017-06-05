@@ -13,7 +13,7 @@ import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
 from etl.extract.extractor import Extractor
-from etl.extract.partition import DefaultPartitioningStrategy
+from etl.extract.partition import MaximizePartitionCountStrategy
 from etl.names import TableName
 from etl.relation import RelationDescription
 
@@ -30,6 +30,7 @@ class SqoopExtractor(Extractor):
         super().__init__("sqoop", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self.max_partitions = max_partitions
+        self.min_parition_size = 1048576  # 1MB; TODO: Make configurable through CLI arg or settings
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
@@ -138,15 +139,19 @@ class SqoopExtractor(Extractor):
         if partition_key:
             quoted_key_arg = '"{}"'.format(partition_key)
             num_mappers = self.determine_partitioning(source_dsn, relation.source_table_name)
-            return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
-        else:
-            # TODO use "--autoreset-to-one-mapper" ?
-            return ["--num-mappers", "1"]
+            if num_mappers > 1:
+                return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
+
+        # Use 1 mapper if either there is no partition key, or if the partitioner returns only one partition
+        # TODO use "--autoreset-to-one-mapper" ?
+        return ["--num-mappers", "1"]
 
     def determine_partitioning(self, source_dsn: Dict[str, str], source_table_name: TableName) -> int:
         with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
             table_size = etl.pg.fetch_table_size(conn, source_table_name.identifier)
-            num_partitions = DefaultPartitioningStrategy(table_size, self.max_partitions).calculate()
+            (num_partitions, partition_size) = MaximizePartitionCountStrategy(table_size,
+                                                                              self.max_partitions,
+                                                                              self.min_parition_size).calculate()
 
         return num_partitions
 

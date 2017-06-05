@@ -3,6 +3,7 @@ Determine how to split up large data sizes into smaller chunks.
 
 Extractors often need to partition the input so that multiple smaller parts can be operated on in parallel.
 """
+from typing import Tuple
 
 
 class DefaultPartitioningStrategy:
@@ -52,3 +53,49 @@ class DefaultPartitioningStrategy:
             partition_size //= 2
 
         return num_partitions
+
+
+class MaximizePartitionCountStrategy:
+    """
+    Determine the maximum number of row-wise partitions a table can be divided into while respecting a minimum partition
+    size, and a limit on the number of partitions.
+
+    Given a table size (in bytes), the maximum number of partitions to divide the table, and the minimum partition size
+    (in bytes), return both the number of partitions and the calculated partition size.
+
+    >>> MaximizePartitionCountStrategy(1, 64, 1048576).calculate()
+    (1, 1)
+    >>> MaximizePartitionCountStrategy(1048575, 64, 1048576).calculate()
+    (1, 1048575)
+    >>> MaximizePartitionCountStrategy(1048576, 64, 1048576).calculate()
+    (1, 1048576)
+    >>> MaximizePartitionCountStrategy(1048577, 64, 1048576).calculate()
+    (1, 1048577)
+    >>> MaximizePartitionCountStrategy(2097151, 64, 1048576).calculate()
+    (1, 2097151)
+    >>> MaximizePartitionCountStrategy(2097152, 64, 1048576).calculate()
+    (2, 1048576)
+    >>> MaximizePartitionCountStrategy(67108863, 64, 1048576).calculate()
+    (63, 1065220)
+    >>> MaximizePartitionCountStrategy(67108864, 64, 1048576).calculate()
+    (64, 1048576)
+    >>> MaximizePartitionCountStrategy(67108865, 64, 1048576).calculate()
+    (64, 1048576)
+    >>> MaximizePartitionCountStrategy(47095840768, 64, 1048576).calculate()
+    (64, 735872512)
+    >>> MaximizePartitionCountStrategy(0, 64, 1048576).calculate()
+    (1, 0)
+    """
+    def __init__(self, table_size: int, max_partitions: int, min_partition_size: int) -> None:
+        self.table_size = table_size
+        self.max_partitions = max_partitions
+        self.min_partition_size = min_partition_size
+
+    def calculate(self) -> Tuple[int, int]:
+        partitions = self.max_partitions
+        partition_size = self.table_size / partitions
+        while partition_size < self.min_partition_size and partitions > 1:
+            partitions -= 1
+            partition_size = self.table_size / partitions
+
+        return (partitions, int(partition_size))
