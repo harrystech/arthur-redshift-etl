@@ -1,14 +1,28 @@
+"""
+Base classes for preparing data to be loaded
+
+Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data files
+
+DBExtractors query upstream databases and save their data on S3 before writing manifests
+"""
+
 import concurrent.futures
 import logging
+from contextlib import closing
 from itertools import groupby
 from operator import attrgetter
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
+
+from psycopg2.extensions import connection  # only for type annotation
+
+from psycopg2.extensions import connection  # only for type annotation
 
 import etl.monitor
 import etl.s3
+import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import MissingCsvFilesError, DataExtractError, ETLRuntimeError
-from etl.names import join_with_quotes
+from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError, UnknownTableSizeError
+from etl.names import TableName, join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -21,6 +35,7 @@ class Extractor:
         * call a child's class extract for a single table
     It is that method (`extract_table`) that child classes must implement.
     """
+
     def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
                  keep_going: bool, needs_to_wait: bool, dry_run: bool) -> None:
         self.name = name
@@ -64,7 +79,7 @@ class Extractor:
                                              source=self.source_info(source, relation),
                                              destination={'bucket_name': relation.bucket_name,
                                                           'object_key': relation.manifest_file_name},
-                                             index={"current": i+1, "final": len(relations), "name": source.name},
+                                             index={"current": i + 1, "final": len(relations), "name": source.name},
                                              dry_run=self.dry_run):
                         self.extract_table(source, relation)
                 except ETLRuntimeError:
@@ -90,6 +105,8 @@ class Extractor:
         self.failed_sources.clear()
         # FIXME We need to evaluate whether extracting from multiple sources in parallel works with Spark!
         max_workers = len(self.schemas)
+
+        # TODO With Python 3.6, we should pass in a thread_name_prefix
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for source_name, relation_group in groupby(self.relations, attrgetter("source_name")):
@@ -111,7 +128,7 @@ class Extractor:
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))
 
-    def write_manifest_file(self, relation: RelationDescription, source_bucket: str, prefix: str) -> None:
+    def write_manifest_file(self, relation: RelationDescription, source_bucket: str, source_prefix: str) -> None:
         """
         Create manifest file to load all the CSV files for the given relation.
         The manifest file will be created in the folder ABOVE the CSV files.
@@ -123,9 +140,9 @@ class Extractor:
 
         This will also test for the presence of the _SUCCESS file (added by map-reduce jobs).
         """
-        self.logger.info("Preparing manifest file for data in 's3://%s/%s'", source_bucket, prefix)
+        self.logger.info("Preparing manifest file for data in 's3://%s/%s'", source_bucket, source_prefix)
 
-        have_success = etl.s3.get_s3_object_last_modified(source_bucket, prefix + "/_SUCCESS",
+        have_success = etl.s3.get_s3_object_last_modified(source_bucket, source_prefix + "/_SUCCESS",
                                                           wait=self.needs_to_wait and not self.dry_run)
         if have_success is None:
             if self.dry_run:
@@ -133,7 +150,7 @@ class Extractor:
             else:
                 raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-        csv_files = sorted(key for key in etl.s3.list_objects_for_prefix(source_bucket, prefix)
+        csv_files = sorted(key for key in etl.s3.list_objects_for_prefix(source_bucket, source_prefix)
                            if "part" in key and key.endswith(".gz"))
         remote_files = ["s3://{}/{}".format(source_bucket, filename) for filename in csv_files]
         manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
@@ -151,3 +168,53 @@ class Extractor:
                 self.logger.info("Writing manifest file to 's3://%s/%s'",
                                  relation.bucket_name, relation.manifest_file_name)
                 etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
+
+
+class DatabaseExtractor(Extractor):
+    """
+    Special super class for database extractors that stores parameters and helps with partitioning and sampling.
+    """
+
+    def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
+                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+        super().__init__(name, schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
+        self.max_partitions = max_partitions
+        self.use_sampling = use_sampling
+
+    def use_sampling_with_table(self, size: int) -> bool:
+        """
+        Return True iff option `--use-sampling` appeared and table is large enough (> 1MB).
+        """
+        return self.use_sampling and (size > 1024 ** 2)
+
+    def select_statement(self, relation: RelationDescription, add_sampling_on_column: Optional[str]) -> str:
+        """
+        Return something like
+            "SELECT id, name FROM table WHERE TRUE" or
+            "SELECT id, name FROM table WHERE ((id % 10) = 1)"
+        where the actual statement used delimited identifiers, but note the existence of the WHERE clause.
+        """
+        selected_columns = relation.get_columns_with_casts()
+        statement = """SELECT {} FROM {}""".format(", ".join(selected_columns), relation.source_table_name)
+        if add_sampling_on_column is None:
+            statement += " WHERE TRUE"
+        else:
+            self.logger.info("Adding sampling on column '%s' while extracting '%s.%s'",
+                             add_sampling_on_column, relation.source_name, relation.source_table_name.identifier)
+            statement += """ WHERE (("{}" % 10) = 1)""".format(add_sampling_on_column)
+        return statement
+
+    def fetch_source_table_size(self, conn: connection, relation: RelationDescription) -> int:
+        """
+        Return size of source table for this relation in bytes
+        """
+        stmt = """
+            SELECT pg_catalog.pg_table_size(%s) AS "bytes"
+                 , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
+            """
+        table = relation.source_table_name
+        rows = etl.pg.query(conn, stmt, (str(table), str(table)))
+        bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
+        self.logger.info("Size of table '%s.%s': %s (%s)",
+                         relation.source_name, table.identifier, bytes_size, pretty_size)
+        return bytes_size

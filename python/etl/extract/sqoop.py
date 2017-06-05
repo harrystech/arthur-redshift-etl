@@ -4,7 +4,7 @@ import shlex
 import subprocess
 from contextlib import closing
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Union
+from typing import Dict, List, Optional
 
 import etl.config
 import etl.monitor
@@ -12,23 +12,24 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract.extractor import Extractor
+from etl.extract.extractor import DatabaseExtractor
 from etl.extract.partition import MaximizePartitionCountStrategy
-from etl.names import TableName
 from etl.relation import RelationDescription
 
 
-class SqoopExtractor(Extractor):
-
+class SqoopExtractor(DatabaseExtractor):
     """
-    This extractor takes care of all the idiosyncrasies of extracting data from
-    upstream sources using Sqoop, http://sqoop.apache.org/
+    This extractor manages parallel SQL database extraction via MapReduce
+    using Sqoop (http://sqoop.apache.org/)
     """
 
     def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 keep_going: bool, max_partitions: int, dry_run: bool) -> None:
-        super().__init__("sqoop", schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
+                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+
+        super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
+
         self.logger = logging.getLogger(__name__)
+        self.use_sampling = use_sampling
         self.max_partitions = max_partitions
         self.min_parition_size = 1048576  # 1MB; TODO: Make configurable through CLI arg or settings
         self.sqoop_executable = "sqoop"
@@ -46,9 +47,10 @@ class SqoopExtractor(Extractor):
         args = self.build_sqoop_options(source.dsn, relation)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         options_file = self.write_options_file(args)
-
         self._delete_directory_before_write(relation)
+
         self.run_sqoop(options_file)
+
         prefix = os.path.join(relation.prefix, relation.csv_path_name)
         self.write_manifest_file(relation, relation.bucket_name, prefix)
 
@@ -95,9 +97,12 @@ class SqoopExtractor(Extractor):
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
 
-        source_table_name = relation.source_table_name
-        columns = relation.get_columns_with_casts()
-        select_statement = """SELECT {} FROM {} WHERE $CONDITIONS""".format(", ".join(columns), source_table_name)
+        with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
+            table_size = self.fetch_source_table_size(conn, relation)
+            partition_key = relation.find_partition_key()
+
+            select_statement = self.build_sqoop_select(relation, partition_key, table_size)
+            partition_options = self.build_sqoop_partition_options(relation, partition_key, table_size)
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -127,33 +132,43 @@ class SqoopExtractor(Extractor):
                 "--hive-drop-import-delims",
                 "--compress"]  # The default compression codec is gzip.
 
-        args.extend(self.build_sqoop_partition_options(source_dsn, relation))
+        args.extend(partition_options)
 
         return args
 
-    def build_sqoop_partition_options(self, source_dsn: Dict[str, str], relation: RelationDescription) -> List[str]:
+    def build_sqoop_select(self, relation: RelationDescription, partition_key: Optional[str], table_size: int) -> str:
+        if self.use_sampling and self.use_sampling_with_table(table_size):
+            select_statement = self.select_statement(relation, partition_key)
+        else:
+            select_statement = self.select_statement(relation, None)
+
+        # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
+        select_statement += " AND $CONDITIONS"
+
+        return select_statement
+
+    def build_sqoop_partition_options(self, relation: RelationDescription, partition_key: Optional[str],
+                                      table_size: int) -> List[str]:
         """
         Build the partitioning-related arguments for Sqoop.
         """
-        partition_key = relation.find_partition_key()
         if partition_key:
             quoted_key_arg = '"{}"'.format(partition_key)
-            num_mappers = self.determine_partitioning(source_dsn, relation.source_table_name)
+
+            if relation.num_partitions:
+                # num_partitions explicitly set in the design file overrides the dynamic determination.
+                num_mappers = min(relation.num_partitions, self.max_partitions)
+            else:
+                (num_mappers, partition_size) = MaximizePartitionCountStrategy(table_size,
+                                                                               self.max_partitions,
+                                                                               self.min_parition_size).calculate()
+
             if num_mappers > 1:
                 return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
 
         # Use 1 mapper if either there is no partition key, or if the partitioner returns only one partition
-        # TODO use "--autoreset-to-one-mapper" ?
+        # TODO use "--autoreset-to-one-mapper"?
         return ["--num-mappers", "1"]
-
-    def determine_partitioning(self, source_dsn: Dict[str, str], source_table_name: TableName) -> int:
-        with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
-            table_size = etl.pg.fetch_table_size(conn, source_table_name.identifier)
-            (num_partitions, partition_size) = MaximizePartitionCountStrategy(table_size,
-                                                                              self.max_partitions,
-                                                                              self.min_parition_size).calculate()
-
-        return num_partitions
 
     def write_options_file(self, args: List[str]) -> str:
         """
@@ -179,10 +194,10 @@ class SqoopExtractor(Extractor):
         deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
         if deletable:
             if self.dry_run:
-                self.logger.info("Dry-run: Skipping deletion of existing CSV files in 's3://%s/%s'",
-                                 relation.bucket_name, csv_prefix)
+                self.logger.info("Dry-run: Skipping deletion of %d existing CSV file(s) in 's3://%s/%s'",
+                                 len(deletable), relation.bucket_name, csv_prefix)
             else:
-                etl.s3.delete_objects(relation.bucket_name, deletable)
+                etl.s3.delete_objects(relation.bucket_name, deletable, wait=True)
 
     def run_sqoop(self, options_file_path: str):
         """

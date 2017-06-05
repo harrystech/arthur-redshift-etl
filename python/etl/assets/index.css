@@ -24,26 +24,34 @@ th {
     background-color: lightgray;
 }
 
+td {
+    background-color: white;
+}
+
 td.progress {
     width: 200px;
 }
 
 td.progress > div {
-    background-color: CornflowerBlue;
+    background-color: lightskyblue;
     display: block;
     height: 1em;
     border: 1px solid darkblue;
+}
+
+td.progress.complete > div {
+    background-color: cornflowerblue;
 }
 
 .events tr:nth-child(odd) > td {
     background-color: lightgray;
 }
 
-.events .event-start {
+.events tr > td.event-start  {
     background-color: lightgoldenrodyellow;
 }
 
-.events .event-fail {
+.events tr > td.event-fail {
     background-color: orangered;
 }
 

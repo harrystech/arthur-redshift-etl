@@ -414,12 +414,12 @@ class MemoryStorage(PayloadDispatcher):
         try:
             while True:
                 payload = self.queue.get_nowait()
+                # Overwrite earlier events by later ones, i.e. ignore "event"
                 key = payload["target"], payload["step"]
                 self.events[key] = payload
-                if payload["event"] != "start":
-                    index = dict(payload.get("extra", {}).get("index", {}))
-                    name = index.setdefault("name", "N/A")
-                    self.indices[name].update(index)
+                index = dict(payload.get("extra", {}).get("index", {}))
+                name = index.setdefault("name", "N/A")
+                self.indices[name].update(index)
         except queue.Empty:
             pass
 
@@ -430,8 +430,9 @@ class MemoryStorage(PayloadDispatcher):
 
     def get_events(self):
         self.drain_queue()
-        events_as_list = list(self.events[key] for key in self.events)
-        events_as_list.reverse()
+        events_as_list = sorted((self.events[key] for key in self.events),
+                                key=lambda p: (2 if p["event"] == "start" else 1, p["timestamp"]),
+                                reverse=True)
         return etl.assets.Content(json=events_as_list)
 
     def create_handler(self):
@@ -551,14 +552,14 @@ def test_run():
     index = {"current": 0, "final": len(schema_names) * len(table_names)}
 
     print("Creating events ... follow along at http://{0}:{1}/".format(*MemoryStorage.SERVER_ADDRESS))
-    for i, names in enumerate(itertools.product(schema_names, table_names)):
-        with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
-            time.sleep(random.uniform(0.5, 2.0))
+
+    with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
+        for i, names in enumerate(itertools.product(schema_names, table_names)):
+            with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
+                time.sleep(random.uniform(0.5, 2.0))
 
     input("Press return (or Ctrl-c) to stop server\n")
 
 if __name__ == "__main__":
-    # import etl.config
-    # etl.config.configure_logging()
     logging.basicConfig(level=logging.DEBUG)
     test_run()

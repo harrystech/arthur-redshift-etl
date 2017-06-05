@@ -55,8 +55,8 @@ class DataWarehouseConfig:
 
     def _check_access_to_cluster(self):
         """
-        Make sure that the ETL and Admin access point to the same cluster (identified by host and port).
-        Also, they must point to different databases in the cluster.
+        Make sure that the ETL and Admin access point to the same cluster (identified by host and port),
+        but they must point to different databases in the cluster.
         It is ok if an environment variable is missing.  But if both are present they must align.
         """
         try:
@@ -85,7 +85,7 @@ class DataWarehouseConfig:
 
     @property
     def dsn_admin_on_etl_db(self):
-        # To connect as a superuser, but on the database on which you would ETL
+        # To connect as a superuser, but on the same database on which you would ETL
         return dict(self.dsn_admin, database=self.dsn_etl['database'])
 
     @property
@@ -109,13 +109,13 @@ class DataWarehouseUser:
 class DataWarehouseSchema:
     """
     Schemas in the data warehouse fall into one of four buckets:
-    (1) Upstream source backed by a database.  Data will be dumped from there and
+    (1) Upstream source backed by a database.  Data will be extracted from there and
     so we need to have a DSN with which we can connect.
-    (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
+    (2) Upstream source backed by CSV files in S3.  Data will be "extracted" in the sense
     that the ETL will create a manifest file suitable for the COPY command.  No DSN
     is needed here.
     (2.5) Target in S3 for "unload" command, which may also be an upstream source.
-    (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
+    (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be extracted here
     (but maybe unload'ed).
     (4) Schemas reserved for users (where user could be a BI tool)
 
@@ -158,7 +158,7 @@ class DataWarehouseSchema:
         Return connection string suitable for the schema which is
         - the value of the environment variable named in the read_access field for upstream sources
         - the value of the environment variable named in the etl_access field of the data warehouse for schemas
-            that have CTAS or views
+            that have CTAS or views (transformations)
         Evaluation of the DSN (and the environment variable) is deferred so that an environment variable
         may be not set if it is actually not used.
         """
@@ -172,4 +172,4 @@ class DataWarehouseSchema:
 
     @property
     def backup_name(self):
-        return '$'.join(("arthur_temp", self.name))
+        return '$'.join(("etl_backup", self.name))
