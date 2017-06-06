@@ -40,7 +40,7 @@ constraints, attributes, and encodings.
 import logging
 from contextlib import closing
 from itertools import chain
-from typing import List, Set
+from typing import Dict, List, Set
 
 import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
@@ -347,16 +347,15 @@ def create_temp_table_as_and_copy(conn, relation, skip_copy=False, dry_run=False
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_name))
 
 
-def create_schemas_after_backup(dsn_etl: dict, schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def create_schemas_after_backup(dsn_etl: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     Move schemas out of the way by renaming them. Then create new ones.
     """
-    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-        if dry_run:
-            logger.info("Dry-run: Skipping backup of schemas and creation")
-        else:
-            etl.dw.backup_schemas(conn, schemas)
-            etl.dw.create_schemas(conn, schemas)
+    if dry_run:
+        logger.info("Dry-run: Skipping backup of schemas and creation")
+    else:
+        etl.dw.backup_schemas(dsn_etl, schemas)
+        etl.dw.create_schemas(dsn_etl, schemas)
 
 
 def grant_access(conn: connection, relation: RelationDescription, schema_config: DataWarehouseSchema, dry_run=False):
@@ -407,7 +406,7 @@ def analyze(conn: connection, table: RelationDescription, dry_run=False) -> None
         etl.pg.execute(conn, "ANALYZE {}".format(table))
 
 
-def vacuum(dsn_etl: str, relations: List[RelationDescription], dry_run=False) -> None:
+def vacuum(dsn_etl: Dict[str, str], relations: List[RelationDescription], dry_run=False) -> None:
     """
     Final step ... tidy up the warehouse before guests come over.
     """
