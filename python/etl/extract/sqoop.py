@@ -12,8 +12,8 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
+from etl.extract import partition
 from etl.extract.database_extractor import DatabaseExtractor
-from etl.extract.partition import MaximizePartitionCountStrategy
 from etl.relation import RelationDescription
 
 
@@ -157,9 +157,8 @@ class SqoopExtractor(DatabaseExtractor):
                 # num_partitions explicitly set in the design file overrides the dynamic determination.
                 num_mappers = min(relation.num_partitions, self.max_partitions)
             else:
-                (num_mappers, partition_size) = MaximizePartitionCountStrategy(table_size,
-                                                                               self.max_partitions,
-                                                                               self.min_parition_size).calculate()
+                (num_mappers, _) = partition.maximize_partitions(table_size, self.max_partitions,
+                                                                 self.min_parition_size)
 
             if num_mappers > 1:
                 return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
