@@ -17,15 +17,17 @@ Oddly enough, it is possible to skip the "create user" step but that comes in
 handy when you want to update the user's search path.
 """
 
-from contextlib import closing
 import logging
+from contextlib import closing
+from typing import Dict, List
 
 import etl.commands
 import etl.config
 import etl.config.dw
+import etl.pg
+from etl.config.dw import DataWarehouseSchema
 from etl.errors import ETLError
 from etl.names import join_with_quotes
-import etl.pg
 
 import psycopg2
 
@@ -33,7 +35,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def create_schemas(dsn, schemas, dry_run=False) -> None:
+def create_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     Create schemas and grant access.
     It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
@@ -56,7 +58,7 @@ def create_schema_and_grant_access(conn, schema, owner=None, dry_run=False) -> N
             etl.pg.grant_usage(conn, schema.name, group)
 
 
-def backup_schemas(dsn, schemas, dry_run=False) -> None:
+def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.
     Once the access is revoked, the backup schemas "disappear" from BI tools.
@@ -83,7 +85,7 @@ def backup_schemas(dsn, schemas, dry_run=False) -> None:
             etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
-def restore_schemas(dsn, schemas, dry_run=False) -> None:
+def restore_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For the schemas that we need / want, rename the backups and restore access.
     This is the inverse of backup_schemas.
