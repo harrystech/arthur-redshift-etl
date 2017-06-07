@@ -28,6 +28,64 @@ class DatabaseExtractor(Extractor):
         """
         return self.use_sampling and (size > 1024 ** 2)
 
+    def select_min_partition_size(self, size: int) -> int:
+        """
+        Return min partition size to stay above when calculating the number of partitions.
+
+        Redshift documentation suggests to stay above 1MB for data files. Assuming that the CSV
+        files can be compressed 1:10 and that sampling will reduce that 1:10, then we have:
+            * with sampling: 100MB
+            * w/o sampling: 10MB
+        """
+        if self.use_sampling_with_table(size):
+            return 100 * 1024 ** 2
+        else:
+            return 10 * 1024 ** 2
+
+    def maximize_partitions(self, table_size: int) -> int:
+        """
+        Determine the maximum number of row-wise partitions a table can be divided into while respecting a minimum
+        partition size, and a limit on the number of partitions.
+
+        DatabaseExtractors often need to partition the input so that multiple smaller parts can be operated on in
+        parallel.
+
+        Given a table size (in bytes), the maximum number of partitions to divide the table, and the minimum partition
+        size (in bytes), return both the number of partitions and the calculated partition size.
+
+        >>> extractor = DatabaseExtractor("test", {}, [], 64, use_sampling=False, keep_going=False, dry_run=True)
+        >>> extractor.maximize_partitions(1)
+        1
+        >>> extractor.maximize_partitions(10485750)
+        1
+        >>> extractor.maximize_partitions(10485760)
+        1
+        >>> extractor.maximize_partitions(10485770)
+        1
+        >>> extractor.maximize_partitions(20971510)
+        1
+        >>> extractor.maximize_partitions(20971520)
+        2
+        >>> extractor.maximize_partitions(671088630)
+        63
+        >>> extractor.maximize_partitions(671088640)
+        64
+        >>> extractor.maximize_partitions(671088650)
+        64
+        >>> extractor.maximize_partitions(470958407680)
+        64
+        >>> extractor.maximize_partitions(0)
+        1
+        """
+        min_partition_size = self.select_min_partition_size(table_size)
+        partitions = self.max_partitions
+        partition_size = table_size / partitions
+        while partition_size < min_partition_size and partitions > 1:
+            partitions -= 1
+            partition_size = table_size / partitions
+
+        return partitions
+
     def select_statement(self, relation: RelationDescription, add_sampling_on_column: Optional[str]) -> str:
         """
         Return something like

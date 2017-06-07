@@ -8,7 +8,6 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.pg
 from etl.config.dw import DataWarehouseSchema
-from etl.extract import partition
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.names import TableName
 from etl.relation import RelationDescription
@@ -81,7 +80,7 @@ class SparkExtractor(DatabaseExtractor):
 
         with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
             table_size = self.fetch_source_table_size(conn, relation)
-            (num_partitions, _) = partition.divide_by_twos(table_size, self.max_partitions)
+            num_partitions = self.maximize_partitions(table_size)
             if partition_key is None or num_partitions <= 1:
                 predicates = None
             else:

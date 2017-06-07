@@ -12,7 +12,6 @@ import etl.pg
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
-from etl.extract import partition
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.relation import RelationDescription
 
@@ -29,7 +28,6 @@ class SqoopExtractor(DatabaseExtractor):
         super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
 
         self.logger = logging.getLogger(__name__)
-        self.min_parition_size = 1048576  # 1MB is minimum size file recommended by AWS for Redshift copies
         self.sqoop_executable = "sqoop"
 
         # During Sqoop extraction we write out files to a temp location
@@ -92,15 +90,16 @@ class SqoopExtractor(DatabaseExtractor):
         """
         jdbc_url, dsn_properties = etl.pg.extract_dsn(source_dsn)
 
+        # FIXME This "build" method used to have no side effects in the file system, now it does ...
         password_file_path = self.write_password_file(dsn_properties["password"])
         params_file_path = self.write_connection_params()
 
         with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
             table_size = self.fetch_source_table_size(conn, relation)
-            partition_key = relation.find_partition_key()
 
-            select_statement = self.build_sqoop_select(relation, partition_key, table_size)
-            partition_options = self.build_sqoop_partition_options(relation, partition_key, table_size)
+        partition_key = relation.find_partition_key()
+        select_statement = self.build_sqoop_select(relation, partition_key, table_size)
+        partition_options = self.build_sqoop_partition_options(relation, partition_key, table_size)
 
         # Only the paranoid survive ... quote arguments of options, except for --select
         def q(s):
@@ -131,11 +130,10 @@ class SqoopExtractor(DatabaseExtractor):
                 "--compress"]  # The default compression codec is gzip.
 
         args.extend(partition_options)
-
         return args
 
     def build_sqoop_select(self, relation: RelationDescription, partition_key: Optional[str], table_size: int) -> str:
-        if self.use_sampling and self.use_sampling_with_table(table_size):
+        if self.use_sampling_with_table(table_size):
             select_statement = self.select_statement(relation, partition_key)
         else:
             select_statement = self.select_statement(relation, None)
@@ -157,8 +155,7 @@ class SqoopExtractor(DatabaseExtractor):
                 # num_partitions explicitly set in the design file overrides the dynamic determination.
                 num_mappers = min(relation.num_partitions, self.max_partitions)
             else:
-                (num_mappers, _) = partition.maximize_partitions(table_size, self.max_partitions,
-                                                                 self.min_parition_size)
+                num_mappers = self.maximize_partitions(table_size)
 
             if num_mappers > 1:
                 return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
@@ -204,7 +201,7 @@ class SqoopExtractor(DatabaseExtractor):
         if self.dry_run:
             self.logger.info("Dry-run: Skipping Sqoop run '%s'", cmdline)
         else:
-            self.logger.debug("Starting: %s", cmdline)
+            self.logger.debug("Starting command: %s", cmdline)
             sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      universal_newlines=True)
             self.logger.debug("Sqoop is running with pid %d", sqoop.pid)

@@ -486,7 +486,7 @@ class ExtractToS3Command(SubCommand):
 
     def callback(self, args, config):
         if args.max_partitions < 1:
-            raise InvalidArgumentsError("max_partitions must be >= 1")
+            raise InvalidArgumentsError("Option for max partitions must be >= 1")
 
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
         # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
