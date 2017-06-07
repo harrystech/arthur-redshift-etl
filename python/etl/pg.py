@@ -20,7 +20,6 @@ import psycopg2
 import psycopg2.extras
 import pgpasslib
 
-from etl.errors import UnknownTableSizeError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)

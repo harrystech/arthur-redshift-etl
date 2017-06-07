@@ -40,8 +40,13 @@ class SqoopExtractor(DatabaseExtractor):
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
-        args = self.build_sqoop_options(source.dsn, relation)
-        self.logger.debug("Sqoop options are:\n%s", " ".join(args))
+        with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
+            table_size = self.fetch_source_table_size(conn, relation)
+
+        connection_params_file_path = self.write_connection_params()
+        password_file_path = self.write_password_file(source.dsn["password"])
+        args = self.build_sqoop_options(source.dsn, relation, table_size,
+                                        connection_params_file_path, password_file_path)
         options_file = self.write_options_file(args)
         self._delete_directory_before_write(relation)
 
@@ -56,7 +61,7 @@ class SqoopExtractor(DatabaseExtractor):
         """
         if self.dry_run:
             self.logger.info("Dry-run: Skipping writing of password file")
-            password_file_path = "/tmp/never_used"
+            password_file_path = "/only/needed/for/type/checking"
         else:
             with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="pw_", delete=False) as fp:
                 fp.write(password)  # type: ignore
@@ -71,7 +76,7 @@ class SqoopExtractor(DatabaseExtractor):
         """
         if self.dry_run:
             self.logger.info("Dry-run: Skipping writing of connection params file")
-            params_file_path = "/tmp/never_used"
+            params_file_path = "/only/needed/for/type/checking"
         else:
             with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="cp_", delete=False) as fp:
                 fp.write("ssl = true\n")  # type: ignore
@@ -81,7 +86,8 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Wrote connection params to '%s'", params_file_path)
         return params_file_path
 
-    def build_sqoop_options(self, source_dsn: Dict[str, str], relation: RelationDescription) -> List[str]:
+    def build_sqoop_options(self, source_dsn: Dict[str, str], relation: RelationDescription,
+                            table_size: int, connection_param_file_path: str, password_file_path: str) -> List[str]:
         """
         Create set of Sqoop options.
 
@@ -89,13 +95,6 @@ class SqoopExtractor(DatabaseExtractor):
         tool specific options, and child-process options.
         """
         jdbc_url, dsn_properties = etl.pg.extract_dsn(source_dsn)
-
-        # FIXME This "build" method used to have no side effects in the file system, now it does ...
-        password_file_path = self.write_password_file(dsn_properties["password"])
-        params_file_path = self.write_connection_params()
-
-        with closing(etl.pg.connection(source_dsn, readonly=True)) as conn:
-            table_size = self.fetch_source_table_size(conn, relation)
 
         partition_key = relation.find_partition_key()
         select_statement = self.build_sqoop_select(relation, partition_key, table_size)
@@ -109,7 +108,7 @@ class SqoopExtractor(DatabaseExtractor):
         args = ["import",
                 "--connect", q(jdbc_url),
                 "--driver", q("org.postgresql.Driver"),
-                "--connection-param-file", q(params_file_path),
+                "--connection-param-file", q(connection_param_file_path),
                 "--username", q(dsn_properties["user"]),
                 "--password-file", '"file://{}"'.format(password_file_path),
                 "--verbose",
@@ -130,9 +129,13 @@ class SqoopExtractor(DatabaseExtractor):
                 "--compress"]  # The default compression codec is gzip.
 
         args.extend(partition_options)
+        self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         return args
 
     def build_sqoop_select(self, relation: RelationDescription, partition_key: Optional[str], table_size: int) -> str:
+        """
+        Build custom select statement needed to implement sampling and extracting views.
+        """
         if self.use_sampling_with_table(table_size):
             select_statement = self.select_statement(relation, partition_key)
         else:
@@ -140,7 +143,6 @@ class SqoopExtractor(DatabaseExtractor):
 
         # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
         select_statement += " AND $CONDITIONS"
-
         return select_statement
 
     def build_sqoop_partition_options(self, relation: RelationDescription, partition_key: Optional[str],
