@@ -51,7 +51,7 @@ class DatabaseExtractor(Extractor):
         parallel.
 
         Given a table size (in bytes), the maximum number of partitions to divide the table, and the minimum partition
-        size (in bytes), return both the number of partitions and the calculated partition size.
+        size (in bytes), return the number of partitions.
 
         >>> extractor = DatabaseExtractor("test", {}, [], 64, use_sampling=False, keep_going=False, dry_run=True)
         >>> extractor.maximize_partitions(1)
