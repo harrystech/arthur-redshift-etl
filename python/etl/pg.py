@@ -14,6 +14,7 @@ import os
 import re
 import textwrap
 from contextlib import closing, contextmanager
+from typing import Dict
 
 import psycopg2
 import psycopg2.extras
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def parse_connection_string(dsn: str) -> dict:
+def parse_connection_string(dsn: str) -> Dict[str, str]:
     """
     Extract connection value from JDBC-style connection string.
 
@@ -56,7 +57,7 @@ def parse_connection_string(dsn: str) -> dict:
     return {key: values[key] for key in values if values[key] is not None}
 
 
-def unparse_connection(dsn: dict) -> str:
+def unparse_connection(dsn: Dict[str, str]) -> str:
     """
     Return connection string for pretty printing or copying when starting psql
     """
@@ -67,7 +68,7 @@ def unparse_connection(dsn: dict) -> str:
     return "host={host} port={port} dbname={database} user={user} password=***".format(**values)
 
 
-def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, readonly=False):
+def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
     Open a connection to the database described by dsn_string which looks something like
     "postgresql://user:password@host:port/database" (see parse_connection_string).
@@ -85,7 +86,7 @@ def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, r
     return cx
 
 
-def extract_dsn(dsn_dict):
+def extract_dsn(dsn_dict: Dict[str, str]):
     """
     Break the connection string into a JDBC URL and connection properties.
 

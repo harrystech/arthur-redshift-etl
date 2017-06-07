@@ -5,10 +5,25 @@ Objects to deal with configuration of our data warehouse, like
 * its users
 """
 
+from typing import Dict
+
 import etl.config.env
-from etl.errors import InvalidEnvironmentError
 import etl.names
 import etl.pg
+from etl.errors import InvalidEnvironmentError
+
+
+class DataWarehouseUser:
+    """
+    Data warehouse users have always a name and group associated with them.
+    Users may have a schema "belong" to them which they then have write access to.
+    This is useful for system users, mostly, since end users should treat the
+    data warehouse as read-only.
+    """
+    def __init__(self, user_info):
+        self.name = user_info["name"]
+        self.group = user_info["group"]
+        self.schema = user_info.get("schema")
 
 
 class DataWarehouseConfig:
@@ -72,38 +87,25 @@ class DataWarehouseConfig:
             pass
 
     @property
-    def owner(self):
+    def owner(self) -> DataWarehouseUser:
         return self.users[0].name
 
     @property
-    def dsn_admin(self):
+    def dsn_admin(self) -> Dict[str, str]:
         return etl.pg.parse_connection_string(etl.config.env.get(self._admin_access))
 
     @property
-    def dsn_etl(self):
+    def dsn_etl(self) -> Dict[str, str]:
         return etl.pg.parse_connection_string(etl.config.env.get(self._etl_access))
 
     @property
-    def dsn_admin_on_etl_db(self):
+    def dsn_admin_on_etl_db(self) -> Dict[str, str]:
         # To connect as a superuser, but on the same database on which you would ETL
         return dict(self.dsn_admin, database=self.dsn_etl['database'])
 
     @property
-    def dsn_reference(self):
+    def dsn_reference(self) -> Dict[str, str]:
         return etl.pg.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
-
-
-class DataWarehouseUser:
-    """
-    Data warehouse users have always a name and group associated with them.
-    Users may have a schema "belong" to them which they then have write access to.
-    This is useful for system users, mostly, since end users should treat the
-    data warehouse as read-only.
-    """
-    def __init__(self, user_info):
-        self.name = user_info["name"]
-        self.group = user_info["group"]
-        self.schema = user_info.get("schema")
 
 
 class DataWarehouseSchema:
