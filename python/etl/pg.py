@@ -368,5 +368,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
+    dsn_dict = parse_connection_string(sys.argv[1])
     with log_error():
-        ping(parse_connection_string(sys.argv[1]))
+        ping(dsn_dict)
