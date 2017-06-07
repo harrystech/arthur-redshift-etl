@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 import traceback
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 
 import boto3
 import simplejson as json
@@ -764,7 +764,7 @@ class SelfTestCommand(SubCommand):
 
     def callback(self, args, config):
         if args.test_family in ("doctest", "all"):
-            etl.selftest.run_doctest(args.log_level)
+            etl.selftest.run_doctest("etl", args.log_level)
         if args.test_family in ("typecheck", "all"):
             etl.selftest.run_type_checker()
 
