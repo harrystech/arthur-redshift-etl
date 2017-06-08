@@ -123,7 +123,7 @@ def delete_objects(bucket_name: str, object_keys: List[str], wait=False, _retry=
             failed.append(error['Key'])
     if failed:
         if _retry:
-            logger.warning("Failed to delete %d objects, trying one more time in 5s", len(failed))
+            logger.warning("Failed to delete %d object(s), trying one more time in 5s", len(failed))
             time.sleep(5)
             delete_objects(bucket_name, failed, _retry=False)
         else:
