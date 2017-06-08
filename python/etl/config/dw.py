@@ -5,10 +5,25 @@ Objects to deal with configuration of our data warehouse, like
 * its users
 """
 
+from typing import Dict
+
 import etl.config.env
-from etl.errors import InvalidEnvironmentError
 import etl.names
 import etl.pg
+from etl.errors import InvalidEnvironmentError
+
+
+class DataWarehouseUser:
+    """
+    Data warehouse users have always a name and group associated with them.
+    Users may have a schema "belong" to them which they then have write access to.
+    This is useful for system users, mostly, since end users should treat the
+    data warehouse as read-only.
+    """
+    def __init__(self, user_info):
+        self.name = user_info["name"]
+        self.group = user_info["group"]
+        self.schema = user_info.get("schema")
 
 
 class DataWarehouseConfig:
@@ -55,8 +70,8 @@ class DataWarehouseConfig:
 
     def _check_access_to_cluster(self):
         """
-        Make sure that the ETL and Admin access point to the same cluster (identified by host and port).
-        Also, they must point to different databases in the cluster.
+        Make sure that the ETL and Admin access point to the same cluster (identified by host and port),
+        but they must point to different databases in the cluster.
         It is ok if an environment variable is missing.  But if both are present they must align.
         """
         try:
@@ -72,50 +87,37 @@ class DataWarehouseConfig:
             pass
 
     @property
-    def owner(self):
+    def owner(self) -> DataWarehouseUser:
         return self.users[0].name
 
     @property
-    def dsn_admin(self):
+    def dsn_admin(self) -> Dict[str, str]:
         return etl.pg.parse_connection_string(etl.config.env.get(self._admin_access))
 
     @property
-    def dsn_etl(self):
+    def dsn_etl(self) -> Dict[str, str]:
         return etl.pg.parse_connection_string(etl.config.env.get(self._etl_access))
 
     @property
-    def dsn_admin_on_etl_db(self):
-        # To connect as a superuser, but on the database on which you would ETL
+    def dsn_admin_on_etl_db(self) -> Dict[str, str]:
+        # To connect as a superuser, but on the same database on which you would ETL
         return dict(self.dsn_admin, database=self.dsn_etl['database'])
 
     @property
-    def dsn_reference(self):
+    def dsn_reference(self) -> Dict[str, str]:
         return etl.pg.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
-
-
-class DataWarehouseUser:
-    """
-    Data warehouse users have always a name and group associated with them.
-    Users may have a schema "belong" to them which they then have write access to.
-    This is useful for system users, mostly, since end users should treat the
-    data warehouse as read-only.
-    """
-    def __init__(self, user_info):
-        self.name = user_info["name"]
-        self.group = user_info["group"]
-        self.schema = user_info.get("schema")
 
 
 class DataWarehouseSchema:
     """
     Schemas in the data warehouse fall into one of four buckets:
-    (1) Upstream source backed by a database.  Data will be dumped from there and
+    (1) Upstream source backed by a database.  Data will be extracted from there and
     so we need to have a DSN with which we can connect.
-    (2) Upstream source backed by CSV files in S3.  Data will be "dumped" in the sense
+    (2) Upstream source backed by CSV files in S3.  Data will be "extracted" in the sense
     that the ETL will create a manifest file suitable for the COPY command.  No DSN
     is needed here.
     (2.5) Target in S3 for "unload" command, which may also be an upstream source.
-    (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be dumped
+    (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be extracted here
     (but maybe unload'ed).
     (4) Schemas reserved for users (where user could be a BI tool)
 
@@ -158,7 +160,7 @@ class DataWarehouseSchema:
         Return connection string suitable for the schema which is
         - the value of the environment variable named in the read_access field for upstream sources
         - the value of the environment variable named in the etl_access field of the data warehouse for schemas
-            that have CTAS or views
+            that have CTAS or views (transformations)
         Evaluation of the DSN (and the environment variable) is deferred so that an environment variable
         may be not set if it is actually not used.
         """
@@ -172,7 +174,7 @@ class DataWarehouseSchema:
 
     @property
     def backup_name(self):
-        return '$'.join(("arthur_temp", self.name))
+        return '$'.join(("etl_backup", self.name))
 
     @property
     def staging_name(self):

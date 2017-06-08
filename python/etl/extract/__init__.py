@@ -31,6 +31,7 @@ from typing import List, Dict
 
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
+from etl.extract.manifest_only import ManifestOnlyExtractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
@@ -43,9 +44,10 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchema],
-                             relations: List[RelationDescription], max_partitions: int,
-                             keep_going: bool, dry_run: bool) -> None:
+def extract_upstream_sources(extract_type: str,
+                             schemas: List[DataWarehouseSchema], relations: List[RelationDescription],
+                             max_partitions: int, use_sampling=False, keep_going=False,
+                             dry_run=False) -> None:
     """
     Extract data from upstream sources to S3.
 
@@ -54,6 +56,7 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
     """
     static_sources = {source.name: source for source in schemas if source.is_static_source}
     applicable = filter_relations_for_sources(static_sources, relations)
+    total_relations = len(applicable)
     if applicable:
         static_extractor = StaticExtractor(static_sources, applicable, keep_going, dry_run)
         static_extractor.extract_sources()
@@ -62,15 +65,27 @@ def extract_upstream_sources(extract_type: str, schemas: List[DataWarehouseSchem
 
     database_sources = {source.name: source for source in schemas if source.is_database_source}
     applicable = filter_relations_for_sources(database_sources, relations)
+    total_relations += len(applicable)
     if not applicable:
         logger.info("No database sources were selected")
+        if total_relations == 0:
+            logger.warning("Found no matching relations for your selection")
         return
 
-    if extract_type == "spark":
-        database_extractor = SparkExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
+    if extract_type == "manifest-only":
+        database_extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
+    elif extract_type == "spark":
+        database_extractor = SparkExtractor(database_sources, applicable,
+                                            max_partitions=max_partitions,
+                                            use_sampling=use_sampling,
+                                            keep_going=keep_going,
+                                            dry_run=dry_run)
     else:
-        database_extractor = SqoopExtractor(database_sources, applicable, keep_going,
-                                            max_partitions=max_partitions, dry_run=dry_run)
+        database_extractor = SqoopExtractor(database_sources, applicable,
+                                            max_partitions=max_partitions,
+                                            use_sampling=use_sampling,
+                                            keep_going=keep_going,
+                                            dry_run=dry_run)
     database_extractor.extract_sources()
 
 

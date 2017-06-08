@@ -40,7 +40,7 @@ constraints, attributes, and encodings.
 import logging
 from contextlib import closing
 from itertools import chain
-from typing import List, Set
+from typing import Dict, List, Set
 
 import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
@@ -347,8 +347,8 @@ def create_temp_table_as_and_copy(conn, relation, skip_copy=False, dry_run=False
         etl.pg.execute(conn, """DROP TABLE {}""".format(temp_name))
 
 
-def create_schemas(dsn_etl: dict, schemas: List[DataWarehouseSchema],
-                   use_staging: bool, dry_run=False) -> None:
+def create_schemas_after_backup(dsn_etl: Dict[str, str], schemas: List[DataWarehouseSchema],
+                                use_staging: bool, dry_run=False) -> None:
     """
     Create schemas necessary for this load or update
     If `use_staging`, create new staging schemas
@@ -361,8 +361,11 @@ def create_schemas(dsn_etl: dict, schemas: List[DataWarehouseSchema],
     with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
         if dry_run:
             logger.info("Dry-run: %s", dry_run_message)
+        elif use_staging:
+            etl.dw.create_schemas(dsn_etl, schemas, staging=use_staging)
         else:
-            etl.dw.create_schemas(conn, schemas, staging=use_staging, after_backup=(not use_staging))
+            etl.dw.backup_schemas(dsn_etl, schemas)
+            etl.dw.create_schemas(dsn_etl, schemas)
 
 
 def grant_access(conn: connection, relation: RelationDescription, schema_config: DataWarehouseSchema, dry_run=False):
@@ -413,7 +416,7 @@ def analyze(conn: connection, table: RelationDescription, dry_run=False) -> None
         etl.pg.execute(conn, "ANALYZE {}".format(table))
 
 
-def vacuum(dsn_etl: str, relations: List[RelationDescription], dry_run=False) -> None:
+def vacuum(dsn_etl: Dict[str, str], relations: List[RelationDescription], dry_run=False) -> None:
     """
     Final step ... tidy up the warehouse before guests come over.
     """
@@ -539,7 +542,7 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
     schema_config_lookup = {schema.name: schema for schema in data_warehouse.schemas}
     involved_schemas = [schema_config_lookup[s] for s in involved_schema_names]
     if whole_schemas:
-        create_schemas(data_warehouse.dsn_etl, involved_schemas, use_staging, dry_run=dry_run)
+        create_schemas_after_backup(data_warehouse.dsn_etl, involved_schemas, use_staging, dry_run=dry_run)
 
     vacuum_ready = []
     skip_after_fail = set()  # type: Set[str]

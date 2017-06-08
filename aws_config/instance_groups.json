@@ -3,12 +3,12 @@
         "Name": "Master instance group - 1",
         "InstanceGroupType": "MASTER",
         "InstanceCount": 1,
-        "InstanceType": "m3.xlarge"
+        "InstanceType": "m4.large"
     },
     {
         "Name": "Core instance group - 2",
         "InstanceGroupType": "CORE",
-        "InstanceCount": 2,
-        "InstanceType": "r3.xlarge"
+        "InstanceCount": 4,
+        "InstanceType": "m4.4xlarge"
     }
 ]

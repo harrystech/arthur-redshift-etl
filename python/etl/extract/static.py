@@ -22,7 +22,7 @@ class StaticExtractor(Extractor):
         self.logger = logging.getLogger(__name__)
 
     @staticmethod
-    def current_location(source: DataWarehouseSchema, relation: RelationDescription):
+    def _current_location(source: DataWarehouseSchema, relation: RelationDescription):
         rendered_template = Thyme.render_template(source.s3_path_template, {"prefix": relation.prefix})
         return os.path.join(rendered_template, relation.csv_path_name)
 
@@ -30,13 +30,13 @@ class StaticExtractor(Extractor):
     def source_info(source: DataWarehouseSchema, relation: RelationDescription):
         return {'name': source.name,
                 'bucket_name': source.s3_bucket,
-                'object_prefix': StaticExtractor.current_location(source, relation)}
+                'object_prefix': StaticExtractor._current_location(source, relation)}
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
         """
         Render the S3 path template for a given source to check for data files before writing
         out a manifest file
         """
-        prefix = self.current_location(source, relation)
         bucket = source.s3_bucket
+        prefix = self._current_location(source, relation)
         self.write_manifest_file(relation, bucket, prefix)

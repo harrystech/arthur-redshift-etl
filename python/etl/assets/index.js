@@ -28,30 +28,29 @@ function updateEtlIndices(etlIndices, lastModified) {
     // Update table with the current progress meter (200px * percentage = 2 * percentage points)
     var table = "<tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan='2'>Progress</th></tr>";
     var len = etlIndices.length;
-    var done = 0;
     if (len === 0) {
        table += "<tr><td colspan='5'>(waiting...)</td></tr>";
     } /* else */
     for (var i = 0; i < len; i++) {
         var e = etlIndices[i];
-        if (e.current === e.final) {
-            done += 1
-        }
         var percentage = (100.0 * e.current) / e.final;
         var percentageLabel = (percentage > 10.0) ? percentage.toFixed(0) : percentage.toFixed(1);
+        if (e.current === e.final) {
+            indexClass = "progress complete"
+        } else {
+            indexClass = "progress"
+        }
         table += "<tr>" +
             "<td>" + e.name + "</td>" +
             "<td>" + e.current + "</td>" +
             "<td>" + e.final + "</td>" +
             "<td>" + percentageLabel + "% </td>" +
-            "<td class='progress'><div style='width:" + (2 * percentage).toFixed(2) + "px'></div></td>" +
+            "<td class='" + indexClass + "'><div style='width:" + (2 * percentage).toFixed(2) + "px'></div></td>" +
             "</tr>";
     }
     document.getElementById("indices-table").innerHTML = table;
     document.getElementById("indices-table-last-modified").innerText = lastModified;
-    if (done < 1 || done < len) {
-        setTimeout(fetchEtlIndices, 1000);
-    }
+    setTimeout(fetchEtlIndices, 1000);
 }
 
 function fetchEtlEvents() {
@@ -60,7 +59,7 @@ function fetchEtlEvents() {
 
 function updateEtlEvents(etlEvents, lastModified) {
     var table = "<tr>" +
-        "<th>Index</th><th>Target</th><th>Step</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th>" +
+        "<th>Index</th><th>Step</th><th>Target</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th>" +
         "</tr>";
     var len = etlEvents.length;
     if (len === 0) {
@@ -75,11 +74,11 @@ function updateEtlEvents(etlEvents, lastModified) {
         var eventClass = "event-" + e.event;
         table += "<tr>" +
             "<td>" + name + " #" + current + "</td>" +
-            "<td class='" + eventClass + "'>" + e.target + "</td>" +
             "<td>" + e.step + "</td>" +
+            "<td class='" + eventClass + "'>" + e.target + "</td>" +
             "<td class='" + eventClass + "'>" + e.event + "</td>" +
             "<td>" + e.timestamp.substring(0, 19) + " UTC </td>" +
-            "<td class='" + eventClass + "'>" + elapsedLabel + "s </td>" +
+            "<td>" + elapsedLabel + "s </td>" +
             "</tr>";
     }
     document.getElementById("events-table").innerHTML = table;
@@ -89,6 +88,6 @@ function updateEtlEvents(etlEvents, lastModified) {
 
 window.onload = function () {
     fetchEtlId();
-    fetchEtlEvents();
     fetchEtlIndices();
+    fetchEtlEvents();
 };

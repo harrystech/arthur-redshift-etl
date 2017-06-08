@@ -45,7 +45,7 @@ def as_staging_name(name):
     """
     The canonical transformation of a (schema) name to its staging position
     """
-    return '$'.join(("arthur_staging", name))
+    return '$'.join(("etl_staging", name))
 
 
 class TableName:
