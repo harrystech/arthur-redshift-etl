@@ -41,7 +41,8 @@
             "mode": "a",
             "maxBytes": 10000,
             "backupCount": 1,
-            "delay": 1
+            "delay": 1,
+            "filters": [ "insert_trace_key" ]
         }
     },
     "root": {
