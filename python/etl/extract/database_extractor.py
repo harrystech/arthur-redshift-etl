@@ -22,6 +22,12 @@ class DatabaseExtractor(Extractor):
         self.max_partitions = max_partitions
         self.use_sampling = use_sampling
 
+    def options_info(self) -> List[str]:
+        info = super().options_info()
+        info.append("max-partitions=%d".format(self.max_partitions))
+        info.append("use-sampling=%s".format(self.use_sampling))
+        return info
+
     def use_sampling_with_table(self, size: int) -> bool:
         """
         Return True iff option `--use-sampling` appeared and table is large enough (> 1MB).

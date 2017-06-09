@@ -44,6 +44,12 @@ class Extractor:
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
         raise NotImplementedError("Forgot to implement extract_table in {}".format(self.__class__.__name__))
 
+    def options_info(self) -> List[str]:
+        """
+        Return list of "options" that describe the extract. This list will be part of the step monitor
+        """
+        return ["with-{0.name}-extractor".format(self)]
+
     @staticmethod
     def source_info(source: DataWarehouseSchema, relation: RelationDescription) -> Dict:
         """
@@ -67,7 +73,7 @@ class Extractor:
                 try:
                     with etl.monitor.Monitor(relation.identifier,
                                              "extract",
-                                             options=["with-{0.name}-extractor".format(self)],
+                                             options=self.options_info(),
                                              source=self.source_info(source, relation),
                                              destination={'bucket_name': relation.bucket_name,
                                                           'object_key': relation.manifest_file_name},
@@ -151,12 +157,12 @@ class Extractor:
             if not manifest:
                 self.logger.warning("Dry-run: Found no CSV files")
             else:
-                self.logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s'",
-                                 relation.bucket_name, relation.manifest_file_name)
+                self.logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s' for %d CSV file(s)",
+                                 relation.bucket_name, relation.manifest_file_name, len(csv_files))
         else:
             if not manifest:
                 raise MissingCsvFilesError("Found no CSV files")
             else:
-                self.logger.info("Writing manifest file to 's3://%s/%s'",
-                                 relation.bucket_name, relation.manifest_file_name)
+                self.logger.info("Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
+                                 relation.bucket_name, relation.manifest_file_name, len(csv_files))
                 etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)

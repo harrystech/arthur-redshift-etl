@@ -301,7 +301,10 @@ def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelecto
         for key in deletable:
             logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
     else:
-        etl.s3.delete_objects(bucket_name, deletable)
+        if deletable:
+            etl.s3.delete_objects(bucket_name, deletable)
+        else:
+            logger.info("Found no matching files in 's3://%s/%s' to delete", bucket_name, prefix)
 
 
 def approx_pretty_size(total_bytes) -> str:
