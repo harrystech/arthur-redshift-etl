@@ -1,12 +1,13 @@
-function apiCall(path, handler) {
+function apiCall(path, success_handler, failure_handler) {
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange = function () {
         if (this.readyState === 4) {
             // console.log(path + ": " + this.statusText);
             if (this.status === 200) {
-                handler(JSON.parse(this.responseText), this.getResponseHeader("Last-Modified"));
+                success_handler(JSON.parse(this.responseText), this.getResponseHeader("Last-Modified"));
             } else {
                 console.log("There was an error retrieving data from " + path);
+                failure_handler(path);
             }
         }
     };
@@ -14,14 +15,22 @@ function apiCall(path, handler) {
     xhttp.send();
 }
 
+function lostConnection(path) {
+    document.getElementById("latest-error").innerHTML = "Failed to retrieve values from: " + path
+}
+
 function fetchEtlId() {
-    apiCall("/api/etl-id", function setEtlId(obj, ignored) {
+    apiCall("/api/etl-id", function (obj, ignored) {
         document.getElementById("etl-id").innerHTML = obj.id
-    });
+    }, lostConnection);
 }
 
 function fetchEtlIndices() {
-    apiCall("/api/indices", updateEtlIndices);
+    apiCall("/api/indices", updateEtlIndices, lostConnection)
+}
+
+function fetchEtlEvents() {
+    apiCall("/api/events", updateEtlEvents, lostConnection);
 }
 
 function updateEtlIndices(etlIndices, lastModified) {
@@ -29,16 +38,18 @@ function updateEtlIndices(etlIndices, lastModified) {
     var table = "<tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan='2'>Progress</th></tr>";
     var len = etlIndices.length;
     if (len === 0) {
-       table += "<tr><td colspan='5'>(waiting...)</td></tr>";
-    } /* else */
+        table += "<tr><td colspan='5'>(waiting...)</td></tr>";
+    }
+    /* else */
     for (var i = 0; i < len; i++) {
         var e = etlIndices[i];
         var percentage = (100.0 * e.current) / e.final;
-        var percentageLabel = (percentage > 10.0) ? percentage.toFixed(0) : percentage.toFixed(1);
+        var percentageLabel = (percentage >= 10.0) ? percentage.toFixed(0) : percentage.toFixed(1);
+        var indexClass;
         if (e.current === e.final) {
-            indexClass = "progress complete"
+            indexClass = "progress complete";
         } else {
-            indexClass = "progress"
+            indexClass = "progress pulsing";
         }
         table += "<tr>" +
             "<td>" + e.name + "</td>" +
@@ -53,10 +64,6 @@ function updateEtlIndices(etlIndices, lastModified) {
     setTimeout(fetchEtlIndices, 1000);
 }
 
-function fetchEtlEvents() {
-    apiCall("/api/events", updateEtlEvents);
-}
-
 function updateEtlEvents(etlEvents, lastModified) {
     var table = "<tr>" +
         "<th>Index</th><th>Step</th><th>Target</th><th>Last Event</th><th>Timestamp</th><th>Elapsed</th>" +
@@ -64,21 +71,33 @@ function updateEtlEvents(etlEvents, lastModified) {
     var len = etlEvents.length;
     if (len === 0) {
         table += "<tr><td colspan='6'>(waiting...)</td></tr>";
-    } /* else */
+    }
+    /* else */
+    var now = (new Date()).valueOf();
     for (var i = 0; i < len; i++) {
         var e = etlEvents[i];
         var name = e.extra.index.name || "";
         var current = e.extra.index.current || "?";
-        var elapsed = e.elapsed || 0.0; // should be: timestamp - now
-        var elapsedLabel = (elapsed > 10.0) ? elapsed.toFixed(1) : elapsed.toFixed(2);
-        var eventClass = "event-" + e.event;
+        var timestamp = new Date(e.timestamp.replace(' ', 'T')); /* officialier ISO8601 */
+        var elapsed = e.elapsed;
+        var elapsedLabel;
+        if (elapsed === undefined) {
+            elapsed = (now - timestamp) / 1000.0;
+        }
+        elapsedLabel = elapsed.toFixed(1);
+        var eventLabel = e.event;
+        var eventClass = "event-" + eventLabel;
+        if (eventLabel === "start") {
+            eventLabel += "&nbsp;<div style='width: 1em'></div>";
+            eventClass += " progress pulsing";
+        }
         table += "<tr>" +
             "<td>" + name + " #" + current + "</td>" +
             "<td>" + e.step + "</td>" +
             "<td class='" + eventClass + "'>" + e.target + "</td>" +
-            "<td class='" + eventClass + "'>" + e.event + "</td>" +
-            "<td>" + e.timestamp.substring(0, 19) + " UTC </td>" +
-            "<td>" + elapsedLabel + "s </td>" +
+            "<td class='" + eventClass + "'>" + eventLabel + "</td>" +
+            "<td>" + timestamp.toISOString() + " </td>" +
+            "<td class='right-aligned'> " + elapsedLabel + "s </td>" +
             "</tr>";
     }
     document.getElementById("events-table").innerHTML = table;

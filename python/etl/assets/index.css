@@ -8,6 +8,10 @@
     padding: 2px 4px 2px 4px;
 }
 
+.right-aligned {
+    text-align: right;
+}
+
 table {
     font-family: arial, sans-serif;
     border-collapse: collapse;
@@ -34,9 +38,31 @@ td.progress {
 
 td.progress > div {
     background-color: lightskyblue;
-    display: block;
+    display: inline-block;
+    vertical-align: middle;
     height: 1em;
     border: 1px solid darkblue;
+}
+
+/*
+ * Inspired by: https://stackoverflow.com/a/8318115
+ * Quote: Seems to work in Chrome, though I thought I heard a slight sobbing noise.
+ */
+
+td.progress.pulsing > div {
+    animation-name: pulsing;
+    animation-iteration-count: infinite;
+    animation-duration: 1s;
+    animation-timing-function: ease;
+}
+
+@keyframes pulsing {
+    0%, 100% {
+        background-color: lightskyblue;
+    }
+    50% {
+        background-color: cornflowerblue;
+    }
 }
 
 td.progress.complete > div {
@@ -45,10 +71,6 @@ td.progress.complete > div {
 
 .events tr:nth-child(odd) > td {
     background-color: lightgray;
-}
-
-.events tr > td.event-start  {
-    background-color: lightgoldenrodyellow;
 }
 
 .events tr > td.event-fail {

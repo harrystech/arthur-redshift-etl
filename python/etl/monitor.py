@@ -205,7 +205,7 @@ class Monitor(metaclass=MetaMonitor):
             payload = MonitorPayload(self, "finish", self._end_time, elapsed=seconds, extra=self._extra)
         else:
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, "fail", self._end_time, extra=self._extra)
+            payload = MonitorPayload(self, "fail", self._end_time, elapsed=seconds, extra=self._extra)
             payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
@@ -555,8 +555,13 @@ def test_run():
 
     with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
         for i, names in enumerate(itertools.product(schema_names, table_names)):
-            with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
-                time.sleep(random.uniform(0.5, 2.0))
+            try:
+                with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
+                    time.sleep(random.uniform(0.5, 2.0))
+                    if i == 9:
+                        raise RuntimeError()
+            except RuntimeError:
+                pass
 
     input("Press return (or Ctrl-c) to stop server\n")
 
