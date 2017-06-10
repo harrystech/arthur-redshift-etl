@@ -104,7 +104,7 @@ def validate_semantics_of_view(table_design):
     for column in table_design["columns"]:
         if len(column) != 1:
             raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(list(column)))
-    for obj in ("constraints", "attributes"):
+    for obj in ("constraints", "attributes", "extract_settings"):
         if obj in table_design:
             raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
 
@@ -173,6 +173,18 @@ def validate_semantics_of_table(table_design):
             if constraint_type in seen_constraint_types and constraint_type != "unique":
                 raise TableDesignSemanticError("multiple constraints of type {}".format(constraint_type))
             seen_constraint_types.add(constraint_type)
+
+    if "extract_settings" in table_design:
+        if table_design.get('source_name') == 'CTAS':
+            raise TableDesignSemanticError("Extract settings not supported for transformations")
+        split_by_name = table_design['extract_settings'].get('split_by', [])
+        if split_by_name:
+            [split_by_column] = [c for c in table_design.get('columns', [])
+                                 if c['name'] == split_by_name[0]]
+            if split_by_column["type"] not in ("int", "long"):
+                raise TableDesignSemanticError(
+                    "Split-by column type must be numeric (int or long) not {}".format(split_by_column["type"])
+                )
 
 
 def validate_table_design_semantics(table_design, table_name, _memoize_is_upstream_source={}):

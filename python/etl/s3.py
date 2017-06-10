@@ -102,9 +102,11 @@ def upload_data_to_s3(data: dict, bucket_name: str, object_key: str) -> None:
         uploader(local_file.name, object_key)
 
 
-def delete_objects(bucket_name: str, object_keys: List[str], _retry=True) -> None:
+def delete_objects(bucket_name: str, object_keys: List[str], wait=False, _retry=True) -> None:
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
+
+    If the optional parameter "wait" is true, then we'll wait until the object has actually been deleted.
     """
     bucket = _get_s3_bucket(bucket_name)
     keys = [{'Key': key} for key in object_keys]
@@ -121,11 +123,14 @@ def delete_objects(bucket_name: str, object_keys: List[str], _retry=True) -> Non
             failed.append(error['Key'])
     if failed:
         if _retry:
-            logger.warning("Failed to delete %d objects, trying one more time in 5s", len(failed))
+            logger.warning("Failed to delete %d object(s), trying one more time in 5s", len(failed))
             time.sleep(5)
             delete_objects(bucket_name, failed, _retry=False)
         else:
             raise S3ServiceError("Failed to delete %d file(s)" % len(failed))
+    if wait and _retry:  # check only in initial call
+        for key in object_keys:
+            bucket.Object(key).wait_until_not_exists()
 
 
 def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) -> Union[datetime, None]:
@@ -197,3 +202,24 @@ def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> Iterator[str]:
         logger.info("Looking for files at 's3://%s/%s'", bucket_name, prefix)
         for obj in bucket.objects.filter(Prefix=prefix):
             yield obj.key
+
+
+def test_object_creation(bucket_name: str, prefix: str) -> None:
+    object_key = "{}/_s3_test".format(prefix.rstrip('/'))
+    logger.info("Testing object creation and deletion using 's3://%s/%s'", bucket_name, object_key)
+    upload_empty_object(bucket_name, object_key)
+    get_s3_object_last_modified(bucket_name, object_key, wait=True)
+    delete_objects(bucket_name, [object_key], wait=True)
+
+
+if __name__ == "__main__":
+    import sys
+    import etl.config
+
+    if len(sys.argv) != 3:
+        print("Usage: {} bucket_name prefix".format(sys.argv[0]))
+        print("This will create a test object under s3://[bucket_name]/[prefix] and delete afterwards.")
+        sys.exit(1)
+
+    etl.config.configure_logging()
+    test_object_creation(sys.argv[1], sys.argv[2])

@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="redshift-etl",
-    version="0.25.1",
+    version="0.25.3",
     author="Harry's Data Engineering and Contributors",
     description="ETL code to ferry data from PostgreSQL databases (or S3 files) to Redshift cluster",
     license="MIT",
@@ -24,7 +24,8 @@ setup(
     entry_points={
         "console_scripts": [
             # NB The script must end in ".py" so that spark submit accepts it as a Python script.
-            "arthur.py=etl.commands:run_arg_as_command"
+            "arthur.py = etl.commands:run_arg_as_command",
+            "run_tests.py = etl.selftest:run_tests"
         ]
     }
 )

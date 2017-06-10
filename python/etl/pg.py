@@ -9,11 +9,12 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
-from contextlib import closing, contextmanager
 import logging
 import os
 import re
 import textwrap
+from contextlib import closing, contextmanager
+from typing import Dict
 
 import psycopg2
 import psycopg2.extras
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def parse_connection_string(dsn: str) -> dict:
+def parse_connection_string(dsn: str) -> Dict[str, str]:
     """
     Extract connection value from JDBC-style connection string.
 
@@ -55,7 +56,7 @@ def parse_connection_string(dsn: str) -> dict:
     return {key: values[key] for key in values if values[key] is not None}
 
 
-def unparse_connection(dsn: dict) -> str:
+def unparse_connection(dsn: Dict[str, str]) -> str:
     """
     Return connection string for pretty printing or copying when starting psql
     """
@@ -66,7 +67,7 @@ def unparse_connection(dsn: dict) -> str:
     return "host={host} port={port} dbname={database} user={user} password=***".format(**values)
 
 
-def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, readonly=False):
+def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
     Open a connection to the database described by dsn_string which looks something like
     "postgresql://user:password@host:port/database" (see parse_connection_string).
@@ -84,7 +85,7 @@ def connection(dsn_dict, application_name=psycopg2.__name__, autocommit=False, r
     return cx
 
 
-def extract_dsn(dsn_dict):
+def extract_dsn(dsn_dict: Dict[str, str]):
     """
     Break the connection string into a JDBC URL and connection properties.
 
@@ -210,100 +211,6 @@ def ping(dsn):
             print("{} is alive".format(dbname(cx)))
 
 
-def drop_and_create_database(cx, database):
-    exists = query(cx, """SELECT 1 FROM pg_database WHERE datname = '{}'""".format(database))
-    if exists:
-        execute(cx, """DROP DATABASE {}""".format(database))
-    execute(cx, """CREATE DATABASE {}""".format(database))
-
-
-def create_group(cx, group):
-    execute(cx, """CREATE GROUP "{}" """.format(group))
-
-
-def create_user(cx, user, group):
-    dsn_complete = dict(kv.split('=') for kv in cx.dsn.split(" "))
-    dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
-    password = pgpasslib.getpass(user=user, **dsn_partial)
-    if password is None:
-        raise RuntimeError("Password missing from PGPASSFILE for {}".format(user))
-    execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
-
-
-def alter_group_add_user(cx, group, user):
-    execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
-
-
-def schema_exists(cx, name):
-    return bool(query(cx, """SELECT 1 FROM pg_namespace WHERE nspname = %s""", (name,)))
-
-
-def alter_schema_rename(cx, old_name, new_name):
-    """
-    Renames old_name to new_name if schema old_name exists and new_name doesn't
-    """
-    if schema_exists(cx, new_name):
-        raise RuntimeError("There is already a schema at the target name {}".format(new_name))
-
-    if schema_exists(cx, old_name):
-        execute(cx, """ALTER SCHEMA {} RENAME TO "{}" """.format(old_name, new_name))
-
-
-def create_schema(cx, schema, owner=None):
-    if owner:
-        execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" AUTHORIZATION "{}" """.format(schema, owner))
-    else:
-        execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" """.format(schema))
-
-
-def grant_usage(cx, schema, group):
-    execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
-
-
-def grant_all_on_schema_to_user(cx, schema, user):
-    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO "{}" """.format(schema, user))
-
-
-def revoke_usage(cx, schema, group):
-    execute(cx, """REVOKE USAGE ON SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
-
-
-def grant_select(cx, schema, table, group):
-    execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
-
-
-def grant_select_in_schema(cx, schema, group):
-    execute(cx, """GRANT SELECT ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
-
-
-def revoke_select_in_schema(cx, schema, group):
-    execute(cx, """REVOKE SELECT ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
-
-
-def grant_select_and_write(cx, schema, table, group):
-    execute(cx, """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
-
-
-def grant_all_to_user(cx, schema, table, user):
-    execute(cx, """GRANT ALL PRIVILEGES ON "{}"."{}" TO "{}" """.format(schema, table, user))
-
-
-def revoke_select(cx, schema, table, group):
-    execute(cx, """REVOKE SELECT ON "{}"."{}" FROM GROUP "{}" """.format(schema, table, group))
-
-
-def alter_table_owner(cx, schema, table, owner):
-    execute(cx, """ALTER TABLE "{}"."{}" OWNER TO {} """.format(schema, table, owner))
-
-
-def alter_search_path(cx, user, schemas):
-    execute(cx, """ALTER USER {} SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
-
-
-def set_search_path(cx, schemas):
-    execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
-
-
 def log_sql_error(exc):
     """
     Send information from psycopg2.Error instance to logfile.
@@ -332,7 +239,7 @@ def log_sql_error(exc):
                  # 'source_function',
                  # 'source_line',
                  ):
-        value = getattr(exc.diag, name)
+        value = getattr(exc.diag, name, None)
         if value:
             logger.debug("DIAG %s: %s", name.upper(), value)
 
@@ -347,6 +254,110 @@ def log_error():
         raise
 
 
+# ---- DATABASE ----
+
+def drop_and_create_database(cx, database, owner):
+    exists = query(cx, """SELECT 1 FROM pg_catalog.pg_database WHERE datname = '{}'""".format(database))
+    if exists:
+        execute(cx, """DROP DATABASE {}""".format(database))
+    execute(cx, """CREATE DATABASE {} WITH OWNER {}""".format(database, owner))
+
+
+# ---- USERS and GROUPS ----
+
+def create_group(cx, group):
+    execute(cx, """CREATE GROUP "{}" """.format(group))
+
+
+def create_user(cx, user, group):
+    dsn_complete = dict(kv.split('=') for kv in cx.dsn.split(" "))
+    dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
+    password = pgpasslib.getpass(user=user, **dsn_partial)
+    if password is None:
+        raise RuntimeError("Password missing from PGPASSFILE for {}".format(user))
+    execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
+
+
+def alter_group_add_user(cx, group, user):
+    execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
+
+
+def alter_search_path(cx, user, schemas):
+    execute(cx, """ALTER USER {} SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
+
+
+def set_search_path(cx, schemas):
+    execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
+
+
+# ---- SCHEMAS ----
+
+def select_schemas(cx, names):
+    rows = query(cx, """
+        SELECT nspname AS name
+          FROM pg_catalog.pg_namespace
+         WHERE nspname IN %s
+        """, (tuple(names),))
+    return frozenset(row[0] for row in rows)
+
+
+def drop_schema(cx, name):
+    execute(cx, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(name))
+
+
+def alter_schema_rename(cx, old_name, new_name):
+    execute(cx, """ALTER SCHEMA {} RENAME TO "{}" """.format(old_name, new_name))
+
+
+def create_schema(cx, schema, owner=None):
+    execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" """.format(schema))
+    if owner:
+        # Because of the "IF NOT EXISTS" we need to expressly set owner in case there's a change in ownership.
+        execute(cx, """ALTER SCHEMA "{}" OWNER TO "{}" """.format(schema, owner))
+
+
+def grant_usage(cx, schema, group):
+    execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
+
+
+def grant_all_on_schema_to_user(cx, schema, user):
+    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO "{}" """.format(schema, user))
+
+
+def revoke_usage(cx, schema, group):
+    execute(cx, """REVOKE USAGE ON SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
+
+
+def grant_select_in_schema(cx, schema, group):
+    execute(cx, """GRANT SELECT ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
+
+
+def revoke_select_on_all_tables_in_schema(cx, schema, group):
+    execute(cx, """REVOKE SELECT ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
+
+
+# ---- TABLES ----
+
+def grant_select(cx, schema, table, group):
+    execute(cx, """GRANT SELECT ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
+
+
+def grant_select_and_write(cx, schema, table, group):
+    execute(cx, """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
+
+
+def grant_all_to_user(cx, schema, table, user):
+    execute(cx, """GRANT ALL PRIVILEGES ON "{}"."{}" TO "{}" """.format(schema, table, user))
+
+
+def revoke_select(cx, schema, table, group):
+    execute(cx, """REVOKE SELECT ON "{}"."{}" FROM GROUP "{}" """.format(schema, table, group))
+
+
+def alter_table_owner(cx, schema, table, owner):
+    execute(cx, """ALTER TABLE "{}"."{}" OWNER TO {} """.format(schema, table, owner))
+
+
 if __name__ == "__main__":
     import sys
 
@@ -357,5 +368,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
+    dsn_dict = parse_connection_string(sys.argv[1])
     with log_error():
-        ping(parse_connection_string(sys.argv[1]))
+        ping(dsn_dict)

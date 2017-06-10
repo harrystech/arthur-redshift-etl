@@ -128,10 +128,14 @@ def get_release_info() -> str:
     Read the release file and return all lines bunched into one comma-separated value.
     Life's exciting. And short. But mostly exciting.
     """
-    release = pkg_resources.resource_string(__name__, "release.txt")
-    text = release.decode(errors='ignore').strip()
-    lines = [line.strip() for line in text.split('\n')]
-    return "Release information: " + ", ".join(lines)
+    if pkg_resources.resource_exists(__name__, "release.txt"):
+        content = pkg_resources.resource_string(__name__, "release.txt")
+        text = content.decode(errors='ignore').strip()
+        lines = [line.strip() for line in text.split('\n')]
+        release_info = ", ".join(lines)
+    else:
+        release_info = "Not available. Hint: release info will be created by upload_env.sh"
+    return "Release information: " + release_info
 
 
 def yield_config_files(config_files: Sequence[str], default_file: str=None) -> Iterable[str]:
