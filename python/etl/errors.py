@@ -116,18 +116,6 @@ class UpstreamValidationError(ETLRuntimeError):
     """
 
 
-class FailedConstraintError(ETLRuntimeError):
-    def __init__(self, relation, constraint_type, columns, examples):
-        self.identifier = relation.identifier
-        self.constraint_type = constraint_type
-        self.columns = columns
-        self.example_string = ', '.join(map(str, examples))
-
-    def __str__(self):
-        return ("relation {0.identifier} violates {0.constraint_type} constraint: "
-                "Example duplicate values of {0.columns} are: {0.example_string}".format(self))
-
-
 class DataExtractError(ETLRuntimeError):
     """
     Exception when extracting from an upstream source fails
@@ -147,36 +135,53 @@ class MissingCsvFilesError(DataExtractError):
 
 
 class S3ServiceError(ETLRuntimeError):
+    """
+    Exception when we encounter problems with S3
+    """
+
+
+class RelationConstructionError(ETLRuntimeError):
+    """
+    Exception when we fail to drop or create a relation
+    """
+
+
+class RelationDataError(ETLRuntimeError):
+    """
+    Exception when we have problems due to data that was supposed to go into the relation or that landed there.
+    """
+
+
+class MissingManifestError(RelationDataError):
     pass
 
 
-class MissingManifestError(ETLRuntimeError):
-    # FIXME Still used / useful?
+class UpdateTableError(RelationDataError):
     pass
+
+
+class FailedConstraintError(RelationDataError):
+
+    def __init__(self, relation, constraint_type, columns, examples):
+        self.identifier = relation.identifier
+        self.constraint_type = constraint_type
+        self.columns = columns
+        self.example_string = ',\n  '.join(map(str, examples))
+
+    def __str__(self):
+        return ("relation {0.identifier} violates {0.constraint_type} constraint.\n"
+                "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self))
 
 
 class RequiredRelationLoadError(ETLRuntimeError):
 
-    def __init__(self, failed_relation, dependent_required_relations):
-        if failed_relation.is_required:
-            self.message = "error on required relation '{}'".format(failed_relation.identifier)
-        else:
-            self.message = "error on relation '{}'".format(failed_relation.identifier)
-        if dependent_required_relations:
-            # Avoiding `join_with_quotes` here to keep this module import-free
-            identifiers = ", ".join("'{}'".format(relation.identifier) for relation in dependent_required_relations)
-            self.message += " implies failure of required relations: {}".format(identifiers)
+    def __init__(self, failed_relations):
+        # Avoiding `join_with_quotes` here to keep this module import-free
+        self.message = "required relations with failure: "
+        self.message += ", ".join("'{}'".format(name) for name in failed_relations)
 
     def __str__(self):
         return self.message
-
-
-class UpdateTableError(ETLRuntimeError):
-    pass
-
-
-class RelationModificationError(ETLRuntimeError):
-    pass
 
 
 class DataUnloadError(ETLRuntimeError):

@@ -535,11 +535,10 @@ class LoadDataWarehouseCommand(SubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
-        with etl.pg.log_error():
-            etl.load.load_data_warehouse(relations, args.pattern,
-                                         skip_copy=args.skip_copy,
-                                         no_rollback=args.no_rollback,
-                                         dry_run=args.dry_run)
+        etl.load.load_data_warehouse(relations, args.pattern,
+                                     skip_copy=args.skip_copy,
+                                     no_rollback=args.no_rollback,
+                                     dry_run=args.dry_run)
 
 
 class UpgradeDataWarehouseCommand(SubCommand):
@@ -562,11 +561,10 @@ class UpgradeDataWarehouseCommand(SubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
-        with etl.pg.log_error():
-            etl.load.upgrade_data_warehouse(relations, args.pattern,
-                                            only_selected=args.only_selected,
-                                            skip_copy=args.skip_copy,
-                                            dry_run=args.dry_run)
+        etl.load.upgrade_data_warehouse(relations, args.pattern,
+                                        only_selected=args.only_selected,
+                                        skip_copy=args.skip_copy,
+                                        dry_run=args.dry_run)
 
 
 class UpdateDataWarehouseCommand(SubCommand):
@@ -587,10 +585,9 @@ class UpdateDataWarehouseCommand(SubCommand):
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
-        with etl.pg.log_error():
-            etl.load.update_data_warehouse(relations, args.pattern,
-                                           only_selected=args.only_selected, run_vacuum=args.vacuum,
-                                           dry_run=args.dry_run)
+        etl.load.update_data_warehouse(relations, args.pattern,
+                                       only_selected=args.only_selected, run_vacuum=args.vacuum,
+                                       dry_run=args.dry_run)
 
 
 class UnloadDataToS3Command(SubCommand):
@@ -611,9 +608,8 @@ class UnloadDataToS3Command(SubCommand):
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
-        with etl.pg.log_error():
-            etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
-                                    keep_going=args.keep_going, dry_run=args.dry_run)
+        etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
+                                keep_going=args.keep_going, dry_run=args.dry_run)
 
 
 class CreateSchemasCommand(SubCommand):

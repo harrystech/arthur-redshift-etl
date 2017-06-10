@@ -28,11 +28,25 @@ import etl.pg
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import ETLError
 from etl.names import join_with_quotes
+from etl.timer import Timer
 
 import psycopg2
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+
+def create_schema_and_grant_access(conn, schema, owner=None, dry_run=False) -> None:
+    group_names = join_with_quotes(schema.groups)
+    if dry_run:
+        logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", schema.name, group_names)
+    else:
+        logger.info("Creating schema '%s', granting access to %s", schema.name, group_names)
+        etl.pg.create_schema(conn, schema.name, owner)
+        etl.pg.grant_all_on_schema_to_user(conn, schema.name, schema.owner)
+        for group in schema.groups:
+            # Readers/writers are differentiated in table permissions, not schema permissions
+            etl.pg.grant_usage(conn, schema.name, group)
 
 
 def create_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
@@ -56,21 +70,10 @@ def create_missing_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchem
         if not missing_schemas:
             logger.info("Found all necessary schemas already in place")
         else:
-            for schema in missing_schemas:
-                create_schema_and_grant_access(conn, schema, dry_run=dry_run)
-
-
-def create_schema_and_grant_access(conn, schema, owner=None, dry_run=False) -> None:
-    group_names = join_with_quotes(schema.groups)
-    if dry_run:
-        logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", schema.name, group_names)
-    else:
-        logger.info("Creating schema '%s', granting access to %s", schema.name, group_names)
-        etl.pg.create_schema(conn, schema.name, owner)
-        etl.pg.grant_all_on_schema_to_user(conn, schema.name, schema.owner)
-        for group in schema.groups:
-            # Readers/writers are differentiated in table permissions, not schema permissions
-            etl.pg.grant_usage(conn, schema.name, group)
+            with Timer() as timer:
+                for schema in missing_schemas:
+                    create_schema_and_grant_access(conn, schema, dry_run=dry_run)
+                logger.info("Created %d missing schema(s) (%s)", len(missing_schemas), timer)
 
 
 def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
@@ -89,6 +92,7 @@ def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_
         if dry_run:
             logger.info("Dry-run: Skipping backup of schema(s) %s", selected_names)
             return
+
         logger.info("Creating backup of schema(s) %s", selected_names)
         for schema in need_backup:
             logger.info("Revoking access from readers to schema '%s' before backup", schema.name)
@@ -116,6 +120,7 @@ def restore_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry
         if dry_run:
             logger.info("Dry-run: Skipping restore of schema(s) %s", selected_names)
             return
+
         logger.info("Restoring from backup schema(s) %s", selected_names)
         for schema in need_restore:
             logger.info("Renaming schema '%s' from backup '%s'", schema.name, schema.backup_name)

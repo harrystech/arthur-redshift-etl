@@ -254,6 +254,40 @@ def log_error():
         raise
 
 
+# TODO Split PostgreSQL and Redshift dialects into different modules
+
+@contextmanager
+def log_load_error(cx):
+    """Log any Redshift LOAD errors during a COPY command"""
+    try:
+        yield
+    except psycopg2.Error as exc:
+        if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
+            logger.warning("Cannot retrieve error information from stl_load_errors within failed transaction")
+        else:
+            rows = query(cx, """
+                        SELECT session
+                             , query
+                             , starttime
+                             , colname
+                             , type
+                             , trim(filename) AS filename
+                             , line_number
+                             , trim(err_reason) AS err_reason
+                          FROM stl_load_errors
+                         WHERE session = pg_backend_pid()
+                         ORDER BY starttime DESC
+                         LIMIT 1""")
+            if rows:
+                row0 = rows.pop()
+                max_len = max(len(k) for k in row0.keys())
+                info = ["{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len) for k in row0.keys()]
+                logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
+            else:
+                log_sql_error(exc)
+        raise
+
+
 # ---- DATABASE ----
 
 def drop_and_create_database(cx, database, owner):

@@ -17,7 +17,7 @@ re-run) to bring in new data.  It cannot be used to make a structural change. Ba
 The "upgrade" command should probably be used only during development. Think of an "upgrade" as a
 "load" without the safety net. Unlike "load", it will upgrade more surgically and not expand
 to modify entire schemas, but unlike "update" it will not go gently about it.
-(It is a bit expensive given the cautious build up and permission changes.)
+(It is a bit expensive still given the cautious build up and permission changes.)
 
 It is possible to bring up an "empty" data warehouse where all the structure exists
 (meaning all the tables and views are in place) but no data was actually loaded.
@@ -25,25 +25,21 @@ This is used during the validation pipeline. See the "skip copy" options.
 
 These are the general pre-requisites:
 
-* "Tables" that have upstream sources must have CSV files and a manifest file from the "extract".
+    * "Tables" that have upstream sources must have CSV files and a manifest file from the "extract".
 
-    * CSV files must have fields delimited by commas, quotes around fields if they
-      contain a comma, and have doubled-up quotes if there's a quote within the field.
+        * CSV files must have fields delimited by commas, quotes around fields if they
+          contain a comma, and have doubled-up quotes if there's a quote within the field.
 
-    * Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
+        * Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
 
-* "CTAS" tables are derived from queries so must have a SQL file. (Think of them as materialized views.)
+    * "CTAS" tables are derived from queries so must have a SQL file. (Think of them as materialized views.)
 
-    * For every derived table (CTAS) a SQL file must exist in S3 with a valid
-      expression to create the content of the table (meaning: just the select without
-      closing ';'). The actual DDL statement (CREATE TABLE AS ...) and the table
-      attributes / constraints are added from the matching table design file.
+        * For every derived table (CTAS) a SQL file must exist in S3 with a valid
+          expression to create the content of the table (meaning: just the select without
+          closing ';'). The actual DDL statement (CREATE TABLE AS ...) and the table
+          attributes / constraints are added from the matching table design file.
 
-    * Note that the target table is actually created empty, then CTAS is used for a temporary
-      table which is then inserted into the table. This is needed to attach
-      constraints, attributes, and column encodings.
-
-* "VIEWS" are views and so must have a SQL file in S3.
+    * "VIEWS" are views and so must have a SQL file in S3.
 """
 
 import logging
@@ -51,7 +47,6 @@ from contextlib import closing
 from itertools import chain
 from typing import Dict, List, Set
 
-import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -60,10 +55,11 @@ import etl.monitor
 import etl.pg
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import (RelationModificationError, ETLRuntimeError, FailedConstraintError, RequiredRelationLoadError,
-                        UpdateTableError)
+from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
+                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError)
 from etl.names import join_column_list, join_with_quotes, TableName, TableSelector
 from etl.relation import RelationDescription
+from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -79,7 +75,6 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
     >>> build_column_description({"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]})
     '"my_key" int REFERENCES "sch"."ble" ( "key" )'
     """
-    # Build up formatting string, then make just one call to format.
     column_ddl = '"{name}" {sql_type}'.format(**column)
     if column.get("identity", False) and not skip_identity:
         column_ddl += " IDENTITY(1, 1)"
@@ -151,6 +146,7 @@ def build_table_attributes(table_design: dict, is_temp=False) -> List[str]:
     interleaved_sort = table_attributes.get("interleaved_sort", [])
 
     ddl_attributes = []
+    # TODO Use for staging tables: ddl_attributes.append("BACKUP NO")
     if distribution:
         if isinstance(distribution, list):
             ddl_attributes.append("DISTSTYLE KEY")
@@ -163,8 +159,6 @@ def build_table_attributes(table_design: dict, is_temp=False) -> List[str]:
         ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_column_list(compound_sort)))
     elif interleaved_sort:
         ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_column_list(interleaved_sort)))
-    if is_temp:
-        ddl_attributes.append("BACKUP NO")
     return ddl_attributes
 
 
@@ -267,7 +261,7 @@ def create_or_replace_relation(conn: connection, relation: RelationDescription, 
             create_table(conn, relation, dry_run=dry_run)
         grant_access(conn, relation, schema, dry_run=dry_run)
     except Exception as exc:
-        raise RelationModificationError(exc) from exc
+        raise RelationConstructionError(exc) from exc
 
 
 def drop_relation_if_exists(conn: connection, relation: RelationDescription, dry_run=False) -> None:
@@ -286,7 +280,7 @@ def drop_relation_if_exists(conn: connection, relation: RelationDescription, dry
                 logger.info("Dropping %s '%s'", kind.lower(), relation.identifier)
                 etl.pg.execute(conn, stmt)
     except Exception as exc:
-        raise RelationModificationError(exc) from exc
+        raise RelationConstructionError(exc) from exc
 
 
 def grant_access(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema, dry_run=False):
@@ -343,14 +337,14 @@ def copy_data(conn: connection, relation: RelationDescription, dry_run=False):
 
     # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
     stmt = """
-        COPY {}
+        COPY {table}
         FROM %s
         CREDENTIALS %s MANIFEST
         DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
         TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
         TRUNCATECOLUMNS
         STATUPDATE OFF
-        """
+        """.format(table=relation)
     # TODO Measure COMPUPDATE OFF
     # TODO Enable using "NOLOAD" to test whether CSV files are valid.
     if dry_run:
@@ -358,24 +352,14 @@ def copy_data(conn: connection, relation: RelationDescription, dry_run=False):
         logger.info("Dry-run: Skipping copying data into '%s' from '%s'", relation.identifier, s3_uri)
         return
 
+    if not relation.has_manifest:
+        raise MissingManifestError("relation '{}' is missing its manifest file".format(relation.identifier))
+
     logger.info("Copying data into '%s' from '%s'", relation.identifier, s3_uri)
-    try:
-        etl.pg.execute(conn, stmt.format(relation), (s3_uri, credentials))
+    with etl.pg.log_load_error(conn):
+        etl.pg.execute(conn, stmt, (s3_uri, credentials))
         row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
         logger.info("Copied %d rows into '%s'", row_count[0][0], relation.identifier)
-    except psycopg2.Error as exc:
-        if "stl_load_errors" in exc.pgerror:
-            logger.debug("Trying to get error message from stl_log_errors table")
-            info = etl.pg.query(conn, """
-                SELECT query, starttime, filename, colname, type, col_length,
-                       line_number, position, err_code, err_reason
-                  FROM stl_load_errors
-                 WHERE session = pg_backend_pid()
-                 ORDER BY starttime DESC
-                 LIMIT 1""")
-            values = "  \n".join(["{}: {}".format(k, row[k]) for row in info for k in row.keys()])
-            logger.info("Information from stl_load_errors:\n  %s", values)
-        raise
 
 
 def insert_from_query(conn: connection, table_name: TableName, columns: List[str], query: str, dry_run=False) -> None:
@@ -414,20 +398,21 @@ def load_ctas_using_temp_table(conn: connection, relation: RelationDescription, 
     temp_name = create_table(conn, relation, is_temp=True, dry_run=dry_run)
     temp_columns = [column["name"] for column in relation.table_design["columns"]
                     if not (column.get("skipped") or column.get("identity"))]
-    insert_from_query(conn, temp_name, temp_columns, relation.query_stmt, dry_run=dry_run)
 
-    inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), temp_name)
-    if relation.target_table_name.table.startswith("dim_"):
-        missing_dimension = build_missing_dimension_row(relation.table_design["columns"])
-        inner_stmt += " UNION ALL SELECT {}".format(", ".join(missing_dimension))
-    insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, inner_stmt, dry_run=dry_run)
-
-    # Until we make it actually temporary:
-    if dry_run:
-        logger.info("Dry-run: Skipping dropping of temporary table '%s'", temp_name.identifier)
-    else:
-        logger.info("Dropping temporary table '%s'", temp_name.identifier)
-        etl.pg.execute(conn, "DROP TABLE {}".format(temp_name))
+    try:
+        insert_from_query(conn, temp_name, temp_columns, relation.query_stmt, dry_run=dry_run)
+        inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), temp_name)
+        if relation.target_table_name.table.startswith("dim_"):
+            missing_dimension = build_missing_dimension_row(relation.table_design["columns"])
+            inner_stmt += " UNION ALL SELECT {}".format(", ".join(missing_dimension))
+        insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, inner_stmt, dry_run=dry_run)
+    finally:
+        # Until we make it actually temporary:
+        if dry_run:
+            logger.info("Dry-run: Skipping dropping of temporary table '%s'", temp_name.identifier)
+        else:
+            logger.info("Dropping temporary table '%s'", temp_name.identifier)
+            etl.pg.execute(conn, "DROP TABLE {}".format(temp_name))
 
 
 def analyze(conn: connection, table: RelationDescription, dry_run=False) -> None:
@@ -524,9 +509,80 @@ def build_single_relation(conn, relation, skip_copy=False, dry_run=False, **kwar
     """
     with etl.monitor.Monitor(dry_run=dry_run, **kwargs):
         create_or_replace_relation(conn, relation, relation.dw_schema, dry_run=dry_run)
-        if not (skip_copy or relation.is_view_relation):
-            update_table(conn, relation, dry_run=dry_run)
-            verify_constraints(conn, relation, dry_run=dry_run)
+        if not relation.is_view_relation:
+            if skip_copy:
+                logger.info("Skipping loading data into '%s'", relation.identifier)
+            else:
+                update_table(conn, relation, dry_run=dry_run)
+                # TODO Should we delete_whole_table if constraints are violated?
+                verify_constraints(conn, relation, dry_run=dry_run)
+
+
+def build_source_relations(conn: connection, relations: List[RelationDescription], monitor_info: dict,
+                           skip_copy=False, dry_run=False) -> None:
+    """
+    Pick out all tables in source schemas from the list of relations and build up just those.
+
+    Since we know that these relations never have dependencies, we don't have to track any
+    failures while loading them.
+    """
+    target_relations = [relation for relation in relations if not relation.is_transformation]
+    failed_relations = []  # type: List[RelationDescription]
+
+    with Timer() as timer:
+        for relation in target_relations:
+            try:
+                build_single_relation(conn, relation, skip_copy=skip_copy, dry_run=dry_run,
+                                      **monitor_info[relation.identifier])
+            except (RelationConstructionError, RelationDataError):
+                failed_relations.append(relation)
+    if not dry_run:
+        logger.info("Built %d relation(s) in source schemas, %d failed (%s)",
+                    len(target_relations), len(failed_relations), timer)
+
+    failed_and_required = [relation.identifier for relation in failed_relations if relation.is_required]
+    if failed_and_required:
+        raise RequiredRelationLoadError(failed_and_required)
+
+
+def build_transformation_relations(conn: connection, relations: List[RelationDescription], monitor_info: dict,
+                                   skip_copy=False, dry_run=False) -> None:
+    """
+    Pick out all tables in transformation schemas from the list of relations and build up just those.
+
+    These relations may be dependent on relations that may have failed before we reached them.
+    If dependencies were left empty, we'll fall back to skip_copy mode.
+    Unless the relation is "required" in which case we abort here.
+    """
+    target_relations = [relation for relation in relations if relation.is_transformation]
+    failed_relations = []  # type: List[RelationDescription]
+    skip_copy_after_prior_fail = set()  # type: Set[str]
+
+    with Timer() as timer:
+        for relation in target_relations:
+            this_skip_copy = skip_copy or relation.identifier in skip_copy_after_prior_fail
+            try:
+                build_single_relation(conn, relation, skip_copy=this_skip_copy, dry_run=dry_run,
+                                      **monitor_info[relation.identifier])
+            except (RelationConstructionError, RelationDataError) as exc:
+                if relation.is_required:
+                    raise RequiredRelationLoadError([relation.identifier]) from exc
+                logger.warning("Failed relation '%s' is not required, ignoring this exception:",
+                               relation.identifier, exc_info=True)
+                failed_relations.append(relation)
+                dependent_relations = etl.relation.find_dependents(target_relations, [relation])
+                if dependent_relations:
+                    dependent_identifiers = [relation.identifier for relation in dependent_relations]
+                    skip_copy_after_prior_fail.update(dependent_identifiers)
+                    logger.warning("Continuing while omitting %d dependent relation(s): %s",
+                                   len(dependent_identifiers), join_with_quotes(dependent_identifiers))
+
+    if failed_relations:
+        logger.warning("These relations failed to build: %s",
+                       join_with_quotes(relation.identifier for relation in failed_relations))
+    if not dry_run:
+        logger.info("Built %d relation(s) in transformation schemas, %d failed, %d left empty (%s)",
+                    len(target_relations), len(failed_relations), len(skip_copy_after_prior_fail), timer)
 
 
 def build_relations(dsn_etl: Dict[str, str], relations: List[RelationDescription], command: str,
@@ -534,33 +590,14 @@ def build_relations(dsn_etl: Dict[str, str], relations: List[RelationDescription
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, load them.
 
-    The process stops if there is an error on a required relation.
-    The process continues if the error happened on a non-required relation but note that all dependencies
-    of the non-required relation will then be left empty.
+    When there is an error with loading a particular table, then we'll proceed to trying to
+    create the dependent relations using "skip copy" mode.
+    When any failed relation is required, this raises an exception.
     """
     monitor_info = build_monitor_info(relations, command, dsn_etl["database"])
-    skip_after_prior_fail = set()  # type: Set[str]
     with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        for relation in relations:
-            if relation.identifier in skip_after_prior_fail:
-                logger.warning("Skipping %s for relation '%s' due to failed dependencies", command, relation.identifier)
-                continue
-            try:
-                build_single_relation(conn, relation, skip_copy=skip_copy, dry_run=dry_run,
-                                      **monitor_info[relation.identifier])
-            except ETLRuntimeError as exc:
-                dependent_relations = etl.relation.find_dependents(relations, [relation])
-                dependent_required_relations = [relation for relation in dependent_relations if relation.is_required]
-                if relation.is_required or dependent_required_relations:
-                    raise RequiredRelationLoadError(relation, dependent_required_relations) from exc
-                logger.warning("This failure for '%s' does not harm any required relations:", relation.identifier,
-                               exc_info=True)
-                # Make sure we don't try to load any of the dependents
-                if dependent_relations:
-                    dependent_identifiers = [relation.identifier for relation in dependent_relations]
-                    skip_after_prior_fail.update(dependent_identifiers)
-                    logger.warning("Continuing %s omitting these dependent relations: %s", command,
-                                   join_with_quotes(dependent_identifiers))
+        build_source_relations(conn, relations, monitor_info, skip_copy=skip_copy, dry_run=dry_run)
+        build_transformation_relations(conn, relations, monitor_info, skip_copy=skip_copy, dry_run=dry_run)
 
 
 def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
@@ -664,7 +701,10 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
                 verify_constraints(tx, relation, dry_run=dry_run)
 
     if run_vacuum:
-        vacuum(dsn_etl, tables, dry_run=dry_run)
+        with Timer() as timer:
+            vacuum(dsn_etl, tables, dry_run=dry_run)
+        if not dry_run:
+            logger.info("Ran vacuum for %d table(s) (%s)", len(tables), timer)
 
 
 def vacuum(dsn_etl: Dict[str, str], relations: List[RelationDescription], dry_run=False) -> None:
@@ -724,11 +764,11 @@ def verify_constraints(conn: connection, relation: RelationDescription, dry_run=
             condition = "TRUE"
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition)
         if dry_run:
-            logger.info("Dry-run: Skipping check of %s constraint in '%s' on [%s]",
+            logger.info("Dry-run: Skipping check of %s constraint in '%s' on column(s): %s",
                         constraint_type, relation.identifier, join_with_quotes(columns))
             logger.debug("Skipped query:\n%s", statement)
         else:
-            logger.info("Checking %s constraint in '%s' on [%s]",
+            logger.info("Checking %s constraint in '%s' on column(s): %s",
                         constraint_type, relation.identifier, join_with_quotes(columns))
             results = etl.pg.query(conn, statement)
             if results:

@@ -358,8 +358,8 @@ class RelationalStorage(PayloadDispatcher):
 
     def __init__(self, table_name, write_access):
         self.table_name = table_name
-        write_access = self.dsn = etl.config.env.get(write_access)
-        self.dsn = etl.pg.parse_connection_string(write_access)
+        write_value = etl.config.env.get(write_access)
+        self.dsn = etl.pg.parse_connection_string(write_value)
         logger.info("Creating table '%s' (unless it already exists)", table_name)
         with closing(etl.pg.connection(self.dsn)) as conn:
             etl.pg.execute(conn, """
@@ -380,11 +380,11 @@ class RelationalStorage(PayloadDispatcher):
         data["timestamp"] = payload["timestamp"].isoformat(' ')
         data["payload"] = json.dumps(payload, sort_keys=True, cls=FancyJsonEncoder)
 
-        with closing(etl.pg.connection(self.dsn)) as conn:
+        with closing(etl.pg.connection(self.dsn, autocommit=True)) as conn:
             with conn.cursor() as cursor:
                 quoted_column_names = ", ".join('"{}"'.format(column) for column in data)
                 column_values = tuple(data.values())
-                cursor.execute('INSERT INTO "{0.table_name}" ({}) VALUES %s'.format(self, quoted_column_names),
+                cursor.execute('INSERT INTO "{0.table_name}" ({1}) VALUES %s'.format(self, quoted_column_names),
                                (column_values,))
 
 
