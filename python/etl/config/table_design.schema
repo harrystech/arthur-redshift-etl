@@ -205,7 +205,10 @@
             "type": "object",
             "properties": {
                 "split_by": { "$ref": "#/definitions/one_column_as_list" },
-                "num_partitions": { "type": "integer" }
+                "num_partitions": {
+                    "type": "integer",
+                    "minimum": 1
+                }
             },
             "additionalProperties": false
         },
