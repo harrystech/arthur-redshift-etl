@@ -503,14 +503,17 @@ class MemoryStorage(PayloadDispatcher):
         class BackgroundServer(threading.Thread):
             def run(self):
                 logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
-                httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
-                httpd.serve_forever()
+                try:
+                    httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
+                    httpd.serve_forever()
+                except Exception as exc:
+                    logger.info("Background server stopped: %s", str(exc))
 
         try:
             thread = BackgroundServer(daemon=True)
             thread.start()
         except RuntimeError:
-            logger.exception("Failed to start background server:")
+            logger.warning("Failed to start background server:", exc_info=True)
 
 
 class InsertTraceKey(logging.Filter):
