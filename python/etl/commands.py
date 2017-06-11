@@ -11,6 +11,7 @@ import os
 import sys
 import traceback
 from contextlib import contextmanager
+from typing import List, Optional
 
 import boto3
 import simplejson as json
@@ -269,13 +270,18 @@ class SubCommand:
     """
     Instances (of child classes) will setup sub-parsers and have callbacks for those.
     """
-    def __init__(self, name, help_, description):
+    def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]]=None) -> None:
         self.name = name
         self.help = help_
         self.description = description
+        self.aliases = aliases
 
     def add_to_parser(self, parent_parser):
-        parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
+        if self.aliases is not None:
+            parser = parent_parser.add_parser(self.name, help=self.help, description=self.description,
+                                              aliases=self.aliases)
+        else:
+            parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
         parser.set_defaults(func=self.callback)
 
         # Log level and prolix setting need to be always known since `run_arg_as_command` depends on them.
@@ -393,7 +399,8 @@ class BootstrapSourcesCommand(SubCommand):
         super().__init__("design",
                          "bootstrap schema information from sources",
                          "Download schema information from upstream sources and compare against current table designs."
-                         " If there is no current design file, then create one as a starting point.")
+                         " If there is no current design file, then create one as a starting point.",
+                         aliases=["bootstrap_sources"])
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
@@ -408,9 +415,10 @@ class BootstrapTransformationsCommand(SubCommand):
 
     def __init__(self):
         super().__init__("auto_design",
-                         "bootstrap schema information for transformations",
+                         "bootstrap schema information from transformations",
                          "Download schema information as if transformation had been run in data warehouse."
-                         " If there is no local design file, then create one as a starting point.")
+                         " If there is no local design file, then create one as a starting point.",
+                         aliases=["bootstrap_transformations"])
 
     def add_arguments(self, parser):
         parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",
@@ -761,7 +769,7 @@ class ShowDependencyChainCommand(SubCommand):
 
     def __init__(self):
         super().__init__("show_dependency_chain",
-                         "show relations that feed the selected relations (including selected ones)",
+                         "show relations that feed the selected relations (including themselves)",
                          "Follow dependencies upstream to their sources to chain all relations"
                          " that the selected ones depend on (with the selected ones).")
 
@@ -807,20 +815,21 @@ class EventsQueryCommand(SubCommand):
 class SelfTestCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("selftest",
+        super().__init__("self-test",
                          "run code tests of ETL",
-                         "Run self-test of the ETL.")
+                         "Run self-test of the ETL.",
+                         aliases=["selftest"])
 
     def add_arguments(self, parser):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument("test_family", help="select which family of tests to run",
-                            nargs='?', choices=["doctest", "typecheck", "all"], default="all")
+                            nargs='?', choices=["doctest", "type-check", "all"], default="all")
 
     def callback(self, args, config):
         if args.test_family in ("doctest", "all"):
             etl.selftest.run_doctest("etl", args.log_level)
-        if args.test_family in ("typecheck", "all"):
+        if args.test_family in ("type-check", "all"):
             etl.selftest.run_type_checker()
 
 
