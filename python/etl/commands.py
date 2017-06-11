@@ -213,7 +213,8 @@ def build_full_parser(prog_name):
             UnloadDataToS3Command,
             # Helper commands
             CreateSchemasCommand, RestoreSchemasCommand,
-            ListFilesCommand, PingCommand, ShowDependentsCommand, ShowPipelinesCommand,
+            ListFilesCommand, PingCommand,
+            ShowDependentsCommand, ShowDependencyChainCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
@@ -750,10 +751,28 @@ class ShowDependentsCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
     def callback(self, args, config):
-        descriptions = self.find_relation_descriptions(args,
-                                                       required_relation_selector=config.required_in_full_load_selector,
-                                                       return_all=True)
-        etl.load.show_dependents(descriptions, args.pattern)
+        relations = self.find_relation_descriptions(args,
+                                                    required_relation_selector=config.required_in_full_load_selector,
+                                                    return_all=True)
+        etl.load.show_dependents(relations, args.pattern)
+
+
+class ShowDependencyChainCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("show_dependency_chain",
+                         "show relations that feed the selected relations (including selected ones)",
+                         "Follow dependencies upstream to their sources to chain all relations"
+                         " that the selected ones depend on (with the selected ones).")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
+
+    def callback(self, args, config):
+        relations = self.find_relation_descriptions(args,
+                                                    required_relation_selector=config.required_in_full_load_selector,
+                                                    return_all=True)
+        etl.load.show_dependency_chain(relations, args.pattern)
 
 
 class ShowPipelinesCommand(SubCommand):

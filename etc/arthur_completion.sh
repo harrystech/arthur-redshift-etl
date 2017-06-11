@@ -12,7 +12,8 @@ _arthur_completion()
     case "$prev" in
         "arthur.py")
             opts="initialize create_user design auto_design sync extract load upgrade update unload
-                  create_schemas restore_schemas validate explain ls ping show_dependents show_pipelines selftest
+                  create_schemas restore_schemas validate explain ls ping
+                  show_dependents show_dependency_chain show_pipelines selftest
                   --submit --config"
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;

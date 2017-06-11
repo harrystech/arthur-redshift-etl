@@ -815,3 +815,25 @@ def show_dependents(relations: List[RelationDescription], selector: TableSelecto
             flag += ", required"
         print("{index:4d} {identifier:{width}s} ({relation_kind}) ({flag})".format(
             index=i + 1, identifier=relation.identifier, width=max_len, relation_kind=relation.kind, flag=flag))
+
+
+def show_dependency_chain(relations: List[RelationDescription], selector: TableSelector):
+    """
+    List the relations upstream (towards sources) from the selected ones, report in execution order.
+    """
+    execution_order = etl.relation.order_by_dependencies(relations)
+    selected_relations = etl.relation.find_matches(execution_order, selector)
+    if len(selected_relations) == 0:
+        logger.warning("Found no matching relations for: %s", selector)
+        return
+
+    dependencies = set(relation.identifier for relation in selected_relations)
+    for relation in execution_order[::-1]:
+        if relation.identifier in dependencies:
+            dependencies.update(relation.dependencies)
+
+    max_len = max(len(identifier) for identifier in dependencies)
+    for i, relation in enumerate(execution_order):
+        if relation.identifier in dependencies:
+            print("{index:4d} {relation.identifier:{width}s} ({relation.kind})".format(
+                index=i + 1, relation=relation, width=max_len))
