@@ -74,8 +74,10 @@ function updateEtlEvents(etlEvents, lastModified) {
     }
     /* else */
     var now = (new Date()).valueOf();
-    for (var i = 0; i < len; i++) {
-        var e = etlEvents[i];
+    var i;
+    var e;
+    for (i = 0; i < len; i++) {
+        e = etlEvents[i];
         var name = e.extra.index.name || "";
         var current = e.extra.index.current || "?";
         var timestamp = new Date(e.timestamp.replace(' ', 'T')); /* officialier ISO8601 */
@@ -85,16 +87,18 @@ function updateEtlEvents(etlEvents, lastModified) {
             elapsed = (now - timestamp) / 1000.0;
         }
         elapsedLabel = elapsed.toFixed(1);
+
         var eventLabel = e.event;
         var eventClass = "event-" + eventLabel;
         if (eventLabel === "start") {
             eventLabel += "&nbsp;<div style='width: 1em'></div>";
             eventClass += " progress pulsing";
         }
+
         table += "<tr>" +
             "<td>" + name + " #" + current + "</td>" +
             "<td>" + e.step + "</td>" +
-            "<td class='" + eventClass + "'>" + e.target + "</td>" +
+            "<td class='" + eventClass + "' id='event-" + e.target + "'>" + e.target + "</td>" +
             "<td class='" + eventClass + "'>" + eventLabel + "</td>" +
             "<td>" + timestamp.toISOString() + " </td>" +
             "<td class='right-aligned'> " + elapsedLabel + "s </td>" +
@@ -102,6 +106,13 @@ function updateEtlEvents(etlEvents, lastModified) {
     }
     document.getElementById("events-table").innerHTML = table;
     document.getElementById("events-table-last-modified").innerText = lastModified;
+
+    for (i = 0; i < len; i++) {
+        e = etlEvents[i];
+        if (e.event === "fail") {
+            document.getElementById("event-" + e.target).setAttribute("title", e.errors[0].message)
+        }
+    }
     setTimeout(fetchEtlEvents, 1000);
 }
 

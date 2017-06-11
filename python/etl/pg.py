@@ -137,6 +137,18 @@ def remove_credentials(s):
     return s
 
 
+def mogrify(cursor, stmt, args=()):
+    """
+    Build the statement by filling in the arguments (and cleaning up whitespace along the way).
+    """
+    stripped = textwrap.dedent(stmt).strip('\n')
+    if len(args):
+        actual_stmt = cursor.mogrify(stripped, args)
+    else:
+        actual_stmt = cursor.mogrify(stripped)
+    return actual_stmt
+
+
 def query(cx, stmt, args=()):
     """
     Send query stmt to connection (with parameters) and return rows.
@@ -155,18 +167,15 @@ def execute(cx, stmt, args=(), return_result=False):
     So be careful or you'll end up sending your credentials to the logfile.
     """
     with cx.cursor() as cursor:
-        stmt = textwrap.dedent(stmt).strip('\n')  # clean-up whitespace from queries embedded in code
-        if len(args):
-            printable_stmt = cursor.mogrify(stmt, args)
-        else:
-            printable_stmt = cursor.mogrify(stmt)
-        logger.debug("QUERY:\n%s\n;", remove_credentials(printable_stmt.decode()))
+        executable_statement = mogrify(cursor, stmt, args)
+        printable_stmt = remove_credentials(executable_statement.decode())
+        logger.debug("QUERY:\n%s\n;", printable_stmt)
         with Timer() as timer:
-            if len(args):
-                cursor.execute(stmt, args)
-            else:
-                cursor.execute(stmt)
-        logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
+            cursor.execute(executable_statement)
+        if cursor.rowcount is not None and cursor.rowcount > 0:
+            logger.debug("QUERY STATUS: %s [%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
+        else:
+            logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
             for msg in cx.notices:
                 logger.debug("QUERY " + msg.rstrip('\n'))
@@ -183,6 +192,16 @@ def format_result(dict_rows):
             str(row[k]).strip() for k in keys
         ])
     return '\n'.join([', '.join(c) for c in content])
+
+
+def skip_query(cx, stmt, args=()):
+    """
+    For logging side-effect only ... show which query would have been executed.
+    """
+    with cx.cursor() as cursor:
+        executable_statement = mogrify(cursor, stmt, args)
+        printable_stmt = remove_credentials(executable_statement.decode())
+        logger.debug("Skipped query:\n%s\n;", printable_stmt)
 
 
 def explain(cx, stmt, args=()):

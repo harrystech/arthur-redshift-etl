@@ -74,7 +74,25 @@ td.progress.complete > div {
 }
 
 .events tr > td.event-fail {
-    background-color: orangered;
+    background-color: lightyellow;
+    animation-name: glowing;
+    animation-iteration-count: infinite;
+    animation-duration: 2.5s;
+    animation-delay: 1.5s;
+    animation-timing-function: ease;
+}
+
+.events tr:nth-child(odd) > td.event-fail {
+    background-color: yellow;
+}
+
+@keyframes glowing {
+    0%, 100% {
+        background-color: lightyellow;
+    }
+    50% {
+        background-color: yellow;
+    }
 }
 
 .last-modified {

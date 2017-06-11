@@ -43,6 +43,7 @@ These are the general pre-requisites:
 """
 
 import logging
+import textwrap
 from contextlib import closing
 from itertools import chain
 from typing import Dict, List, Set
@@ -218,14 +219,14 @@ def create_table(conn: connection, relation: RelationDescription, is_temp=False,
         )
         {attributes}
         """.format(table_name=table_name,
-                   columns_and_constraints=",\n".join(chain(columns, constraints)),
-                   attributes="\n".join(attributes))
+                   columns_and_constraints=",\n            ".join(chain(columns, constraints)),
+                   attributes="\n        ".join(attributes))
     if dry_run:
         logger.info("Dry-run: Skipping creating table '%s'", table_name.identifier)
-        logger.debug("Skipped query: %s", ddl)
+        etl.pg.skip_query(conn, ddl)
     else:
         logger.info("Creating table '%s'", table_name.identifier)
-        etl.pg.execute(conn, ddl.replace('\n', "\n    "))
+        etl.pg.execute(conn, ddl)
 
     return table_name
 
@@ -239,7 +240,7 @@ def create_view(conn: connection, relation: RelationDescription, dry_run=False) 
     stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
     if dry_run:
         logger.info("Dry-run: Skipping creating view '%s'", relation.identifier)
-        logger.debug("Skipped statement: %s", stmt)
+        etl.pg.skip_query(conn, stmt)
     else:
         logger.info("Creating view '%s'", relation.identifier)
         etl.pg.execute(conn, stmt)
@@ -275,7 +276,7 @@ def drop_relation_if_exists(conn: connection, relation: RelationDescription, dry
             stmt = """DROP {} {} CASCADE""".format(kind, relation)
             if dry_run:
                 logger.info("Dry-run: Skipping dropping %s '%s'", kind.lower(), relation.identifier)
-                logger.debug("Skipped statement: %s", stmt)
+                etl.pg.skip_query(conn, stmt)
             else:
                 logger.info("Dropping %s '%s'", kind.lower(), relation.identifier)
                 etl.pg.execute(conn, stmt)
@@ -350,6 +351,7 @@ def copy_data(conn: connection, relation: RelationDescription, dry_run=False):
     if dry_run:
         # stmt += " NOLOAD"
         logger.info("Dry-run: Skipping copying data into '%s' from '%s'", relation.identifier, s3_uri)
+        etl.pg.skip_query(conn, stmt, (s3_uri, credentials))
         return
 
     if not relation.has_manifest:
@@ -370,15 +372,14 @@ def insert_from_query(conn: connection, table_name: TableName, columns: List[str
     stmt_template = """
         INSERT INTO {table} (
           {columns}
-        ) (
-          {query}
         )
+        {query}
     """
-    stmt = stmt_template.format(table=table_name, columns=join_column_list(columns), query=query)
+    stmt = textwrap.dedent(stmt_template).format(table=table_name, columns=join_column_list(columns), query=query)
 
     if dry_run:
         logger.info("Dry-run: Skipping query to load data into '%s'", table_name.identifier)
-        logger.debug("Skipped query: %s", stmt)
+        etl.pg.skip_query(conn, stmt)
     else:
         logger.info("Loading data into %s from query", table_name.identifier)
         etl.pg.execute(conn, stmt)
@@ -754,10 +755,10 @@ def verify_constraints(conn: connection, relation: RelationDescription, dry_run=
                {columns}
           FROM {table}
          WHERE {condition}
-      GROUP BY {columns}
+         GROUP BY {columns}
         HAVING COUNT(*) > 1
          LIMIT 5
-    """
+        """
 
     for constraint in constraints:
         [[constraint_type, columns]] = constraint.items()  # There will always be exactly one item.
@@ -766,16 +767,17 @@ def verify_constraints(conn: connection, relation: RelationDescription, dry_run=
             condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
         else:
             condition = "TRUE"
-        statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition)
+        statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition).strip()
         if dry_run:
             logger.info("Dry-run: Skipping check of %s constraint in '%s' on column(s): %s",
                         constraint_type, relation.identifier, join_with_quotes(columns))
-            logger.debug("Skipped query:\n%s", statement)
+            etl.pg.skip_query(conn, statement)
         else:
             logger.info("Checking %s constraint in '%s' on column(s): %s",
                         constraint_type, relation.identifier, join_with_quotes(columns))
             results = etl.pg.query(conn, statement)
             if results:
+                logger.error("Constraint check failed with at least %d row(s)", len(results))
                 raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
@@ -805,14 +807,14 @@ def show_dependents(relations: List[RelationDescription], selector: TableSelecto
 
     max_len = max(len(relation.identifier) for relation in complete_sequence)
     line_template = ("{index:4d} {relation.identifier:{width}s}"
-                     " # kind={relation.kind} is_required={relation.is_required} {flag}")
+                     " # {flag:9s} kind={relation.kind} is_required={relation.is_required}")
     for i, relation in enumerate(complete_sequence):
         if relation.identifier in selected:
-            flag = "is_selected=True"
+            flag = "selected"
         elif relation.identifier in immediate:
-            flag = "is_immediate=True"
+            flag = "immediate"
         else:
-            flag = "is_downstream=True"
+            flag = ""
         print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
 
 

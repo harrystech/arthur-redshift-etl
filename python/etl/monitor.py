@@ -563,12 +563,12 @@ def test_run():
                 with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
                     time.sleep(random.uniform(0.5, 2.0))
                     if i == 9:
-                        raise RuntimeError()
+                        raise RuntimeError("An error occurred!")
             except RuntimeError:
                 pass
 
     input("Press return (or Ctrl-c) to stop server\n")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     test_run()
