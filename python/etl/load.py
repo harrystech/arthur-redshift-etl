@@ -804,17 +804,16 @@ def show_dependents(relations: List[RelationDescription], selector: TableSelecto
                 len(selected), len(immediate), len(complete_sequence) - len(selected) - len(immediate))
 
     max_len = max(len(relation.identifier) for relation in complete_sequence)
+    line_template = ("{index:4d} {relation.identifier:{width}s}"
+                     " # kind={relation.kind} is_required={relation.is_required} {flag}")
     for i, relation in enumerate(complete_sequence):
         if relation.identifier in selected:
-            flag = "selected"
+            flag = "is_selected=True"
         elif relation.identifier in immediate:
-            flag = "immediate"
+            flag = "is_immediate=True"
         else:
-            flag = "downstream"
-        if relation.is_required:
-            flag += ", required"
-        print("{index:4d} {identifier:{width}s} ({relation_kind}) ({flag})".format(
-            index=i + 1, identifier=relation.identifier, width=max_len, relation_kind=relation.kind, flag=flag))
+            flag = "is_downstream=True"
+        print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
 
 
 def show_dependency_chain(relations: List[RelationDescription], selector: TableSelector):
@@ -833,7 +832,8 @@ def show_dependency_chain(relations: List[RelationDescription], selector: TableS
             dependencies.update(relation.dependencies)
 
     max_len = max(len(identifier) for identifier in dependencies)
+    line_template = ("{index:4d} {relation.identifier:{width}s}"
+                     " # kind={relation.kind} is_required={relation.is_required}")
     for i, relation in enumerate(execution_order):
         if relation.identifier in dependencies:
-            print("{index:4d} {relation.identifier:{width}s} ({relation.kind})".format(
-                index=i + 1, relation=relation, width=max_len))
+            print(line_template.format(index=i + 1, relation=relation, width=max_len))

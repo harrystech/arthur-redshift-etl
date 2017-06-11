@@ -431,23 +431,29 @@ source ../harrys-redshift-etl/etc/arthur_completion.sh
 
 And if you're using `virtualenv-wrapper`, then you should make this part of the activation sequence.
 
-### iPython
+### iPython and q
 
-Consider installing [iPython](https://ipython.org/index.html).
+Consider installing [iPython](https://ipython.org/index.html):
 ```shell
 pip3 install ipython
 ```
 
-### Running type checker
-
-Here is how to run the static type checker [mypy](http://mypy-lang.org/):
+Also, [q](https://github.com/zestyping/q) comes in handy for debugging:
 ```shell
-mypy python --strict-optional --ignore-missing-imports
-
-arthur.py selftest typecheck
+pip3 install q
 ```
 
-Keep this handy [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
+### Running unit tests and type checker
+
+Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
+```shell
+run_tests.py
+
+# And in case you have a config file handy
+arthur.py self-test
+```
+
+Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
 
 ### EMR login / EC2 login
 

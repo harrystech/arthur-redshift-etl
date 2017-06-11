@@ -8,6 +8,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 import argparse
 import logging
 import os
+import shlex
 import sys
 import traceback
 from contextlib import contextmanager
@@ -158,6 +159,56 @@ def submit_step(cluster_id, sub_command):
         croak(exc, 1)
 
 
+class FancyArgumentParser(argparse.ArgumentParser):
+    """
+    Add feature to read command line arguments from files and support:
+        * One argument per line (whitespace is trimmed)
+        * Comments or empty lines (either are ignored)
+        * Output from show_dependents and show_dependency_chain:
+            * If a line looks like "<index (number)> <name (string)>", then only the "name" is used as the arg.
+
+    To use this feature, add an argument with "@" and have values ready inside of it:
+        cat > tables <<EOF
+        www.users
+        www.user_comments
+        EOF
+        arthur.py load @tables
+    """
+    def __init__(self, **kwargs) -> None:
+        fromfile_prefix_chars = kwargs.pop("fromfile_prefix_chars", "@")
+        super().__init__(fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
+
+    def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
+        """
+        Return argument from the current line (when arguments are processed from a file).
+
+        >>> parser = FancyArgumentParser()
+        >>> parser.convert_arg_line_to_args("--verbose")
+        ['--verbose']
+        >>> parser.convert_arg_line_to_args(" schema.table ")
+        ['schema.table']
+        >>> parser.convert_arg_line_to_args("    1 show_dependents.output_compatible # kind=CTAS, is_required=true")
+        ['show_dependents.output_compatible']
+        >>> parser.convert_arg_line_to_args(" # single-line comment")
+        []
+        >>> parser.convert_arg_line_to_args("--config accidentally_on_one_line")
+        Traceback (most recent call last):
+        ValueError: first value must be index in lines with two values: --config accidentally_on_one_line
+        """
+        args = shlex.split(arg_line, comments=True)
+        if len(args) == 1:
+            return args
+        elif len(args) == 2:
+            try:
+                int(args[0])
+                return args[1:2]
+            except ValueError as exc:
+                raise ValueError("first value must be index in lines with two values: {}".format(arg_line)) from exc
+        elif len(args) > 2:
+            raise ValueError("unrecognizable argument value in line: {}".format(arg_line))
+        return []
+
+
 def build_basic_parser(prog_name, description=None):
     """
     Build basic parser that knows about the configuration setting.
@@ -167,7 +218,7 @@ def build_basic_parser(prog_name, description=None):
 
     Similarly, '--submit-to-cluster' is shared for all sub-commands.
     """
-    parser = argparse.ArgumentParser(prog=prog_name, description=description)
+    parser = FancyArgumentParser(prog=prog_name, description=description, fromfile_prefix_chars='@')
     group = parser.add_mutually_exclusive_group()
 
     # Show different help message depending on whether user has already set the environment variable.

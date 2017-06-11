@@ -23,7 +23,10 @@ _arthur_completion()
             opts=$(find -L  . -maxdepth 2 -name '*.yaml' -or -name '*.sh' | sed -e 's:^\./::')
             COMPREPLY=( $(compgen -W "$opts" -d -- "$cur") )
             ;;
-        "auto_design"|"boostrap_transformations")
+        "--submit"*)
+            COMPREPLY=( $(compgen -A variable -P '$' -- "${cur#'$'}") )
+            ;;
+        "auto_design"|"bootstrap_transformations")
             COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
             ;;
         "selftest"|"self-test")
@@ -31,16 +34,22 @@ _arthur_completion()
             ;;
         *)
             case "$cur" in
+                "@"*)
+                    # compopt -o filenames
+                    COMPREPLY=( $(compgen -A file -P "@" -- "${cur#@}") )
+                    ;;
                 *.*)
                     opts=$(find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
                            sed -n -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\)\..*:\1.\2:p' | uniq)
+                    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
                     ;;
                 *)
                     opts=$(find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
                            sed -n -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\)\..*:\1:p' | uniq)
+                    # compopt -o nospace
+                    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
                     ;;
             esac
-            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;
     esac
 
