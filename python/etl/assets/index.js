@@ -6,7 +6,6 @@ function apiCall(path, success_handler, failure_handler) {
             if (this.status === 200) {
                 success_handler(JSON.parse(this.responseText), this.getResponseHeader("Last-Modified"));
             } else {
-                console.log("There was an error retrieving data from " + path);
                 failure_handler(path);
             }
         }
@@ -16,12 +15,12 @@ function apiCall(path, success_handler, failure_handler) {
 }
 
 function lostConnection(path) {
-    document.getElementById("latest-error").innerHTML = "Failed to retrieve values from: " + path
+    console.log("There was an error retrieving data from " + path);
 }
 
 function fetchEtlId() {
     apiCall("/api/etl-id", function (obj, ignored) {
-        document.getElementById("etl-id").innerHTML = obj.id
+        document.getElementById("etl-id").textContent = obj.id
     }, lostConnection);
 }
 
@@ -60,7 +59,7 @@ function updateEtlIndices(etlIndices, lastModified) {
             "</tr>";
     }
     document.getElementById("indices-table").innerHTML = table;
-    document.getElementById("indices-table-last-modified").innerText = lastModified;
+    document.getElementById("indices-table-last-modified").textContent = lastModified;
     setTimeout(fetchEtlIndices, 1000);
 }
 
@@ -105,7 +104,7 @@ function updateEtlEvents(etlEvents, lastModified) {
             "</tr>";
     }
     document.getElementById("events-table").innerHTML = table;
-    document.getElementById("events-table-last-modified").innerText = lastModified;
+    document.getElementById("events-table-last-modified").textContent = lastModified;
 
     for (i = 0; i < len; i++) {
         e = etlEvents[i];

@@ -9,7 +9,7 @@ from typing import Dict
 
 import etl.config.env
 import etl.names
-import etl.pg
+import etl.db
 from etl.errors import InvalidEnvironmentError
 
 
@@ -84,7 +84,7 @@ class DataWarehouseSchema:
         """
         # Note this returns None for a static source.
         if self._dsn_env_var:
-            return etl.pg.parse_connection_string(etl.config.env.get(self._dsn_env_var))
+            return etl.db.parse_connection_string(etl.config.env.get(self._dsn_env_var))
 
     @property
     def groups(self):
@@ -162,11 +162,11 @@ class DataWarehouseConfig:
 
     @property
     def dsn_admin(self) -> Dict[str, str]:
-        return etl.pg.parse_connection_string(etl.config.env.get(self._admin_access))
+        return etl.db.parse_connection_string(etl.config.env.get(self._admin_access))
 
     @property
     def dsn_etl(self) -> Dict[str, str]:
-        return etl.pg.parse_connection_string(etl.config.env.get(self._etl_access))
+        return etl.db.parse_connection_string(etl.config.env.get(self._etl_access))
 
     @property
     def dsn_admin_on_etl_db(self) -> Dict[str, str]:
@@ -175,7 +175,7 @@ class DataWarehouseConfig:
 
     @property
     def dsn_reference(self) -> Dict[str, str]:
-        return etl.pg.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
+        return etl.db.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
 
     def schema_lookup(self, schema_name) -> DataWarehouseSchema:
         return self._schema_lookup[schema_name]

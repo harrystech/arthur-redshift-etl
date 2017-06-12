@@ -14,6 +14,7 @@ import os
 import queue
 import random
 import re
+import socketserver
 import threading
 import time
 import traceback
@@ -27,6 +28,7 @@ from typing import List
 try:
     from http import HTTPStatus  # type: ignore
 except ImportError:
+    # Compatibility for Python 3.4
     class HTTPStatus:  # type: ignore
         OK = 200
         MOVED_PERMANENTLY = 301
@@ -38,7 +40,7 @@ import simplejson as json
 
 import etl.assets
 import etl.config.env
-import etl.pg
+import etl.db
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds
 
@@ -359,10 +361,10 @@ class RelationalStorage(PayloadDispatcher):
     def __init__(self, table_name, write_access):
         self.table_name = table_name
         write_value = etl.config.env.get(write_access)
-        self.dsn = etl.pg.parse_connection_string(write_value)
+        self.dsn = etl.db.parse_connection_string(write_value)
         logger.info("Creating table '%s' (unless it already exists)", table_name)
-        with closing(etl.pg.connection(self.dsn)) as conn:
-            etl.pg.execute(conn, """
+        with closing(etl.db.connection(self.dsn)) as conn:
+            etl.db.execute(conn, """
                 CREATE TABLE IF NOT EXISTS "{0.table_name}" (
                     environment CHARACTER VARYING(255),
                     etl_id      CHARACTER VARYING(255) NOT NULL,
@@ -380,12 +382,16 @@ class RelationalStorage(PayloadDispatcher):
         data["timestamp"] = payload["timestamp"].isoformat(' ')
         data["payload"] = json.dumps(payload, sort_keys=True, cls=FancyJsonEncoder)
 
-        with closing(etl.pg.connection(self.dsn, autocommit=True)) as conn:
+        with closing(etl.db.connection(self.dsn, autocommit=True)) as conn:
             with conn.cursor() as cursor:
                 quoted_column_names = ", ".join('"{}"'.format(column) for column in data)
                 column_values = tuple(data.values())
                 cursor.execute('INSERT INTO "{0.table_name}" ({1}) VALUES %s'.format(self, quoted_column_names),
                                (column_values,))
+
+
+class _ThreadingSimpleServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    pass
 
 
 class MemoryStorage(PayloadDispatcher):
@@ -405,7 +411,6 @@ class MemoryStorage(PayloadDispatcher):
     def __init__(self):
         self.queue = queue.Queue()
         self.events = OrderedDict()
-        self.indices = defaultdict(dict)
         self.start_server()
 
     def store(self, payload: dict):
@@ -415,18 +420,23 @@ class MemoryStorage(PayloadDispatcher):
         try:
             while True:
                 payload = self.queue.get_nowait()
-                # Overwrite earlier events by later ones, i.e. ignore "event"
+                # Overwrite earlier events by later ones
                 key = payload["target"], payload["step"]
                 self.events[key] = payload
-                index = dict(payload.get("extra", {}).get("index", {}))
-                name = index.setdefault("name", "N/A")
-                self.indices[name].update(index)
         except queue.Empty:
             pass
 
     def get_indices(self):
         self.drain_queue()
-        indices_as_list = [self.indices[name] for name in sorted(self.indices)]
+        indices = {}
+        for payload in self.events.values():
+            index = dict(payload.get("extra", {}).get("index", {}))
+            name = index.setdefault("name", "N/A")
+            if name not in indices:
+                indices[name] = index
+            elif index["current"] > indices[name]["current"]:
+                indices[name].update(index)
+        indices_as_list = [indices[name] for name in sorted(indices)]
         return etl.assets.Content(json=indices_as_list)
 
     def get_events(self):
@@ -505,7 +515,7 @@ class MemoryStorage(PayloadDispatcher):
             def run(self):
                 logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
                 try:
-                    httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
+                    httpd = _ThreadingSimpleServer(MemoryStorage.SERVER_ADDRESS, handler_class)
                     httpd.serve_forever()
                 except Exception as exc:
                     logger.info("Background server stopped: %s", str(exc))

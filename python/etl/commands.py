@@ -22,13 +22,13 @@ import etl.config.env
 import etl.design.bootstrap
 import etl.explain
 import etl.extract
-import etl.dw
+import etl.data_warehouse
 import etl.file_sets
 import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.pg
+import etl.db
 import etl.pipeline
 import etl.relation
 import etl.selftest
@@ -413,9 +413,9 @@ class InitializeSetupCommand(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        with etl.pg.log_error():
-            etl.dw.initial_setup(config, with_user_creation=args.with_user_creation, force=args.force,
-                                 dry_run=args.dry_run)
+        with etl.db.log_error():
+            etl.data_warehouse.initial_setup(config, with_user_creation=args.with_user_creation, force=args.force,
+                                             dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
@@ -438,10 +438,10 @@ class CreateUserCommand(SubCommand):
                             help="skip new user; only change search path of existing user", action="store_true")
 
     def callback(self, args, config):
-        with etl.pg.log_error():
-            etl.dw.create_new_user(config, args.username,
-                                   group=args.group, add_user_schema=args.add_user_schema,
-                                   skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
+        with etl.db.log_error():
+            etl.data_warehouse.create_new_user(config, args.username,
+                                               group=args.group, add_user_schema=args.add_user_schema,
+                                               skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
 class BootstrapSourcesCommand(SubCommand):
@@ -689,10 +689,10 @@ class CreateSchemasCommand(SubCommand):
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
-        with etl.pg.log_error():
+        with etl.db.log_error():
             if args.with_backup:
-                etl.dw.backup_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
-            etl.dw.create_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+                etl.data_warehouse.backup_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+            etl.data_warehouse.create_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
 
 
 class RestoreSchemasCommand(SubCommand):
@@ -708,8 +708,8 @@ class RestoreSchemasCommand(SubCommand):
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
-        with etl.pg.log_error():
-            etl.dw.restore_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+        with etl.db.log_error():
+            etl.data_warehouse.restore_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
@@ -758,7 +758,7 @@ class ExplainQueryCommand(SubCommand):
         else:
             # When running with S3, we expect full sets of files (SQL plus table design)
             descriptions = self.find_relation_descriptions(args)
-        with etl.pg.log_error():
+        with etl.db.log_error():
             etl.explain.explain_queries(config.dsn_etl, descriptions)
 
 
@@ -795,8 +795,8 @@ class PingCommand(SubCommand):
 
     def callback(self, args, config):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
-        with etl.pg.log_error():
-            etl.pg.ping(dsn)
+        with etl.db.log_error():
+            etl.db.ping(dsn)
 
 
 class ShowDependentsCommand(SubCommand):

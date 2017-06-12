@@ -11,7 +11,7 @@ from psycopg2.extensions import connection  # only for type annotation
 import etl.config
 import etl.design.load
 import etl.file_sets
-import etl.pg
+import etl.db
 import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
@@ -33,7 +33,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     down by the pattern in :selector.
     """
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
-    result = etl.pg.query(cx, """
+    result = etl.db.query(cx, """
         SELECT nsp.nspname AS "schema"
              , cls.relname AS "table"
           FROM pg_catalog.pg_class AS cls
@@ -84,7 +84,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
            AND ns.nspname = %s
            AND cls.relname = %s
          ORDER BY a.attnum"""
-    attributes = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
+    attributes = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [Attribute(**att) for att in attributes]
 
 
@@ -118,7 +118,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
            AND ns.nspname = %s
            AND cls.relname = %s
          ORDER BY "constraint_type", ic.relname"""
-    indices = etl.pg.query(cx, stmt_index, (table_name.schema, table_name.table))
+    indices = etl.db.query(cx, stmt_index, (table_name.schema, table_name.table))
 
     stmt_att = """
         SELECT a.attname AS "name"
@@ -130,7 +130,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
         cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
-        attributes = etl.pg.query(cx, stmt_att % cond, (index_id,))
+        attributes = etl.db.query(cx, stmt_att % cond, (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
             constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
@@ -159,7 +159,7 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
            AND cls.relname = %s
          ORDER BY "schema", "table"
         """
-    dependencies = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
+    dependencies = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [TableName(**row).identifier for row in dependencies]
 
 
@@ -386,7 +386,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
                     if file_set.source_name == source.name and file_set.design_file_name}
     try:
         logger.info("Connecting to database source '%s' to look for tables", source.name)
-        with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
+        with closing(etl.db.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in source_tables:
                 if source_table_name in source_files:
@@ -454,7 +454,7 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
     else:
         create_func = create_table_design_for_ctas
 
-    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
+    with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             with relation.matching_temporary_view(conn) as tmp_view_name:
                 table_design = create_func(conn, tmp_view_name, relation, update)

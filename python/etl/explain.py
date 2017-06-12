@@ -13,7 +13,7 @@ from contextlib import closing
 from collections import Counter
 from typing import Dict, List
 
-import etl.pg
+import etl.db
 from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
@@ -61,10 +61,10 @@ def explain_queries(dsn: dict, relations: List[RelationDescription]) -> None:
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)
     # will be needed during query execution.  (Look for scans on volt_tt_* tables.)
-    with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
+    with closing(etl.db.connection(dsn, autocommit=True)) as conn:
         for relation in transforms:
             logger.info("Retrieving query plan for '%s'", relation.identifier)
-            plan = etl.pg.explain(conn, relation.query_stmt)
+            plan = etl.db.explain(conn, relation.query_stmt)
             print("Query plan for query of '{0.identifier}':\n | {1}".format(relation, "\n | ".join(plan)))
             if any(row == "" for row in plan):
                 queries_with_temps += 1

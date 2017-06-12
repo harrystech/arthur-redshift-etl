@@ -150,12 +150,11 @@ def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) ->
         timestamp = None
     except botocore.exceptions.ClientError as exc:
         error_code = exc.response['Error']['Code']
-        # FIXME We're mixing codes and statuses here
-        if error_code == "404" or error_code == "NoSuchKey":
+        if error_code == "404":
             logger.debug("Object 's3://%s/%s' does not exist", bucket_name, object_key)
             timestamp = None
         else:
-            logger.warning("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
+            logger.warning("Failed to find 's3://%s/%s' (%s)", bucket_name, object_key, error_code)
             raise
     return timestamp
 
@@ -221,5 +220,5 @@ if __name__ == "__main__":
         print("This will create a test object under s3://[bucket_name]/[prefix] and delete afterwards.")
         sys.exit(1)
 
-    etl.config.configure_logging()
+    etl.config.configure_logging(log_level="DEBUG")
     test_object_creation(sys.argv[1], sys.argv[2])

@@ -26,7 +26,7 @@ from typing import Any, Dict, FrozenSet, Optional, Union, List
 import etl.config
 import etl.design.load
 import etl.file_sets
-import etl.pg
+import etl.db
 import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema
@@ -283,10 +283,10 @@ class RelationDescription:
         # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
         view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
 
-        with etl.pg.log_error():
+        with etl.db.log_error():
             ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, self.query_stmt)
             logger.info("Creating view '%s' to match relation '%s'", view_identifier, self.identifier)
-            etl.pg.execute(conn, ddl_stmt)
+            etl.db.execute(conn, ddl_stmt)
 
             lookup_stmt = """
                 SELECT nsp.nspname AS "schema"
@@ -296,13 +296,13 @@ class RelationDescription:
                  WHERE cls.relname = %s
                    AND cls.relkind = 'v'
                 """
-            row = etl.pg.query(conn, lookup_stmt, (view_identifier,))[0]
+            row = etl.db.query(conn, lookup_stmt, (view_identifier,))[0]
             view_name = TableName(**row)
 
             try:
                 yield view_name
             finally:
-                etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))
+                etl.db.execute(conn, "DROP VIEW {}".format(view_identifier))
 
 
 class SortableRelationDescription:

@@ -20,7 +20,7 @@ import etl.config
 import etl.design
 import etl.design.bootstrap
 import etl.design.load
-import etl.dw
+import etl.data_warehouse
 import etl.errors
 import etl.explain
 import etl.extract
@@ -29,7 +29,7 @@ import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.pg
+import etl.db
 import etl.pipeline
 import etl.relation
 import etl.s3
