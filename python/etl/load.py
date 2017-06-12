@@ -523,6 +523,21 @@ def load_or_update_redshift(data_warehouse, relations, selector, drop=False, sto
     should be a quick way to load data that is "under development" and may not have all dependencies or
     names / types correct.
     """
+    conn = etl.pg.connection(data_warehouse.dsn_etl)
+    with closing(conn) as conn, conn as conn:
+        def _nicely(dict_rows):
+            keys = list(dict_rows[0].keys())
+            content = [keys]
+            for row in dict_rows:
+                content.append([
+                    str(row[k]).strip() for k in keys
+                ])
+
+            return '\n'.join([', '.join(c) for c in content])
+
+        logger.info("Open connections:\n%s", _nicely(etl.pg.list_connections(conn)))
+        logger.info("Open transactions:\n%s", _nicely(etl.pg.list_transactions(conn)))
+
     whole_schemas = drop and not stop_after_first
     execution_order, involved_schema_names = evaluate_execution_order(
         relations, selector, only_first=stop_after_first, whole_schemas=whole_schemas)
