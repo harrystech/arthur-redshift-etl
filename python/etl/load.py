@@ -387,7 +387,8 @@ def build_one_relation(conn, relation, use_delete=False, skip_copy=False, dry_ru
     Within transaction? Only applies to tables which get emptied and then potentially filled again.
     Not in transaction? Drop and create all relations, for tables, also potentially fill 'em up again.
     """
-    monitor_info = dict(**kwargs, dry_run=dry_run)
+    monitor_info = dict(**kwargs)
+    monitor_info["dry_run"] = dry_run
     with etl.monitor.Monitor(**monitor_info):
         # Step 1 -- clear out existing data (by deletion or by re-creation)
         if use_delete:
