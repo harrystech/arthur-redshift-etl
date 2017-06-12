@@ -230,7 +230,7 @@ class TableSelector:
     If no base schemas are set, then we default simply to a list of schemas from the patterns.
     """
 
-    __slots__ = ["_patterns", "_base_schemas"]
+    __slots__ = ("_patterns", "_base_schemas")
 
     def __init__(self, patterns=None, base_schemas=None):
         """

@@ -122,6 +122,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
+    logger.info("Loading table design for %d relation(s) to look for unloadable relations", len(relations))
     etl.relation.RelationDescription.load_in_parallel(relations)
 
     unloadable_relations = [d for d in relations if d.is_unloadable]

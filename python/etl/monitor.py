@@ -572,6 +572,7 @@ def test_run():
             try:
                 with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
                     time.sleep(random.uniform(0.5, 2.0))
+                    # Create an error on one "table" so that highlighting of errors can be tested:
                     if i == 9:
                         raise RuntimeError("An error occurred!")
             except RuntimeError:

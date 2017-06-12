@@ -446,6 +446,7 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
         return
     relations = [RelationDescription(file_set) for file_set in transforms]
     if update:
+        logger.info("Loading existing table design file(s)")
         # Unfortunately, this adds warnings about any of the upstream sources being unknown.
         relations = etl.relation.order_by_dependencies(relations)
 

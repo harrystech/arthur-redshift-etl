@@ -14,7 +14,7 @@ import os
 import re
 import textwrap
 from contextlib import closing, contextmanager
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import psycopg2
 import psycopg2.extras
@@ -209,14 +209,16 @@ def skip_query(cx, stmt, args=()):
         logger.debug("Skipped QUERY:\n%s\n;", printable_stmt)
 
 
-def skip_query(cx, stmt, args=()):
+def run(cx, message, stmt, args=(), dry_run=False):
     """
-    For logging side-effect only ... show which query would have been executed.
+    Execute the query and log the message around it.  Or just show what would have been run in dry-run mode.
     """
-    with cx.cursor() as cursor:
-        executable_statement = mogrify(cursor, stmt, args)
-        printable_stmt = remove_credentials(executable_statement.decode())
-        logger.debug("Skipped query:\n%s\n;", printable_stmt)
+    if dry_run:
+        logger.info("Dry-run: Skipping {}{}".format(message[:1].lower(), message[1:]))
+        skip_query(cx, stmt, args=args)
+    else:
+        logger.info(message)
+        execute(cx, stmt, args=args)
 
 
 def explain(cx, stmt, args=()):
@@ -296,7 +298,6 @@ def log_error():
     except psycopg2.Error as exc:
         log_sql_error(exc)
         raise
-
 
 
 # ---- DATABASE ----
@@ -394,7 +395,11 @@ def revoke_select_on_all_tables_in_schema(cx, schema, group):
 
 # ---- TABLES ----
 
-def relation_kind(cx, schema, table):
+def relation_kind(cx, schema, table) -> Optional[str]:
+    """
+    Return "kind" of relation, either 'TABLE' or 'VIEW' for relations that actually exist.
+    If the relation doesn't exist, None is returned.
+    """
     rows = query(cx, """
         SELECT CASE cls.relkind
                  WHEN 'r' THEN 'TABLE'
@@ -430,7 +435,6 @@ def revoke_select(cx, schema, table, group):
 
 def alter_table_owner(cx, schema, table, owner):
     execute(cx, """ALTER TABLE "{}"."{}" OWNER TO {} """.format(schema, table, owner))
-
 
 
 if __name__ == "__main__":

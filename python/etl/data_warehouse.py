@@ -49,21 +49,23 @@ def create_schema_and_grant_access(conn, schema, owner=None, dry_run=False) -> N
             etl.db.grant_usage(conn, schema.name, group)
 
 
-def create_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def create_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     Create schemas and grant access.
     It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
     """
-    with closing(etl.db.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for schema in schemas:
             create_schema_and_grant_access(conn, schema, dry_run=dry_run)
 
 
-def create_missing_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def create_missing_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     Create only those schemas not already present. Also, grant access to new schemas.
     """
-    with closing(etl.db.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         needed_names = [schema.name for schema in schemas]
         found_names = etl.db.select_schemas(conn, needed_names)
         missing_schemas = [schema for schema in schemas if schema.name not in found_names]
@@ -76,12 +78,13 @@ def create_missing_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchem
                 logger.info("Created %d missing schema(s) (%s)", len(missing_schemas), timer)
 
 
-def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.
     Once the access is revoked, the backup schemas "disappear" from BI tools.
     """
-    with closing(etl.db.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         names = [schema.name for schema in schemas]
         found = etl.db.select_schemas(conn, names)
         need_backup = [schema for schema in schemas if schema.name in found]
@@ -104,12 +107,13 @@ def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_
             etl.db.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
-def restore_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For the schemas that we need / want, rename the backups and restore access.
     This is the inverse of backup_schemas.
     """
-    with closing(etl.db.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         names = [schema.backup_name for schema in schemas]
         found = etl.db.select_schemas(conn, names)
         need_restore = [schema for schema in schemas if schema.backup_name in found]
