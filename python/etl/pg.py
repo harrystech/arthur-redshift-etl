@@ -290,7 +290,17 @@ def set_search_path(cx, schemas):
     execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
 
 
+def list_connections(cx):
+    return query(cx, """SELECT datname, procpid, usesysid, usename FROM pg_stat_activity""")
+
+
+def list_transactions(cx):
+    return query(cx, """SELECT  t.*,  c.relname FROM svv_transactions t
+                        JOIN pg_catalog.pg_class c    ON t.relation = c.OID""")
+
+
 # ---- SCHEMAS ----
+
 
 def select_schemas(cx, names):
     rows = query(cx, """
