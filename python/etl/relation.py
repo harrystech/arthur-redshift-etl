@@ -182,13 +182,12 @@ class RelationDescription:
             self._dependencies = frozenset(self.table_design.get("depends_on", []))
         return self._dependencies
 
-    # FIXME This is a bit confusingly named.
     @property
     def source_name(self):
         return self.target_table_name.schema
 
     @property
-    def dw_schema(self) -> DataWarehouseSchema:
+    def schema_config(self) -> DataWarehouseSchema:
         dw_config = etl.config.get_dw_config()
         return dw_config.schema_lookup(self.source_name)
 

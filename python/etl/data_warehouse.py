@@ -60,24 +60,6 @@ def create_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
             create_schema_and_grant_access(conn, schema, dry_run=dry_run)
 
 
-def create_missing_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
-    """
-    Create only those schemas not already present. Also, grant access to new schemas.
-    """
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        needed_names = [schema.name for schema in schemas]
-        found_names = etl.db.select_schemas(conn, needed_names)
-        missing_schemas = [schema for schema in schemas if schema.name not in found_names]
-        if not missing_schemas:
-            logger.info("Found all necessary schemas already in place")
-        else:
-            with Timer() as timer:
-                for schema in missing_schemas:
-                    create_schema_and_grant_access(conn, schema, dry_run=dry_run)
-                logger.info("Created %d missing schema(s) (%s)", len(missing_schemas), timer)
-
-
 def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.

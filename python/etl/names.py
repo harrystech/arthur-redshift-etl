@@ -98,17 +98,6 @@ class TableName:
         """
         return self._schema, self._table
 
-    def to_dict(self):
-        """
-        Return schema name and table name as a dict.
-
-        >>> tn = TableName("recipes", "pudding")
-        >>> d = tn.to_dict()
-        >>> d['schema'], d['table']
-        ('recipes', 'pudding')
-        """
-        return dict(zip(["schema", "table"], self.to_tuple()))
-
     @property
     def identifier(self) -> str:
         """
