@@ -629,6 +629,10 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
     logger.info("Starting to load %s relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
+        logger.info("Open connections:\n%s", etl.pg.format_result(etl.pg.list_connections(conn)))
+        logger.info("Open transactions:\n%s", etl.pg.format_result(etl.pg.list_transactions(conn)))
+
     etl.dw.backup_schemas(dsn_etl, traversed_schemas, dry_run=dry_run)
     try:
         etl.dw.create_schemas(dsn_etl, traversed_schemas, dry_run=dry_run)
