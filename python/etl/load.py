@@ -191,7 +191,8 @@ def copy_data(conn: connection, relation: RelationDescription, dry_run=False):
         else:
             raise MissingManifestError("relation '{}' is missing its manifest file".format(relation.identifier))
 
-    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role, dry_run=dry_run)
+    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
+                                      need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
 
 def insert_from_query(conn: connection, table_name: TableName, columns: List[str], query: str, dry_run=False) -> None:

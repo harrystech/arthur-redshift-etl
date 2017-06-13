@@ -128,15 +128,18 @@ def list_pipelines():
         status = get_pipeline_status(client, pipeline_id)
         if status["@pipelineState"] == "SCHEDULED":
             statuses.append(status)
+    if not statuses:
+        print("Found no scheduled ETL pipelines")
+        return
     for status in sorted(statuses, key=itemgetter("name")):
         print("{pipelineId:24s} - {name} - ({@healthStatus}, {@latestRunTime})".format(**status))
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] == "-h":
-        print("Usage: {} [-l | '<pipeline-id>']".format(sys.argv[0]))
+        print("Usage: {} [--list | '<pipeline-id>']".format(sys.argv[0]))
         sys.exit(0)
-    if sys.argv[1] == "-l":
+    if sys.argv[1] in ("-l", "--list"):
         list_pipelines()
     else:
         change_status_to_rerun(sys.argv[1])

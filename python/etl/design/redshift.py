@@ -167,7 +167,8 @@ def log_load_error(cx):
         raise
 
 
-def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_role: str, dry_run=False) -> None:
+def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_role: str,
+                  need_compupdate=False, dry_run=False) -> None:
     """
     Load data into table in the data warehouse using the COPY command.
     """
@@ -181,9 +182,8 @@ def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_
         TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
         TRUNCATECOLUMNS
         STATUPDATE OFF
-        """.format(table=table_name)
-    # TODO Measure COMPUPDATE OFF
-    # TODO Enable using "NOLOAD" to test whether CSV files are valid.
+        COMPUPDATE {compupdate}
+        """.format(table=table_name, compupdate="ON" if need_compupdate else "OFF")
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' from '%s'", table_name.identifier, s3_uri)
         etl.db.skip_query(conn, stmt, (s3_uri, credentials))

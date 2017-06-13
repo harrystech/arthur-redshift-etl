@@ -182,6 +182,16 @@ class RelationDescription:
             self._dependencies = frozenset(self.table_design.get("depends_on", []))
         return self._dependencies
 
+    # FIXME This is a bit confusingly named.
+    @property
+    def source_name(self):
+        return self.target_table_name.schema
+
+    @property
+    def dw_schema(self) -> DataWarehouseSchema:
+        dw_config = etl.config.get_dw_config()
+        return dw_config.schema_lookup(self.source_name)
+
     @property
     def unquoted_columns(self) -> List[str]:
         """
@@ -204,15 +214,12 @@ class RelationDescription:
         """
         return any(column.get("identity") for column in self.table_design["columns"])
 
-    # FIXME This is a bit confusingly named.
     @property
-    def source_name(self):
-        return self.target_table_name.schema
-
-    @property
-    def dw_schema(self) -> DataWarehouseSchema:
-        dw_config = etl.config.get_dw_config()
-        return dw_config.schema_lookup(self.source_name)
+    def is_missing_encoding(self) -> bool:
+        """
+        Return whether any column doesn't have encoding specified.
+        """
+        return any(not column.get("encoding") for column in self.table_design["columns"] if not column.get("skipped"))
 
     @classmethod
     def from_file_sets(cls, file_sets, required_relation_selector=None) -> List["RelationDescription"]:
