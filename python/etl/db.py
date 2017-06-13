@@ -228,6 +228,16 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
         return execute(cx, stmt, args=args, return_result=return_result)
 
 
+def format_result(dict_rows):
+    keys = list(dict_rows[0].keys())
+    content = [keys]  # header
+    for row in dict_rows:
+        content.append([
+            str(row[k]).strip() for k in keys
+        ])
+    return '\n'.join([', '.join(c) for c in content])
+
+
 def explain(cx, stmt, args=()):
     """
     Return explain plan for the query as a list of steps.

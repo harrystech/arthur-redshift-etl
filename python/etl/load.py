@@ -39,7 +39,6 @@ These are the general pre-requisites:
 
 import concurrent.futures
 import logging
-import textwrap
 from contextlib import closing
 from itertools import chain
 from typing import Dict, List, Set
@@ -655,6 +654,11 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
     relations = LoadableRelation.from_descriptions(selected_relations, "load", skip_copy=skip_copy)
     traversed_schemas = find_traversed_schemas(relations)
     logger.info("Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+        logger.info("Open connections:\n%s", etl.db.format_result(etl.db.list_connections(conn)))
+        logger.info("Open transactions:\n%s", etl.db.format_result(etl.db.list_transactions(conn)))
 
     etl.data_warehouse.backup_schemas(traversed_schemas, dry_run=dry_run)
     try:
