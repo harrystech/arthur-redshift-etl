@@ -93,7 +93,7 @@ class LoadableRelation:
     def __init__(self, relation: RelationDescription, info: dict, skip_copy=False) -> None:
         self._relation_description = relation
         self.info = info
-        self.skip_copy = skip_copy
+        self.skip_copy = skip_copy or relation.is_view_relation
         self.failed = False
 
     def delete_to_reset(self) -> bool:
@@ -104,13 +104,6 @@ class LoadableRelation:
 
     def monitor(self):
         return etl.monitor.Monitor(**self.info)
-
-    def set_failed(self, message):
-        self.failed = True
-        if self.is_required:
-            logger.error("Exception information for required relation '%s': %s", self.identifier, message)
-        else:
-            logger.warning("Exception information for relation '%s': %s", self.identifier, message)
 
     def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
         unpacked = [r._relation_description for r in relations]  # make type checker happy
@@ -474,9 +467,10 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             create_or_replace_relation(conn, relation, dry_run=dry_run)
 
         # Step 2 -- load data (and verify)
-        if relation.skip_copy:
-            if not relation.is_view_relation:  # avoid silly logging
-                logger.info("Skipping loading data into '%s'", relation.identifier)
+        if relation.is_view_relation:
+            pass
+        elif relation.skip_copy:
+            logger.info("Skipping loading data into '%s'", relation.identifier)
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
@@ -486,7 +480,14 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
     conn = pool.getconn()
     try:
         build_one_relation(conn, relation, dry_run=dry_run)
-    except:
+        conn.commit()
+    except Exception as exc:
+        # Add (some) exception information close to when it happened
+        message = str(exc).split('\n', 1)[0]
+        if relation.is_required:
+            logger.error("Exception information for required relation '%s': %s", relation.identifier, message)
+        else:
+            logger.warning("Exception information for relation '%s': %s", relation.identifier, message)
         pool.putconn(conn, close=True)
         raise
     else:
@@ -545,7 +546,7 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
         except concurrent.futures.CancelledError:
             pass
         except (RelationConstructionError, RelationDataError) as exc:
-            relation.set_failed(str(exc))
+            relation.failed = True
 
     failed_and_required = [relation.identifier for relation in relations if relation.failed and relation.is_required]
     if failed_and_required:
