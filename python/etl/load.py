@@ -55,7 +55,7 @@ import etl.relation
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
                         RelationConstructionError, RequiredRelationLoadError, UpdateTableError)
-from etl.names import join_column_list, join_with_quotes, TableName, TableSelector
+from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -65,10 +65,9 @@ logger.addHandler(logging.NullHandler())
 
 # ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
 
-def create_table(conn: connection, relation: RelationDescription, is_temp=False, dry_run=False) -> TableName:
+def create_table(conn: connection, table_design: dict, table_name: TableName, dry_run=False) -> None:
     """
     Create a table matching this design (but possibly under another name, e.g. for temp tables).
-    Return name of table that was created.
 
     Columns must have a name and a SQL type (compatible with Redshift).
     They may have an attribute of the compression encoding and the nullable constraint.
@@ -79,16 +78,9 @@ def create_table(conn: connection, relation: RelationDescription, is_temp=False,
     Tables may have attributes such as a distribution style and sort key.
     Depending on the distribution style, they may also have a distribution key.
     """
-    if is_temp:
-        # TODO Start using an actual temp table (name starts with # and is session specific).
-        table_name = TableName.from_identifier("{0.schema}.arthur_temp${0.table}".format(relation.target_table_name))
-    else:
-        table_name = relation.target_table_name
-
-    ddl_stmt = etl.design.redshift.build_table_ddl(relation.table_design, table_name, is_temp=is_temp)
+    is_temp = table_design["name"] != table_name.identifier
+    ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
     etl.db.run(conn, "Creating table '{:x}'".format(table_name), ddl_stmt, dry_run=dry_run)
-
-    return table_name
 
 
 def create_view(conn: connection, relation: RelationDescription, dry_run=False) -> None:
@@ -127,7 +119,7 @@ def create_or_replace_relation(conn: connection, relation: RelationDescription, 
         if relation.is_view_relation:
             create_view(conn, relation, dry_run=dry_run)
         else:
-            create_table(conn, relation, dry_run=dry_run)
+            create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
         grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
@@ -200,7 +192,7 @@ def insert_from_query(conn: connection, table_name: TableName, columns: List[str
     Load data into table from its query (aka materializing a view). The table name must be specified since
     the load goes either into the target table or a temporary one.
     """
-    stmt = """INSERT INTO {table} ( {columns} )""".format(table=table_name, columns=join_column_list(columns))
+    stmt = """INSERT INTO {table} (\n  {columns}\n)""".format(table=table_name, columns=join_column_list(columns))
     stmt += "\n" + query
     etl.db.run(conn, "Loading data into '{:x}' from query".format(table_name), stmt, dry_run=dry_run)
 
@@ -242,7 +234,8 @@ def load_ctas_using_temp_table(conn: connection, relation: RelationDescription, 
     """
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
-    temp_name = create_table(conn, relation, is_temp=True, dry_run=dry_run)
+    temp_name = TempTableName.for_table(relation.target_table_name)
+    create_table(conn, relation.table_design, temp_name, dry_run=dry_run)
     temp_columns = [column["name"] for column in relation.table_design["columns"]
                     if not (column.get("skipped") or column.get("identity"))]
 
@@ -256,7 +249,6 @@ def load_ctas_using_temp_table(conn: connection, relation: RelationDescription, 
 
         insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, inner_stmt, dry_run=dry_run)
     finally:
-        # Until we make it actually temporary:
         stmt = "DROP TABLE {}".format(temp_name)
         etl.db.run(conn, "Dropping temporary table '{:x}'".format(temp_name), stmt, dry_run=dry_run)
 

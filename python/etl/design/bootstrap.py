@@ -81,7 +81,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
           JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
          WHERE a.attnum > 0  -- skip system columns
            AND NOT a.attisdropped
-           AND ns.nspname = %s
+           AND ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY a.attnum"""
     attributes = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
@@ -114,8 +114,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
           JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
          WHERE i.indisunique
-           AND i.indpred IS NULL
-           AND ns.nspname = %s
+           AND ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY "constraint_type", ic.relname"""
     indices = etl.db.query(cx, stmt_index, (table_name.schema, table_name.table))
@@ -124,13 +123,13 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
         SELECT a.attname AS "name"
           FROM pg_catalog.pg_attribute AS a
           JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
-          WHERE i.indexrelid = %%s
-            AND (%s)
+          WHERE i.indexrelid = %s
+            AND ({cond})
           ORDER BY a.attname"""
     found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
         cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
-        attributes = etl.db.query(cx, stmt_att % cond, (index_id,))
+        attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
             constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
@@ -140,7 +139,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     return found
 
 
-def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]:
+def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
     """
     Lookup dependencies (other tables)
     """
@@ -155,7 +154,7 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
           JOIN pg_catalog.pg_depend AS target_dep ON dep.objid = target_dep.objid
           JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid AND cls.oid <> target_cls.oid
           JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
-         WHERE ns.nspname = %s
+         WHERE ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY "schema", "table"
         """

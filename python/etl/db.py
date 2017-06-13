@@ -9,8 +9,10 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
+import inspect
 import logging
 import os
+import os.path
 import re
 import textwrap
 from contextlib import closing, contextmanager
@@ -209,16 +211,21 @@ def skip_query(cx, stmt, args=()):
         logger.debug("Skipped QUERY:\n%s\n;", printable_stmt)
 
 
-def run(cx, message, stmt, args=(), dry_run=False):
+def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
     """
     Execute the query and log the message around it.  Or just show what would have been run in dry-run mode.
     """
+    # Figure out caller for better logging
+    current_frame = inspect.currentframe()
+    caller_code = current_frame.f_back.f_code
+    caller_name = caller_code.co_name
+
     if dry_run:
-        logger.info("Dry-run: Skipping {}{}".format(message[:1].lower(), message[1:]))
+        logger.info("({}) Dry-run: Skipping {}{}".format(caller_name, message[:1].lower(), message[1:]))
         skip_query(cx, stmt, args=args)
     else:
-        logger.info(message)
-        execute(cx, stmt, args=args)
+        logger.info("({}) {}".format(caller_name, message))
+        return execute(cx, stmt, args=args, return_result=return_result)
 
 
 def explain(cx, stmt, args=()):
@@ -239,7 +246,7 @@ def test_connection(cx):
     """
     is_alive = False
     try:
-        result = query(cx, "SELECT 1 AS connection_test")
+        result = run(cx, "Ping {}!".format(dbname(cx)), "SELECT 1 AS connection_test", return_result=True)
         if len(result) == 1 and "connection_test" in result[0]:
             is_alive = cx.closed == 0
     except psycopg2.OperationalError:

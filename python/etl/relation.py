@@ -31,7 +31,7 @@ import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import CyclicDependencyError, MissingQueryError
-from etl.names import join_with_quotes, TableName, TableSelector
+from etl.names import join_with_quotes, TableName, TableSelector, TempTableName
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -306,29 +306,17 @@ class RelationDescription:
 
         We look up which temp schema the view landed in so that we can use TableName.
         """
-        # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
-        view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
+        temp_view = TempTableName.for_table(self.target_table_name)
 
         with etl.db.log_error():
-            ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, self.query_stmt)
-            logger.info("Creating view '%s' to match relation '%s'", view_identifier, self.identifier)
+            ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
+            logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)
             etl.db.execute(conn, ddl_stmt)
 
-            lookup_stmt = """
-                SELECT nsp.nspname AS "schema"
-                     , cls.relname AS "table"
-                  FROM pg_catalog.pg_class cls
-                  JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
-                 WHERE cls.relname = %s
-                   AND cls.relkind = 'v'
-                """
-            row = etl.db.query(conn, lookup_stmt, (view_identifier,))[0]
-            view_name = TableName(**row)
-
             try:
-                yield view_name
+                yield temp_view
             finally:
-                etl.db.execute(conn, "DROP VIEW {}".format(view_identifier))
+                etl.db.execute(conn, "DROP VIEW {}".format(temp_view))
 
 
 class SortableRelationDescription:
