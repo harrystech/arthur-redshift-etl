@@ -540,7 +540,7 @@ class ExtractToS3Command(SubCommand):
         group.add_argument("--use-existing-csv-files",
                            help="skip extraction and go straight to creating manifest files,"
                            " implied default for static sources",
-                           const="use-existing-csv-files", action="store_const", dest="extractor")
+                           const="manifest-only", action="store_const", dest="extractor")
         parser.add_argument("-k", "--keep-going",
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
@@ -554,6 +554,8 @@ class ExtractToS3Command(SubCommand):
     def callback(self, args, config):
         if args.max_partitions < 1:
             raise InvalidArgumentsError("Option for max partitions must be >= 1")
+        if args.extractor not in ("sqoop", "spark", "manifest-only"):
+            raise ETLSystemError("bad extractor value: {}".format(args.extractor))
 
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
         # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
@@ -562,6 +564,7 @@ class ExtractToS3Command(SubCommand):
             submit_arthur = etl.config.etl_tmp_dir("venv/bin/submit_arthur.sh")
             if not os.path.exists(submit_arthur):
                 submit_arthur = "submit_arthur.sh"
+            logger.info("Restarting to submit to cluster (using '%s')", submit_arthur)
             print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)

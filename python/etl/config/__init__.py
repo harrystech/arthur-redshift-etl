@@ -23,6 +23,7 @@ import yaml
 import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import SchemaInvalidError, SchemaValidationError
+import etl.monitor
 
 __all__ = [
     "package_version",  # retrieve ETL version from package information
@@ -85,7 +86,7 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     logging.config.dictConfig(config)
     # Ignored due to lack of stub in type checking library
     logging.captureWarnings(True)  # type: ignore
-    logger.info("Starting log for %s", package_version())
+    logger.info("Starting log for %s with ETL ID %s", package_version(), etl.monitor.Monitor.etl_id)
     logger.info('Command line: "%s"', ' '.join(sys.argv))
     logger.debug("Current working directory: '%s'", os.getcwd())
     logger.info(get_release_info())

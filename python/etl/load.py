@@ -265,9 +265,11 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
 
     if not relation.has_manifest:
         if dry_run:
-            logger.info("Dry-run: Ignoring missing manifest file '%s'", s3_uri)
+            logger.info("Dry-run: Ignoring that relation '%s' is missing manifest file '%s'",
+                        relation.identifier, s3_uri)
         else:
-            raise MissingManifestError("relation '{}' is missing its manifest file".format(relation.identifier))
+            raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
+                relation.identifier, s3_uri))
 
     etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
                                       need_compupdate=relation.is_missing_encoding, dry_run=dry_run)

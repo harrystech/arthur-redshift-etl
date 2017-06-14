@@ -192,7 +192,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
     if user.name in ("default", config.owner):
         raise ValueError("illegal user name '%s'" % user.name)
 
-    with closing(etl.db.connection(config.dsn_admin_on_etl_db)) as conn:
+    with closing(etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)) as conn:
         with conn:
             if not skip_user_creation:
                 if dry_run:

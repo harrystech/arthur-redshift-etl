@@ -193,3 +193,6 @@ def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_
             etl.db.execute(conn, stmt, (s3_uri, credentials))
             row_count = etl.db.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
+
+# Find files that were just copied in:
+# select query, trim(filename) as file, curtime as updated from stl_load_commits where query = pg_last_copy_id();
