@@ -473,7 +473,7 @@ class ExtractToS3Command(SubCommand):
         group.add_argument("--use-existing-csv-files",
                            help="skip extraction and go straight to creating manifest files,"
                            " implied default for static sources",
-                           const="use-existing-csv-files", action="store_const", dest="extractor")
+                           const="manifest-only", action="store_const", dest="extractor")
         parser.add_argument("-k", "--keep-going",
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
