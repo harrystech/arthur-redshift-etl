@@ -536,6 +536,10 @@ def build_source_relations(conn: connection, relations: List[RelationDescription
                 build_single_relation(conn, relation, skip_copy=skip_copy, dry_run=dry_run,
                                       **monitor_info[relation.identifier])
             except (RelationConstructionError, RelationDataError):
+                if relation.is_required:
+                    logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+                else:
+                    logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
                 failed_relations.append(relation)
     if not dry_run:
         logger.info("Built %d relation(s) in source schemas, %d failed (%s)",
