@@ -6,7 +6,7 @@ from contextlib import closing
 import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
-import etl.pg
+import etl.db
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.names import TableName
@@ -66,7 +66,7 @@ class SparkExtractor(DatabaseExtractor):
         """
         Using Spark's dataframe API, read the table in as a dataframe before writing it out to CSV.
         """
-        with etl.pg.log_error():
+        with etl.db.log_error():
             df = self.read_table_as_dataframe(source, relation)
             self.write_dataframe_as_csv(df, relation)
             prefix = os.path.join(relation.prefix, relation.csv_path_name)
@@ -78,7 +78,7 @@ class SparkExtractor(DatabaseExtractor):
         """
         partition_key = relation.find_partition_key()
 
-        with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
+        with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
             table_size = self.fetch_source_table_size(conn, relation)
             num_partitions = self.maximize_partitions(table_size)
             if partition_key is None or num_partitions <= 1:
@@ -93,7 +93,7 @@ class SparkExtractor(DatabaseExtractor):
         select_statement = """({}) AS t""".format(inner_select)
         self.logger.debug("Table query: SELECT * FROM %s", select_statement)
 
-        jdbc_url, dsn_properties = etl.pg.extract_dsn(source.dsn)
+        jdbc_url, dsn_properties = etl.db.extract_dsn(source.dsn, read_only=True)
         df = self.sql_context.read.jdbc(url=jdbc_url,
                                         properties=dsn_properties,
                                         table=select_statement,
@@ -134,7 +134,7 @@ class SparkExtractor(DatabaseExtractor):
              ORDER BY part
         """
         with Timer() as timer:
-            rows = etl.pg.query(conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions,
+            rows = etl.db.query(conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions,
                                                   table_name=table_name))
         row_count = sum(row["count"] for row in rows)
         self.logger.info("Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",

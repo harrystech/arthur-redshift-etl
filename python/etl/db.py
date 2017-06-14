@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 """
-Thin wrapper around PostgreSQL API, adding niceties like logging,
+Thin wrapper around Psycopg2 for database access, adding niceties like logging,
 transaction handling, simple DSN strings, as well as simple commands
 (for new users, schema creation, etc.)
 
@@ -9,15 +9,18 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
+import inspect
 import logging
 import os
+import os.path
 import re
 import textwrap
 from contextlib import closing, contextmanager
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 import pgpasslib
 
 from etl.timer import Timer
@@ -75,17 +78,25 @@ def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, aut
     Caveat Emptor: By default, this turns off autocommit on the connection. This means that you
     have to explicitly commit on the connection object or run your SQL within a transaction context!
     """
-    dsn_values = dict(dsn_dict)  # so as to not mutate the argument
-    dsn_values["application_name"] = application_name
+    dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
-    cx = psycopg2.connect(cursor_factory=psycopg2.extras.DictCursor, **dsn_values)
+    cx = psycopg2.connect(**dsn_values)
     cx.set_session(autocommit=autocommit, readonly=readonly)
     logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
                  cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
     return cx
 
 
-def extract_dsn(dsn_dict: Dict[str, str]):
+def connection_pool(max_conn, dsn_dict: Dict[str, str], application_name=psycopg2.__name__):
+    """
+    Create a connection pool (with up to max_conn connections), where all connections will use the
+    given connection string.
+    """
+    dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
+    return psycopg2.pool.ThreadedConnectionPool(1, max_conn, **dsn_values)
+
+
+def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     """
     Break the connection string into a JDBC URL and connection properties.
 
@@ -96,9 +107,8 @@ def extract_dsn(dsn_dict: Dict[str, str]):
     dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
     dsn_properties.update({
         "ApplicationName": __name__,
-        "readOnly": "true",
+        "readOnly": "true" if read_only else "false",
         "driver": "org.postgresql.Driver"  # necessary, weirdly enough
-        # FIXME can ssl.props be done here?
     })
     if "port" in dsn_properties:
         jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
@@ -115,19 +125,19 @@ def dbname(cx):
     return dsn["dbname"]
 
 
-def remove_credentials(s):
+def remove_password(s):
     """
-    Remove the AWS credentials information from a query string.
+    Remove any password or credentials information from a query string.
 
+    >>> s = '''CREATE USER dw_user IN GROUP etl PASSWORD 'horse_staple_battery';'''
+    >>> remove_password(s)
+    "CREATE USER dw_user IN GROUP etl PASSWORD '';"
     >>> s = '''copy listing from 's3://mybucket/data/listing/' credentials 'aws_access_key_id=...';'''
-    >>> remove_credentials(s)
+    >>> remove_password(s)
     "copy listing from 's3://mybucket/data/listing/' credentials '';"
     >>> s = '''COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS 'aws_iam_role=...';'''
-    >>> remove_credentials(s)
+    >>> remove_password(s)
     "COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS '';"
-    >>> s = '''CREATE USER dw_user IN GROUP etl PASSWORD 'horse_staple_battery';'''
-    >>> remove_credentials(s)
-    "CREATE USER dw_user IN GROUP etl PASSWORD '';"
     """
     match = re.search("(CREDENTIALS|PASSWORD)\s*'([^']*)'", s, re.IGNORECASE)
     if match:
@@ -168,7 +178,7 @@ def execute(cx, stmt, args=(), return_result=False):
     """
     with cx.cursor() as cursor:
         executable_statement = mogrify(cursor, stmt, args)
-        printable_stmt = remove_credentials(executable_statement.decode())
+        printable_stmt = remove_password(executable_statement.decode())
         logger.debug("QUERY:\n%s\n;", printable_stmt)
         with Timer() as timer:
             cursor.execute(executable_statement)
@@ -184,7 +194,37 @@ def execute(cx, stmt, args=(), return_result=False):
             return cursor.fetchall()
 
 
-def format_result(dict_rows):
+def skip_query(cx, stmt, args=()):
+    """
+    For logging side-effect only ... show which query would have been executed.
+    """
+    with cx.cursor() as cursor:
+        executable_statement = mogrify(cursor, stmt, args)
+        printable_stmt = remove_password(executable_statement.decode())
+        logger.debug("Skipped QUERY:\n%s\n;", printable_stmt)
+
+
+def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
+    """
+    Execute the query and log the message around it.  Or just show what would have been run in dry-run mode.
+    """
+    # Figure out caller for better logging
+    current_frame = inspect.currentframe()
+    caller_code = current_frame.f_back.f_code
+    caller_name = caller_code.co_name
+
+    if dry_run:
+        logger.info("({}) Dry-run: Skipping {}{}".format(caller_name, message[:1].lower(), message[1:]))
+        skip_query(cx, stmt, args=args)
+    else:
+        logger.info("({}) {}".format(caller_name, message))
+        return execute(cx, stmt, args=args, return_result=return_result)
+
+
+def format_result(dict_rows) -> str:
+    """
+    Take result from query() and pretty-format it into one string, ready for print or log.
+    """
     keys = list(dict_rows[0].keys())
     content = [keys]  # header
     for row in dict_rows:
@@ -192,16 +232,6 @@ def format_result(dict_rows):
             str(row[k]).strip() for k in keys
         ])
     return '\n'.join([', '.join(c) for c in content])
-
-
-def skip_query(cx, stmt, args=()):
-    """
-    For logging side-effect only ... show which query would have been executed.
-    """
-    with cx.cursor() as cursor:
-        executable_statement = mogrify(cursor, stmt, args)
-        printable_stmt = remove_credentials(executable_statement.decode())
-        logger.debug("Skipped query:\n%s\n;", printable_stmt)
 
 
 def explain(cx, stmt, args=()):
@@ -222,7 +252,7 @@ def test_connection(cx):
     """
     is_alive = False
     try:
-        result = query(cx, "SELECT 1 AS connection_test")
+        result = run(cx, "Ping {}!".format(dbname(cx)), "SELECT 1 AS connection_test", return_result=True)
         if len(result) == 1 and "connection_test" in result[0]:
             is_alive = cx.closed == 0
     except psycopg2.OperationalError:
@@ -283,40 +313,6 @@ def log_error():
         raise
 
 
-# TODO Split PostgreSQL and Redshift dialects into different modules
-
-@contextmanager
-def log_load_error(cx):
-    """Log any Redshift LOAD errors during a COPY command"""
-    try:
-        yield
-    except psycopg2.Error as exc:
-        if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
-            logger.warning("Cannot retrieve error information from stl_load_errors within failed transaction")
-        else:
-            rows = query(cx, """
-                        SELECT session
-                             , query
-                             , starttime
-                             , colname
-                             , type
-                             , trim(filename) AS filename
-                             , line_number
-                             , trim(err_reason) AS err_reason
-                          FROM stl_load_errors
-                         WHERE session = pg_backend_pid()
-                         ORDER BY starttime DESC
-                         LIMIT 1""")
-            if rows:
-                row0 = rows.pop()
-                max_len = max(len(k) for k in row0.keys())
-                info = ["{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len) for k in row0.keys()]
-                logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
-            else:
-                log_sql_error(exc)
-        raise
-
-
 # ---- DATABASE ----
 
 def drop_and_create_database(cx, database, owner):
@@ -354,12 +350,15 @@ def set_search_path(cx, schemas):
 
 
 def list_connections(cx):
-    return query(cx, """SELECT datname, procpid, usesysid, usename FROM pg_stat_activity""")
+    return query(cx, """SELECT datname, procpid, usesysid, usename
+                          FROM pg_catalog.pg_stat_activity""")
 
 
 def list_transactions(cx):
-    return query(cx, """SELECT  t.*,  c.relname FROM svv_transactions t
-                        JOIN pg_catalog.pg_class c    ON t.relation = c.OID""")
+    return query(cx, """SELECT t.*
+                             , c.relname
+                          FROM pg_catalog.svv_transactions t
+                          JOIN pg_catalog.pg_class c ON t.relation = c.OID""")
 
 
 # ---- SCHEMAS ----
@@ -412,7 +411,11 @@ def revoke_select_on_all_tables_in_schema(cx, schema, group):
 
 # ---- TABLES ----
 
-def relation_kind(cx, schema, table):
+def relation_kind(cx, schema, table) -> Optional[str]:
+    """
+    Return "kind" of relation, either 'TABLE' or 'VIEW' for relations that actually exist.
+    If the relation doesn't exist, None is returned.
+    """
     rows = query(cx, """
         SELECT CASE cls.relkind
                  WHEN 'r' THEN 'TABLE'
@@ -460,6 +463,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
-    dsn_dict = parse_connection_string(sys.argv[1])
+    dsn_dict_ = parse_connection_string(sys.argv[1])
     with log_error():
-        ping(dsn_dict)
+        ping(dsn_dict_)

@@ -11,10 +11,11 @@
 <h1>ETL Progress Monitor</h1>
 <div class="sub-header">
     You are currently experiencing the ETL with
-    <span class="boxed-id">ID = <span id="etl-id">(fetching...)</span></span>
+    <span class="boxed-id">ID = <span id="etl-id">(fetching...)</span></span>.
 </div>
 
 <h2>By Index (latest completion)</h2>
+<div class="last-modified">Last Modified: <span id="indices-table-last-modified">???</span></div>
 <table id="indices-table">
     <tr>
         <th>Name</th>
@@ -26,14 +27,14 @@
         <td colspan="5">(fetching...)</td>
     </tr>
 </table>
-<div class="last-modified">Last Modified: <span id="indices-table-last-modified">???</span></div>
 
 <h2>By Events (in reverse order)</h2>
+<div class="last-modified">Last Modified: <span id="events-table-last-modified">???</span></div>
 <table id="events-table" class="events">
     <tr>
         <th>Index</th>
         <th>Step</th>
-        <th>Target</th>
+        <th>Target Relation</th>
         <th>Last Event</th>
         <th>Timestamp</th>
         <th>Elapsed</th>
@@ -42,9 +43,6 @@
         <td colspan="6">(fetching...)</td>
     </tr>
 </table>
-<div class="last-modified">Last Modified: <span id="events-table-last-modified">???</span></div>
 
-<br />
-<div class="last-modified"><span id="latest-error">Everything is peachy.</span></div>
 </body>
 </html>

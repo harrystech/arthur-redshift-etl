@@ -22,13 +22,13 @@ import etl.config.env
 import etl.design.bootstrap
 import etl.explain
 import etl.extract
-import etl.dw
+import etl.data_warehouse
 import etl.file_sets
 import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.pg
+import etl.db
 import etl.pipeline
 import etl.relation
 import etl.selftest
@@ -226,7 +226,7 @@ def build_basic_parser(prog_name, description=None):
     group.add_argument("-c", "--config",
                        help="add configuration path or file (default: '%s')" % default_config,
                        action="append", default=[default_config])
-    group.add_argument("--submit-to-cluster", help="submit this command to the cluster (EXPERIMENTAL)",
+    group.add_argument("--submit-to-cluster", help="submit this command to the cluster",
                        dest="cluster_id")
 
     # Set some defaults (in case no sub-command's add_to_parser is called)
@@ -297,6 +297,10 @@ def add_standard_arguments(parser, options):
     if "max-partitions" in options:
         parser.add_argument("-m", "--max-partitions", metavar="N",
                             help="set max number of partitions to write to N (default: %(default)s)", default=4)
+    if "max-concurrency" in options:
+        parser.add_argument("-x", "--max-concurrency", metavar="N",
+                            help="EXPERIMENTAL set max number of parallel loads to use to N (default: %(default)s)",
+                            type=int, default=1)
     if "skip-copy" in options:
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY and INSERT commands (leaves tables empty, for debugging)",
@@ -413,9 +417,9 @@ class InitializeSetupCommand(SubCommand):
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        with etl.pg.log_error():
-            etl.dw.initial_setup(config, with_user_creation=args.with_user_creation, force=args.force,
-                                 dry_run=args.dry_run)
+        with etl.db.log_error():
+            etl.data_warehouse.initial_setup(config, with_user_creation=args.with_user_creation, force=args.force,
+                                             dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
@@ -438,10 +442,10 @@ class CreateUserCommand(SubCommand):
                             help="skip new user; only change search path of existing user", action="store_true")
 
     def callback(self, args, config):
-        with etl.pg.log_error():
-            etl.dw.create_new_user(config, args.username,
-                                   group=args.group, add_user_schema=args.add_user_schema,
-                                   skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
+        with etl.db.log_error():
+            etl.data_warehouse.create_new_user(config, args.username,
+                                               group=args.group, add_user_schema=args.add_user_schema,
+                                               skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
 
 
 class BootstrapSourcesCommand(SubCommand):
@@ -581,7 +585,7 @@ class LoadDataWarehouseCommand(SubCommand):
                          " It is an error to try to select tables unless they are all the tables in the schema.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "skip-copy", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "skip-copy", "dry-run"])
         parser.add_argument("--no-rollback",
                             help="in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
@@ -596,6 +600,7 @@ class LoadDataWarehouseCommand(SubCommand):
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
         etl.load.load_data_warehouse(relations, args.pattern,
+                                     max_concurrency=args.max_concurrency,
                                      skip_copy=args.skip_copy,
                                      no_rollback=args.no_rollback,
                                      dry_run=args.dry_run)
@@ -611,9 +616,9 @@ class UpgradeDataWarehouseCommand(SubCommand):
                          " visible to users (i.e. outside a transaction).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "skip-copy", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "skip-copy", "dry-run"])
         parser.add_argument("--only-selected",
-                            help="skip rebuilding relations that only depend on the selected ones"
+                            help="skip rebuilding relations that depend on the selected ones"
                             " (leaves warehouse in inconsistent state, for debugging only)",
                             default=False, action="store_true")
 
@@ -622,6 +627,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
         etl.load.upgrade_data_warehouse(relations, args.pattern,
+                                        max_concurrency=args.max_concurrency,
                                         only_selected=args.only_selected,
                                         skip_copy=args.skip_copy,
                                         dry_run=args.dry_run)
@@ -689,10 +695,10 @@ class CreateSchemasCommand(SubCommand):
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
-        with etl.pg.log_error():
+        with etl.db.log_error():
             if args.with_backup:
-                etl.dw.backup_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
-            etl.dw.create_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+                etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
+            etl.data_warehouse.create_schemas(schemas, dry_run=args.dry_run)
 
 
 class RestoreSchemasCommand(SubCommand):
@@ -708,8 +714,8 @@ class RestoreSchemasCommand(SubCommand):
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
-        with etl.pg.log_error():
-            etl.dw.restore_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+        with etl.db.log_error():
+            etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
@@ -758,7 +764,7 @@ class ExplainQueryCommand(SubCommand):
         else:
             # When running with S3, we expect full sets of files (SQL plus table design)
             descriptions = self.find_relation_descriptions(args)
-        with etl.pg.log_error():
+        with etl.db.log_error():
             etl.explain.explain_queries(config.dsn_etl, descriptions)
 
 
@@ -795,8 +801,8 @@ class PingCommand(SubCommand):
 
     def callback(self, args, config):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
-        with etl.pg.log_error():
-            etl.pg.ping(dsn)
+        with etl.db.log_error():
+            etl.db.ping(dsn)
 
 
 class ShowDependentsCommand(SubCommand):

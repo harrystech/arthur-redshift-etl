@@ -27,11 +27,6 @@ These are the general pre-requisites:
 
     * "Tables" that have upstream sources must have CSV files and a manifest file from the "extract".
 
-        * CSV files must have fields delimited by commas, quotes around fields if they
-          contain a comma, and have doubled-up quotes if there's a quote within the field.
-
-        * Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
-
     * "CTAS" tables are derived from queries so must have a SQL file. (Think of them as materialized views.)
 
         * For every derived table (CTAS) a SQL file must exist in S3 with a valid
@@ -42,8 +37,8 @@ These are the general pre-requisites:
     * "VIEWS" are views and so must have a SQL file in S3.
 """
 
+import concurrent.futures
 import logging
-import textwrap
 from contextlib import closing
 from itertools import chain
 from typing import Dict, List, Set
@@ -51,14 +46,15 @@ from typing import Dict, List, Set
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
-import etl.dw
+import etl.data_warehouse
 import etl.monitor
-import etl.pg
+import etl.db
+import etl.design.redshift
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
                         RelationConstructionError, RequiredRelationLoadError, UpdateTableError)
-from etl.names import join_column_list, join_with_quotes, TableName, TableSelector
+from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -66,104 +62,235 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def build_column_description(column: Dict[str, str], skip_identity=False, skip_references=False) -> str:
+# ---- Section 0: Foundation: LoadableRelation ----
+
+class LoadableRelation:
     """
-    Return the description of a table column suitable for a table creation.
-    See build_columns.
+    Wrapper for RelationDescription that adds state machinery useful for loading.
+    (Load here refers to the step in the ETL, so includes load, upgrade, and update commands).
 
-    >>> build_column_description({"name": "key", "sql_type": "int", "not_null": True, "encoding": "raw"})
-    '"key" int ENCODE raw NOT NULL'
-    >>> build_column_description({"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]})
-    '"my_key" int REFERENCES "sch"."ble" ( "key" )'
+    We use composition here to avoid copying from the RelationDescription.
+    Also, inheritance would work less well given how lazy loading is used in RelationDescription.
+    You're welcome.
+
+    Q: Why 'loadable'?
+    A: Because 'LoadOrUpgradeOrUpdateInProgress' sounded less supercalifragilisticexpialidocious.
     """
-    column_ddl = '"{name}" {sql_type}'.format(**column)
-    if column.get("identity", False) and not skip_identity:
-        column_ddl += " IDENTITY(1, 1)"
-    if "encoding" in column:
-        column_ddl += " ENCODE {}".format(column["encoding"])
-    if column.get("not_null", False):
-        column_ddl += " NOT NULL"
-    if "references" in column and not skip_references:
-        [table_identifier, [foreign_column]] = column["references"]
-        foreign_name = TableName.from_identifier(table_identifier)
-        column_ddl += ' REFERENCES {} ( "{}" )'.format(foreign_name, foreign_column)
-    return column_ddl
+
+    def __getattr__(self, name):
+        """
+        Grab everything from the contained relation. Fail if it's actually not available.
+        """
+        if hasattr(self._relation_description, name):
+            return getattr(self._relation_description, name)
+        raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, name))
+
+    __str__ = RelationDescription.__str__
+
+    __format__ = RelationDescription.__format__
+
+    def __init__(self, relation: RelationDescription, info: dict, skip_copy=False) -> None:
+        self._relation_description = relation
+        self.info = info
+        self.skip_copy = skip_copy or relation.is_view_relation
+        self.failed = False
+
+    def delete_to_reset(self) -> bool:
+        return False
+
+    def create_to_reset(self) -> bool:
+        return True
+
+    def monitor(self):
+        return etl.monitor.Monitor(**self.info)
+
+    def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
+        unpacked = [r._relation_description for r in relations]  # make type checker happy
+        return etl.relation.find_dependents(unpacked, [self._relation_description])
+
+    @classmethod
+    def from_descriptions(cls, relations: List[RelationDescription], command: str,
+                          skip_copy=False) -> List["LoadableRelation"]:
+        """
+        Build a list of "loadable" relations
+        """
+        dsn_etl = etl.config.get_dw_config().dsn_etl
+        dbname = dsn_etl["database"]
+        base_index = {"name": dbname, "current": 0, "final": len(relations)}
+        base_destination = {"name": dbname}
+
+        loadable = []
+        for i, relation in enumerate(relations):
+            target = relation.target_table_name
+            source = dict(bucket_name=relation.bucket_name)
+            if relation.is_view_relation or relation.is_ctas_relation:
+                source['object_key'] = relation.sql_file_name
+            else:
+                source['object_key'] = relation.manifest_file_name
+            destination = dict(base_destination, schema=target.schema, table=target.table)
+            monitor_info = {
+                "target": target.identifier,
+                "step": command,
+                "source": source,
+                "destination": destination,
+                "index": dict(base_index, current=i + 1)
+            }
+            loadable.append(cls(relation, monitor_info, skip_copy=skip_copy))
+
+        return loadable
 
 
-def build_columns(columns: List[dict], is_temp=False) -> List[str]:
+class LoadableInTransactionRelation(LoadableRelation):
+
+    def delete_to_reset(self) -> bool:
+        return not self.is_view_relation
+
+    def create_to_reset(self) -> bool:
+        return False
+
+
+# ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
+
+def create_table(conn: connection, table_design: dict, table_name: TableName, dry_run=False) -> None:
     """
-    Build up partial DDL for all non-skipped columns.
+    Create a table matching this design (but possibly under another name, e.g. for temp tables).
 
-    For our final table, we skip the IDENTITY (which would mess with our row at key==0) but do add
-    references to other tables.
-    For temp tables, we use IDENTITY so that the key column is filled in but skip the references.
+    Columns must have a name and a SQL type (compatible with Redshift).
+    They may have an attribute of the compression encoding and the nullable constraint.
 
-    >>> build_columns([{"name": "key", "sql_type": "int"}, {"name": "?", "skipped": True}])
-    ['"key" int']
+    Other column attributes and constraints should be resolved as table
+    attributes (e.g. distkey) and table constraints (e.g. primary key).
+
+    Tables may have attributes such as a distribution style and sort key.
+    Depending on the distribution style, they may also have a distribution key.
     """
-    ddl_for_columns = [
-        build_column_description(column, skip_identity=not is_temp, skip_references=is_temp)
-        for column in columns
-        if not column.get("skipped", False)
-    ]
-    return ddl_for_columns
+    is_temp = table_design["name"] != table_name.identifier
+    ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
+    etl.db.run(conn, "Creating table '{:x}'".format(table_name), ddl_stmt, dry_run=dry_run)
 
 
-def build_table_constraints(table_design: dict) -> List[str]:
+def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
-    Return the constraints from the table design so that they can be inserted into a SQL DDL statement.
-
-    >>> build_table_constraints({})  # no-op
-    []
-    >>> build_table_constraints({"constraints": [{"primary_key": ["id"]}, {"unique": ["name", "email"]}]})
-    ['PRIMARY KEY ( "id" )', 'UNIQUE ( "name", "email" )']
+    Create VIEW using the relation's query.
     """
-    table_constraints = table_design.get("constraints", [])
-    type_lookup = dict([("primary_key", "PRIMARY KEY"),
-                        ("surrogate_key", "PRIMARY KEY"),
-                        ("unique", "UNIQUE"),
-                        ("natural_key", "UNIQUE")])
-    ddl_for_constraints = []
-    for constraint in table_constraints:
-        [[constraint_type, column_list]] = constraint.items()
-        ddl_for_constraints.append("{} ( {} )".format(type_lookup[constraint_type], join_column_list(column_list)))
-    return ddl_for_constraints
+    view_name = relation.target_table_name
+    columns = join_column_list(relation.unquoted_columns)
+    stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
+    etl.db.run(conn, "Creating view '{:x}'".format(relation), stmt, dry_run=dry_run)
 
 
-def build_table_attributes(table_design: dict, is_temp=False) -> List[str]:
+def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
-    Return the attributes from the table design so that they can be inserted into a SQL DDL statement.
-
-    >>> build_table_attributes({})  # no-op
-    []
-    >>> build_table_attributes({"attributes": {"distribution": "even"}})
-    ['DISTSTYLE EVEN']
-    >>> build_table_attributes({"attributes": {"distribution": ["key"], "compound_sort": ["name"]}})
-    ['DISTSTYLE KEY', 'DISTKEY ( "key" )', 'COMPOUND SORTKEY ( "name" )']
+    Run either DROP VIEW or DROP TABLE depending on type of existing relation. It's ok if the relation
+    doesn't already exist.
     """
-    table_attributes = table_design.get("attributes", {})
-    distribution = table_attributes.get("distribution", [])
-    compound_sort = table_attributes.get("compound_sort", [])
-    interleaved_sort = table_attributes.get("interleaved_sort", [])
-
-    ddl_attributes = []
-    # TODO Use for staging tables: ddl_attributes.append("BACKUP NO")
-    if distribution:
-        if isinstance(distribution, list):
-            ddl_attributes.append("DISTSTYLE KEY")
-            ddl_attributes.append("DISTKEY ( {} )".format(join_column_list(distribution)))
-        elif distribution == "all":
-            ddl_attributes.append("DISTSTYLE ALL")
-        elif distribution == "even":
-            ddl_attributes.append("DISTSTYLE EVEN")
-    if compound_sort:
-        ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_column_list(compound_sort)))
-    elif interleaved_sort:
-        ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_column_list(interleaved_sort)))
-    return ddl_attributes
+    try:
+        kind = etl.db.relation_kind(conn, relation.target_table_name.schema, relation.target_table_name.table)
+        if kind is not None:
+            stmt = """DROP {} {} CASCADE""".format(kind, relation)
+            etl.db.run(conn, "Dropping {} '{:x}'".format(kind.lower(), relation), stmt, dry_run=dry_run)
+    except Exception as exc:
+        raise RelationConstructionError(exc) from exc
 
 
-def build_missing_dimension_row(columns: List[dict]) -> List[str]:
+def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+    """
+    Create fresh VIEW or TABLE and grant groups access permissions.
+
+    Note that we cannot use CREATE OR REPLACE statements since we want to allow going back and forth
+    between VIEW and TABLE (or in table design terms: VIEW and CTAS).
+    """
+    try:
+        drop_relation_if_exists(conn, relation, dry_run=dry_run)
+        if relation.is_view_relation:
+            create_view(conn, relation, dry_run=dry_run)
+        else:
+            create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
+        grant_access(conn, relation, dry_run=dry_run)
+    except Exception as exc:
+        raise RelationConstructionError(exc) from exc
+
+
+def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
+    """
+    Grant privileges on (new) relation based on configuration.
+
+    We always grant all privileges to the ETL user. We may grant read-only access
+    or read-write access based on configuration. Note that the access is always based on groups, not users.
+    """
+    target = relation.target_table_name
+    schema_config = relation.schema_config
+    owner, reader_groups, writer_groups = schema_config.owner, schema_config.reader_groups, schema_config.writer_groups
+
+    if dry_run:
+        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", relation.identifier, owner)
+    else:
+        logger.info("Granting all privileges on '%s' to '%s'", relation.identifier, owner)
+        etl.db.grant_all_to_user(conn, target.schema, target.table, owner)
+
+    if reader_groups:
+        if dry_run:
+            logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
+                        relation.identifier, join_with_quotes(reader_groups))
+        else:
+            logger.info("Granting select access on '%s' to %s", relation.identifier, join_with_quotes(reader_groups))
+            for reader in reader_groups:
+                etl.db.grant_select(conn, target.schema, target.table, reader)
+
+    if writer_groups:
+        if dry_run:
+            logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
+                        relation.identifier, join_with_quotes(writer_groups))
+        else:
+            logger.info("Granting write access on '%s' to %s", relation.identifier, join_with_quotes(writer_groups))
+            for writer in writer_groups:
+                etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
+
+
+def delete_whole_table(conn: connection, table: LoadableRelation, dry_run=False) -> None:
+    """
+    Delete all rows from this table.
+    """
+    stmt = """DELETE FROM {}""".format(table)
+    etl.db.run(conn, "Deleting all rows in table '{:x}'".format(table), stmt, dry_run=dry_run)
+
+
+def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
+    """
+    Load data into table in the data warehouse using the COPY command.
+    A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
+    """
+    aws_iam_role = etl.config.get_data_lake_config("iam_role")
+    s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
+
+    if not relation.has_manifest:
+        if dry_run:
+            logger.info("Dry-run: Ignoring missing manifest file '%s'", s3_uri)
+        else:
+            raise MissingManifestError("relation '{}' is missing its manifest file".format(relation.identifier))
+
+    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
+                                      need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
+
+
+def insert_from_query(conn: connection, table_name: TableName, columns: List[str], query: str, dry_run=False) -> None:
+    """
+    Load data into table from its query (aka materializing a view). The table name must be specified since
+    the load goes either into the target table or a temporary one.
+    """
+    stmt = """INSERT INTO {table} (\n  {columns}\n)""".format(table=table_name, columns=join_column_list(columns))
+    stmt += "\n" + query
+    etl.db.run(conn, "Loading data into '{:x}' from query".format(table_name), stmt, dry_run=dry_run)
+
+
+def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+    """
+    Run query to fill CTAS relation. (Not to be used for dimensions etc.)
+    """
+    insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, relation.query_stmt, dry_run=dry_run)
+
+
+def create_missing_dimension_row(columns: List[dict]) -> List[str]:
     """
     Return row that represents missing dimension values.
     """
@@ -189,549 +316,36 @@ def build_missing_dimension_row(columns: List[dict]) -> List[str]:
     return na_values_row
 
 
-def create_table(conn: connection, relation: RelationDescription, is_temp=False, dry_run=False) -> TableName:
-    """
-    Create a table matching this design (but possibly under another name, e.g. for temp tables).
-    Return name of table that was created.
-
-    Columns must have a name and a SQL type (compatible with Redshift).
-    They may have an attribute of the compression encoding and the nullable constraint.
-
-    Other column attributes and constraints should be resolved as table
-    attributes (e.g. distkey) and table constraints (e.g. primary key).
-
-    Tables may have attributes such as a distribution style and sort key.
-    Depending on the distribution style, they may also have a distribution key.
-    """
-    columns = build_columns(relation.table_design["columns"], is_temp=is_temp)
-    constraints = build_table_constraints(relation.table_design)
-    attributes = build_table_attributes(relation.table_design, is_temp=is_temp)
-
-    if is_temp:
-        # TODO Start using an actual temp table (name starts with # and is session specific).
-        table_name = TableName.from_identifier("{0.schema}.arthur_temp${0.table}".format(relation.target_table_name))
-    else:
-        table_name = relation.target_table_name
-
-    ddl = """
-        CREATE TABLE {table_name} (
-            {columns_and_constraints}
-        )
-        {attributes}
-        """.format(table_name=table_name,
-                   columns_and_constraints=",\n            ".join(chain(columns, constraints)),
-                   attributes="\n        ".join(attributes))
-    if dry_run:
-        logger.info("Dry-run: Skipping creating table '%s'", table_name.identifier)
-        etl.pg.skip_query(conn, ddl)
-    else:
-        logger.info("Creating table '%s'", table_name.identifier)
-        etl.pg.execute(conn, ddl)
-
-    return table_name
-
-
-def create_view(conn: connection, relation: RelationDescription, dry_run=False) -> None:
-    """
-    Create VIEW using the relation's query.
-    """
-    view_name = relation.target_table_name
-    columns = join_column_list(relation.unquoted_columns)
-    stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
-    if dry_run:
-        logger.info("Dry-run: Skipping creating view '%s'", relation.identifier)
-        etl.pg.skip_query(conn, stmt)
-    else:
-        logger.info("Creating view '%s'", relation.identifier)
-        etl.pg.execute(conn, stmt)
-
-
-def create_or_replace_relation(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema,
-                               dry_run=False) -> None:
-    """
-    Create fresh VIEW or TABLE and grant groups access permissions.
-
-    Note that we cannot use CREATE OR REPLACE statements since we want to allow going back and forth
-    between VIEW and TABLE (or in table design terms: VIEW and CTAS).
-    """
-    try:
-        drop_relation_if_exists(conn, relation, dry_run=dry_run)
-        if relation.is_view_relation:
-            create_view(conn, relation, dry_run=dry_run)
-        else:
-            create_table(conn, relation, dry_run=dry_run)
-        grant_access(conn, relation, schema, dry_run=dry_run)
-    except Exception as exc:
-        raise RelationConstructionError(exc) from exc
-
-
-def drop_relation_if_exists(conn: connection, relation: RelationDescription, dry_run=False) -> None:
-    """
-    Run either DROP VIEW IF EXISTS or DROP TABLE IF EXISTS depending on type of existing relation.
-    (It's ok if the relation doesn't already exist.)
-    """
-    try:
-        kind = etl.pg.relation_kind(conn, relation.target_table_name.schema, relation.target_table_name.table)
-        if kind is not None:
-            stmt = """DROP {} {} CASCADE""".format(kind, relation)
-            if dry_run:
-                logger.info("Dry-run: Skipping dropping %s '%s'", kind.lower(), relation.identifier)
-                etl.pg.skip_query(conn, stmt)
-            else:
-                logger.info("Dropping %s '%s'", kind.lower(), relation.identifier)
-                etl.pg.execute(conn, stmt)
-    except Exception as exc:
-        raise RelationConstructionError(exc) from exc
-
-
-def grant_access(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema, dry_run=False):
-    """
-    Grant privileges on (new) relation based on configuration.
-
-    We always grant all privileges to the ETL user. We may grant read-only access
-    or read-write access based on configuration. Note that the access is always based on groups, not users.
-    """
-    target = relation.target_table_name
-    owner, reader_groups, writer_groups = schema.owner, schema.reader_groups, schema.writer_groups
-
-    if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", relation.identifier, owner)
-    else:
-        logger.info("Granting all privileges on '%s' to '%s'", relation.identifier, owner)
-        etl.pg.grant_all_to_user(conn, target.schema, target.table, owner)
-
-    if reader_groups:
-        if dry_run:
-            logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
-                        relation.identifier, join_with_quotes(reader_groups))
-        else:
-            logger.info("Granting select access on '%s' to %s", relation.identifier, join_with_quotes(reader_groups))
-            for reader in reader_groups:
-                etl.pg.grant_select(conn, target.schema, target.table, reader)
-
-    if writer_groups:
-        if dry_run:
-            logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
-                        relation.identifier, join_with_quotes(writer_groups))
-        else:
-            logger.info("Granting write access on '%s' to %s", relation.identifier, join_with_quotes(writer_groups))
-            for writer in writer_groups:
-                etl.pg.grant_select_and_write(conn, target.schema, target.table, writer)
-
-
-def delete_whole_table(conn: connection, table: RelationDescription, dry_run=False) -> None:
-    if dry_run:
-        logger.info("Dry-run: Skipping deletion of '%s'", table.identifier)
-    else:
-        logger.info("Deleting all rows in table '%s'", table.identifier)
-        etl.pg.execute(conn, "DELETE FROM {}".format(table))
-
-
-def copy_data(conn: connection, relation: RelationDescription, dry_run=False):
-    """
-    Load data into table in the data warehouse using the COPY command.
-    A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
-    """
-    aws_iam_role = etl.config.get_data_lake_config("iam_role")
-    credentials = "aws_iam_role={}".format(aws_iam_role)
-    s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
-
-    # N.B. If you change the COPY options, make sure to change the documentation at the top of the file.
-    stmt = """
-        COPY {table}
-        FROM %s
-        CREDENTIALS %s MANIFEST
-        DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
-        TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
-        TRUNCATECOLUMNS
-        STATUPDATE OFF
-        """.format(table=relation)
-    # TODO Measure COMPUPDATE OFF
-    # TODO Enable using "NOLOAD" to test whether CSV files are valid.
-    if dry_run:
-        # stmt += " NOLOAD"
-        logger.info("Dry-run: Skipping copying data into '%s' from '%s'", relation.identifier, s3_uri)
-        etl.pg.skip_query(conn, stmt, (s3_uri, credentials))
-        return
-
-    if not relation.has_manifest:
-        raise MissingManifestError("relation '{}' is missing its manifest file".format(relation.identifier))
-
-    logger.info("Copying data into '%s' from '%s'", relation.identifier, s3_uri)
-    with etl.pg.log_load_error(conn):
-        etl.pg.execute(conn, stmt, (s3_uri, credentials))
-        row_count = etl.pg.query(conn, "SELECT pg_last_copy_count()")
-        logger.info("Copied %d rows into '%s'", row_count[0][0], relation.identifier)
-
-
-def insert_from_query(conn: connection, table_name: TableName, columns: List[str], query: str, dry_run=False) -> None:
-    """
-    Load data into table from its query (aka materializing a view). The table name must be specified since
-    the load goes either into the target table or a temporary one.
-    """
-    stmt_template = """
-        INSERT INTO {table} (
-          {columns}
-        )
-        {query}
-    """
-    stmt = textwrap.dedent(stmt_template).format(table=table_name, columns=join_column_list(columns), query=query)
-
-    if dry_run:
-        logger.info("Dry-run: Skipping query to load data into '%s'", table_name.identifier)
-        etl.pg.skip_query(conn, stmt)
-    else:
-        logger.info("Loading data into %s from query", table_name.identifier)
-        etl.pg.execute(conn, stmt)
-
-
-def load_ctas_directly(conn: connection, relation: RelationDescription, dry_run=False) -> None:
-    """
-    Run query to fill CTAS relation. (Not to be used for dimensions etc.)
-    """
-    insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, relation.query_stmt, dry_run=dry_run)
-
-
-def load_ctas_using_temp_table(conn: connection, relation: RelationDescription, dry_run=False) -> None:
+def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
-    temp_name = create_table(conn, relation, is_temp=True, dry_run=dry_run)
-    temp_columns = [column["name"] for column in relation.table_design["columns"]
-                    if not (column.get("skipped") or column.get("identity"))]
-
+    temp_name = TempTableName.for_table(relation.target_table_name)
+    create_table(conn, relation.table_design, temp_name, dry_run=dry_run)
     try:
+        temp_columns = [column["name"] for column in relation.table_design["columns"]
+                        if not (column.get("skipped") or column.get("identity"))]
         insert_from_query(conn, temp_name, temp_columns, relation.query_stmt, dry_run=dry_run)
+
         inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), temp_name)
         if relation.target_table_name.table.startswith("dim_"):
-            missing_dimension = build_missing_dimension_row(relation.table_design["columns"])
-            inner_stmt += " UNION ALL SELECT {}".format(", ".join(missing_dimension))
+            missing_dimension = create_missing_dimension_row(relation.table_design["columns"])
+            inner_stmt += "\nUNION ALL SELECT {}".format(", ".join(missing_dimension))
+
         insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, inner_stmt, dry_run=dry_run)
     finally:
-        # Until we make it actually temporary:
-        if dry_run:
-            logger.info("Dry-run: Skipping dropping of temporary table '%s'", temp_name.identifier)
-        else:
-            logger.info("Dropping temporary table '%s'", temp_name.identifier)
-            etl.pg.execute(conn, "DROP TABLE {}".format(temp_name))
+        stmt = "DROP TABLE {}".format(temp_name)
+        etl.db.run(conn, "Dropping temporary table '{:x}'".format(temp_name), stmt, dry_run=dry_run)
 
 
-def analyze(conn: connection, table: RelationDescription, dry_run=False) -> None:
+def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
     """
     Update table statistics.
     """
-    if dry_run:
-        logger.info("Dry-run: Skipping analysis of '%s'", table.identifier)
-    else:
-        logger.info("Running analyze step on table '%s'", table.identifier)
-        etl.pg.execute(conn, "ANALYZE {}".format(table))
+    etl.db.run(conn, "Running analyze step on table '{:x}'".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
 
 
-def update_table(conn: connection, relation: RelationDescription, dry_run=False) -> None:
-    """
-    Update table contents either from CSV files from upstream sources or by running some SQL
-    for CTAS relations. This assumes that the table was previously created.
-
-    For tables backed by upstream sources, data is copied in.
-
-    If the CTAS doesn't have a key (no identity column), then values are inserted straight from a view.
-
-    If a column is marked as being a key (identity is true), then a temporary table is built from
-    the query and then copied into the "CTAS" relation. If the name of the relation starts with "dim_",
-    then it's assumed to be a dimension and a row with missing values (mostly 0, false, etc.) is added as well.
-    """
-    try:
-        if relation.is_ctas_relation:
-            if relation.has_identity_column:
-                load_ctas_using_temp_table(conn, relation, dry_run=dry_run)
-            else:
-                load_ctas_directly(conn, relation, dry_run=dry_run)
-        else:
-            copy_data(conn, relation, dry_run=dry_run)
-        analyze(conn, relation, dry_run=dry_run)
-    except Exception as exc:
-        raise UpdateTableError(exc) from exc
-
-
-def evaluate_execution_order(relations: List[RelationDescription], selector: TableSelector,
-                             include_dependents=False) -> List[RelationDescription]:
-    """
-    Filter the list of relation descriptions by the selector. Optionally, expand the list to the dependents
-    of the selected relations.
-    """
-    execution_order = etl.relation.order_by_dependencies(relations)
-    selected = etl.relation.find_matches(execution_order, selector)
-    if not include_dependents:
-        return selected
-
-    dependents = etl.relation.find_dependents(execution_order, selected)
-    combined = frozenset(relation.identifier for relation in chain(selected, dependents))
-    return [relation for relation in execution_order if relation.identifier in combined]
-
-
-def find_traversed_schemas(relations: List[RelationDescription]) -> List[DataWarehouseSchema]:
-    """
-    Return schemas traversed when refreshing relations (in order that they are needed).
-    """
-    got_it = set()  # type: Set[str]
-    traversed_in_order = []
-    for relation in relations:
-        this_schema = relation.dw_schema
-        if this_schema.name not in got_it:
-            got_it.add(this_schema.name)
-            traversed_in_order.append(this_schema)
-    return traversed_in_order
-
-
-def build_monitor_info(relations: List[RelationDescription], step: str, dbname: str) -> dict:
-    monitor_info = {}
-    base_index = {"name": dbname, "current": 0, "final": len(relations)}
-    for i, relation in enumerate(relations):
-        source = dict(bucket_name=relation.bucket_name)
-        if relation.is_view_relation or relation.is_ctas_relation:
-            source['object_key'] = relation.sql_file_name
-        else:
-            source['object_key'] = relation.manifest_file_name
-        destination = relation.target_table_name.to_dict()
-        destination['name'] = dbname
-        monitor_info[relation.identifier] = {
-            "target": relation.identifier,
-            "step": step,
-            "source": source,
-            "destination": destination,
-            "index": dict(base_index, current=i + 1)
-        }
-    return monitor_info
-
-
-def build_single_relation(conn, relation, skip_copy=False, dry_run=False, **kwargs):
-    """
-    Make a single relation appear in its schema. Any keyword args are passed to the monitor.
-    """
-    with etl.monitor.Monitor(dry_run=dry_run, **kwargs):
-        create_or_replace_relation(conn, relation, relation.dw_schema, dry_run=dry_run)
-        if not relation.is_view_relation:
-            if skip_copy:
-                logger.info("Skipping loading data into '%s'", relation.identifier)
-            else:
-                update_table(conn, relation, dry_run=dry_run)
-                # TODO Should we delete_whole_table if constraints are violated?
-                verify_constraints(conn, relation, dry_run=dry_run)
-
-
-def build_source_relations(conn: connection, relations: List[RelationDescription], monitor_info: dict,
-                           skip_copy=False, dry_run=False) -> None:
-    """
-    Pick out all tables in source schemas from the list of relations and build up just those.
-
-    Since we know that these relations never have dependencies, we don't have to track any
-    failures while loading them.
-    """
-    target_relations = [relation for relation in relations if not relation.is_transformation]
-    failed_relations = []  # type: List[RelationDescription]
-
-    with Timer() as timer:
-        for relation in target_relations:
-            try:
-                build_single_relation(conn, relation, skip_copy=skip_copy, dry_run=dry_run,
-                                      **monitor_info[relation.identifier])
-            except (RelationConstructionError, RelationDataError):
-                if relation.is_required:
-                    logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
-                else:
-                    logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
-                failed_relations.append(relation)
-    if not dry_run:
-        logger.info("Built %d relation(s) in source schemas, %d failed (%s)",
-                    len(target_relations), len(failed_relations), timer)
-
-    failed_and_required = [relation.identifier for relation in failed_relations if relation.is_required]
-    if failed_and_required:
-        raise RequiredRelationLoadError(failed_and_required)
-
-
-def build_transformation_relations(conn: connection, relations: List[RelationDescription], monitor_info: dict,
-                                   skip_copy=False, dry_run=False) -> None:
-    """
-    Pick out all tables in transformation schemas from the list of relations and build up just those.
-
-    These relations may be dependent on relations that may have failed before we reached them.
-    If dependencies were left empty, we'll fall back to skip_copy mode.
-    Unless the relation is "required" in which case we abort here.
-    """
-    target_relations = [relation for relation in relations if relation.is_transformation]
-    failed_relations = []  # type: List[RelationDescription]
-    skip_copy_after_prior_fail = set()  # type: Set[str]
-
-    with Timer() as timer:
-        for relation in target_relations:
-            this_skip_copy = skip_copy or relation.identifier in skip_copy_after_prior_fail
-            try:
-                build_single_relation(conn, relation, skip_copy=this_skip_copy, dry_run=dry_run,
-                                      **monitor_info[relation.identifier])
-            except (RelationConstructionError, RelationDataError) as exc:
-                if relation.is_required:
-                    raise RequiredRelationLoadError([relation.identifier]) from exc
-                logger.warning("Failed relation '%s' is not required, ignoring this exception:",
-                               relation.identifier, exc_info=True)
-                failed_relations.append(relation)
-                dependent_relations = etl.relation.find_dependents(target_relations, [relation])
-                if dependent_relations:
-                    dependent_identifiers = [relation.identifier for relation in dependent_relations]
-                    skip_copy_after_prior_fail.update(dependent_identifiers)
-                    logger.warning("Continuing while omitting %d dependent relation(s): %s",
-                                   len(dependent_identifiers), join_with_quotes(dependent_identifiers))
-
-    if failed_relations:
-        logger.warning("These relations failed to build: %s",
-                       join_with_quotes(relation.identifier for relation in failed_relations))
-    if not dry_run:
-        logger.info("Built %d relation(s) in transformation schemas, %d failed, %d left empty (%s)",
-                    len(target_relations), len(failed_relations), len(skip_copy_after_prior_fail), timer)
-
-
-def build_relations(dsn_etl: Dict[str, str], relations: List[RelationDescription], command: str,
-                    skip_copy=False, dry_run=False) -> None:
-    """
-    "Building" relations refers to creating them, granting access, and if they should hold data, load them.
-
-    When there is an error with loading a particular table, then we'll proceed to trying to
-    create the dependent relations using "skip copy" mode.
-    When any failed relation is required, this raises an exception.
-    """
-    monitor_info = build_monitor_info(relations, command, dsn_etl["database"])
-    with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        build_source_relations(conn, relations, monitor_info, skip_copy=skip_copy, dry_run=dry_run)
-        build_transformation_relations(conn, relations, monitor_info, skip_copy=skip_copy, dry_run=dry_run)
-
-
-def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                        skip_copy=False, no_rollback=False, dry_run=False):
-    """
-    Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
-
-    Check that only complete schemas are selected. Error out if not.
-
-    1 Determine schemas that house any of the selected or dependent relations.
-    2 Move old schemas in the data warehouse out of the way (for "backup").
-    3 Create new schemas (and give access)
-    4 Loop over all relations in selected schemas:
-      4.1 Create relation (and give access)
-      4.2 Load data into tables or CTAS (no further action for views)
-          If it's a source table, use COPY to load data.
-          If it's a CTAS with an identity column, create temp table, then move data into final table.
-          If it's a CTAS without an identity column, insert values straight into final table.
-    On error: restore the backup (unless asked not to rollback)
-
-    N.B. If arthur gets interrupted (eg. because the instance is inadvertently shut down),
-    then there will be an incomplete state.
-    """
-    relations = evaluate_execution_order(all_relations, selector, include_dependents=True)
-    if not relations:
-        logger.warning("Found no relations matching: %s", selector)
-        return
-    traversed_schemas = find_traversed_schemas(relations)
-    logger.info("Starting to load %s relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
-
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
-        logger.info("Open connections:\n%s", etl.pg.format_result(etl.pg.list_connections(conn)))
-        logger.info("Open transactions:\n%s", etl.pg.format_result(etl.pg.list_transactions(conn)))
-
-    etl.dw.backup_schemas(dsn_etl, traversed_schemas, dry_run=dry_run)
-    try:
-        etl.dw.create_schemas(dsn_etl, traversed_schemas, dry_run=dry_run)
-        build_relations(dsn_etl, relations, "load", skip_copy=skip_copy, dry_run=dry_run)
-    except ETLRuntimeError:
-        if not no_rollback:
-            etl.dw.restore_schemas(dsn_etl, traversed_schemas, dry_run=dry_run)
-        raise
-
-
-def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                           only_selected=False, skip_copy=False, dry_run=False):
-    """
-    Push new (structural) changes and fresh data through data warehouse.
-
-    This will create schemas as needed to house the relations being created or replaced.
-    The set of relations is usually expanded to include all those in (transitively) depending
-    on the selected ones. But this can be kept to just the selected ones for faster testing.
-
-    For all relations:
-        1 Drop relation
-        2.Create relation and grant access to the relation
-        3 Unless skip_copy is true (else leave tables empty):
-            3.1 Load data into tables
-            3.2 Verify constraints
-    """
-    relations = evaluate_execution_order(all_relations, selector, include_dependents=not only_selected)
-    if not relations:
-        logger.warning("Found no relations matching: %s", selector)
-        return
-    traversed_schemas = find_traversed_schemas(relations)
-    logger.info("Starting to upgrade %s relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
-
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    etl.dw.create_missing_schemas(dsn_etl, traversed_schemas, dry_run=dry_run)
-    build_relations(dsn_etl, relations, "upgrade", skip_copy=skip_copy, dry_run=dry_run)
-
-
-def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                          only_selected=False, run_vacuum=False, dry_run=False):
-    """
-    Let new data percolate through the data warehouse.
-
-    Within a transaction:
-        Iterate over relations (selected or (selected and transitively dependent)):
-            1 Delete rows
-            2.Load data from upstream sources using COPY command, load data into CTAS using views for queries
-            3 Verify constraints
-
-    Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
-    Finally, if elected, run vacuum (in new connection) for all tables that were modified.
-    """
-    relations = evaluate_execution_order(all_relations, selector, include_dependents=not only_selected)
-    tables = [relation for relation in relations if not relation.is_view_relation]
-    if not tables:
-        logger.warning("Found no tables matching: %s", selector)
-        return
-    logger.info("Starting to update %s tables(s)", len(tables))
-
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    monitor_info = build_monitor_info(tables, "update", dsn_etl["database"])
-
-    # Run update within a transaction:
-    with closing(etl.pg.connection(dsn_etl, readonly=dry_run)) as conn, conn as tx:
-        for relation in tables:
-            monitor_info[relation.identifier]["dry_run"] = dry_run  # make type checker happy
-            with etl.monitor.Monitor(**monitor_info[relation.identifier]):
-                delete_whole_table(tx, relation, dry_run=dry_run)
-                update_table(tx, relation, dry_run=dry_run)
-                verify_constraints(tx, relation, dry_run=dry_run)
-
-    if run_vacuum:
-        with Timer() as timer:
-            vacuum(dsn_etl, tables, dry_run=dry_run)
-        if not dry_run:
-            logger.info("Ran vacuum for %d table(s) (%s)", len(tables), timer)
-
-
-def vacuum(dsn_etl: Dict[str, str], relations: List[RelationDescription], dry_run=False) -> None:
-    """
-    Final step ... tidy up the warehouse before guests come over.
-
-    This needs to open a new connection since it needs to happen outside a transaction.
-    """
-    with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        for relation in relations:
-            if dry_run:
-                logger.info("Dry-run: Skipping vacuum of '%s'", relation.identifier)
-            else:
-                logger.info("Running vacuum step on table '%s'", relation.identifier)
-                etl.pg.execute(conn, "VACUUM {}".format(relation))
-
-
-def verify_constraints(conn: connection, relation: RelationDescription, dry_run=False) -> None:
+def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Raises a FailedConstraintError if :relation's target table doesn't obey its declared constraints.
 
@@ -761,8 +375,9 @@ def verify_constraints(conn: connection, relation: RelationDescription, dry_run=
          WHERE {condition}
          GROUP BY {columns}
         HAVING COUNT(*) > 1
-         LIMIT 5
+         LIMIT {limit}
         """
+    limit = 5  # arbitrarily chosen limit of examples to show
 
     for constraint in constraints:
         [[constraint_type, columns]] = constraint.items()  # There will always be exactly one item.
@@ -771,18 +386,355 @@ def verify_constraints(conn: connection, relation: RelationDescription, dry_run=
             condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
         else:
             condition = "TRUE"
-        statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition).strip()
+
+        statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
             logger.info("Dry-run: Skipping check of %s constraint in '%s' on column(s): %s",
                         constraint_type, relation.identifier, join_with_quotes(columns))
-            etl.pg.skip_query(conn, statement)
+            etl.db.skip_query(conn, statement)
         else:
             logger.info("Checking %s constraint in '%s' on column(s): %s",
                         constraint_type, relation.identifier, join_with_quotes(columns))
-            results = etl.pg.query(conn, statement)
+            results = etl.db.query(conn, statement)
             if results:
-                logger.error("Constraint check failed with at least %d row(s)", len(results))
+                if len(results) == limit:
+                    logger.error("Constraint check failed on at least %d row(s)", len(results))
+                else:
+                    logger.error("Constraint check failed on %d row(s)", len(results))
                 raise FailedConstraintError(relation, constraint_type, columns, results)
+
+
+# ---- Section 2: Functions that work on schemas ----
+
+def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWarehouseSchema]:
+    """
+    Return schemas traversed when refreshing relations (in order that they are needed).
+    """
+    got_it = set()  # type: Set[str]
+    traversed_in_order = []
+    for relation in relations:
+        this_schema = relation.schema_config
+        if this_schema.name not in got_it:
+            got_it.add(this_schema.name)
+            traversed_in_order.append(this_schema)
+    return traversed_in_order
+
+
+# ---- Section 3: Functions that tie table operations together ----
+
+def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+    """
+    Update table contents either from CSV files from upstream sources or by running some SQL
+    for CTAS relations. This assumes that the table was previously created.
+
+    For tables backed by upstream sources, data is copied in.
+
+    If the CTAS doesn't have a key (no identity column), then values are inserted straight from a view.
+
+    If a column is marked as being a key (identity is true), then a temporary table is built from
+    the query and then copied into the "CTAS" relation. If the name of the relation starts with "dim_",
+    then it's assumed to be a dimension and a row with missing values (mostly 0, false, etc.) is added as well.
+    """
+    try:
+        if relation.is_ctas_relation:
+            if relation.has_identity_column:
+                load_ctas_using_temp_table(conn, relation, dry_run=dry_run)
+            else:
+                load_ctas_directly(conn, relation, dry_run=dry_run)
+        else:
+            copy_data(conn, relation, dry_run=dry_run)
+        analyze(conn, relation, dry_run=dry_run)
+    except Exception as exc:
+        raise UpdateTableError(exc) from exc
+
+
+def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+    """
+    Empty out tables (either with delete or by create-or-replacing them) and fill 'em up.
+    Unless in delete mode, this always makes sure tables and views are created.
+
+    Within transaction? Only applies to tables which get emptied and then potentially filled again.
+    Not in transaction? Drop and create all relations, for tables, also potentially fill 'em up again.
+    """
+
+    with relation.monitor():
+
+        # Step 1 -- clear out existing data (by deletion or by re-creation)
+        if relation.delete_to_reset():
+            delete_whole_table(conn, relation, dry_run=dry_run)
+        elif relation.create_to_reset():
+            create_or_replace_relation(conn, relation, dry_run=dry_run)
+
+        # Step 2 -- load data (and verify)
+        if relation.is_view_relation:
+            pass
+        elif relation.skip_copy:
+            logger.info("Skipping loading data into '%s'", relation.identifier)
+        else:
+            update_table(conn, relation, dry_run=dry_run)
+            verify_constraints(conn, relation, dry_run=dry_run)
+
+
+def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
+    assert not relation.is_transformation, "submitted view to parallel load"
+    conn = pool.getconn()
+    try:
+        build_one_relation(conn, relation, dry_run=dry_run)
+        conn.commit()
+    except Exception as exc:
+        # Add (some) exception information close to when it happened
+        message = str(exc).split('\n', 1)[0]
+        if relation.is_required:
+            logger.error("Exception information for required relation '%s': %s", relation.identifier, message)
+        else:
+            logger.warning("Exception information for relation '%s': %s", relation.identifier, message)
+        pool.putconn(conn, close=True)
+        raise
+    else:
+        pool.putconn(conn, close=False)
+
+
+def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
+    """
+    Final step ... tidy up the warehouse before guests come over.
+
+    This needs to open a new connection since it needs to happen outside a transaction.
+    """
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        for relation in relations:
+            etl.db.run(conn, "Running vacuum on '{:x}'".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
+        if not dry_run:
+            logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
+
+
+# ---- Section 4: Functions related to control flow ----
+
+def create_source_tables_with_data(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
+    """
+    Pick out all tables in source schemas from the list of relations and build up just those.
+    Return list of identifiers for relations that are now empty (failed to load).
+
+    Since we know that these relations never have dependencies, we don't have to track any
+    failures while loading them.
+    """
+    timer = Timer()
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+    futures = {}  # type: Dict[str, concurrent.futures.Future]
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+            for relation in relations:
+                future = executor.submit(build_one_relation_using_pool, pool, relation, dry_run=dry_run)
+                futures[relation.identifier] = future
+            # TODO for fail fast, switch to FIRST_EXCEPTION
+            done, not_done = concurrent.futures.wait(futures.values(), return_when=concurrent.futures.ALL_COMPLETED)
+            cancelled = [future for future in not_done if future.cancel()]
+            logger.info("Wrapping up work in %d worker(s): %d done, %d not done (%d cancelled) (%s)",
+                        max_concurrency, len(done), len(not_done), len(cancelled), timer)
+    finally:
+        pool.closeall()
+
+    for relation in relations:
+        try:
+            futures[relation.identifier].result()
+        except concurrent.futures.CancelledError:
+            pass
+        except (RelationConstructionError, RelationDataError):
+            relation.failed = True
+            if relation.is_required:
+                logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+            else:
+                logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+
+    failed_and_required = [relation.identifier for relation in relations if relation.failed and relation.is_required]
+    if failed_and_required:
+        raise RequiredRelationLoadError(failed_and_required)
+
+    failed = [relation.identifier for relation in relations if relation.failed]
+    if failed:
+        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+    logger.info("Finished with %d relation(s) in source schemas (%s)", len(relations), timer)
+
+
+def create_transformations_with_data(relations: List[LoadableRelation], dry_run=False) -> None:
+    """
+    Pick out all tables in transformation schemas from the list of relations and build up just those.
+
+    These relations may be dependent on relations that may have failed before we reached them.
+    If dependencies were left empty, we'll fall back to skip_copy mode.
+    Unless the relation is "required" in which case we abort here.
+    """
+    transformations = [relation for relation in relations if relation.is_transformation]
+    if not transformations:
+        logger.info("None of the relations are in transformation schemas")
+        return
+
+    timer = Timer()
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        for relation in transformations:
+            try:
+                build_one_relation(conn, relation, dry_run=dry_run)
+            except (RelationConstructionError, RelationDataError) as exc:
+                if relation.is_required:
+                    raise RequiredRelationLoadError([relation.identifier]) from exc
+                dependent_relations = relation.find_dependents(transformations)
+                dependent_required = [relation.identifier for relation in dependent_relations if relation.is_required]
+                if dependent_required:
+                    raise RequiredRelationLoadError(dependent_required, relation.identifier) from exc
+                logger.warning("Failed relation '%s' is not required, ignoring this exception:",
+                               relation.identifier, exc_info=True)
+                if dependent_relations:
+                    for deb in dependent_relations:
+                        deb.skip_copy = True
+                    dependents = [relation.identifier for relation in dependent_relations]
+                    logger.warning("Continuing while omitting dependent relation(s): %s", join_with_quotes(dependents))
+
+    failed = [relation.identifier for relation in relations if relation.failed]
+    if failed:
+        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+    skipped = [relation.identifier for relation in relations if relation.failed]
+    if 0 < len(skipped) < len(relations):
+        logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_quotes(skipped))
+    logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
+
+
+def create_relations_with_data(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
+    """
+    "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
+    """
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+    else:
+        create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
+
+    create_transformations_with_data(relations, dry_run=dry_run)
+
+
+def select_execution_order(relations: List[RelationDescription], selector: TableSelector,
+                           include_dependents=False) -> List[RelationDescription]:
+    """
+    Return list of relations that were selected and optionally, expand the list by the dependents of the selected ones.
+    """
+    logger.info("Pondering execution order of %d relation(s)", len(relations))
+    execution_order = etl.relation.order_by_dependencies(relations)
+    selected = etl.relation.find_matches(execution_order, selector)
+    if include_dependents:
+        dependents = etl.relation.find_dependents(execution_order, selected)
+        combined = frozenset(relation.identifier for relation in chain(selected, dependents))
+        selected = [relation for relation in execution_order if relation.identifier in combined]
+    return selected
+
+
+# ---- Section 5: "Callbacks" (functions that implement commands) ----
+
+def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+                        max_concurrency=1, skip_copy=False, no_rollback=False, dry_run=False):
+    """
+    Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
+
+    Check that only complete schemas are selected. Error out if not.
+
+    1 Determine schemas that house any of the selected or dependent relations.
+    2 Move old schemas in the data warehouse out of the way (for "backup").
+    3 Create new schemas (and give access)
+    4 Loop over all relations in selected schemas:
+      4.1 Create relation (and give access)
+      4.2 Load data into tables or CTAS (no further action for views)
+          If it's a source table, use COPY to load data.
+          If it's a CTAS with an identity column, create temp table, then move data into final table.
+          If it's a CTAS without an identity column, insert values straight into final table.
+    On error: restore the backup (unless asked not to rollback)
+
+    N.B. If arthur gets interrupted (eg. because the instance is inadvertently shut down),
+    then there will be an incomplete state.
+    """
+    selected_relations = select_execution_order(all_relations, selector, include_dependents=True)
+    if not selected_relations:
+        logger.warning("Found no relations matching: %s", selector)
+        return
+
+    relations = LoadableRelation.from_descriptions(selected_relations, "load", skip_copy=skip_copy)
+    traversed_schemas = find_traversed_schemas(relations)
+    logger.info("Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+        logger.info("Open connections:\n%s", etl.db.format_result(etl.db.list_connections(conn)))
+        logger.info("Open transactions:\n%s", etl.db.format_result(etl.db.list_transactions(conn)))
+
+    etl.data_warehouse.backup_schemas(traversed_schemas, dry_run=dry_run)
+    try:
+        etl.data_warehouse.create_schemas(traversed_schemas, dry_run=dry_run)
+        create_relations_with_data(relations, max_concurrency, dry_run=dry_run)
+    except ETLRuntimeError:
+        if not no_rollback:
+            etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
+        raise
+
+
+def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+                           max_concurrency=1, only_selected=False, skip_copy=False, dry_run=False):
+    """
+    Push new (structural) changes and fresh data through data warehouse.
+
+    This will create schemas as needed to house the relations being created or replaced.
+    The set of relations is usually expanded to include all those in (transitively) depending
+    on the selected ones. But this can be kept to just the selected ones for faster testing.
+
+    For all relations:
+        1 Drop relation
+        2.Create relation and grant access to the relation
+        3 Unless skip_copy is true (else leave tables empty):
+            3.1 Load data into tables
+            3.2 Verify constraints
+    """
+    selected_relations = select_execution_order(all_relations, selector, include_dependents=not only_selected)
+    if not selected_relations:
+        logger.warning("Found no relations matching: %s", selector)
+        return
+
+    relations = LoadableRelation.from_descriptions(selected_relations, "upgrade", skip_copy=skip_copy)
+    traversed_schemas = find_traversed_schemas(relations)
+    logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+
+    etl.data_warehouse.create_schemas(traversed_schemas, dry_run=dry_run)
+    create_relations_with_data(relations, max_concurrency, dry_run=dry_run)
+
+
+def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+                          only_selected=False, run_vacuum=False, dry_run=False):
+    """
+    Let new data percolate through the data warehouse.
+
+    Within a transaction:
+        Iterate over relations (selected or (selected and transitively dependent)):
+            1 Delete rows
+            2.Load data from upstream sources using COPY command, load data into CTAS using views for queries
+            3 Verify constraints
+
+    Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
+    Finally, if elected, run vacuum (in new connection) for all tables that were modified.
+    """
+    selected_relations = select_execution_order(all_relations, selector, include_dependents=not only_selected)
+    tables = [relation for relation in selected_relations if not relation.is_view_relation]
+    if not tables:
+        logger.warning("Found no tables matching: %s", selector)
+        return
+
+    relations = LoadableInTransactionRelation.from_descriptions(selected_relations, "update")
+    logger.info("Starting to update %d tables(s)", len(relations))
+
+    # Run update within a transaction:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:
+        for relation in relations:
+            build_one_relation(conn, relation, dry_run=dry_run)
+
+    if run_vacuum:
+        vacuum(tables, dry_run=dry_run)
 
 
 def show_dependents(relations: List[RelationDescription], selector: TableSelector):
@@ -793,9 +745,8 @@ def show_dependents(relations: List[RelationDescription], selector: TableSelecto
     part of the propagation of an update or upgrade.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    complete_sequence = evaluate_execution_order(relations, selector, include_dependents=True)
+    complete_sequence = select_execution_order(relations, selector, include_dependents=True)
     selected_relations = etl.relation.find_matches(complete_sequence, selector)
-
     if len(selected_relations) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
@@ -811,7 +762,7 @@ def show_dependents(relations: List[RelationDescription], selector: TableSelecto
 
     max_len = max(len(relation.identifier) for relation in complete_sequence)
     line_template = ("{index:4d} {relation.identifier:{width}s}"
-                     " # {flag:9s} kind={relation.kind} is_required={relation.is_required}")
+                     " # {flag:9s} | kind={relation.kind} is_required={relation.is_required}")
     for i, relation in enumerate(complete_sequence):
         if relation.identifier in selected:
             flag = "selected"

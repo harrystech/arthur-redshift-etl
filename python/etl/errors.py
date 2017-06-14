@@ -175,10 +175,12 @@ class FailedConstraintError(RelationDataError):
 
 class RequiredRelationLoadError(ETLRuntimeError):
 
-    def __init__(self, failed_relations):
+    def __init__(self, failed_relations, bad_apple=None):
         # Avoiding `join_with_quotes` here to keep this module import-free
-        self.message = "required relations with failure: "
+        self.message = "required relation(s) with failure: "
         self.message += ", ".join("'{}'".format(name) for name in failed_relations)
+        if bad_apple:
+            self.message += ", triggered by load failure of '{}'".format(bad_apple)
 
     def __str__(self):
         return self.message

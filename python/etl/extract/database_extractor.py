@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 from psycopg2.extensions import connection  # only for type annotation
 
-import etl.pg
+import etl.db
 from etl.extract.extractor import Extractor
 from etl.config.dw import DataWarehouseSchema
 from etl.relation import RelationDescription
@@ -118,7 +118,7 @@ class DatabaseExtractor(Extractor):
                  , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
             """
         table = relation.source_table_name
-        rows = etl.pg.query(conn, stmt, (str(table), str(table)))
+        rows = etl.db.query(conn, stmt, (str(table), str(table)))
         bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
         self.logger.info("Size of table '%s.%s': %s (%s)",
                          relation.source_name, table.identifier, bytes_size, pretty_size)
