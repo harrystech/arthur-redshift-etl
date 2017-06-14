@@ -82,7 +82,7 @@ def build_table_constraints(table_design: dict) -> List[str]:
     return ddl_for_constraints
 
 
-def build_table_attributes(table_design: dict, is_temp=False) -> List[str]:
+def build_table_attributes(table_design: dict) -> List[str]:
     """
     Return the attributes from the table design so that they can be inserted into a SQL DDL statement.
 
@@ -122,7 +122,7 @@ def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) ->
     # FIXME We should derive is_temp from the table_name
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
-    attributes = build_table_attributes(table_design, is_temp=is_temp)
+    attributes = build_table_attributes(table_design)
 
     ddl = """
         CREATE TABLE {table_name} (

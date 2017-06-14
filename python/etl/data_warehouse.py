@@ -19,7 +19,7 @@ handy when you want to update the user's search path.
 
 import logging
 from contextlib import closing
-from typing import Dict, List
+from typing import List
 
 import etl.commands
 import etl.config
@@ -28,7 +28,6 @@ import etl.db
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import ETLError
 from etl.names import join_with_quotes
-from etl.timer import Timer
 
 import psycopg2
 

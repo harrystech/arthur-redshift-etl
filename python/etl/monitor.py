@@ -20,7 +20,7 @@ import time
 import traceback
 import urllib.parse
 import uuid
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal

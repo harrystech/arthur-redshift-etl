@@ -697,8 +697,8 @@ class CreateSchemasCommand(SubCommand):
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
         with etl.db.log_error():
             if args.with_backup:
-                etl.data_warehouse.backup_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
-            etl.data_warehouse.create_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+                etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
+            etl.data_warehouse.create_schemas(schemas, dry_run=args.dry_run)
 
 
 class RestoreSchemasCommand(SubCommand):
@@ -715,7 +715,7 @@ class RestoreSchemasCommand(SubCommand):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
         with etl.db.log_error():
-            etl.data_warehouse.restore_schemas(config.dsn_etl, schemas, dry_run=args.dry_run)
+            etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):

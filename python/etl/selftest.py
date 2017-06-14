@@ -56,14 +56,14 @@ def load_tests(loader, tests, pattern):
     return tests
 
 
-def run_doctest(module: Optional[str]=None, log_level: str="INFO") -> None:
+def run_doctest(module_: Optional[str]=None, log_level: str= "INFO") -> None:
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
     print("Running doctests...")
-    if module is None:
-        module = __name__
-    test_program = unittest.main(module=module, verbosity=verbosity, exit=False, argv=sys.argv[:2])
+    if module_ is None:
+        module_ = __name__
+    test_program = unittest.main(module=module_, verbosity=verbosity, exit=False, argv=sys.argv[:2])
     test_result = test_program.result
     if not test_result.wasSuccessful():
         raise etl.errors.SelfTestError("Unsuccessful (run=%d, errors=%d, failures=%d)" %

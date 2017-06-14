@@ -133,7 +133,7 @@ def validate_column_references(table_design):
         if obj == 'constraints':
             # This evaluates all unique constraints at once by concatenating all of the columns.
             cols = [col for constraint in constraints for col in constraint.get(key, [])]
-        elif obj == 'attributes':
+        else:  # 'attributes'
             cols = table_design.get(obj, {}).get(key, [])
         unknown = join_with_quotes(frozenset(cols).difference(valid_columns))
         if unknown:
@@ -202,10 +202,10 @@ def validate_semantics_of_table(table_design):
 
     split_by_name = table_design.get('extract_settings', {}).get('split_by', [])
     if split_by_name:
-        [split_by_column] = [c for c in table_design.get('columns', []) if c['name'] == split_by_name[0]]
+        [split_by_column] = [c for c in table_design["columns"] if c['name'] == split_by_name[0]]
         if split_by_column["type"] not in ("int", "long"):
             raise TableDesignSemanticError(
-                "Split-by column type must be numeric (int or long) not {}".format(split_by_column["type"])
+                "Split-by column type must be numeric (int or long) not '{}'".format(split_by_column["type"])
             )
 
 

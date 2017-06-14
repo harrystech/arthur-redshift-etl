@@ -351,7 +351,7 @@ arthur.py load  # This will automatically create schemas and tables as necessary
 | `show_dependents`  | Inspect the other relations impacted by changes to the selected ones |
 | `show_dependency_chain`  | Inspect which other relations feed the selected ones |
 
-The patterns used by commands like `extracat` or `load` may be provided using files.
+The patterns used by commands like `extract` or `load` may be provided using files.
 Together with `show_dependents` and `show_dependency_chains`, this opens up
 opportunities to work on a "sub-tree" of the data warehouse.
 

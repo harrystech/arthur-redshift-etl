@@ -185,13 +185,6 @@ def execute(cx, stmt, args=(), return_result=False):
         if cursor.rowcount is not None and cursor.rowcount > 0:
             logger.debug("QUERY STATUS: %s [%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
         else:
-            printable_stmt = cursor.mogrify(stmt)
-        logger.debug("QUERY:\n%s\n;", remove_credentials(printable_stmt.decode()))
-        with Timer() as timer:
-            cursor.execute(executable_statement)
-        if cursor.rowcount is not None and cursor.rowcount > 0:
-            logger.debug("QUERY STATUS: %s [%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
-        else:
             logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
             for msg in cx.notices:
@@ -228,7 +221,10 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
         return execute(cx, stmt, args=args, return_result=return_result)
 
 
-def format_result(dict_rows):
+def format_result(dict_rows) -> str:
+    """
+    Take result from query() and pretty-format it into one string, ready for print or log.
+    """
     keys = list(dict_rows[0].keys())
     content = [keys]  # header
     for row in dict_rows:
@@ -354,12 +350,15 @@ def set_search_path(cx, schemas):
 
 
 def list_connections(cx):
-    return query(cx, """SELECT datname, procpid, usesysid, usename FROM pg_stat_activity""")
+    return query(cx, """SELECT datname, procpid, usesysid, usename
+                          FROM pg_catalog.pg_stat_activity""")
 
 
 def list_transactions(cx):
-    return query(cx, """SELECT  t.*,  c.relname FROM svv_transactions t
-                        JOIN pg_catalog.pg_class c    ON t.relation = c.OID""")
+    return query(cx, """SELECT t.*
+                             , c.relname
+                          FROM pg_catalog.svv_transactions t
+                          JOIN pg_catalog.pg_class c ON t.relation = c.OID""")
 
 
 # ---- SCHEMAS ----

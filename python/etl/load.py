@@ -476,6 +476,7 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
+    assert not relation.is_transformation, "submitted view to parallel load"
     conn = pool.getconn()
     try:
         build_one_relation(conn, relation, dry_run=dry_run)
@@ -517,18 +518,13 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
     Since we know that these relations never have dependencies, we don't have to track any
     failures while loading them.
     """
-    source_relations = [relation for relation in relations if not relation.is_transformation]
-    if not source_relations:
-        logger.info("None of the relations are in source schemas")
-        return
-
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
     futures = {}  # type: Dict[str, concurrent.futures.Future]
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            for relation in source_relations:
+            for relation in relations:
                 future = executor.submit(build_one_relation_using_pool, pool, relation, dry_run=dry_run)
                 futures[relation.identifier] = future
             # TODO for fail fast, switch to FIRST_EXCEPTION
@@ -539,13 +535,17 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
     finally:
         pool.closeall()
 
-    for relation in source_relations:
+    for relation in relations:
         try:
             futures[relation.identifier].result()
         except concurrent.futures.CancelledError:
             pass
-        except (RelationConstructionError, RelationDataError) as exc:
+        except (RelationConstructionError, RelationDataError):
             relation.failed = True
+            if relation.is_required:
+                logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+            else:
+                logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
 
     failed_and_required = [relation.identifier for relation in relations if relation.failed and relation.is_required]
     if failed_and_required:
@@ -554,7 +554,7 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
     failed = [relation.identifier for relation in relations if relation.failed]
     if failed:
         logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
-    logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
+    logger.info("Finished with %d relation(s) in source schemas (%s)", len(relations), timer)
 
 
 def create_transformations_with_data(relations: List[LoadableRelation], dry_run=False) -> None:
@@ -586,8 +586,8 @@ def create_transformations_with_data(relations: List[LoadableRelation], dry_run=
                 logger.warning("Failed relation '%s' is not required, ignoring this exception:",
                                relation.identifier, exc_info=True)
                 if dependent_relations:
-                    for relation in dependent_relations:
-                        relation.skip_copy = True
+                    for deb in dependent_relations:
+                        deb.skip_copy = True
                     dependents = [relation.identifier for relation in dependent_relations]
                     logger.warning("Continuing while omitting dependent relation(s): %s", join_with_quotes(dependents))
 
@@ -604,7 +604,12 @@ def create_relations_with_data(relations: List[LoadableRelation], max_concurrenc
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
-    create_source_tables_with_data(relations, max_concurrency, dry_run=dry_run)
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+    else:
+        create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
+
     create_transformations_with_data(relations, dry_run=dry_run)
 
 
