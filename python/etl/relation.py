@@ -260,6 +260,10 @@ class RelationDescription:
                     selected_columns.append('"{name}"'.format(**column))
         return selected_columns
 
+    @property
+    def num_partitions(self):
+        return self.table_design.get("extract_settings", {}).get("num_partitions")
+
     def find_partition_key(self) -> Union[str, None]:
         """
         Return valid partition key for a relation which fulfills the conditions that
