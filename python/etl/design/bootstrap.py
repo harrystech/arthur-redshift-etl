@@ -114,6 +114,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
           JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
          WHERE i.indisunique
+           AND i.indpred IS NULL
            AND ns.nspname = %s
            AND cls.relname = %s
          ORDER BY "constraint_type", ic.relname"""
