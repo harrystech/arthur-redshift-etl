@@ -373,6 +373,9 @@ Once everything is working fine in staging, you can promote the code into produc
 
 Pull requests are welcome!
 
+Development takes place on the `next` branch. So go ahead, and create a branch off `next` and work
+on the next ETL feature.
+
 * Please run code through [pep8](https://www.python.org/dev/peps/pep-0008/) (see [local config](.pep8)):
 ```shell
 pep8 python
@@ -383,14 +386,27 @@ pep8 python
 ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 ```
 
+* Run the unit tests (including doc tests) and type checker before submitting a PR.
+```
+run_tests.py
+```
+
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/))
+
 * Use git rebasing to merge your commits into logical chunks
 (See [Thoughtbot's guidelines](https://github.com/thoughtbot/guides/blob/master/protocol/git/README.md))
 
 ## Releasing new versions
 
 Here are the basic steps to release a new version. Appropriate as you deem appropriate.
+
+### Creating patches
+
+For minor updates, use a PR to update `next`. Anything that requires integration tests or
+running code in development cluster first should go through a release candidate.
+
+### Creating a release candidate
 
 * Create a new branch for the release candidate, e.g. `v0_22_0` for v0.22.0.
 (Do yourself a favor and use underscores in branch names and periods in the tag names.)
@@ -402,16 +418,37 @@ Here are the basic steps to release a new version. Appropriate as you deem appro
 * Go through pull requests that are ready for release and change their base branch to your release branch (in our example, `v0_22_0`).
     * Make sure the PR message contains the Issue number or the Jira story (like DW-99).
     * Add the changes from the story work into comments of the PR.
+        * Consider changes that are user facing and make there's a summary for those
+        * List all bug fixes (especially when there are associated tickets)
+        * Highlight internal changes, like changes in data structures or added control flow
     * Then merge the ready PRs into your release candidate.
 
-* Test then merge the PR with your release candidate into master.
+* Test then merge the PR with your release candidate into `next`.
 
 * Create a release under [Releases](https://github.com/harrystech/harrys-redshift-etl/releases).
     * Create a new release and set the release version, e.g. `v0.22.0`.
     * Copy the comments from the PR where you collected all the changes into the release notes.
     * Save the release which will add the tag of the release.
 
-* Ship the new version using `upload_env.sh`.
+* Ship the new version using `upload_env.sh` in development.
+
+### Releasing code to master branch
+
+Once code is considered ready for production:
+* Merge `next` into `master`
+```
+git checkout master
+git pull
+git merge origin/next
+git push
+```
+* Then merge `master` back into `next` to ensure any hotfixes on master get picked up:
+```
+git checkout next
+git pull
+git merge --no-ff origin/master
+git push
+```
 
 # Tips & Tricks
 
