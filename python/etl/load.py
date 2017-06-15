@@ -559,7 +559,7 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(relations), timer)
 
 
-def create_transformations_with_data(relations: List[LoadableRelation], dry_run=False) -> None:
+def create_transformations_with_data(relations: List[LoadableRelation], max_concurrency: int, dry_run=False) -> None:
     """
     Pick out all tables in transformation schemas from the list of relations and build up just those.
 
@@ -575,6 +575,7 @@ def create_transformations_with_data(relations: List[LoadableRelation], dry_run=
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        set_redshift_wlm_slots(conn, max_concurrency)
         for relation in transformations:
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
@@ -602,6 +603,11 @@ def create_transformations_with_data(relations: List[LoadableRelation], dry_run=
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 
+def set_redshift_wlm_slots(conn: connection, slots: int) -> None:
+    logger.info("Using %d WLM queue slots for transformations.", slots)
+    etl.db.execute(conn, "SET wlm_query_slot_count to {}".format(slots))
+
+
 def create_relations_with_data(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
@@ -612,7 +618,7 @@ def create_relations_with_data(relations: List[LoadableRelation], max_concurrenc
     else:
         create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
 
-    create_transformations_with_data(relations, dry_run=dry_run)
+    create_transformations_with_data(relations, max_concurrency, dry_run=dry_run)
 
 
 def select_execution_order(relations: List[RelationDescription], selector: TableSelector,
