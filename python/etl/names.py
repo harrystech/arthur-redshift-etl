@@ -5,12 +5,11 @@ To be safe, we always delimit names in queries but would prefer not to during lo
 
 There are additional methods and classes here to support the feature of choosing relations
 by a pattern from the command line.
-
-Finally, we offer some context managers to create temporary views and tables that return the
-names of the created views or tables and automatically clean up.
 """
 
 import fnmatch
+import uuid
+from typing import Optional, List
 
 
 def join_with_quotes(names):
@@ -75,8 +74,9 @@ class TableName:
 
     __slots__ = ("_schema", "_table")
 
-    def __init__(self, schema, table):
-        self._schema = schema.lower()
+    def __init__(self, schema: Optional[str], table) -> None:
+        # Concession to subclasses ... schema is optional
+        self._schema = schema.lower() if schema else None
         self._table = table.lower()
 
     @property
@@ -99,7 +99,7 @@ class TableName:
         return self._schema, self._table
 
     @property
-    def identifier(self):
+    def identifier(self) -> str:
         """
         Return simple identifier, like one would use on the command line.
 
@@ -110,7 +110,7 @@ class TableName:
         return "{0.schema}.{0.table}".format(self)
 
     @classmethod
-    def from_identifier(cls, identifier):
+    def from_identifier(cls, identifier: str):
         """
         Split identifier into schema and table before creating a new TableName instance
 
@@ -156,15 +156,18 @@ class TableName:
         elif code == 'x':
             return self.identifier
         else:
-            raise ValueError("Unknown format code '{}' for TableName".format(code))
+            raise ValueError("Unknown format code '{}' for {}".format(code, self.__class__.__name__))
 
-    def __eq__(self, other):
-        return self.to_tuple() == other.to_tuple()
+    def __eq__(self, other: object):
+        if isinstance(other, TableName):
+            return self.to_tuple() == other.to_tuple()
+        else:
+            return False
 
     def __hash__(self):
         return hash((self._schema, self._table))
 
-    def __lt__(self, other):
+    def __lt__(self, other: "TableName"):
         """
         Order two table names, case-insensitive. (Used by sort.)
 
@@ -175,7 +178,7 @@ class TableName:
         """
         return self.identifier < other.identifier
 
-    def match(self, other):
+    def match(self, other: "TableName") -> bool:
         """
         Treat yo'self as a tuple of patterns and match against the other table.
 
@@ -190,11 +193,11 @@ class TableName:
         >>> tp.match(tn)
         False
         """
-        other_schema = other.schema.lower()
-        other_table = other.table.lower()
+        other_schema = other.schema
+        other_table = other.table
         return fnmatch.fnmatch(other_schema, self.schema) and fnmatch.fnmatch(other_table, self.table)
 
-    def match_pattern(self, pattern):
+    def match_pattern(self, pattern: str) -> bool:
         """
         Test whether this table matches the given pattern
 
@@ -205,6 +208,67 @@ class TableName:
         False
         """
         return fnmatch.fnmatch(self.identifier, pattern)
+
+
+class TempTableName(TableName):
+    """
+    Class to deal with names of temporary relations.
+
+    Note that temporary views or tables do not have a schema (*) and have a name starting with '#'.
+    (* = strictly speaking, their schema is one of the pg_temp% schemas. But who's looking.)
+
+    >>> temp = TempTableName("#hello")
+    >>> str(temp)
+    '"#hello"'
+    >>> temp.identifier
+    '#hello'
+    >>> "For SQL: {:s}, for logging: {:x}".format(temp, temp)
+    'For SQL: "#hello", for logging: #hello'
+
+    Schema and name comparison in SQL continues to work if you use LIKE for schema names:
+    >>> temp.schema
+    'pg_temp%'
+    """
+    def __init__(self, table) -> None:
+        if not table.startswith('#'):
+            raise ValueError("name of temporary table must start with '#'")
+        super().__init__(None, table)
+
+    @property
+    def schema(self):
+        return "pg_temp%"
+
+    @property
+    def identifier(self):
+        return self.table
+
+    def __str__(self):
+        return '"{}"'.format(self.table)
+
+    @staticmethod
+    def for_table(table: TableName):
+        """
+        Return a valid name for a temporary table that's derived from the given table name.
+
+        Leaks Redshift spec in that we make sure that names are less than 127 characters long.
+
+        >>> table = "public.speakeasy"
+        >>> tn = TableName.from_identifier(table)
+        >>> temp = TempTableName.for_table(tn)
+        >>> temp.identifier
+        '#public$speakeasy'
+        >>> str(temp)
+        '"#public$speakeasy"'
+
+        >>> too_long = "public." + "abcd" * 32
+        >>> tt = TempTableName.for_table(TableName.from_identifier(too_long))
+        >>> len(tt.identifier)
+        127
+        """
+        temp_name = "#{0.schema}${0.table}".format(table)
+        if len(temp_name) > 127:
+            temp_name = temp_name[:119] + uuid.uuid4().hex[:8]
+        return TempTableName(temp_name)
 
 
 class TableSelector:
@@ -221,7 +285,7 @@ class TableSelector:
     If no base schemas are set, then we default simply to a list of schemas from the patterns.
     """
 
-    __slots__ = ["_patterns", "_base_schemas"]
+    __slots__ = ("_patterns", "_base_schemas")
 
     def __init__(self, patterns=None, base_schemas=None):
         """
@@ -313,7 +377,7 @@ class TableSelector:
         else:
             return "[{}]".format(join_with_quotes(p.identifier for p in self._patterns))
 
-    def match_schema(self, schema):
+    def match_schema(self, schema) -> bool:
         """
         Match against schema name, return true if any pattern matches the schema name
         and the schema is part of the base schemas (if defined).
@@ -336,7 +400,7 @@ class TableSelector:
                     return True
             return False
 
-    def selected_schemas(self):
+    def selected_schemas(self) -> List[str]:
         """
         Return list of schemas from base schemas that match the selection.
         It is an error if a pattern tries to select a specific table instead of a schema.
@@ -352,7 +416,7 @@ class TableSelector:
         for pattern in self._patterns:
             if pattern.table != '*':
                 raise ValueError("pattern selects table, not schema: '%s'" % pattern)
-        return list(filter(self.match_schema, self._base_schemas))
+        return [schema for schema in self._base_schemas if self.match_schema(schema)]
 
     def match(self, table_name):
         """

@@ -68,6 +68,12 @@
             "level": "INFO",
             "propagate": 0
         },
+        "boto3.resources.action": {
+            "qualname": "boto3.resources.action",
+            "handlers": [ "file" ],
+            "level": "WARNING",
+            "propagate": 0
+        },
         "monitor_http": {
             "qualname": "monitor_http",
             "handlers": ["monitor_http"],

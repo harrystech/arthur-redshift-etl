@@ -24,7 +24,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl
 import etl.monitor
-import etl.pg
+import etl.db
 import etl.s3
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
@@ -58,8 +58,8 @@ def run_redshift_unload(conn: connection, relation: RelationDescription, unload_
         unload_statement += "ALLOWOVERWRITE"
 
     logger.info("Unloading data from '%s' to '%s'", relation.identifier, unload_path)
-    with etl.pg.log_error():
-        etl.pg.execute(conn, unload_statement)
+    with etl.db.log_error():
+        etl.db.execute(conn, unload_statement)
 
 
 def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
@@ -122,6 +122,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
+    logger.info("Loading table design for %d relation(s) to look for unloadable relations", len(relations))
     etl.relation.RelationDescription.load_in_parallel(relations)
 
     unloadable_relations = [d for d in relations if d.is_unloadable]
@@ -138,7 +139,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
     error_occurred = False
-    conn = etl.pg.connection(config.dsn_etl, autocommit=True, readonly=True)
+    conn = etl.db.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:

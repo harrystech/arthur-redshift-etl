@@ -285,7 +285,7 @@ bin/aws_emr_cluster.sh -i "<your S3 bucket>"
 
 Now check for the output and pick up the cluster ID. There will be a line that looks something like this:
 ```
-+ CLUSER_ID=j-12345678
++ CLUSTER_ID=j-12345678
 ```
 
 You can then use `arthur.py --submit "<cluster ID>"` instead of `arthur.py` in the examples below.
@@ -327,22 +327,13 @@ arthur.py sync "<schema>.<table>"  # This will upload local files for just one t
 | Sub-command   | Goal |
 | ---- | ---- |
 | `extract`  | Get data from upstream sources |
-| `load`, `update` | Move data from upstream sources and let it percolate |
+| `load`, `upgrade` | Make data warehouse "structural" changes and let data percolate through |
+| `update` | Move data from upstream sources and let it percolate through |
 | `unload` | Take data from a relation in the data warehouse and extract as CSVs into S3 |
 
 ```shell
 arthur.py extract
-arthur.py load  # This will automatically create schemas as necessary
-```
-
-### Running unit tests on ETL code
-
-| Sub-command   | Goal |
-| ---- | ---- |
-| `selftest`  | Run unit tests builtin code before committing changes |
-
-```shell
-arthur.py selftest
+arthur.py load  # This will automatically create schemas and tables as necessary
 ```
 
 ### Dealing with schemas (create, restore)
@@ -352,6 +343,52 @@ arthur.py selftest
 | `create_schemas`  | Create schemas; normally `load` will do that for you |
 | `restore_schemas`  | Bring back schemas from backup if `load` was aborted |
 
+
+### Working with subsets of tables
+
+| Sub-command   | Goal |
+| ---- | ---- |
+| `show_dependents`  | Inspect the other relations impacted by changes to the selected ones |
+| `show_dependency_chain`  | Inspect which other relations feed the selected ones |
+
+The patterns used by commands like `extract` or `load` may be provided using files.
+Together with `show_dependents` and `show_dependency_chains`, this opens up
+opportunities to work on a "sub-tree" of the data warehouse.
+
+#### Working with just the source schemas or transformation schemas
+
+At the beginning it might be worthwhile to focus just on tables in source schemas -- those
+tables that get loaded using CSV files after `extract`.
+```shell
+arthur.py show_dependents -q | grep 'kind=DATA' | tee sources.txt
+
+# List CSV files and manifests, then continue with upgrade etc.
+arthur.py ls --remote --only @sources.txt
+```
+
+The above also works when we're just interested in transformations. This can
+save time while iterating on transformations since the sources won't be reloaded.
+
+Example:
+```shell
+arthur.py show_dependents -q | grep -v 'kind=DATA' | tee transformations.txt
+
+arthur.py sync @transformations.txt
+arthur.py upgrade --only @transformations.txt
+```
+
+#### Working with a table and everything feeding it
+
+While working on transformations or constraints, it might be useful to focus on just a
+set of of tables that feed data into it.
+
+Example:
+```shell
+arthur.py show_dependency_chain -q www.users | tee www_users.txt
+
+arthur.py sync www.users
+arthur.py upgrade --only @www_users.txt
+```
 
 ## Working with a staging environment
 
@@ -468,23 +505,29 @@ source ../harrys-redshift-etl/etc/arthur_completion.sh
 
 And if you're using `virtualenv-wrapper`, then you should make this part of the activation sequence.
 
-### iPython
+### iPython and q
 
-Consider installing [iPython](https://ipython.org/index.html).
+Consider installing [iPython](https://ipython.org/index.html):
 ```shell
 pip3 install ipython
 ```
 
-### Running type checker
-
-Here is how to run the static type checker [mypy](http://mypy-lang.org/):
+Also, [q](https://github.com/zestyping/q) comes in handy for debugging:
 ```shell
-mypy python --strict-optional --ignore-missing-imports
-
-arthur.py selftest typecheck
+pip3 install q
 ```
 
-Keep this handy [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
+### Running unit tests and type checker
+
+Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
+```shell
+run_tests.py
+
+# And in case you have a config file handy
+arthur.py self-test
+```
+
+Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
 
 ### EMR login / EC2 login
 
