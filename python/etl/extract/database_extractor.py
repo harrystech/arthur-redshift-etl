@@ -90,8 +90,8 @@ class DatabaseExtractor(Extractor):
             partitions -= 1
             partition_size = table_size / partitions
 
-        self.logger.debug("Number of partitions: {:d} (max: {:d}, min size: {:d}, partition_size: {:d})",
-                          partitions, self.max_partitions, min_partition_size, int(partition_size))
+        self.logger.debug("Number of partitions: %d (max: %d), partition size: %d (table size: %d, min size: %d)",
+                          partitions, self.max_partitions, int(partition_size), table_size, min_partition_size)
         return partitions
 
     def select_statement(self, relation: RelationDescription, add_sampling_on_column: Optional[str]) -> str:
