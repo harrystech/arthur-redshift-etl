@@ -575,7 +575,7 @@ def create_transformations_with_data(relations: List[LoadableRelation], max_conc
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        set_redshift_wlm_slots(conn, max_concurrency)
+        set_redshift_wlm_slots(conn, max_concurrency, dry_run=dry_run)
         for relation in transformations:
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
@@ -603,9 +603,9 @@ def create_transformations_with_data(relations: List[LoadableRelation], max_conc
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 
-def set_redshift_wlm_slots(conn: connection, slots: int) -> None:
-    logger.info("Using %d WLM queue slots for transformations.", slots)
-    etl.db.execute(conn, "SET wlm_query_slot_count to {}".format(slots))
+def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
+    etl.db.run(conn, "Using {} WLM queue slots for transformations.".format(slots),
+               "SET wlm_query_slot_count TO {}".format(slots), dry_run=dry_run)
 
 
 def create_relations_with_data(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
