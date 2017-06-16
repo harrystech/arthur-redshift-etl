@@ -29,7 +29,7 @@ import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.design.bootstrap
-import etl.pg
+import etl.db
 import etl.relation
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLRuntimeError  # Exception classes that we might catch
@@ -172,7 +172,7 @@ def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_go
         return
 
     # TODO Parallelize but use separate connections per thread
-    with closing(etl.pg.connection(dsn, autocommit=True)) as conn:
+    with closing(etl.db.connection(dsn, autocommit=True)) as conn:
         for relation in transforms:
             validate_single_transform(conn, relation, keep_going=keep_going)
 
@@ -251,7 +251,7 @@ def check_select_permission(conn: connection, table_name: TableName):
     # Why mess with querying the permissions table when you can just try to read (EAFP).
     statement = """SELECT 1 FROM {} WHERE FALSE""".format(table_name)
     try:
-        etl.pg.execute(conn, statement)
+        etl.db.execute(conn, statement)
     except psycopg2.Error as exc:
         raise UpstreamValidationError("failed to read from upstream table '%s'" % table_name.identifier) from exc
 
@@ -347,7 +347,7 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
     Validate table design of an upstream table against its source database.
     """
     try:
-        with etl.pg.log_error():
+        with etl.db.log_error():
             check_select_permission(conn, table.source_table_name)
             validate_upstream_columns(conn, table)
             validate_upstream_constraints(conn, table)
@@ -386,7 +386,7 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], relations: Lis
         tables = list(table_group)
         source = source_lookup[source_name]
         logger.info("Checking %d table(s) in upstream source '%s'", len(tables), source_name)
-        with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
+        with closing(etl.db.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             for table in tables:
                 validate_upstream_table(conn, table, keep_going=keep_going)
 

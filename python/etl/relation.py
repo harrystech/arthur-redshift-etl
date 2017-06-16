@@ -23,13 +23,15 @@ from operator import attrgetter
 from queue import PriorityQueue
 from typing import Any, Dict, FrozenSet, Optional, Union, List
 
+import etl.config
 import etl.design.load
 import etl.file_sets
-import etl.pg
+import etl.db
 import etl.s3
 import etl.timer
+from etl.config.dw import DataWarehouseSchema
 from etl.errors import CyclicDependencyError, MissingQueryError
-from etl.names import join_with_quotes, TableName, TableSelector
+from etl.names import join_with_quotes, TableName, TableSelector, TempTableName
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -59,10 +61,14 @@ class RelationDescription:
     def __init__(self, discovered_files: etl.file_sets.TableFileSet) -> None:
         # Basic properties to locate files describing the relation
         self._fileset = discovered_files
-        self.bucket_name = discovered_files.netloc if discovered_files.scheme == "s3" else None
-        self.prefix = discovered_files.path
+        if discovered_files.scheme == "s3":
+            self.bucket_name = discovered_files.netloc
+            self.prefix = discovered_files.path
+        else:
+            self.bucket_name = None
+            self.prefix = None
         # Note the subtle difference to TableFileSet--here the manifest_file_name is always present since it's computed
-        self.manifest_file_name = os.path.join(self.prefix, "data", self.source_path_name + ".manifest")
+        self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
         self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design and query statement and any derived information from the table design
         self._table_design = None  # type: Optional[Dict[str, Any]]
@@ -79,7 +85,7 @@ class RelationDescription:
             return self._fileset.target_table_name
 
     @property
-    def identifier(self):
+    def identifier(self) -> str:
         return self.target_table_name.identifier
 
     def __str__(self):
@@ -87,6 +93,22 @@ class RelationDescription:
 
     def __repr__(self):
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
+
+    def __format__(self, code):
+        """
+        Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
+
+        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
+        >>> relation = RelationDescription(fs)
+        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
+        'As delimited identifier: "c"."b", as string: c.b'
+        """
+        if (not code) or (code == 's'):
+            return str(self)
+        elif code == 'x':
+            return self.identifier
+        else:
+            raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
 
     def load(self) -> None:
         """
@@ -106,7 +128,6 @@ class RelationDescription:
         """
         Load all relations' table design file in parallel.
         """
-        logger.info("Loading table design for %d relation(s)", len(relations))
         with etl.timer.Timer() as timer:
             # TODO With Python 3.6, we should pass in a thread_name_prefix
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -119,19 +140,30 @@ class RelationDescription:
         return self._table_design  # type: ignore
 
     @property
-    def is_ctas_relation(self):
-        return self.table_design["source_name"] == "CTAS"
+    def kind(self) -> str:
+        if self.table_design["source_name"] in ("CTAS", "VIEW"):
+            return self.table_design["source_name"]
+        else:
+            return "DATA"
 
     @property
-    def is_view_relation(self):
-        return self.table_design["source_name"] == "VIEW"
+    def is_ctas_relation(self) -> bool:
+        return self.kind == "CTAS"
 
     @property
-    def is_unloadable(self):
+    def is_view_relation(self) -> bool:
+        return self.kind == "VIEW"
+
+    @property
+    def is_transformation(self) -> bool:
+        return self.kind != "DATA"
+
+    @property
+    def is_unloadable(self) -> bool:
         return "unload_target" in self.table_design
 
     @property
-    def is_required(self):
+    def is_required(self) -> bool:
         if self._is_required is None:
             raise RuntimeError("State of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self))
         return self._is_required
@@ -151,11 +183,6 @@ class RelationDescription:
             else:
                 with open(self.sql_file_name) as f:
                     query_stmt = f.read()
-            if self.staging:
-                # Rewrite the query to use staging schemas:
-                for dependency in self.dependencies:
-                    staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
-                    query_stmt = query_stmt.replace(dependency, staging_dependency.identifier)
 
             self._query_stmt = query_stmt.strip().rstrip(';')
         return str(self._query_stmt)  # The str(...) shuts up the type checker.
@@ -167,29 +194,45 @@ class RelationDescription:
         return self._dependencies
 
     @property
-    def unquoted_columns(self):
+    def source_name(self):
+        return self.target_table_name.schema
+
+    @property
+    def schema_config(self) -> DataWarehouseSchema:
+        dw_config = etl.config.get_dw_config()
+        return dw_config.schema_lookup(self.source_name)
+
+    @property
+    def unquoted_columns(self) -> List[str]:
         """
         List of the column names of this relation
         """
         return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
 
     @property
-    def columns(self):
+    def columns(self) -> List[str]:
         """
         List of delimited column names of this relation
         """
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
     @property
-    def source_name(self):
-        return self.target_table_name.schema
+    def has_identity_column(self) -> bool:
+        """
+        Return whether any of the columns is marked as identity column.
+        (Should only ever be possible for CTAS, see validation code).
+        """
+        return any(column.get("identity") for column in self.table_design["columns"])
 
     @property
-    def num_partitions(self):
-        return self.table_design.get('extract_settings', {}).get('num_partitions')
+    def is_missing_encoding(self) -> bool:
+        """
+        Return whether any column doesn't have encoding specified.
+        """
+        return any(not column.get("encoding") for column in self.table_design["columns"] if not column.get("skipped"))
 
     @classmethod
-    def from_file_sets(cls, file_sets, required_relation_selector=None):
+    def from_file_sets(cls, file_sets, required_relation_selector=None) -> List["RelationDescription"]:
         """
         Return a list of relation descriptions based on a list of file sets.
 
@@ -227,6 +270,10 @@ class RelationDescription:
                 else:
                     selected_columns.append('"{name}"'.format(**column))
         return selected_columns
+
+    @property
+    def num_partitions(self):
+        return self.table_design.get("extract_settings", {}).get("num_partitions")
 
     def find_partition_key(self) -> Union[str, None]:
         """
@@ -273,29 +320,17 @@ class RelationDescription:
 
         We look up which temp schema the view landed in so that we can use TableName.
         """
-        # Redshift seems to cut off identifier so we might as well not pass in something longer than 127.
-        view_identifier = "#{0.schema}${0.table}".format(self.target_table_name)[:127]
+        temp_view = TempTableName.for_table(self.target_table_name)
 
-        with etl.pg.log_error():
-            ddl_stmt = """CREATE OR REPLACE VIEW "{}" AS\n{}""".format(view_identifier, self.query_stmt)
-            logger.info("Creating view '%s' to match relation '%s'", view_identifier, self.identifier)
-            etl.pg.execute(conn, ddl_stmt)
-
-            lookup_stmt = """
-                SELECT nsp.nspname AS "schema"
-                     , cls.relname AS "table"
-                  FROM pg_catalog.pg_class cls
-                  JOIN pg_catalog.pg_namespace nsp ON cls.relnamespace = nsp.oid
-                 WHERE cls.relname = %s
-                   AND cls.relkind = 'v'
-                """
-            row = etl.pg.query(conn, lookup_stmt, (view_identifier,))[0]
-            view_name = TableName(**row)
+        with etl.db.log_error():
+            ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
+            logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)
+            etl.db.execute(conn, ddl_stmt)
 
             try:
-                yield view_name
+                yield temp_view
             finally:
-                etl.pg.execute(conn, "DROP VIEW {}".format(view_identifier))
+                etl.db.execute(conn, "DROP VIEW {}".format(temp_view))
 
     def as_staging_relation(self):
         relation = RelationDescription(self._fileset)
@@ -392,6 +427,7 @@ def set_required_relations(relations: List[RelationDescription], required_select
     Set the required property of the relations if they are directly or indirectly feeding
     into relations selected by the :required_selector.
     """
+    logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
     ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
     required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]

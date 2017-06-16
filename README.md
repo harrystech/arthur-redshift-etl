@@ -285,7 +285,7 @@ bin/aws_emr_cluster.sh -i "<your S3 bucket>"
 
 Now check for the output and pick up the cluster ID. There will be a line that looks something like this:
 ```
-+ CLUSER_ID=j-12345678
++ CLUSTER_ID=j-12345678
 ```
 
 You can then use `arthur.py --submit "<cluster ID>"` instead of `arthur.py` in the examples below.
@@ -327,22 +327,13 @@ arthur.py sync "<schema>.<table>"  # This will upload local files for just one t
 | Sub-command   | Goal |
 | ---- | ---- |
 | `extract`  | Get data from upstream sources |
-| `load`, `update` | Move data from upstream sources and let it percolate |
+| `load`, `upgrade` | Make data warehouse "structural" changes and let data percolate through |
+| `update` | Move data from upstream sources and let it percolate through |
 | `unload` | Take data from a relation in the data warehouse and extract as CSVs into S3 |
 
 ```shell
 arthur.py extract
-arthur.py load  # This will automatically create schemas as necessary
-```
-
-### Running unit tests on ETL code
-
-| Sub-command   | Goal |
-| ---- | ---- |
-| `selftest`  | Run unit tests builtin code before committing changes |
-
-```shell
-arthur.py selftest
+arthur.py load  # This will automatically create schemas and tables as necessary
 ```
 
 ### Dealing with schemas (create, restore)
@@ -352,6 +343,52 @@ arthur.py selftest
 | `create_schemas`  | Create schemas; normally `load` will do that for you |
 | `restore_schemas`  | Bring back schemas from backup if `load` was aborted |
 
+
+### Working with subsets of tables
+
+| Sub-command   | Goal |
+| ---- | ---- |
+| `show_dependents`  | Inspect the other relations impacted by changes to the selected ones |
+| `show_dependency_chain`  | Inspect which other relations feed the selected ones |
+
+The patterns used by commands like `extract` or `load` may be provided using files.
+Together with `show_dependents` and `show_dependency_chains`, this opens up
+opportunities to work on a "sub-tree" of the data warehouse.
+
+#### Working with just the source schemas or transformation schemas
+
+At the beginning it might be worthwhile to focus just on tables in source schemas -- those
+tables that get loaded using CSV files after `extract`.
+```shell
+arthur.py show_dependents -q | grep 'kind=DATA' | tee sources.txt
+
+# List CSV files and manifests, then continue with upgrade etc.
+arthur.py ls --remote --only @sources.txt
+```
+
+The above also works when we're just interested in transformations. This can
+save time while iterating on transformations since the sources won't be reloaded.
+
+Example:
+```shell
+arthur.py show_dependents -q | grep -v 'kind=DATA' | tee transformations.txt
+
+arthur.py sync @transformations.txt
+arthur.py upgrade --only @transformations.txt
+```
+
+#### Working with a table and everything feeding it
+
+While working on transformations or constraints, it might be useful to focus on just a
+set of of tables that feed data into it.
+
+Example:
+```shell
+arthur.py show_dependency_chain -q www.users | tee www_users.txt
+
+arthur.py sync www.users
+arthur.py upgrade --only @www_users.txt
+```
 
 ## Working with a staging environment
 
@@ -373,6 +410,9 @@ Once everything is working fine in staging, you can promote the code into produc
 
 Pull requests are welcome!
 
+Development takes place on the `next` branch. So go ahead, and create a branch off `next` and work
+on the next ETL feature.
+
 * Please run code through [pep8](https://www.python.org/dev/peps/pep-0008/) (see [local config](.pep8)):
 ```shell
 pep8 python
@@ -383,14 +423,27 @@ pep8 python
 ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 ```
 
+* Run the unit tests (including doc tests) and type checker before submitting a PR.
+```
+run_tests.py
+```
+
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/))
+
 * Use git rebasing to merge your commits into logical chunks
 (See [Thoughtbot's guidelines](https://github.com/thoughtbot/guides/blob/master/protocol/git/README.md))
 
 ## Releasing new versions
 
 Here are the basic steps to release a new version. Appropriate as you deem appropriate.
+
+### Creating patches
+
+For minor updates, use a PR to update `next`. Anything that requires integration tests or
+running code in development cluster first should go through a release candidate.
+
+### Creating a release candidate
 
 * Create a new branch for the release candidate, e.g. `v0_22_0` for v0.22.0.
 (Do yourself a favor and use underscores in branch names and periods in the tag names.)
@@ -402,16 +455,37 @@ Here are the basic steps to release a new version. Appropriate as you deem appro
 * Go through pull requests that are ready for release and change their base branch to your release branch (in our example, `v0_22_0`).
     * Make sure the PR message contains the Issue number or the Jira story (like DW-99).
     * Add the changes from the story work into comments of the PR.
+        * Consider changes that are user facing and make there's a summary for those
+        * List all bug fixes (especially when there are associated tickets)
+        * Highlight internal changes, like changes in data structures or added control flow
     * Then merge the ready PRs into your release candidate.
 
-* Test then merge the PR with your release candidate into master.
+* Test then merge the PR with your release candidate into `next`.
 
 * Create a release under [Releases](https://github.com/harrystech/harrys-redshift-etl/releases).
     * Create a new release and set the release version, e.g. `v0.22.0`.
     * Copy the comments from the PR where you collected all the changes into the release notes.
     * Save the release which will add the tag of the release.
 
-* Ship the new version using `upload_env.sh`.
+* Ship the new version using `upload_env.sh` in development.
+
+### Releasing code to master branch
+
+Once code is considered ready for production:
+* Merge `next` into `master`
+```
+git checkout master
+git pull
+git merge origin/next
+git push
+```
+* Then merge `master` back into `next` to ensure any hotfixes on master get picked up:
+```
+git checkout next
+git pull
+git merge --no-ff origin/master
+git push
+```
 
 # Tips & Tricks
 
@@ -431,23 +505,29 @@ source ../harrys-redshift-etl/etc/arthur_completion.sh
 
 And if you're using `virtualenv-wrapper`, then you should make this part of the activation sequence.
 
-### iPython
+### iPython and q
 
-Consider installing [iPython](https://ipython.org/index.html).
+Consider installing [iPython](https://ipython.org/index.html):
 ```shell
 pip3 install ipython
 ```
 
-### Running type checker
-
-Here is how to run the static type checker [mypy](http://mypy-lang.org/):
+Also, [q](https://github.com/zestyping/q) comes in handy for debugging:
 ```shell
-mypy python --strict-optional --ignore-missing-imports
-
-arthur.py selftest typecheck
+pip3 install q
 ```
 
-Keep this handy [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
+### Running unit tests and type checker
+
+Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
+```shell
+run_tests.py
+
+# And in case you have a config file handy
+arthur.py self-test
+```
+
+Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
 
 ### EMR login / EC2 login
 

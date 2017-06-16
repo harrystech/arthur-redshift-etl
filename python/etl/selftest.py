@@ -11,6 +11,7 @@ import logging
 import os.path
 import sys
 import unittest
+from typing import Optional
 
 import mypy.api
 
@@ -19,7 +20,7 @@ import etl.config
 import etl.design
 import etl.design.bootstrap
 import etl.design.load
-import etl.dw
+import etl.data_warehouse
 import etl.errors
 import etl.explain
 import etl.extract
@@ -28,7 +29,7 @@ import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.pg
+import etl.db
 import etl.pipeline
 import etl.relation
 import etl.s3
@@ -55,12 +56,14 @@ def load_tests(loader, tests, pattern):
     return tests
 
 
-def run_doctest(log_level: str="INFO") -> None:
+def run_doctest(module_: Optional[str]=None, log_level: str= "INFO") -> None:
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
     print("Running doctests...")
-    test_program = unittest.main(module="etl", verbosity=verbosity, exit=False, argv=sys.argv[:2])
+    if module_ is None:
+        module_ = __name__
+    test_program = unittest.main(module=module_, verbosity=verbosity, exit=False, argv=sys.argv[:2])
     test_result = test_program.result
     if not test_result.wasSuccessful():
         raise etl.errors.SelfTestError("Unsuccessful (run=%d, errors=%d, failures=%d)" %
@@ -82,8 +85,13 @@ def run_type_checker() -> None:
         print(error_report)
     if exit_status != 0:
         raise etl.errors.SelfTestError("Unsuccessful (exit status = %d)" % exit_status)
+    print("OK")
+
+
+def run_tests() -> None:
+    run_doctest()
+    run_type_checker()
 
 
 if __name__ == "__main__":
-    run_doctest()
-    run_type_checker()
+    run_tests()

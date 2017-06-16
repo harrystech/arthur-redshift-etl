@@ -19,12 +19,12 @@ handy when you want to update the user's search path.
 
 import logging
 from contextlib import closing
-from typing import Dict, List
+from typing import List
 
 import etl.commands
 import etl.config
 import etl.config.dw
-import etl.pg
+import etl.db
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import ETLError
 from etl.names import join_with_quotes
@@ -35,40 +35,43 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def create_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], staging=False, dry_run=False) -> None:
+def create_schemas(schemas: List[DataWarehouseSchema], staging=False, dry_run=False) -> None:
     """
     Create schemas and grant access.
     It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
     """
-    with closing(etl.pg.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for schema in schemas:
             create_schema_and_grant_access(conn, schema, staging=staging, dry_run=dry_run)
 
 
 def create_schema_and_grant_access(conn, schema, owner=None, staging=False, dry_run=False) -> None:
     group_names = join_with_quotes(schema.groups)
+    name = schema.staging_name if staging else schema.name
     if dry_run:
-        logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", schema.name, group_names)
+        logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", name, group_names)
     else:
         logger.info("Creating schema '%s'", name)
-        etl.pg.create_schema(conn, schema.name, owner)
-        etl.pg.grant_all_on_schema_to_user(conn, schema.name, schema.owner)
+        etl.pg.create_schema(conn, name, owner)
+        etl.pg.grant_all_on_schema_to_user(conn, name, schema.owner)
         if staging:
             # Don't grant usage on staging schemas to readers/writers
             return None
-        logger.info("Granting access to %s", join_with_quotes(schema.groups))
+        logger.info("Granting access to %s", group_names)
         for group in schema.groups:
             # Readers/writers are differentiated in table permissions, not schema permissions
             etl.pg.grant_usage(conn, name, group)
 
 
-def _promote_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema],
+def _promote_schemas(schemas: List[DataWarehouseSchema],
                      from_name_attr: str, dry_run=False) -> None:
     """
     Promote (staging or backup) schemas into their standard names and permissions
     Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name' or 'staging_name'
     """
-    with closing(etl.pg.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         names = [getattr(schema, from_name_attr) for schema in schemas]
         found = etl.pg.select_schemas(conn, names)
         need_promotion = [schema for schema in schemas if getattr(schema, from_name_attr) in found]
@@ -91,14 +94,15 @@ def _promote_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema],
                 etl.pg.grant_select_in_schema(conn, schema.name, reader_group)
 
 
-def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.
     Once the access is revoked, the backup schemas "disappear" from BI tools.
     """
-    with closing(etl.pg.connection(dsn, autocommit=True, readonly=dry_run)) as conn:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         names = [schema.name for schema in schemas]
-        found = etl.pg.select_schemas(conn, names)
+        found = etl.db.select_schemas(conn, names)
         need_backup = [schema for schema in schemas if schema.name in found]
         if not need_backup:
             logger.info("Found no existing schemas to backup")
@@ -107,33 +111,34 @@ def backup_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_
         if dry_run:
             logger.info("Dry-run: Skipping backup of schema(s) %s", selected_names)
             return
+
         logger.info("Creating backup of schema(s) %s", selected_names)
         for schema in need_backup:
             logger.info("Revoking access from readers to schema '%s' before backup", schema.name)
             for reader_group in schema.reader_groups:
-                etl.pg.revoke_usage(conn, schema.name, reader_group)
-                etl.pg.revoke_select_on_all_tables_in_schema(conn, schema.name, reader_group)
+                etl.db.revoke_usage(conn, schema.name, reader_group)
+                etl.db.revoke_select_on_all_tables_in_schema(conn, schema.name, reader_group)
             logger.info("Renaming schema '%s' to backup '%s'", schema.name, schema.backup_name)
-            etl.pg.drop_schema(conn, schema.backup_name)
-            etl.pg.alter_schema_rename(conn, schema.name, schema.backup_name)
+            etl.db.drop_schema(conn, schema.backup_name)
+            etl.db.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
-def restore_schemas(dsn: Dict[str, str], schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For the schemas that we need / want, rename the backups and restore access.
     This is the inverse of backup_schemas.
     Useful if bad data is in standard schemas
     """
-    _promote_schemas(conn, schemas, 'backup_name')
+    _promote_schemas(schemas, 'backup_name', dry_run=dry_run)
 
 
-def publish_schemas(conn, schemas):
+def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     Put staging schemas into their standard configuration
     (First backs up current occupants of standard position)
     """
-    backup_schemas(conn, schemas)
-    _promote_schemas(conn, schemas, 'staging_name')
+    backup_schemas(schemas, dry_run=dry_run)
+    _promote_schemas(schemas, 'staging_name', dry_run=dry_run)
 
 
 def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
@@ -165,29 +170,29 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
             logger.info("Dry-run: Skipping creation of required users: %s",
                         join_with_quotes(u.name for u in config.users))
         else:
-            with closing(etl.pg.connection(config.dsn_admin)) as conn:
+            with closing(etl.db.connection(config.dsn_admin)) as conn:
                 with conn:
                     logger.info("Creating required groups: %s", join_with_quotes(config.groups))
                     for group in config.groups:
-                        etl.pg.create_group(conn, group)
+                        etl.db.create_group(conn, group)
                     for user in config.users:
                         logger.info("Creating user '%s' in group '%s' with empty search path", user.name, user.group)
-                        etl.pg.create_user(conn, user.name, user.group)
-                        etl.pg.alter_search_path(conn, user.name, ['public'])
+                        etl.db.create_user(conn, user.name, user.group)
+                        etl.db.alter_search_path(conn, user.name, ['public'])
 
     if dry_run:
         logger.info("Dry-run: Skipping drop and create of database '%s' with owner '%s'", database_name, config.owner)
         logger.info("Dry-run: Skipping drop of PUBLIC schema in '%s'", database_name)
     else:
         logger.info("Dropping and creating database '%s' with owner '%s'", database_name, config.owner)
-        admin_dev_conn = etl.pg.connection(config.dsn_admin, autocommit=True)
+        admin_dev_conn = etl.db.connection(config.dsn_admin, autocommit=True)
         with closing(admin_dev_conn):
-            etl.pg.drop_and_create_database(admin_dev_conn, database_name, config.owner)
+            etl.db.drop_and_create_database(admin_dev_conn, database_name, config.owner)
         # Connect as admin to new database to drop `public`
-        admin_target_db_conn = etl.pg.connection(dict(config.dsn_admin, database=database_name), autocommit=True)
+        admin_target_db_conn = etl.db.connection(dict(config.dsn_admin, database=database_name), autocommit=True)
         with closing(admin_target_db_conn):
             logger.info("Dropping PUBLIC schema in '%s'", database_name)
-            etl.pg.drop_schema(admin_target_db_conn, "PUBLIC")
+            etl.db.drop_schema(admin_target_db_conn, "PUBLIC")
 
 
 def create_new_user(config, new_user, group=None, add_user_schema=False, skip_user_creation=False, dry_run=False):
@@ -211,7 +216,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
     if user.name in ("default", config.owner):
         raise ValueError("illegal user name '%s'" % user.name)
 
-    with closing(etl.pg.connection(config.dsn_admin_on_etl_db)) as conn:
+    with closing(etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)) as conn:
         with conn:
             if not skip_user_creation:
                 if dry_run:
@@ -219,10 +224,10 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                 else:
                     logger.info("Creating user '%s' in group '%s'", user.name, user.group)
                     try:
-                        etl.pg.create_user(conn, user.name, user.group)
+                        etl.db.create_user(conn, user.name, user.group)
                     except psycopg2.ProgrammingError:
-                        etl.pg.create_group(conn, user.group)
-                        etl.pg.create_user(conn, user.name, user.group)
+                        etl.db.create_group(conn, user.group)
+                        etl.db.create_user(conn, user.name, user.group)
 
             if group is not None:
                 # FIXME This check should come before creating the user
@@ -232,7 +237,7 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                     logger.info("Dry-run: Skipping adding user '%s' to group '%s'", user.name, group)
                 else:
                     logger.info("Adding user '%s' to group '%s'", user.name, group)
-                    etl.pg.alter_group_add_user(conn, group, user.name)
+                    etl.db.alter_group_add_user(conn, group, user.name)
             if add_user_schema:
                 user_schema = etl.config.dw.DataWarehouseSchema({"name": user.schema,
                                                                  "owner": user.name,
@@ -249,4 +254,4 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                 logger.info("Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path)
             else:
                 logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
-                etl.pg.alter_search_path(conn, user.name, search_path)
+                etl.db.alter_search_path(conn, user.name, search_path)

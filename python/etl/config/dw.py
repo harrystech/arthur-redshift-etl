@@ -9,7 +9,7 @@ from typing import Dict
 
 import etl.config.env
 import etl.names
-import etl.pg
+import etl.db
 from etl.errors import InvalidEnvironmentError
 
 
@@ -24,88 +24,6 @@ class DataWarehouseUser:
         self.name = user_info["name"]
         self.group = user_info["group"]
         self.schema = user_info.get("schema")
-
-
-class DataWarehouseConfig:
-    """
-    Pretty face to the object from the settings files.
-    """
-    def __init__(self, settings):
-        dw_settings = settings["data_warehouse"]
-
-        # Environment variables with DSN
-        self._admin_access = dw_settings["admin_access"]
-        self._etl_access = dw_settings["etl_access"]
-        self._check_access_to_cluster()
-        self._reference_warehouse_access = dw_settings["reference_warehouse_access"]
-        root = DataWarehouseUser(dw_settings["owner"])
-        # Users are in the order from the config
-        other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
-
-        # Note that the "owner," which is our super-user of sorts, comes first.
-        self.users = [root] + other_users
-        schema_owner_map = {u.schema: u.name for u in self.users if u.schema}
-
-        # Schemas (upstream sources followed by transformations, keeps order of settings file)
-        self.schemas = [
-            DataWarehouseSchema(
-                dict(info, owner=schema_owner_map.get(info['name'], root.name)),
-                self._etl_access)
-            for info in settings["sources"] + dw_settings.get("transformations", dw_settings.get("schemas", []))
-        ]
-
-        # Schemas may grant access to groups that have no bootstrapped users, so create all mentioned user groups
-        other_groups = {u.group for u in other_users} | {g for schema in self.schemas for g in schema.reader_groups}
-
-        # Groups are in sorted order after the root group
-        self.groups = [root.group] + sorted(other_groups)
-        # Surely You're Joking, Mr. Feynman?  Nope, pop works here.
-        self.default_group = [user["group"] for user in dw_settings["users"] if user["name"] == "default"].pop()
-        # Credentials used in COPY command that allow jumping into our data lake
-        self.iam_role = etl.config.get_data_lake_config("iam_role")
-        # Mapping SQL types to be able to automatically insert "expressions" into table design files.
-        self.type_maps = settings["type_maps"]
-        # Relation glob patterns indicating unacceptable load failures; matches everything if unset
-        self.required_in_full_load_selector = etl.names.TableSelector(settings.get("required_in_full_load", []))
-
-    def _check_access_to_cluster(self):
-        """
-        Make sure that the ETL and Admin access point to the same cluster (identified by host and port),
-        but they must point to different databases in the cluster.
-        It is ok if an environment variable is missing.  But if both are present they must align.
-        """
-        try:
-            etl_dsn = self.dsn_etl
-            admin_dsn = self.dsn_admin
-            if etl_dsn["host"] != admin_dsn["host"]:
-                raise InvalidEnvironmentError("Host is different between ETL and admin user")
-            if etl_dsn.get("port") != admin_dsn.get("port"):
-                raise InvalidEnvironmentError("Port is different between ETL and admin user")
-            if etl_dsn["database"] == admin_dsn["database"]:
-                raise InvalidEnvironmentError("Database is not different between ETL and admin user")
-        except (KeyError, ValueError):
-            pass
-
-    @property
-    def owner(self) -> DataWarehouseUser:
-        return self.users[0].name
-
-    @property
-    def dsn_admin(self) -> Dict[str, str]:
-        return etl.pg.parse_connection_string(etl.config.env.get(self._admin_access))
-
-    @property
-    def dsn_etl(self) -> Dict[str, str]:
-        return etl.pg.parse_connection_string(etl.config.env.get(self._etl_access))
-
-    @property
-    def dsn_admin_on_etl_db(self) -> Dict[str, str]:
-        # To connect as a superuser, but on the same database on which you would ETL
-        return dict(self.dsn_admin, database=self.dsn_etl['database'])
-
-    @property
-    def dsn_reference(self) -> Dict[str, str]:
-        return etl.pg.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
 
 
 class DataWarehouseSchema:
@@ -166,7 +84,7 @@ class DataWarehouseSchema:
         """
         # Note this returns None for a static source.
         if self._dsn_env_var:
-            return etl.pg.parse_connection_string(etl.config.env.get(self._dsn_env_var))
+            return etl.db.parse_connection_string(etl.config.env.get(self._dsn_env_var))
 
     @property
     def groups(self):
@@ -179,3 +97,89 @@ class DataWarehouseSchema:
     @property
     def staging_name(self):
         return etl.names.as_staging_name(self.name)
+
+
+class DataWarehouseConfig:
+    """
+    Pretty face to the object from the settings files.
+    """
+    def __init__(self, settings):
+        dw_settings = settings["data_warehouse"]
+
+        # Environment variables with DSN
+        self._admin_access = dw_settings["admin_access"]
+        self._etl_access = dw_settings["etl_access"]
+        self._check_access_to_cluster()
+        self._reference_warehouse_access = dw_settings["reference_warehouse_access"]
+        root = DataWarehouseUser(dw_settings["owner"])
+        # Users are in the order from the config
+        other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
+
+        # Note that the "owner," which is our super-user of sorts, comes first.
+        self.users = [root] + other_users
+        schema_owner_map = {u.schema: u.name for u in self.users if u.schema}
+
+        # Schemas (upstream sources followed by transformations, keeps order of settings file)
+        self.schemas = [
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info['name'], root.name)),
+                self._etl_access)
+            for info in settings["sources"] + dw_settings.get("transformations", dw_settings.get("schemas", []))
+        ]
+        self._schema_lookup = {schema.name: schema for schema in self.schemas}
+
+        # Schemas may grant access to groups that have no bootstrapped users, so create all mentioned user groups
+        other_groups = {u.group for u in other_users} | {g for schema in self.schemas for g in schema.reader_groups}
+
+        # Groups are in sorted order after the root group
+        self.groups = [root.group] + sorted(other_groups)
+        # Surely You're Joking, Mr. Feynman?  Nope, pop works here.
+        self.default_group = [user["group"] for user in dw_settings["users"] if user["name"] == "default"].pop()
+        # Credentials used in COPY command that allow jumping into our data lake
+        self.iam_role = etl.config.get_data_lake_config("iam_role")
+        # Mapping SQL types to be able to automatically insert "expressions" into table design files.
+        self.type_maps = settings["type_maps"]
+        # Relation glob patterns indicating unacceptable load failures; matches everything if unset
+        self.required_in_full_load_selector = etl.names.TableSelector(settings.get("required_in_full_load", []))
+
+    def _check_access_to_cluster(self):
+        """
+        Make sure that the ETL and Admin access point to the same cluster (identified by host and port),
+        but they must point to different databases in the cluster.
+        It is ok if an environment variable is missing.  But if both are present they must align.
+        """
+        try:
+            etl_dsn = self.dsn_etl
+            admin_dsn = self.dsn_admin
+            if etl_dsn["host"] != admin_dsn["host"]:
+                raise InvalidEnvironmentError("Host is different between ETL and admin user")
+            if etl_dsn.get("port") != admin_dsn.get("port"):
+                raise InvalidEnvironmentError("Port is different between ETL and admin user")
+            if etl_dsn["database"] == admin_dsn["database"]:
+                raise InvalidEnvironmentError("Database is not different between ETL and admin user")
+        except (KeyError, ValueError):
+            pass
+
+    @property
+    def owner(self) -> DataWarehouseUser:
+        return self.users[0].name
+
+    @property
+    def dsn_admin(self) -> Dict[str, str]:
+        return etl.db.parse_connection_string(etl.config.env.get(self._admin_access))
+
+    @property
+    def dsn_etl(self) -> Dict[str, str]:
+        return etl.db.parse_connection_string(etl.config.env.get(self._etl_access))
+
+    @property
+    def dsn_admin_on_etl_db(self) -> Dict[str, str]:
+        # To connect as a superuser, but on the same database on which you would ETL
+        return dict(self.dsn_admin, database=self.dsn_etl['database'])
+
+    @property
+    def dsn_reference(self) -> Dict[str, str]:
+        return etl.db.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
+
+    def schema_lookup(self, schema_name) -> DataWarehouseSchema:
+        return self._schema_lookup[schema_name]

@@ -13,7 +13,7 @@ import yaml.parser
 
 import etl
 import etl.config
-import etl.pg
+import etl.db
 import etl.file_sets
 import etl.s3
 from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
@@ -93,22 +93,6 @@ def validate_table_design_syntax(table_design, table_name):
         raise TableDesignSyntaxError("failed to validate table design for '{}'".format(table_name.identifier)) from exc
 
 
-def validate_semantics_of_view(table_design):
-    """
-    Check for semantics that only apply to views.
-
-    Basically, definitions of views may only contain column names.
-    """
-    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra information
-    # for the columns, like type, sql_type.
-    for column in table_design["columns"]:
-        if len(column) != 1:
-            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(list(column)))
-    for obj in ("constraints", "attributes", "extract_settings"):
-        if obj in table_design:
-            raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
-
-
 def validate_identity_as_surrogate_key(table_design):
     """
     Check whether specification of our identity column is valid and whether it matches surrogate key
@@ -149,7 +133,7 @@ def validate_column_references(table_design):
         if obj == 'constraints':
             # This evaluates all unique constraints at once by concatenating all of the columns.
             cols = [col for constraint in constraints for col in constraint.get(key, [])]
-        elif obj == 'attributes':
+        else:  # 'attributes'
             cols = table_design.get(obj, {}).get(key, [])
         unknown = join_with_quotes(frozenset(cols).difference(valid_columns))
         if unknown:
@@ -158,14 +142,30 @@ def validate_column_references(table_design):
                                                                                      unknown=unknown))
 
 
-def validate_semantics_of_table(table_design):
+def validate_semantics_of_view(table_design):
     """
-    Check for semantics that apply to tables only ... either upstream sources or CTAS.
+    Check for semantics that only apply to views.
+
+    Basically, definitions of views may only contain column names.
+    """
+    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra information
+    # for the columns, like type or sql_type.
+    for column in table_design["columns"]:
+        if len(column) != 1:
+            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(list(column)))
+    for obj in ("constraints", "attributes", "extract_settings"):
+        if obj in table_design:
+            raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
+
+
+def validate_semantics_of_table_or_ctas(table_design):
+    """
+    Check for semantics that apply to tables that are in source schemas or are a CTAS
     """
     validate_identity_as_surrogate_key(table_design)
     validate_column_references(table_design)
 
-    # Make sure that no constraints other than unique have multiple values
+    # Make sure that constraints other than unique constraint appear only once
     constraints = table_design.get("constraints", [])
     seen_constraint_types = set()
     for constraint in constraints:
@@ -174,53 +174,63 @@ def validate_semantics_of_table(table_design):
                 raise TableDesignSemanticError("multiple constraints of type {}".format(constraint_type))
             seen_constraint_types.add(constraint_type)
 
+
+def validate_semantics_of_ctas(table_design):
+    """
+    Check for semantics that apply only to CTAS
+    """
+    validate_semantics_of_table_or_ctas(table_design)
     if "extract_settings" in table_design:
-        if table_design.get('source_name') == 'CTAS':
-            raise TableDesignSemanticError("Extract settings not supported for transformations")
-        split_by_name = table_design['extract_settings'].get('split_by', [])
-        if split_by_name:
-            [split_by_column] = [c for c in table_design.get('columns', [])
-                                 if c['name'] == split_by_name[0]]
-            if split_by_column["type"] not in ("int", "long"):
-                raise TableDesignSemanticError(
-                    "Split-by column type must be numeric (int or long) not {}".format(split_by_column["type"])
-                )
+        raise TableDesignSemanticError("Extract settings not supported for transformations")
 
 
-def validate_table_design_semantics(table_design, table_name, _memoize_is_upstream_source={}):
+def validate_semantics_of_table(table_design):
+    """
+    Check for semantics that apply to tables in source schemas
+    """
+    validate_semantics_of_table_or_ctas(table_design)
+
+    if "depends_on" in table_design:
+        raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_design["name"])
+
+    constraints = table_design.get("constraints", [])
+    constraint_types_in_design = [t for c in constraints for t in c]
+    for constraint_type in ("natural_key", "surrogate_key"):
+        if constraint_type in constraint_types_in_design:
+            raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
+                                           (table_design["name"], constraint_type))
+
+    split_by_name = table_design.get('extract_settings', {}).get('split_by', [])
+    if split_by_name:
+        [split_by_column] = [c for c in table_design["columns"] if c['name'] == split_by_name[0]]
+        if split_by_column["type"] not in ("int", "long"):
+            raise TableDesignSemanticError(
+                "Split-by column type must be numeric (int or long) not '{}'".format(split_by_column["type"])
+            )
+
+
+def validate_table_design_semantics(table_design, table_name):
     """
     Validate table design against rule set based on values (e.g. name of columns).
     Raise an exception if anything is amiss.
     """
     if table_design["name"] != table_name.identifier:
         raise TableDesignSemanticError("name in table design must match target '{}'".format(table_name.identifier))
-    if table_name.schema not in _memoize_is_upstream_source:
-        dw_config = etl.config.get_dw_config()
-        for schema in dw_config.schemas:
-            if schema.name == table_name.schema:
-                _memoize_is_upstream_source[table_name.schema] = schema.is_upstream_source
-                break
+
+    schema = etl.config.get_dw_config().schema_lookup(table_name.schema)
 
     if table_design["source_name"] == "VIEW":
         validate_semantics_of_view(table_design)
-        if _memoize_is_upstream_source[table_name.schema]:
+        if schema.is_upstream_source:
             raise TableDesignSemanticError("invalid upstream source '%s' in view '%s'" %
                                            (table_name.schema, table_name.identifier))
     elif table_design["source_name"] == "CTAS":
-        validate_semantics_of_table(table_design)
-        if _memoize_is_upstream_source[table_name.schema]:
+        validate_semantics_of_ctas(table_design)
+        if schema.is_upstream_source:
             raise TableDesignSemanticError("invalid source name '%s' in upstream table '%s'" %
                                            (table_design["source_name"], table_name.identifier))
     else:
         validate_semantics_of_table(table_design)
-        if not _memoize_is_upstream_source[table_name.schema]:
+        if not schema.is_upstream_source:
             raise TableDesignSemanticError("invalid source name '%s' in transformation '%s'" %
                                            (table_design["source_name"], table_name.identifier))
-        if "depends_on" in table_design:
-            raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_name.identifier)
-        constraints = table_design.get("constraints", [])
-        constraint_types_in_design = [t for c in constraints for t in c]
-        for constraint_type in ("natural_key", "surrogate_key"):
-            if constraint_type in constraint_types_in_design:
-                    raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
-                                                   (table_name.identifier, constraint_type))

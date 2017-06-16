@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 
 import etl.config
 import etl.monitor
-import etl.pg
+import etl.db
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import SqoopExecutionError
@@ -40,7 +40,7 @@ class SqoopExtractor(DatabaseExtractor):
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
-        with closing(etl.pg.connection(source.dsn, readonly=True)) as conn:
+        with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
             table_size = self.fetch_source_table_size(conn, relation)
 
         connection_params_file_path = self.write_connection_params()
@@ -94,7 +94,7 @@ class SqoopExtractor(DatabaseExtractor):
         Starts with the command (import), then continues with generic options,
         tool specific options, and child-process options.
         """
-        jdbc_url, dsn_properties = etl.pg.extract_dsn(source_dsn)
+        jdbc_url, dsn_properties = etl.db.extract_dsn(source_dsn)
 
         partition_key = relation.find_partition_key()
         select_statement = self.build_sqoop_select(relation, partition_key, table_size)
