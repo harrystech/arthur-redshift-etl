@@ -264,7 +264,7 @@ def build_full_parser(prog_name):
             ExtractToS3Command, LoadDataWarehouseCommand, UpgradeDataWarehouseCommand, UpdateDataWarehouseCommand,
             UnloadDataToS3Command,
             # Helper commands
-            CreateSchemasCommand, RestoreSchemasCommand,
+            CreateSchemasCommand, PromoteSchemasCommand,
             ListFilesCommand, PingCommand,
             ShowDependentsCommand, ShowDependencyChainCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
@@ -310,8 +310,9 @@ def add_standard_arguments(parser, options):
                             nargs='*', action=StorePatternAsSelector)
     if "use-staging-schemas" in options:
         parser.add_argument("--use-staging-schemas",
-                            help="do all the work in hidden schemas and publish to standard names on completion",
-                            action="store_true")
+                            help="do all the work in hidden schemas and publish to standard names on completion, "
+                                 "default: %(default)s)",
+                            default=True, action="store_true")
     if "only-selected" in options:
         parser.add_argument("--only-selected",
                             help="only load data into selected relations"
@@ -710,7 +711,7 @@ class CreateSchemasCommand(SubCommand):
             etl.data_warehouse.create_schemas(schemas, dry_run=args.dry_run)
 
 
-class RestoreSchemasCommand(SubCommand):
+class PromoteSchemasCommand(SubCommand):
 
     def __init__(self):
         super().__init__("promote_schemas",
@@ -730,7 +731,6 @@ class RestoreSchemasCommand(SubCommand):
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
         with etl.db.log_error():
             if args.from_position == 'staging':
-                etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
                 etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
             elif args.from_position == 'backup':
                 etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)

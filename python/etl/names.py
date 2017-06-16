@@ -77,15 +77,20 @@ class TableName:
     >>> purchases = TableName.from_identifier("www.purchases")
     >>> orders < purchases
     True
+    >>> staging_purchases = purchases.as_staging_table_name()
+    >>> staging_purchases.table == purchases.table
+    True
+    >>> staging_purchases.schema == purchases.schema
+    False
     """
 
-    __slots__ = ("_schema", "_table", "staging")
+    __slots__ = ("_schema", "_table", "_staging")
 
-    def __init__(self, schema, table):
+    def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
-        self.staging = False
+        self._staging = False
 
     @property
     def schema(self):
@@ -98,6 +103,10 @@ class TableName:
     def table(self):
         return self._table
 
+    @property
+    def staging(self):
+        return self._staging
+
     def to_tuple(self):
         """
         Return schema name and table name as a handy tuple.
@@ -107,7 +116,7 @@ class TableName:
         >>> schema_name, table_name
         ('weather', 'temp')
         """
-        return self._schema, self._table
+        return self.schema, self.table
 
     @property
     def identifier(self) -> str:
@@ -118,7 +127,7 @@ class TableName:
         >>> tn.identifier
         'hello.world'
         """
-        return "{0.schema}.{0.table}".format(self)
+        return "{}.{}".format(*self.to_tuple())
 
     @classmethod
     def from_identifier(cls, identifier: str):
@@ -140,8 +149,10 @@ class TableName:
         >>> tn = TableName("hello", "world")
         >>> str(tn)
         '"hello"."world"'
+        >>> str(tn.as_staging_table_name())
+        '"etl_staging$hello"."world"'
         """
-        return '"{0}"."{1}"'.format(self.schema, self.table)
+        return '"{}"."{}"'.format(*self.to_tuple())
 
     def __format__(self, code):
         """
@@ -176,7 +187,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash((self._schema, self._table))
+        return hash(self.to_tuple())
 
     def __lt__(self, other: "TableName"):
         """
@@ -221,8 +232,8 @@ class TableName:
         return fnmatch.fnmatch(self.identifier, pattern)
 
     def as_staging_table_name(self):
-        tn = TableName(self.schema, self.table)
-        tn.staging = True
+        tn = TableName(*self.to_tuple())
+        tn._staging = True
         return tn
 
 

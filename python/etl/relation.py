@@ -451,7 +451,8 @@ def find_matches(relations: List[RelationDescription], selector: TableSelector):
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
-def find_dependents(relations: List[RelationDescription], seed_relations: List[RelationDescription]):
+def find_dependents(relations: List[RelationDescription], seed_relations: List[RelationDescription]
+                    ) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
     For this to really work, the list of relations should be sorted in "execution order"!

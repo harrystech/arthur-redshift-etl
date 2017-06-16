@@ -14,7 +14,7 @@ _arthur_completion()
             opts="initialize create_user
                   design auto_design bootstrap_sources bootstrap_transformations sync
                   extract load upgrade update unload
-                  create_schemas restore_schemas validate explain ls ping
+                  create_schemas promote_schemas validate explain ls ping
                   show_dependents show_dependency_chain show_pipelines selftest self-test
                   --submit --config"
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )

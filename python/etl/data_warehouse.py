@@ -35,33 +35,33 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def create_schemas(schemas: List[DataWarehouseSchema], staging=False, dry_run=False) -> None:
+def create_schemas(schemas: List[DataWarehouseSchema], use_staging=False, dry_run=False) -> None:
     """
     Create schemas and grant access.
     It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for schema in schemas:
-            create_schema_and_grant_access(conn, schema, staging=staging, dry_run=dry_run)
+            create_schema_and_grant_access(conn, schema, use_staging=use_staging, dry_run=dry_run)
 
 
-def create_schema_and_grant_access(conn, schema, owner=None, staging=False, dry_run=False) -> None:
+def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, dry_run=False) -> None:
     group_names = join_with_quotes(schema.groups)
-    name = schema.staging_name if staging else schema.name
+    name = schema.staging_name if use_staging else schema.name
     if dry_run:
         logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", name, group_names)
     else:
         logger.info("Creating schema '%s'", name)
-        etl.pg.create_schema(conn, name, owner)
-        etl.pg.grant_all_on_schema_to_user(conn, name, schema.owner)
-        if staging:
+        etl.db.create_schema(conn, name, owner)
+        etl.db.grant_all_on_schema_to_user(conn, name, schema.owner)
+        if use_staging:
             # Don't grant usage on staging schemas to readers/writers
             return None
         logger.info("Granting access to %s", group_names)
         for group in schema.groups:
             # Readers/writers are differentiated in table permissions, not schema permissions
-            etl.pg.grant_usage(conn, name, group)
+            etl.db.grant_usage(conn, name, group)
 
 
 def _promote_schemas(schemas: List[DataWarehouseSchema],
@@ -71,14 +71,14 @@ def _promote_schemas(schemas: List[DataWarehouseSchema],
     Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name' or 'staging_name'
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.pg.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         names = [getattr(schema, from_name_attr) for schema in schemas]
-        found = etl.pg.select_schemas(conn, names)
+        found = etl.db.select_schemas(conn, names)
         need_promotion = [schema for schema in schemas if getattr(schema, from_name_attr) in found]
         if not need_promotion:
             logger.info("Found no %s schemas to promote", from_name_attr)
             return
-        selected_names = join_with_quotes(schema.name for schema in need_promotion)
+        selected_names = join_with_quotes(getattr(schema, from_name_attr) for schema in need_promotion)
         if dry_run:
             logger.info("Dry-run: Skipping promotion of schema(s) %s", selected_names)
             return
@@ -86,12 +86,12 @@ def _promote_schemas(schemas: List[DataWarehouseSchema],
         for schema in need_promotion:
             from_name = getattr(schema, from_name_attr)
             logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
-            etl.pg.drop_schema(conn, schema.name)
-            etl.pg.alter_schema_rename(conn, from_name, schema.name)
+            etl.db.drop_schema(conn, schema.name)
+            etl.db.alter_schema_rename(conn, from_name, schema.name)
             logger.info("Granting readers access to schema '%s' after promotion", schema.name)
             for reader_group in schema.reader_groups:
-                etl.pg.grant_usage(conn, schema.name, reader_group)
-                etl.pg.grant_select_in_schema(conn, schema.name, reader_group)
+                etl.db.grant_usage(conn, schema.name, reader_group)
+                etl.db.grant_select_in_schema(conn, schema.name, reader_group)
 
 
 def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
