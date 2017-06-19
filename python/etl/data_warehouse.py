@@ -72,19 +72,19 @@ def _promote_schemas(schemas: List[DataWarehouseSchema],
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        names = [getattr(schema, from_name_attr) for schema in schemas]
+        from_name_schema_lookup = {getattr(schema, from_name_attr): schema for schema in schemas}
+        names = list(from_name_schema_lookup.keys())
         found = etl.db.select_schemas(conn, names)
-        need_promotion = [schema for schema in schemas if getattr(schema, from_name_attr) in found]
+        need_promotion = {name: schema for name, schema in from_name_schema_lookup.items() if name in found}
         if not need_promotion:
             logger.info("Found no %s schemas to promote", from_name_attr)
             return
-        selected_names = join_with_quotes(getattr(schema, from_name_attr) for schema in need_promotion)
+        selected_names = join_with_quotes(need_promotion.keys())
         if dry_run:
             logger.info("Dry-run: Skipping promotion of schema(s) %s", selected_names)
             return
-        logger.info("Promote from %s schema(s) %s", from_name_attr, selected_names)
-        for schema in need_promotion:
-            from_name = getattr(schema, from_name_attr)
+        logger.info("Promoting from %s schema(s) %s", from_name_attr, selected_names)
+        for from_name, schema in need_promotion.items():
             logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
             etl.db.drop_schema(conn, schema.name)
             etl.db.alter_schema_rename(conn, from_name, schema.name)

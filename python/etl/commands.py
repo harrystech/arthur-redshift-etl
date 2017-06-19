@@ -308,16 +308,6 @@ def add_standard_arguments(parser, options):
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
-    if "use-staging-schemas" in options:
-        parser.add_argument("--use-staging-schemas",
-                            help="do all the work in hidden schemas and publish to standard names on completion, "
-                                 "default: %(default)s)",
-                            default=True, action="store_true")
-    if "only-selected" in options:
-        parser.add_argument("--only-selected",
-                            help="only load data into selected relations"
-                                 " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
-                            default=False, action="store_true")
     # Cannot be set on the command line since changing it is not supported by file sets.
     parser.set_defaults(table_design_dir="./schemas")
 
@@ -598,12 +588,15 @@ class LoadDataWarehouseCommand(SubCommand):
                          " It is an error to try to select tables unless they are all the tables in the schema.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "use-staging-schemas",
-                                        "skip-copy", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "skip-copy", "dry-run"])
         parser.add_argument("--no-rollback",
                             help="DEPRECATED: Staging loads don't rollback;\n"
                             "in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
+        parser.add_argument("--without-staging-schemas",
+                            help="do NOT do all the work in hidden schemas and publish to standard names on completion"
+                                 " (default: %(dest)s is %(default)s)",
+                            default=True, action="store_false", dest='use_staging_schemas')
 
     def callback(self, args, config):
         try:
@@ -632,8 +625,15 @@ class UpgradeDataWarehouseCommand(SubCommand):
                          " visible to users (i.e. outside a transaction).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "use-staging-schemas", "only-selected",
-                                        "skip-copy", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "skip-copy", "dry-run"])
+        parser.add_argument("--only-selected",
+                            help="skip rebuilding relations that depend on the selected ones"
+                            " (leaves warehouse in inconsistent state, for debugging only)",
+                            default=False, action="store_true")
+        parser.add_argument("--with-staging-schemas",
+                            help=" do all the work in hidden schemas and publish to standard names on completion"
+                                 " (default: %(dest)s is %(default)s)",
+                            default=False, action="store_true", dest='use_staging_schemas')
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
@@ -655,7 +655,11 @@ class UpdateDataWarehouseCommand(SubCommand):
                          "Load data into data warehouse from files in S3 and then update all dependent CTAS relations.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "only-selected", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
+        parser.add_argument("--only-selected",
+                            help="only load data into selected relations"
+                                 " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
+                            default=False, action="store_true")
         parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
                             default=False, action="store_true")
 
@@ -718,13 +722,13 @@ class PromoteSchemasCommand(SubCommand):
                          "move staging or backup schemas into standard position",
                          "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
                          "When promoting from staging, current standard position schemas are backed up first."
-                         "Promoting (ie, restoring) a backup should only happen after a load succeeded with bad data.",
-                         aliases=["promote"])
+                         "Promoting (ie, restoring) a backup should only happen after a load succeeded with bad data.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
         parser.add_argument("--from-position",
-                            help="which hidden schema should be promoted (staging or backup)")
+                            help="which hidden schema should be promoted",
+                            choices=["staging", "backup"], required=True)
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
@@ -734,10 +738,6 @@ class PromoteSchemasCommand(SubCommand):
                 etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
             elif args.from_position == 'backup':
                 etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
-            else:
-                raise etl.errors.InvalidArgumentsError(
-                    "Unknown from_position argument: '{}'".format(args.from_position)
-                )
 
 
 class ValidateDesignsCommand(SubCommand):

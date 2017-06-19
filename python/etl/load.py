@@ -187,7 +187,7 @@ class LoadableInTransactionRelation(LoadableRelation):
 
 # ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
 
-def create_table(conn: connection, table_design: dict, table_name: TableName, dry_run=False) -> None:
+def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
     """
     Create a table matching this design (but possibly under another name, e.g. for temp tables).
 
@@ -200,7 +200,6 @@ def create_table(conn: connection, table_design: dict, table_name: TableName, dr
     Tables may have attributes such as a distribution style and sort key.
     Depending on the distribution style, they may also have a distribution key.
     """
-    is_temp = table_design["name"] != table_name.identifier
     ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
     etl.db.run(conn, "Creating table '{:x}'".format(table_name), ddl_stmt, dry_run=dry_run)
 
@@ -373,7 +372,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
     temp_name = TempTableName.for_table(relation.target_table_name)
-    create_table(conn, relation.table_design, temp_name, dry_run=dry_run)
+    create_table(conn, relation.table_design, temp_name, is_temp=True, dry_run=dry_run)
     try:
         temp_columns = [column["name"] for column in relation.table_design["columns"]
                         if not (column.get("skipped") or column.get("identity"))]

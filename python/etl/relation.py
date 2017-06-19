@@ -45,8 +45,6 @@ class RelationDescription:
     Modified by other functions in relations module to set attributes related to dependency graph.
     """
 
-    _lazy_slots = ('_table_design', '_query_stmt', '_dependencies', '_is_required')
-
     def __getattr__(self, attr):
         """
         Pass-through access to file set -- if the relation doesn't know about an attribute
@@ -331,13 +329,6 @@ class RelationDescription:
                 yield temp_view
             finally:
                 etl.db.execute(conn, "DROP VIEW {}".format(temp_view))
-
-    def as_staging_relation(self):
-        relation = RelationDescription(self._fileset)
-        for slot in self._lazy_slots:
-            setattr(relation, slot, getattr(self, slot))
-        relation.staging = True
-        return relation
 
 
 class SortableRelationDescription:

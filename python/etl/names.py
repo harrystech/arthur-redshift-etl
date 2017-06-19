@@ -47,6 +47,13 @@ def as_staging_name(name):
     return '$'.join(("etl_staging", name))
 
 
+def as_backup_name(name):
+    """
+    The canonical transformation of a (schema) name to its backup position
+    """
+    return '$'.join(("etl_backup", name))
+
+
 class TableName:
     """
     Class to automatically create delimited identifiers for tables.
@@ -187,7 +194,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash(self.to_tuple())
+        return hash(tuple(getattr(self, slot) for slot in self.__slots__))
 
     def __lt__(self, other: "TableName"):
         """
