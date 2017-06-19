@@ -301,6 +301,11 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-x", "--max-concurrency", metavar="N",
                             help="EXPERIMENTAL set max number of parallel loads to use to N (default: %(default)s)",
                             type=int, default=1)
+    if "wlm-query-slots" in options:
+        parser.add_argument("-w", "--wlm-query-slots", metavar="N",
+                            help="set the number of Redshift WLM query slots used for transformations"
+                                 " (default: %(default)s)",
+                            type=int, default=1)
     if "skip-copy" in options:
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY and INSERT commands (leaves tables empty, for debugging)",
@@ -588,7 +593,8 @@ class LoadDataWarehouseCommand(SubCommand):
                          " It is an error to try to select tables unless they are all the tables in the schema.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "skip-copy", "dry-run"])
+        add_standard_arguments(parser,
+                               ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"])
         parser.add_argument("--no-rollback",
                             help="in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
@@ -604,6 +610,7 @@ class LoadDataWarehouseCommand(SubCommand):
                                                     return_all=True)
         etl.load.load_data_warehouse(relations, args.pattern,
                                      max_concurrency=args.max_concurrency,
+                                     wlm_query_slots=args.wlm_query_slots,
                                      skip_copy=args.skip_copy,
                                      no_rollback=args.no_rollback,
                                      dry_run=args.dry_run)
@@ -619,7 +626,8 @@ class UpgradeDataWarehouseCommand(SubCommand):
                          " visible to users (i.e. outside a transaction).")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "max-concurrency", "skip-copy", "dry-run"])
+        add_standard_arguments(parser,
+                               ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"])
         parser.add_argument("--only-selected",
                             help="skip rebuilding relations that depend on the selected ones"
                             " (leaves warehouse in inconsistent state, for debugging only)",
@@ -631,6 +639,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                                                     return_all=True)
         etl.load.upgrade_data_warehouse(relations, args.pattern,
                                         max_concurrency=args.max_concurrency,
+                                        wlm_query_slots=args.wlm_query_slots,
                                         only_selected=args.only_selected,
                                         skip_copy=args.skip_copy,
                                         dry_run=args.dry_run)
@@ -644,7 +653,7 @@ class UpdateDataWarehouseCommand(SubCommand):
                          "Load data into data warehouse from files in S3 and then update all dependent CTAS relations.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
+        add_standard_arguments(parser, ["pattern", "prefix", "wlm-query-slots", "dry-run"])
         parser.add_argument("--only-selected",
                             help="only load data into selected relations"
                                  " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
@@ -655,6 +664,7 @@ class UpdateDataWarehouseCommand(SubCommand):
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         etl.load.update_data_warehouse(relations, args.pattern,
+                                       wlm_query_slots=args.wlm_query_slots,
                                        only_selected=args.only_selected, run_vacuum=args.vacuum,
                                        dry_run=args.dry_run)
 

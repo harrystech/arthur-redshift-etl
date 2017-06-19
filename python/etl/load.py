@@ -559,7 +559,7 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(relations), timer)
 
 
-def create_transformations_with_data(relations: List[LoadableRelation], dry_run=False) -> None:
+def create_transformations_with_data(relations: List[LoadableRelation], wlm_query_slots: int, dry_run=False) -> None:
     """
     Pick out all tables in transformation schemas from the list of relations and build up just those.
 
@@ -575,6 +575,7 @@ def create_transformations_with_data(relations: List[LoadableRelation], dry_run=
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        set_redshift_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
         for relation in transformations:
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
@@ -602,7 +603,13 @@ def create_transformations_with_data(relations: List[LoadableRelation], dry_run=
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 
-def create_relations_with_data(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
+def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
+    etl.db.run(conn, "Using {} WLM queue slots for transformations.".format(slots),
+               "SET wlm_query_slot_count TO {}".format(slots), dry_run=dry_run)
+
+
+def create_relations_with_data(relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1,
+                               dry_run=False) -> None:
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
@@ -612,7 +619,7 @@ def create_relations_with_data(relations: List[LoadableRelation], max_concurrenc
     else:
         create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
 
-    create_transformations_with_data(relations, dry_run=dry_run)
+    create_transformations_with_data(relations, wlm_query_slots, dry_run=dry_run)
 
 
 def select_execution_order(relations: List[RelationDescription], selector: TableSelector,
@@ -633,7 +640,7 @@ def select_execution_order(relations: List[RelationDescription], selector: Table
 # ---- Section 5: "Callbacks" (functions that implement commands) ----
 
 def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                        max_concurrency=1, skip_copy=False, no_rollback=False, dry_run=False):
+                        max_concurrency=1, wlm_query_slots=1, skip_copy=False, no_rollback=False, dry_run=False):
     """
     Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
 
@@ -670,7 +677,7 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
     etl.data_warehouse.backup_schemas(traversed_schemas, dry_run=dry_run)
     try:
         etl.data_warehouse.create_schemas(traversed_schemas, dry_run=dry_run)
-        create_relations_with_data(relations, max_concurrency, dry_run=dry_run)
+        create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
     except ETLRuntimeError:
         if not no_rollback:
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
@@ -678,7 +685,7 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
 
 
 def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                           max_concurrency=1, only_selected=False, skip_copy=False, dry_run=False):
+                           max_concurrency=1, wlm_query_slots=1, only_selected=False, skip_copy=False, dry_run=False):
     """
     Push new (structural) changes and fresh data through data warehouse.
 
@@ -703,11 +710,11 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
 
     etl.data_warehouse.create_schemas(traversed_schemas, dry_run=dry_run)
-    create_relations_with_data(relations, max_concurrency, dry_run=dry_run)
+    create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
 
 
 def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                          only_selected=False, run_vacuum=False, dry_run=False):
+                          wlm_query_slots=1, only_selected=False, run_vacuum=False, dry_run=False):
     """
     Let new data percolate through the data warehouse.
 
@@ -732,6 +739,7 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
     # Run update within a transaction:
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:
+        set_redshift_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
         for relation in relations:
             build_one_relation(conn, relation, dry_run=dry_run)
 
