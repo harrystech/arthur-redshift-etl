@@ -264,7 +264,7 @@ def build_full_parser(prog_name):
             ExtractToS3Command, LoadDataWarehouseCommand, UpgradeDataWarehouseCommand, UpdateDataWarehouseCommand,
             UnloadDataToS3Command,
             # Helper commands
-            CreateSchemasCommand, RestoreSchemasCommand,
+            CreateSchemasCommand, PromoteSchemasCommand,
             ListFilesCommand, PingCommand,
             ShowDependentsCommand, ShowDependencyChainCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
@@ -596,8 +596,13 @@ class LoadDataWarehouseCommand(SubCommand):
         add_standard_arguments(parser,
                                ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"])
         parser.add_argument("--no-rollback",
-                            help="in case of error, leave warehouse in partially completed state (for debugging)",
+                            help="DEPRECATED: Staging loads don't rollback;\n"
+                            "in case of error, leave warehouse in partially completed state (for debugging)",
                             action="store_true")
+        parser.add_argument("--without-staging-schemas",
+                            help="do NOT do all the work in hidden schemas and publish to standard names on completion"
+                                 " (default: %(dest)s is %(default)s)",
+                            default=True, action="store_false", dest='use_staging_schemas')
 
     def callback(self, args, config):
         try:
@@ -612,6 +617,7 @@ class LoadDataWarehouseCommand(SubCommand):
                                      max_concurrency=args.max_concurrency,
                                      wlm_query_slots=args.wlm_query_slots,
                                      skip_copy=args.skip_copy,
+                                     use_staging=args.use_staging_schemas,
                                      no_rollback=args.no_rollback,
                                      dry_run=args.dry_run)
 
@@ -632,6 +638,10 @@ class UpgradeDataWarehouseCommand(SubCommand):
                             help="skip rebuilding relations that depend on the selected ones"
                             " (leaves warehouse in inconsistent state, for debugging only)",
                             default=False, action="store_true")
+        parser.add_argument("--with-staging-schemas",
+                            help=" do all the work in hidden schemas and publish to standard names on completion"
+                                 " (default: %(dest)s is %(default)s)",
+                            default=False, action="store_true", dest='use_staging_schemas')
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
@@ -641,6 +651,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                                         max_concurrency=args.max_concurrency,
                                         wlm_query_slots=args.wlm_query_slots,
                                         only_selected=args.only_selected,
+                                        use_staging=args.use_staging_schemas,
                                         skip_copy=args.skip_copy,
                                         dry_run=args.dry_run)
 
@@ -714,21 +725,29 @@ class CreateSchemasCommand(SubCommand):
             etl.data_warehouse.create_schemas(schemas, dry_run=args.dry_run)
 
 
-class RestoreSchemasCommand(SubCommand):
+class PromoteSchemasCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("restore_schemas",
-                         "restore schemas from their backup (after an interrupted load)",
-                         "Restore schemas from their backup which should only be useful or used after killing a load.")
+        super().__init__("promote_schemas",
+                         "move staging or backup schemas into standard position",
+                         "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
+                         "When promoting from staging, current standard position schemas are backed up first."
+                         "Promoting (ie, restoring) a backup should only happen after a load succeeded with bad data.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
+        parser.add_argument("--from-position",
+                            help="which hidden schema should be promoted",
+                            choices=["staging", "backup"], required=True)
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
         with etl.db.log_error():
-            etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
+            if args.from_position == 'staging':
+                etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
+            elif args.from_position == 'backup':
+                etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):

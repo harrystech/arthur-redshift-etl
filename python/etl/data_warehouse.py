@@ -35,20 +35,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def create_schema_and_grant_access(conn, schema, owner=None, dry_run=False) -> None:
-    group_names = join_with_quotes(schema.groups)
-    if dry_run:
-        logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", schema.name, group_names)
-    else:
-        logger.info("Creating schema '%s', granting access to %s", schema.name, group_names)
-        etl.db.create_schema(conn, schema.name, owner)
-        etl.db.grant_all_on_schema_to_user(conn, schema.name, schema.owner)
-        for group in schema.groups:
-            # Readers/writers are differentiated in table permissions, not schema permissions
-            etl.db.grant_usage(conn, schema.name, group)
-
-
-def create_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+def create_schemas(schemas: List[DataWarehouseSchema], use_staging=False, dry_run=False) -> None:
     """
     Create schemas and grant access.
     It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
@@ -56,7 +43,55 @@ def create_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for schema in schemas:
-            create_schema_and_grant_access(conn, schema, dry_run=dry_run)
+            create_schema_and_grant_access(conn, schema, use_staging=use_staging, dry_run=dry_run)
+
+
+def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, dry_run=False) -> None:
+    group_names = join_with_quotes(schema.groups)
+    name = schema.staging_name if use_staging else schema.name
+    if dry_run:
+        logger.info("Dry-run: Skipping creating schema '%s' and granting access to '%s'", name, group_names)
+    else:
+        logger.info("Creating schema '%s'", name)
+        etl.db.create_schema(conn, name, owner)
+        etl.db.grant_all_on_schema_to_user(conn, name, schema.owner)
+        if use_staging:
+            # Don't grant usage on staging schemas to readers/writers
+            return None
+        logger.info("Granting access to %s", group_names)
+        for group in schema.groups:
+            # Readers/writers are differentiated in table permissions, not schema permissions
+            etl.db.grant_usage(conn, name, group)
+
+
+def _promote_schemas(schemas: List[DataWarehouseSchema],
+                     from_name_attr: str, dry_run=False) -> None:
+    """
+    Promote (staging or backup) schemas into their standard names and permissions
+    Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name' or 'staging_name'
+    """
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        from_name_schema_lookup = {getattr(schema, from_name_attr): schema for schema in schemas}
+        names = list(from_name_schema_lookup.keys())
+        found = etl.db.select_schemas(conn, names)
+        need_promotion = {name: schema for name, schema in from_name_schema_lookup.items() if name in found}
+        if not need_promotion:
+            logger.info("Found no %s schemas to promote", from_name_attr)
+            return
+        selected_names = join_with_quotes(need_promotion.keys())
+        if dry_run:
+            logger.info("Dry-run: Skipping promotion of schema(s) %s", selected_names)
+            return
+        logger.info("Promoting from %s schema(s) %s", from_name_attr, selected_names)
+        for from_name, schema in need_promotion.items():
+            logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
+            etl.db.drop_schema(conn, schema.name)
+            etl.db.alter_schema_rename(conn, from_name, schema.name)
+            logger.info("Granting readers access to schema '%s' after promotion", schema.name)
+            for reader_group in schema.reader_groups:
+                etl.db.grant_usage(conn, schema.name, reader_group)
+                etl.db.grant_select_in_schema(conn, schema.name, reader_group)
 
 
 def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
@@ -92,29 +127,18 @@ def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For the schemas that we need / want, rename the backups and restore access.
     This is the inverse of backup_schemas.
+    Useful if bad data is in standard schemas
     """
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        names = [schema.backup_name for schema in schemas]
-        found = etl.db.select_schemas(conn, names)
-        need_restore = [schema for schema in schemas if schema.backup_name in found]
-        if not need_restore:
-            logger.info("Found no backup schemas to restore")
-            return
-        selected_names = join_with_quotes(schema.name for schema in need_restore)
-        if dry_run:
-            logger.info("Dry-run: Skipping restore of schema(s) %s", selected_names)
-            return
+    _promote_schemas(schemas, 'backup_name', dry_run=dry_run)
 
-        logger.info("Restoring from backup schema(s) %s", selected_names)
-        for schema in need_restore:
-            logger.info("Renaming schema '%s' from backup '%s'", schema.name, schema.backup_name)
-            etl.db.drop_schema(conn, schema.name)
-            etl.db.alter_schema_rename(conn, schema.backup_name, schema.name)
-            logger.info("Granting readers access to schema '%s' after restore", schema.name)
-            for reader_group in schema.reader_groups:
-                etl.db.grant_usage(conn, schema.name, reader_group)
-                etl.db.grant_select_in_schema(conn, schema.name, reader_group)
+
+def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
+    """
+    Put staging schemas into their standard configuration
+    (First backs up current occupants of standard position)
+    """
+    backup_schemas(schemas, dry_run=dry_run)
+    _promote_schemas(schemas, 'staging_name', dry_run=dry_run)
 
 
 def initial_setup(config, with_user_creation=False, force=False, dry_run=False):

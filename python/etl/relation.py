@@ -73,6 +73,14 @@ class RelationDescription:
         self._query_stmt = None  # type: Optional[str]
         self._dependencies = None  # type: Optional[FrozenSet[str]]
         self._is_required = None  # type: Union[None, bool]
+        self.staging = False
+
+    @property
+    def target_table_name(self):
+        if self.staging:
+            return self._fileset.target_table_name.as_staging_table_name()
+        else:
+            return self._fileset.target_table_name
 
     @property
     def identifier(self) -> str:
@@ -173,6 +181,7 @@ class RelationDescription:
             else:
                 with open(self.sql_file_name) as f:
                     query_stmt = f.read()
+
             self._query_stmt = query_stmt.strip().rstrip(';')
         return str(self._query_stmt)  # The str(...) shuts up the type checker.
 
@@ -433,7 +442,8 @@ def find_matches(relations: List[RelationDescription], selector: TableSelector):
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
-def find_dependents(relations: List[RelationDescription], seed_relations: List[RelationDescription]):
+def find_dependents(relations: List[RelationDescription], seed_relations: List[RelationDescription]
+                    ) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
     For this to really work, the list of relations should be sorted in "execution order"!

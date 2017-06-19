@@ -92,7 +92,11 @@ class DataWarehouseSchema:
 
     @property
     def backup_name(self):
-        return '$'.join(("etl_backup", self.name))
+        return etl.names.as_backup_name(self.name)
+
+    @property
+    def staging_name(self):
+        return etl.names.as_staging_name(self.name)
 
 
 class DataWarehouseConfig:

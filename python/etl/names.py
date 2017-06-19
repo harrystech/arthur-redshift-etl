@@ -40,6 +40,20 @@ def join_column_list(columns):
     return ", ".join('"{}"'.format(column) for column in columns)
 
 
+def as_staging_name(name):
+    """
+    The canonical transformation of a (schema) name to its staging position
+    """
+    return '$'.join(("etl_staging", name))
+
+
+def as_backup_name(name):
+    """
+    The canonical transformation of a (schema) name to its backup position
+    """
+    return '$'.join(("etl_backup", name))
+
+
 class TableName:
     """
     Class to automatically create delimited identifiers for tables.
@@ -70,22 +84,35 @@ class TableName:
     >>> purchases = TableName.from_identifier("www.purchases")
     >>> orders < purchases
     True
+    >>> staging_purchases = purchases.as_staging_table_name()
+    >>> staging_purchases.table == purchases.table
+    True
+    >>> staging_purchases.schema == purchases.schema
+    False
     """
 
-    __slots__ = ("_schema", "_table")
+    __slots__ = ("_schema", "_table", "_staging")
 
-    def __init__(self, schema: Optional[str], table) -> None:
+    def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
+        self._staging = False
 
     @property
     def schema(self):
-        return self._schema
+        if self.staging:
+            return as_staging_name(self._schema)
+        else:
+            return self._schema
 
     @property
     def table(self):
         return self._table
+
+    @property
+    def staging(self):
+        return self._staging
 
     def to_tuple(self):
         """
@@ -96,7 +123,7 @@ class TableName:
         >>> schema_name, table_name
         ('weather', 'temp')
         """
-        return self._schema, self._table
+        return self.schema, self.table
 
     @property
     def identifier(self) -> str:
@@ -107,7 +134,7 @@ class TableName:
         >>> tn.identifier
         'hello.world'
         """
-        return "{0.schema}.{0.table}".format(self)
+        return "{}.{}".format(*self.to_tuple())
 
     @classmethod
     def from_identifier(cls, identifier: str):
@@ -129,8 +156,10 @@ class TableName:
         >>> tn = TableName("hello", "world")
         >>> str(tn)
         '"hello"."world"'
+        >>> str(tn.as_staging_table_name())
+        '"etl_staging$hello"."world"'
         """
-        return '"{0}"."{1}"'.format(self._schema, self._table)
+        return '"{}"."{}"'.format(*self.to_tuple())
 
     def __format__(self, code):
         """
@@ -165,7 +194,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash((self._schema, self._table))
+        return hash(tuple(getattr(self, slot) for slot in self.__slots__))
 
     def __lt__(self, other: "TableName"):
         """
@@ -208,6 +237,11 @@ class TableName:
         False
         """
         return fnmatch.fnmatch(self.identifier, pattern)
+
+    def as_staging_table_name(self):
+        tn = TableName(*self.to_tuple())
+        tn._staging = True
+        return tn
 
 
 class TempTableName(TableName):

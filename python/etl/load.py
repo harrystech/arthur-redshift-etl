@@ -73,6 +73,16 @@ class LoadableRelation:
     Also, inheritance would work less well given how lazy loading is used in RelationDescription.
     You're welcome.
 
+    Being 'Loadable' means that load-relevant RelationDescription properties may get new values here.
+    In particular:
+        - target_table_name is 'use_staging' aware
+        - query_stmt is 'use_staging' aware
+
+    However, dependency graph properties of RelationDescription should _not_ differ.
+    In particular:
+        - identifier should be consistent
+        - dependencies should be consistent
+
     Q: Why 'loadable'?
     A: Because 'LoadOrUpgradeOrUpdateInProgress' sounded less supercalifragilisticexpialidocious.
     """
@@ -89,11 +99,12 @@ class LoadableRelation:
 
     __format__ = RelationDescription.__format__
 
-    def __init__(self, relation: RelationDescription, info: dict, skip_copy=False) -> None:
+    def __init__(self, relation: RelationDescription, info: dict, use_staging=False, skip_copy=False) -> None:
         self._relation_description = relation
         self.info = info
         self.skip_copy = skip_copy or relation.is_view_relation
         self.failed = False
+        self.use_staging = use_staging
 
     def delete_to_reset(self) -> bool:
         return False
@@ -104,13 +115,38 @@ class LoadableRelation:
     def monitor(self):
         return etl.monitor.Monitor(**self.info)
 
+    @property
+    def identifier(self) -> str:
+        # Load context does not change the identifier
+        return self._relation_description.identifier
+
+    @property
+    def target_table_name(self):
+        # Load context changes our target table
+        if self.use_staging:
+            return self._relation_description.target_table_name.as_staging_table_name()
+        else:
+            return self._relation_description.target_table_name
+
     def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
-        unpacked = [r._relation_description for r in relations]  # make type checker happy
-        return etl.relation.find_dependents(unpacked, [self._relation_description])
+        unpacked = [r._relation_description for r in relations]  # do DAG operations in terms of RelationDescriptions
+        dependent_relations = etl.relation.find_dependents(unpacked, [self._relation_description])
+        dependent_relation_identifiers = set([r.identifier for r in dependent_relations])
+        return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
+
+    @property
+    def query_stmt(self):
+        stmt = super().query_stmt
+        if self.use_staging:
+            # Rewrite the query to use staging schemas:
+            for dependency in self.dependencies:
+                staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
+                stmt = stmt.replace(dependency, staging_dependency.identifier)
+        return stmt
 
     @classmethod
     def from_descriptions(cls, relations: List[RelationDescription], command: str,
-                          skip_copy=False) -> List["LoadableRelation"]:
+                          use_staging=False, skip_copy=False) -> List["LoadableRelation"]:
         """
         Build a list of "loadable" relations
         """
@@ -135,7 +171,7 @@ class LoadableRelation:
                 "destination": destination,
                 "index": dict(base_index, current=i + 1)
             }
-            loadable.append(cls(relation, monitor_info, skip_copy=skip_copy))
+            loadable.append(cls(relation, monitor_info, use_staging, skip_copy=skip_copy))
 
         return loadable
 
@@ -151,7 +187,7 @@ class LoadableInTransactionRelation(LoadableRelation):
 
 # ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
 
-def create_table(conn: connection, table_design: dict, table_name: TableName, dry_run=False) -> None:
+def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
     """
     Create a table matching this design (but possibly under another name, e.g. for temp tables).
 
@@ -164,7 +200,6 @@ def create_table(conn: connection, table_design: dict, table_name: TableName, dr
     Tables may have attributes such as a distribution style and sort key.
     Depending on the distribution style, they may also have a distribution key.
     """
-    is_temp = table_design["name"] != table_name.identifier
     ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
     etl.db.run(conn, "Creating table '{:x}'".format(table_name), ddl_stmt, dry_run=dry_run)
 
@@ -191,6 +226,20 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
             etl.db.run(conn, "Dropping {} '{:x}'".format(kind.lower(), relation), stmt, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
+
+
+def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema],
+                               use_staging: bool, dry_run=False) -> None:
+    """
+    Create schemas necessary for a full rebuild of data warehouse
+    If `use_staging`, create new staging schemas.
+    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
+    """
+    if use_staging:
+        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
+    else:
+        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
+        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
 
 
 def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -323,7 +372,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
     temp_name = TempTableName.for_table(relation.target_table_name)
-    create_table(conn, relation.table_design, temp_name, dry_run=dry_run)
+    create_table(conn, relation.table_design, temp_name, is_temp=True, dry_run=dry_run)
     try:
         temp_columns = [column["name"] for column in relation.table_design["columns"]
                         if not (column.get("skipped") or column.get("identity"))]
@@ -349,7 +398,7 @@ def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
 
 def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
-    Raises a FailedConstraintError if :relation's target table doesn't obey its declared constraints.
+    Raise a FailedConstraintError if :relation's target table doesn't obey its declared constraints.
 
     Note that NULL in SQL is never equal to another value. This means for unique constraints that
     rows where (at least) one column is null are not equal even if they have the same values in the
@@ -458,7 +507,6 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
     Within transaction? Only applies to tables which get emptied and then potentially filled again.
     Not in transaction? Drop and create all relations, for tables, also potentially fill 'em up again.
     """
-
     with relation.monitor():
 
         # Step 1 -- clear out existing data (by deletion or by re-creation)
@@ -639,7 +687,7 @@ def select_execution_order(relations: List[RelationDescription], selector: Table
 
 # ---- Section 5: "Callbacks" (functions that implement commands) ----
 
-def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=True,
                         max_concurrency=1, wlm_query_slots=1, skip_copy=False, no_rollback=False, dry_run=False):
     """
     Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
@@ -665,7 +713,8 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
         logger.warning("Found no relations matching: %s", selector)
         return
 
-    relations = LoadableRelation.from_descriptions(selected_relations, "load", skip_copy=skip_copy)
+    relations = LoadableRelation.from_descriptions(selected_relations, "load",
+                                                   skip_copy=skip_copy, use_staging=use_staging)
     traversed_schemas = find_traversed_schemas(relations)
     logger.info("Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
 
@@ -674,17 +723,20 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
         logger.info("Open connections:\n%s", etl.db.format_result(etl.db.list_connections(conn)))
         logger.info("Open transactions:\n%s", etl.db.format_result(etl.db.list_transactions(conn)))
 
-    etl.data_warehouse.backup_schemas(traversed_schemas, dry_run=dry_run)
+    create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
-        etl.data_warehouse.create_schemas(traversed_schemas, dry_run=dry_run)
         create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
     except ETLRuntimeError:
-        if not no_rollback:
+        if not (no_rollback or use_staging):
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
 
+    if use_staging:
+        # We've successfully built staging schemas, so roll them out
+        etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
-def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+
+def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=False,
                            max_concurrency=1, wlm_query_slots=1, only_selected=False, skip_copy=False, dry_run=False):
     """
     Push new (structural) changes and fresh data through data warehouse.
@@ -705,11 +757,13 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
         logger.warning("Found no relations matching: %s", selector)
         return
 
-    relations = LoadableRelation.from_descriptions(selected_relations, "upgrade", skip_copy=skip_copy)
+    relations = LoadableRelation.from_descriptions(selected_relations, "upgrade",
+                                                   skip_copy=skip_copy, use_staging=use_staging)
+
     traversed_schemas = find_traversed_schemas(relations)
     logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
 
-    etl.data_warehouse.create_schemas(traversed_schemas, dry_run=dry_run)
+    etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
 
 

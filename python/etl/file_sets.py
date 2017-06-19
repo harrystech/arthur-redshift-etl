@@ -117,10 +117,6 @@ class TableFileSet:
                                  self.source_table_name.schema,
                                  self.source_table_name.table)
 
-    # @property
-    # def design_path_name(self):
-    #     return os.path.join("schemas", self.source_path_name)
-
     @property
     def csv_path_name(self):
         return os.path.join("data", self.source_path_name, "csv")
