@@ -164,10 +164,9 @@ class FancyArgumentParser(argparse.ArgumentParser):
     Add feature to read command line arguments from files and support:
         * One argument per line (whitespace is trimmed)
         * Comments or empty lines (either are ignored)
-        * Output from show_dependents and show_dependency_chain:
-            * If a line looks like "<index (number)> <name (string)>", then only the "name" is used as the arg.
+    This enables direct use of output from show_downstream_dependents and show_upstream_dependencies.
 
-    To use this feature, add an argument with "@" and have values ready inside of it:
+    To use this feature, add an argument with "@" and have values ready inside of it, one per line:
         cat > tables <<EOF
         www.users
         www.user_comments
@@ -187,26 +186,18 @@ class FancyArgumentParser(argparse.ArgumentParser):
         ['--verbose']
         >>> parser.convert_arg_line_to_args(" schema.table ")
         ['schema.table']
-        >>> parser.convert_arg_line_to_args("    1 show_dependents.output_compatible # kind=CTAS, is_required=true")
+        >>> parser.convert_arg_line_to_args("show_dependents.output_compatible # index=1, kind=CTAS, is_required=true")
         ['show_dependents.output_compatible']
         >>> parser.convert_arg_line_to_args(" # single-line comment")
         []
         >>> parser.convert_arg_line_to_args("--config accidentally_on_one_line")
         Traceback (most recent call last):
-        ValueError: first value must be index in lines with two values: --config accidentally_on_one_line
+        ValueError: unrecognizable argument value in line: --config accidentally_on_one_line
         """
         args = shlex.split(arg_line, comments=True)
-        if len(args) == 1:
-            return args
-        elif len(args) == 2:
-            try:
-                int(args[0])
-                return args[1:2]
-            except ValueError as exc:
-                raise ValueError("first value must be index in lines with two values: {}".format(arg_line)) from exc
-        elif len(args) > 2:
-            raise ValueError("unrecognizable argument value in line: {}".format(arg_line))
-        return []
+        if len(args) > 1:
+            raise ValueError("unrecognizable argument value in line: {}".format(arg_line.strip()))
+        return args
 
 
 def build_basic_parser(prog_name, description=None):
@@ -266,7 +257,7 @@ def build_full_parser(prog_name):
             # Helper commands
             CreateSchemasCommand, PromoteSchemasCommand,
             ListFilesCommand, PingCommand,
-            ShowDependentsCommand, ShowDependencyChainCommand, ShowPipelinesCommand,
+            ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand, ShowPipelinesCommand,
             EventsQueryCommand, SelfTestCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
@@ -837,12 +828,13 @@ class PingCommand(SubCommand):
             etl.db.ping(dsn)
 
 
-class ShowDependentsCommand(SubCommand):
+class ShowDownstreamDependentsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("show_dependents",
+        super().__init__("show_downstream_dependents",
                          "show dependent relations",
-                         "Show relations in execution order (includes selected and all dependent relations).")
+                         "Show relations that follow in execution order and are selected or depend on them.",
+                         aliases=["show_dependents"])
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
@@ -851,13 +843,13 @@ class ShowDependentsCommand(SubCommand):
         relations = self.find_relation_descriptions(args,
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
-        etl.load.show_dependents(relations, args.pattern)
+        etl.load.show_downstream_dependents(relations, args.pattern)
 
 
-class ShowDependencyChainCommand(SubCommand):
+class ShowUpstreamDependenciesCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("show_dependency_chain",
+        super().__init__("show_upstream_dependencies",
                          "show relations that feed the selected relations (including themselves)",
                          "Follow dependencies upstream to their sources to chain all relations"
                          " that the selected ones depend on (with the selected ones).")
@@ -869,7 +861,7 @@ class ShowDependencyChainCommand(SubCommand):
         relations = self.find_relation_descriptions(args,
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
-        etl.load.show_dependency_chain(relations, args.pattern)
+        etl.load.show_upstream_dependencies(relations, args.pattern)
 
 
 class ShowPipelinesCommand(SubCommand):
