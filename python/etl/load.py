@@ -42,7 +42,7 @@ import logging
 import re
 from contextlib import closing
 from itertools import chain
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Set
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -136,7 +136,7 @@ class LoadableRelation:
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
     @property
-    def query_stmt(self):
+    def query_stmt(self) -> str:
         stmt = self._relation_description.query_stmt
         if self.use_staging:
             # Rewrite the query to use staging schemas:
@@ -144,6 +144,16 @@ class LoadableRelation:
                 staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
                 stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
         return stmt
+
+    @property
+    def table_design(self) -> Dict[str, Any]:
+        design = self._relation_description.table_design
+        if self.use_staging:
+            for column in design['columns']:
+                if 'references' in column:
+                    [foreign_table, [foreign_column]] = column['references']
+                    column['references'] = [TableName.from_identifier(foreign_table).as_staging_table_name().identifier, [foreign_column]]
+        return design
 
     @classmethod
     def from_descriptions(cls, relations: List[RelationDescription], command: str,
