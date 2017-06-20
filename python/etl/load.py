@@ -152,7 +152,10 @@ class LoadableRelation:
             for column in design['columns']:
                 if 'references' in column:
                     [foreign_table, [foreign_column]] = column['references']
-                    column['references'] = [TableName.from_identifier(foreign_table).as_staging_table_name().identifier, [foreign_column]]
+                    column['references'] = [
+                        TableName.from_identifier(foreign_table).as_staging_table_name().identifier,
+                        [foreign_column]
+                    ]
         return design
 
     @classmethod

@@ -18,6 +18,7 @@ import concurrent.futures
 import logging
 import os.path
 from contextlib import closing, contextmanager
+from copy import deepcopy
 from functools import partial
 from operator import attrgetter
 from queue import PriorityQueue
@@ -135,7 +136,7 @@ class RelationDescription:
     @property  # This property is lazily loaded
     def table_design(self) -> Dict[str, Any]:
         self.load()
-        return self._table_design  # type: ignore
+        return deepcopy(self._table_design)  # type: ignore
 
     @property
     def kind(self) -> str:
