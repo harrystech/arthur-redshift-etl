@@ -39,6 +39,7 @@ These are the general pre-requisites:
 
 import concurrent.futures
 import logging
+import re
 from contextlib import closing
 from itertools import chain
 from typing import Dict, List, Set
@@ -141,7 +142,7 @@ class LoadableRelation:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
                 staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
-                stmt = stmt.replace(dependency, staging_dependency.identifier)
+                stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
         return stmt
 
     @classmethod
