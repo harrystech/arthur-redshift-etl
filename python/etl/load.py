@@ -136,7 +136,7 @@ class LoadableRelation:
 
     @property
     def query_stmt(self):
-        stmt = super().query_stmt
+        stmt = self._relation_description.query_stmt
         if self.use_staging:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
