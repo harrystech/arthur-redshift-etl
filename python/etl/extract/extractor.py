@@ -11,7 +11,7 @@ from typing import Dict, List, Set
 
 import etl.monitor
 import etl.s3
-import etl.pg
+import etl.db
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError
 from etl.names import join_with_quotes
@@ -108,8 +108,8 @@ class Extractor:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for source_name, relation_group in groupby(self.relations, attrgetter("source_name")):
-                f = executor.submit(self.extract_source, self.schemas[source_name], list(relation_group))
-                futures.append(f)
+                future = executor.submit(self.extract_source, self.schemas[source_name], list(relation_group))
+                futures.append(future)
             if self.keep_going:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
             else:

@@ -14,12 +14,13 @@ import os
 import queue
 import random
 import re
+import socketserver
 import threading
 import time
 import traceback
 import urllib.parse
 import uuid
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
@@ -27,6 +28,7 @@ from typing import List
 try:
     from http import HTTPStatus  # type: ignore
 except ImportError:
+    # Compatibility for Python 3.4
     class HTTPStatus:  # type: ignore
         OK = 200
         MOVED_PERMANENTLY = 301
@@ -38,7 +40,7 @@ import simplejson as json
 
 import etl.assets
 import etl.config.env
-import etl.pg
+import etl.db
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds
 
@@ -205,7 +207,7 @@ class Monitor(metaclass=MetaMonitor):
             payload = MonitorPayload(self, "finish", self._end_time, elapsed=seconds, extra=self._extra)
         else:
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, "fail", self._end_time, extra=self._extra)
+            payload = MonitorPayload(self, "fail", self._end_time, elapsed=seconds, extra=self._extra)
             payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
@@ -358,10 +360,11 @@ class RelationalStorage(PayloadDispatcher):
 
     def __init__(self, table_name, write_access):
         self.table_name = table_name
-        self.dsn = etl.config.env.get(write_access)
+        write_value = etl.config.env.get(write_access)
+        self.dsn = etl.db.parse_connection_string(write_value)
         logger.info("Creating table '%s' (unless it already exists)", table_name)
-        with closing(etl.pg.connection(self.dsn)) as conn:
-            etl.pg.execute(conn, """
+        with closing(etl.db.connection(self.dsn)) as conn:
+            etl.db.execute(conn, """
                 CREATE TABLE IF NOT EXISTS "{0.table_name}" (
                     environment CHARACTER VARYING(255),
                     etl_id      CHARACTER VARYING(255) NOT NULL,
@@ -379,12 +382,16 @@ class RelationalStorage(PayloadDispatcher):
         data["timestamp"] = payload["timestamp"].isoformat(' ')
         data["payload"] = json.dumps(payload, sort_keys=True, cls=FancyJsonEncoder)
 
-        with closing(etl.pg.connection(self.dsn)) as conn:
+        with closing(etl.db.connection(self.dsn, autocommit=True)) as conn:
             with conn.cursor() as cursor:
                 quoted_column_names = ", ".join('"{}"'.format(column) for column in data)
                 column_values = tuple(data.values())
-                cursor.execute('INSERT INTO "{0.table_name}" ({}) VALUES %s'.format(self, quoted_column_names),
+                cursor.execute('INSERT INTO "{0.table_name}" ({1}) VALUES %s'.format(self, quoted_column_names),
                                (column_values,))
+
+
+class _ThreadingSimpleServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    pass
 
 
 class MemoryStorage(PayloadDispatcher):
@@ -404,7 +411,6 @@ class MemoryStorage(PayloadDispatcher):
     def __init__(self):
         self.queue = queue.Queue()
         self.events = OrderedDict()
-        self.indices = defaultdict(dict)
         self.start_server()
 
     def store(self, payload: dict):
@@ -414,18 +420,23 @@ class MemoryStorage(PayloadDispatcher):
         try:
             while True:
                 payload = self.queue.get_nowait()
-                # Overwrite earlier events by later ones, i.e. ignore "event"
+                # Overwrite earlier events by later ones
                 key = payload["target"], payload["step"]
                 self.events[key] = payload
-                index = dict(payload.get("extra", {}).get("index", {}))
-                name = index.setdefault("name", "N/A")
-                self.indices[name].update(index)
         except queue.Empty:
             pass
 
     def get_indices(self):
         self.drain_queue()
-        indices_as_list = [self.indices[name] for name in sorted(self.indices)]
+        indices = {}
+        for payload in self.events.values():
+            index = dict(payload.get("extra", {}).get("index", {}))
+            name = index.setdefault("name", "N/A")
+            if name not in indices:
+                indices[name] = index
+            elif index["current"] > indices[name]["current"]:
+                indices[name].update(index)
+        indices_as_list = [indices[name] for name in sorted(indices)]
         return etl.assets.Content(json=indices_as_list)
 
     def get_events(self):
@@ -503,14 +514,17 @@ class MemoryStorage(PayloadDispatcher):
         class BackgroundServer(threading.Thread):
             def run(self):
                 logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
-                httpd = http.server.HTTPServer(MemoryStorage.SERVER_ADDRESS, handler_class)
-                httpd.serve_forever()
+                try:
+                    httpd = _ThreadingSimpleServer(MemoryStorage.SERVER_ADDRESS, handler_class)
+                    httpd.serve_forever()
+                except Exception as exc:
+                    logger.info("Background server stopped: %s", str(exc))
 
         try:
             thread = BackgroundServer(daemon=True)
             thread.start()
         except RuntimeError:
-            logger.exception("Failed to start background server:")
+            logger.warning("Failed to start background server:", exc_info=True)
 
 
 class InsertTraceKey(logging.Filter):
@@ -555,11 +569,17 @@ def test_run():
 
     with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
         for i, names in enumerate(itertools.product(schema_names, table_names)):
-            with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
-                time.sleep(random.uniform(0.5, 2.0))
+            try:
+                with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
+                    time.sleep(random.uniform(0.5, 2.0))
+                    # Create an error on one "table" so that highlighting of errors can be tested:
+                    if i == 9:
+                        raise RuntimeError("An error occurred!")
+            except RuntimeError:
+                pass
 
     input("Press return (or Ctrl-c) to stop server\n")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     test_run()

@@ -116,18 +116,6 @@ class UpstreamValidationError(ETLRuntimeError):
     """
 
 
-class FailedConstraintError(ETLRuntimeError):
-    def __init__(self, relation, constraint_type, columns, examples):
-        self.relation = relation
-        self.constraint_type = constraint_type
-        self.columns = columns
-        self.example_string = ', '.join(map(str, examples))
-
-    def __str__(self):
-        return ("Relation {0.relation} violates {0.constraint_type} constraint: "
-                "Example duplicate values of {0.columns} are: {0.example_string}".format(self))
-
-
 class DataExtractError(ETLRuntimeError):
     """
     Exception when extracting from an upstream source fails
@@ -147,21 +135,52 @@ class MissingCsvFilesError(DataExtractError):
 
 
 class S3ServiceError(ETLRuntimeError):
+    """
+    Exception when we encounter problems with S3
+    """
+
+
+class RelationConstructionError(ETLRuntimeError):
+    """
+    Exception when we fail to drop or create a relation
+    """
+
+
+class RelationDataError(ETLRuntimeError):
+    """
+    Exception when we have problems due to data that was supposed to go into the relation or that landed there.
+    """
+
+
+class MissingManifestError(RelationDataError):
     pass
 
 
-class MissingManifestError(ETLRuntimeError):
+class UpdateTableError(RelationDataError):
     pass
+
+
+class FailedConstraintError(RelationDataError):
+
+    def __init__(self, relation, constraint_type, columns, examples):
+        self.identifier = relation.identifier
+        self.constraint_type = constraint_type
+        self.columns = columns
+        self.example_string = ',\n  '.join(map(str, examples))
+
+    def __str__(self):
+        return ("relation {0.identifier} violates {0.constraint_type} constraint.\n"
+                "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self))
 
 
 class RequiredRelationLoadError(ETLRuntimeError):
 
-    def __init__(self, failed, failed_and_required):
-        if failed_and_required:
-            self.message = "Failure of {} implies failure of required relation(s): {}".format(failed,
-                                                                                              failed_and_required)
-        else:
-            self.message = "Failure occurred for required {} relation".format(failed)
+    def __init__(self, failed_relations, bad_apple=None):
+        # Avoiding `join_with_quotes` here to keep this module import-free
+        self.message = "required relation(s) with failure: "
+        self.message += ", ".join("'{}'".format(name) for name in failed_relations)
+        if bad_apple:
+            self.message += ", triggered by load failure of '{}'".format(bad_apple)
 
     def __str__(self):
         return self.message

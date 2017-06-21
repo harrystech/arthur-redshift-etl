@@ -47,7 +47,7 @@ fi
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
     PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Production"
-    PIPELINE_NAME="Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+    PIPELINE_NAME="ETL Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 else
     PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Development"
     PIPELINE_NAME="Validation Pipeline ($USER:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"

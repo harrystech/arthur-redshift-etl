@@ -11,7 +11,7 @@ from psycopg2.extensions import connection  # only for type annotation
 import etl.config
 import etl.design.load
 import etl.file_sets
-import etl.pg
+import etl.db
 import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
@@ -33,7 +33,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     down by the pattern in :selector.
     """
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
-    result = etl.pg.query(cx, """
+    result = etl.db.query(cx, """
         SELECT nsp.nspname AS "schema"
              , cls.relname AS "table"
           FROM pg_catalog.pg_class AS cls
@@ -81,10 +81,10 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
           JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
          WHERE a.attnum > 0  -- skip system columns
            AND NOT a.attisdropped
-           AND ns.nspname = %s
+           AND ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY a.attnum"""
-    attributes = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
+    attributes = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [Attribute(**att) for att in attributes]
 
 
@@ -114,22 +114,22 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
           JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
          WHERE i.indisunique
-           AND ns.nspname = %s
+           AND ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY "constraint_type", ic.relname"""
-    indices = etl.pg.query(cx, stmt_index, (table_name.schema, table_name.table))
+    indices = etl.db.query(cx, stmt_index, (table_name.schema, table_name.table))
 
     stmt_att = """
         SELECT a.attname AS "name"
           FROM pg_catalog.pg_attribute AS a
           JOIN pg_catalog.pg_index AS i ON a.attrelid = i.indrelid
-          WHERE i.indexrelid = %%s
-            AND (%s)
+          WHERE i.indexrelid = %s
+            AND ({cond})
           ORDER BY a.attname"""
     found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
         cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
-        attributes = etl.pg.query(cx, stmt_att % cond, (index_id,))
+        attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
             constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
@@ -139,7 +139,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     return found
 
 
-def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]:
+def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
     """
     Lookup dependencies (other tables)
     """
@@ -154,11 +154,11 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[TableName]
           JOIN pg_catalog.pg_depend AS target_dep ON dep.objid = target_dep.objid
           JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid AND cls.oid <> target_cls.oid
           JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
-         WHERE ns.nspname = %s
+         WHERE ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY "schema", "table"
         """
-    dependencies = etl.pg.query(cx, stmt, (table_name.schema, table_name.table))
+    dependencies = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [TableName(**row).identifier for row in dependencies]
 
 
@@ -385,7 +385,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
                     if file_set.source_name == source.name and file_set.design_file_name}
     try:
         logger.info("Connecting to database source '%s' to look for tables", source.name)
-        with closing(etl.pg.connection(source.dsn, autocommit=True, readonly=True)) as conn:
+        with closing(etl.db.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in source_tables:
                 if source_table_name in source_files:
@@ -445,6 +445,7 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
         return
     relations = [RelationDescription(file_set) for file_set in transforms]
     if update:
+        logger.info("Loading existing table design file(s)")
         # Unfortunately, this adds warnings about any of the upstream sources being unknown.
         relations = etl.relation.order_by_dependencies(relations)
 
@@ -453,7 +454,7 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
     else:
         create_func = create_table_design_for_ctas
 
-    with closing(etl.pg.connection(dsn_etl, autocommit=True)) as conn:
+    with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             with relation.matching_temporary_view(conn) as tmp_view_name:
                 table_design = create_func(conn, tmp_view_name, relation, update)
