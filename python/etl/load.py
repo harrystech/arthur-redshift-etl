@@ -542,9 +542,9 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
     assert not relation.is_transformation, "submitted view to parallel load"
     conn = pool.getconn()
+    conn.set_session(autocommit=True, readonly=dry_run)
     try:
         build_one_relation(conn, relation, dry_run=dry_run)
-        conn.commit()
     except Exception as exc:
         # Add (some) exception information close to when it happened
         message = str(exc).split('\n', 1)[0]
