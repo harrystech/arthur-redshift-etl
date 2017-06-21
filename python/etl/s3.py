@@ -129,6 +129,7 @@ def delete_objects(bucket_name: str, object_keys: List[str], wait=False, _retry=
         else:
             raise S3ServiceError("Failed to delete %d file(s)" % len(failed))
     if wait and _retry:  # check only in initial call
+        logger.debug("Waiting for %d object(s) to no longer exist", len(object_keys))
         for key in object_keys:
             bucket.Object(key).wait_until_not_exists()
 

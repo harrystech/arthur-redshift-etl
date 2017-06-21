@@ -57,14 +57,14 @@ RELEASE_FILE="/tmp/upload_env_release_${USER}$$.txt"
 > "$RELEASE_FILE"
 trap "rm \"$RELEASE_FILE\"" EXIT
 
-git rev-parse --show-toplevel >> "$RELEASE_FILE"
+echo "toplevel=`git rev-parse --show-toplevel`" >> "$RELEASE_FILE"
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
 if GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
-    echo "$GIT_COMMIT_HASH ($GIT_BRANCH)" >> "$RELEASE_FILE"
+    echo "commit=$GIT_COMMIT_HASH ($GIT_BRANCH)" >> "$RELEASE_FILE"
 else
-    echo "$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
+    echo "commit=$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
 fi
-date "+%Y-%m-%d %H:%M:%S%z" >> "$RELEASE_FILE"
+echo "date=`date '+%Y-%m-%d %H:%M:%S%z'`" >> "$RELEASE_FILE"
 cat "$RELEASE_FILE" > "python/etl/config/release.txt"
 
 python3 setup.py sdist
