@@ -815,12 +815,12 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         vacuum(tables, dry_run=dry_run)
 
 
-def show_dependents(relations: List[RelationDescription], selector: TableSelector):
+def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector):
     """
     List the execution order of loads or updates.
 
     Relations are marked based on whether they were directly selected or selected as
-    part of the propagation of an update or upgrade.
+    part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
     complete_sequence = select_execution_order(relations, selector, include_dependents=True)
@@ -839,19 +839,19 @@ def show_dependents(relations: List[RelationDescription], selector: TableSelecto
                 len(selected), len(immediate), len(complete_sequence) - len(selected) - len(immediate))
 
     max_len = max(len(relation.identifier) for relation in complete_sequence)
-    line_template = ("{index:4d} {relation.identifier:{width}s}"
-                     " # {flag:9s} | kind={relation.kind} is_required={relation.is_required}")
+    line_template = ("{relation.identifier:{width}s}"
+                     " # index={index:4d}, flag={flag:.9s}, kind={relation.kind}, is_required={relation.is_required}")
     for i, relation in enumerate(complete_sequence):
         if relation.identifier in selected:
             flag = "selected"
         elif relation.identifier in immediate:
             flag = "immediate"
         else:
-            flag = ""
+            flag = "dependent"
         print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
 
 
-def show_dependency_chain(relations: List[RelationDescription], selector: TableSelector):
+def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):
     """
     List the relations upstream (towards sources) from the selected ones, report in execution order.
     """
@@ -867,8 +867,8 @@ def show_dependency_chain(relations: List[RelationDescription], selector: TableS
             dependencies.update(relation.dependencies)
 
     max_len = max(len(identifier) for identifier in dependencies)
-    line_template = ("{index:4d} {relation.identifier:{width}s}"
-                     " # kind={relation.kind} is_required={relation.is_required}")
+    line_template = ("{relation.identifier:{width}s}"
+                     " # index={index:4d}, kind={relation.kind}, is_required={relation.is_required}")
     for i, relation in enumerate(execution_order):
         if relation.identifier in dependencies:
             print(line_template.format(index=i + 1, relation=relation, width=max_len))

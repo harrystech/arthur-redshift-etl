@@ -348,11 +348,11 @@ arthur.py load  # This will automatically create schemas and tables as necessary
 
 | Sub-command   | Goal |
 | ---- | ---- |
-| `show_dependents`  | Inspect the other relations impacted by changes to the selected ones |
-| `show_dependency_chain`  | Inspect which other relations feed the selected ones |
+| `show_downstream_dependents`  | Inspect the other relations impacted by changes to the selected ones |
+| `show_upstream_dependencies`  | Inspect which other relations feed the selected ones |
 
 The patterns used by commands like `extract` or `load` may be provided using files.
-Together with `show_dependents` and `show_dependency_chains`, this opens up
+Together with `show_downstream_dependents` and `show_upstream_dependencies`, this opens up
 opportunities to work on a "sub-tree" of the data warehouse.
 
 #### Working with just the source schemas or transformation schemas
@@ -360,10 +360,10 @@ opportunities to work on a "sub-tree" of the data warehouse.
 At the beginning it might be worthwhile to focus just on tables in source schemas -- those
 tables that get loaded using CSV files after `extract`.
 ```shell
-arthur.py show_dependents -q | grep 'kind=DATA' | tee sources.txt
+arthur.py show_downstream_dependents -q | grep 'kind=DATA' | tee sources.txt
 
 # List CSV files and manifests, then continue with upgrade etc.
-arthur.py ls --remote --only @sources.txt
+arthur.py ls --remote @sources.txt
 ```
 
 The above also works when we're just interested in transformations. This can
@@ -371,7 +371,7 @@ save time while iterating on transformations since the sources won't be reloaded
 
 Example:
 ```shell
-arthur.py show_dependents -q | grep -v 'kind=DATA' | tee transformations.txt
+arthur.py show_downstream_dependents -q | grep -v 'kind=DATA' | tee transformations.txt
 
 arthur.py sync @transformations.txt
 arthur.py upgrade --only @transformations.txt
@@ -384,7 +384,7 @@ set of of tables that feed data into it.
 
 Example:
 ```shell
-arthur.py show_dependency_chain -q www.users | tee www_users.txt
+arthur.py show_upstream_dependencies -q www.users | tee www_users.txt
 
 arthur.py sync www.users
 arthur.py upgrade --only @www_users.txt
