@@ -101,6 +101,7 @@ class TableName:
 
     @property
     def schema(self):
+        # for system table dependencies, the schema should not be in a "staging" version
         if self.staging and not self._schema.startswith('pg_catalog'):
             return as_staging_name(self._schema)
         else:
