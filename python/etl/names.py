@@ -101,7 +101,7 @@ class TableName:
 
     @property
     def schema(self):
-        if self.staging:
+        if self.staging and not self._schema.startswith('pg_catalog'):
             return as_staging_name(self._schema)
         else:
             return self._schema
