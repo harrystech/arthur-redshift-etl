@@ -269,7 +269,8 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
             create_view(conn, relation, dry_run=dry_run)
         else:
             create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
-        grant_access(conn, relation, dry_run=dry_run)
+        if not relation.use_staging:
+            grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
@@ -283,13 +284,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     target = relation.target_table_name
     schema_config = relation.schema_config
-    owner, reader_groups, writer_groups = schema_config.owner, schema_config.reader_groups, schema_config.writer_groups
-
-    if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", relation.identifier, owner)
-    else:
-        logger.info("Granting all privileges on '%s' to '%s'", relation.identifier, owner)
-        etl.db.grant_all_to_user(conn, target.schema, target.table, owner)
+    reader_groups, writer_groups = schema_config.reader_groups, schema_config.writer_groups
 
     if reader_groups:
         if dry_run:
