@@ -146,7 +146,7 @@ def grant_schema_permissions(schema: DataWarehouseSchema, dry_run=False) -> None
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for reader_group in schema.reader_groups:
             etl.db.grant_usage(conn, schema.name, reader_group)
-            etl.db.grant_select_in_schema(conn, schema.name, reader_group)
+            etl.db.grant_select_on_all_tables_in_schema(conn, schema.name, reader_group)
         for writer_group in schema.writer_groups:
             etl.db.grant_usage(conn, schema.name, writer_group)
             etl.db.grant_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
