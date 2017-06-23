@@ -512,8 +512,8 @@ class SyncWithS3Command(SubCommand):
         if args.force:
             etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
 
-        descriptions = self.find_relation_descriptions(args, default_scheme="file")
-        etl.sync.sync_with_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        relations = self.find_relation_descriptions(args, default_scheme="file")
+        etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class ExtractToS3Command(SubCommand):
