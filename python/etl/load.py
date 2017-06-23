@@ -242,8 +242,7 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         raise RelationConstructionError(exc) from exc
 
 
-def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema],
-                               use_staging: bool, dry_run=False) -> None:
+def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
     """
     Create schemas necessary for a full rebuild of data warehouse
     If `use_staging`, create new staging schemas.
@@ -737,11 +736,12 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
         create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
     except ETLRuntimeError:
         if not (no_rollback or use_staging):
+            logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
 
     if use_staging:
-        # We've successfully built staging schemas, so roll them out
+        logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
 

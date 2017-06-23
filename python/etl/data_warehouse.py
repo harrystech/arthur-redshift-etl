@@ -21,6 +21,9 @@ import logging
 from contextlib import closing
 from typing import List
 
+import psycopg2
+from psycopg2.extensions import connection  # only for type annotation
+
 import etl.commands
 import etl.config
 import etl.config.dw
@@ -28,8 +31,6 @@ import etl.db
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import ETLError
 from etl.names import join_with_quotes
-
-import psycopg2
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -81,15 +82,16 @@ def _promote_schemas(schemas: List[DataWarehouseSchema],
             return
         selected_names = join_with_quotes(need_promotion.keys())
         if dry_run:
-            logger.info("Dry-run: Skipping promotion of schema(s) %s", selected_names)
+            logger.info("Dry-run: Skipping promotion of schema(s): %s", selected_names)
             return
+
         logger.info("Promoting from %s schema(s) %s", from_name_attr, selected_names)
         for from_name, schema in need_promotion.items():
             logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
             etl.db.drop_schema(conn, schema.name)
             etl.db.alter_schema_rename(conn, from_name, schema.name)
             logger.info("Granting readers and writers access to schema '%s' after promotion", schema.name)
-            grant_schema_permissions(schema, dry_run=dry_run)
+            grant_schema_permissions(conn, schema)
 
 
 def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
@@ -107,13 +109,13 @@ def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
             return
         selected_names = join_with_quotes(name for name in names if name in found)
         if dry_run:
-            logger.info("Dry-run: Skipping backup of schema(s) %s", selected_names)
+            logger.info("Dry-run: Skipping backup of schema(s): %s", selected_names)
             return
 
         logger.info("Creating backup of schema(s) %s", selected_names)
         for schema in need_backup:
             logger.info("Revoking access from readers and writers to schema '%s' before backup", schema.name)
-            revoke_schema_permissions(schema, dry_run=dry_run)
+            revoke_schema_permissions(conn, schema)
             logger.info("Renaming schema '%s' to backup '%s'", schema.name, schema.backup_name)
             etl.db.drop_schema(conn, schema.backup_name)
             etl.db.alter_schema_rename(conn, schema.name, schema.backup_name)
@@ -137,34 +139,30 @@ def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     _promote_schemas(schemas, 'staging_name', dry_run=dry_run)
 
 
-def grant_schema_permissions(schema: DataWarehouseSchema, dry_run=False) -> None:
+def grant_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> None:
     """
     Grant usage to readers and writers
     Grant select to readers and select & write to writers
     """
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        for reader_group in schema.reader_groups:
-            etl.db.grant_usage(conn, schema.name, reader_group)
-            etl.db.grant_select_on_all_tables_in_schema(conn, schema.name, reader_group)
-        for writer_group in schema.writer_groups:
-            etl.db.grant_usage(conn, schema.name, writer_group)
-            etl.db.grant_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
+    for reader_group in schema.reader_groups:
+        etl.db.grant_usage(conn, schema.name, reader_group)
+        etl.db.grant_select_on_all_tables_in_schema(conn, schema.name, reader_group)
+    for writer_group in schema.writer_groups:
+        etl.db.grant_usage(conn, schema.name, writer_group)
+        etl.db.grant_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
 
 
-def revoke_schema_permissions(schema: DataWarehouseSchema, dry_run=False) -> None:
+def revoke_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> None:
     """
     Revoke usage to readers and writers
     Revoke select to readers and select & write to writers
     """
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        for reader_group in schema.reader_groups:
-            etl.db.revoke_usage(conn, schema.name, reader_group)
-            etl.db.revoke_select_on_all_tables_in_schema(conn, schema.name, reader_group)
-        for writer_group in schema.writer_groups:
-            etl.db.revoke_usage(conn, schema.name, writer_group)
-            etl.db.revoke_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
+    for reader_group in schema.reader_groups:
+        etl.db.revoke_usage(conn, schema.name, reader_group)
+        etl.db.revoke_select_on_all_tables_in_schema(conn, schema.name, reader_group)
+    for writer_group in schema.writer_groups:
+        etl.db.revoke_usage(conn, schema.name, writer_group)
+        etl.db.revoke_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
 
 
 def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
