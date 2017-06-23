@@ -699,13 +699,16 @@ class CreateSchemasCommand(SubCommand):
         super().__init__("create_schemas",
                          "create schemas from data warehouse config",
                          "Create schemas as configured and set permissions."
-                         " Optionally move existing schemas to backup."
+                         " Optionally move existing schemas to backup or create in staging position."
                          " (Any patterns must be schema names.)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
-        parser.add_argument("-b", "--with-backup", help="backup any existing schemas",
-                            default=False, action="store_true")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("-b", "--with-backup", help="backup any existing schemas",
+                           default=False, action="store_true")
+        group.add_argument("--with-staging", help="create schemas in staging position",
+                           default=False, action="store_true")
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
@@ -713,7 +716,7 @@ class CreateSchemasCommand(SubCommand):
         with etl.db.log_error():
             if args.with_backup:
                 etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
-            etl.data_warehouse.create_schemas(schemas, dry_run=args.dry_run)
+            etl.data_warehouse.create_schemas(schemas, use_staging=args.with_staging, dry_run=args.dry_run)
 
 
 class PromoteSchemasCommand(SubCommand):

@@ -65,28 +65,32 @@ def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, 
             etl.db.grant_usage(conn, name, group)
 
 
-def _promote_schemas(schemas: List[DataWarehouseSchema],
-                     from_name_attr: str, dry_run=False) -> None:
+def _promote_schemas(schemas: List[DataWarehouseSchema], from_where: str, dry_run=False) -> None:
     """
     Promote (staging or backup) schemas into their standard names and permissions
     Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name' or 'staging_name'
     """
+    attr_name = from_where + "_name"
+    from_names = [getattr(schema, attr_name) for schema in schemas]
+    from_name_schema_lookup = dict(zip(from_names, schemas))
+
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        from_name_schema_lookup = {getattr(schema, from_name_attr): schema for schema in schemas}
-        names = list(from_name_schema_lookup.keys())
-        found = etl.db.select_schemas(conn, names)
-        need_promotion = {name: schema for name, schema in from_name_schema_lookup.items() if name in found}
+        need_promotion = etl.db.select_schemas(conn, from_names)
         if not need_promotion:
-            logger.info("Found no %s schemas to promote", from_name_attr)
-            return
-        selected_names = join_with_quotes(need_promotion.keys())
-        if dry_run:
-            logger.info("Dry-run: Skipping promotion of schema(s): %s", selected_names)
+            logger.info("Found no %s schemas to promote", from_where)
             return
 
-        logger.info("Promoting from %s schema(s) %s", from_name_attr, selected_names)
-        for from_name, schema in need_promotion.items():
+        # Always log the original names
+        selected_names = join_with_quotes(from_name_schema_lookup[from_name].name for from_name in need_promotion)
+        if dry_run:
+            logger.info("Dry-run: Skipping promotion of %d schema(s) from %s position: %s",
+                        len(need_promotion), from_where, selected_names)
+            return
+
+        logger.info("Promoting %d schema(s) from %s position: %s", len(need_promotion), from_where, selected_names)
+        for from_name in need_promotion:
+            schema = from_name_schema_lookup[from_name]
             logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
             etl.db.drop_schema(conn, schema.name)
             etl.db.alter_schema_rename(conn, from_name, schema.name)
@@ -127,7 +131,7 @@ def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     This is the inverse of backup_schemas.
     Useful if bad data is in standard schemas
     """
-    _promote_schemas(schemas, 'backup_name', dry_run=dry_run)
+    _promote_schemas(schemas, "backup", dry_run=dry_run)
 
 
 def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
@@ -136,7 +140,7 @@ def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     (First backs up current occupants of standard position)
     """
     backup_schemas(schemas, dry_run=dry_run)
-    _promote_schemas(schemas, 'staging_name', dry_run=dry_run)
+    _promote_schemas(schemas, "staging", dry_run=dry_run)
 
 
 def grant_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> None:
