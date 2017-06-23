@@ -41,8 +41,8 @@ import concurrent.futures
 import logging
 import re
 from contextlib import closing
-from itertools import chain
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set
+from itertools import chain, dropwhile
+from typing import Any, Dict, List, Optional, Set
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -699,27 +699,6 @@ def select_execution_order(relations: List[RelationDescription], selector: Table
     return selected
 
 
-def take_starting_from(predicate: Callable, iterable: Iterable) -> Iterator:
-    """
-    Generate sequence of elements from the input which start from the first match (based on
-    predicate function).
-
-    >>> ints = range(5)
-    >>> gen = take_starting_from(lambda i: i == 3, ints)
-    >>> list(gen)
-    [3, 4]
-    >>> gen = take_starting_from(lambda i: i > 5, ints)
-    >>> list(gen)
-    []
-    """
-    found = False
-    for element in iterable:
-        if not found and predicate(element):
-            found = True
-        if found:
-            yield element
-
-
 # ---- Section 5: "Callbacks" (functions that implement commands) ----
 
 def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=True,
@@ -795,8 +774,7 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
         return
     if continue_from is not None:
         logger.info("Trying to fast forward to '%s'", continue_from)
-        selected_relations = list(take_starting_from(lambda relation: relation.identifier == continue_from,
-                                                     selected_relations))
+        selected_relations = list(dropwhile(lambda relation: relation.identifier != continue_from, selected_relations))
         if not selected_relations:
             logger.warning("Found no relations matching relation '%s'", continue_from)
             return
@@ -860,8 +838,7 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
         return
     if continue_from is not None:
         logger.info("Trying to fast forward to '%s'", continue_from)
-        complete_sequence = list(take_starting_from(lambda relation: relation.identifier == continue_from,
-                                                    complete_sequence))
+        complete_sequence = list(dropwhile(lambda relation: relation.identifier != continue_from, complete_sequence))
         if len(complete_sequence) == 0:
             logger.warning("Found no relations matching relation '%s'", continue_from)
             return
