@@ -161,7 +161,7 @@ def revoke_schema_permissions(schema: DataWarehouseSchema, dry_run=False) -> Non
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for reader_group in schema.reader_groups:
             etl.db.revoke_usage(conn, schema.name, reader_group)
-            etl.db.revoke_select_in_schema(conn, schema.name, reader_group)
+            etl.db.revoke_select_on_all_tables_in_schema(conn, schema.name, reader_group)
         for writer_group in schema.writer_groups:
             etl.db.revoke_usage(conn, schema.name, writer_group)
             etl.db.revoke_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
