@@ -40,10 +40,17 @@ These are the general pre-requisites:
 import concurrent.futures
 import logging
 import re
+import time
+import threading
+import queue
 from contextlib import closing
+from datetime import datetime, timedelta
+from calendar import timegm
 from itertools import chain
 from typing import Any, Dict, List, Set
 
+
+import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -571,6 +578,100 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
         if not dry_run:
             logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
 
+# ---- Experimental Section: load during extract ----
+
+
+def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
+                                    look_back_hours=21, idle_termination_seconds=2,
+                                    dry_run=False) -> None:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+
+    [ddb] = [dispatcher for dispatcher in etl.monitor.MonitorPayload.dispatchers
+             if isinstance(dispatcher, etl.monitor.DynamoDBStorage)]
+    session = boto3.session.Session(region_name=ddb.region_name)
+    dynamodb = session.resource('dynamodb')
+    table = dynamodb.Table(ddb.table_name)
+
+    recent_cutoff = datetime.utcnow() - timedelta(hours=look_back_hours)
+    cutoff_epoch = timegm(recent_cutoff.utctimetuple())
+    timer = Timer()
+
+    def poll_worker():
+        while True:
+            try:
+                item = to_poll.get(block=False)
+            except queue.Empty:
+                logger.info("Nothing left to poll")
+                for i in range(max_concurrency):
+                    to_load.put(None)
+                break
+            logger.info("Polling for %s", item.identifier)
+            res = table.query(
+                ConsistentRead=True,
+                KeyConditionExpression="#ts > :dt and target = :table",
+                FilterExpression="step = :step and event = :event",
+                ExpressionAttributeNames={"#ts": "timestamp"},
+                ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
+                                           ":step": "extract", ":event": "finish"}
+            )
+            logger.info((len(relations), to_poll.qsize(), timer.elapsed))
+            if res['Count'] == 0:
+                to_poll.put(item)
+                if last_size == to_poll.qsize() and timer.elapsed > idle_termination_seconds:
+                    for i in range(max_concurrency):
+                        to_load.put(None)
+                    return
+            else:
+                to_load.put(item)
+            logger.info("%s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
+            to_poll.task_done()
+
+    def load_worker():
+        while True:
+            item = to_load.get()
+            if item is None:
+                break
+            logger.info("Found %s ready to be loaded", item.identifier)
+            build_one_relation_using_pool(pool, item, dry_run=dry_run)
+            to_load.task_done()
+            logger.info("%s ready to load", to_load.qsize())
+
+    to_poll = queue.Queue()
+    to_load = queue.Queue()
+    threads = []
+    for i in range(max_concurrency):
+        t = threading.Thread(target=load_worker)
+        t.start()
+        threads.append(t)
+
+    for relation in relations:
+        to_poll.put(relation)
+
+    last_size = to_poll.qsize()
+    poller = threading.Thread(target=poll_worker)
+    poller.start()
+    threads.append(poller)
+    logger.info("Poller started; %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
+
+    while to_poll.qsize():
+        # Update last known queue size
+        last_size = to_poll.qsize()
+        poller.join(idle_termination_seconds)
+        # Update 'progress by' checkpoint
+        idle_termination_seconds += timer.elapsed
+        logger.info("Poller joined")
+        if not poller.is_alive():
+            for t in threads:
+                t.join()
+            raise ETLRuntimeError("No extracts found after %s seconds, bailing out" % idle_termination_seconds)
+        else:
+            continue
+
+    for t in threads:
+        t.join()
+    logger.info("Wrapping up work in %d worker(s): (%s)", max_concurrency, timer)
+
 
 # ---- Section 4: Functions related to control flow ----
 
@@ -679,7 +780,8 @@ def create_relations_with_data(relations: List[LoadableRelation], max_concurrenc
     if not source_relations:
         logger.info("None of the relations are in source schemas")
     else:
-        create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
+        create_source_tables_when_ready(source_relations, max_concurrency, dry_run=dry_run)
+        # create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
 
     create_transformations_with_data(relations, wlm_query_slots, dry_run=dry_run)
 
