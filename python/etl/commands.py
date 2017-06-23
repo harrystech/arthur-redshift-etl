@@ -725,8 +725,9 @@ class PromoteSchemasCommand(SubCommand):
         super().__init__("promote_schemas",
                          "move staging or backup schemas into standard position",
                          "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
-                         "When promoting from staging, current standard position schemas are backed up first."
-                         "Promoting (ie, restoring) a backup should only happen after a load succeeded with bad data.")
+                         " When promoting from staging, current standard position schemas are backed up first."
+                         " Promoting (ie, restoring) a backup should only happen after a load finished successfully"
+                         " but left bad data behind.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])

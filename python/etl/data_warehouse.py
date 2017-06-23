@@ -136,8 +136,8 @@ def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
 
 def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
-    Put staging schemas into their standard configuration
-    (First backs up current occupants of standard position)
+    Put staging schemas into their standard configuration after backing up the current occupants of
+    of standard position.
     """
     backup_schemas(schemas, dry_run=dry_run)
     _promote_schemas(schemas, "staging", dry_run=dry_run)
