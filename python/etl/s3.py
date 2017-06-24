@@ -39,30 +39,26 @@ def _get_s3_bucket(bucket_name: str):
 
 
 class S3Uploader:
-
     """
     Upload files from local filesystem into the given S3 folder.
-
-    Note that the current implementation is NOT thread safe since
-    the bucket resource is tied to the s3 resource of one thread.
     """
 
     def __init__(self, bucket_name: str, dry_run=False) -> None:
         self.logger = logging.getLogger(__name__)
         self.bucket_name = bucket_name
-        self._bucket = _get_s3_bucket(self.bucket_name)
         if dry_run:
-            self._call = self.skip_upload
+            self._call = self._skip_upload
         else:
-            self._call = self.do_upload
+            self._call = self._do_upload
 
-    def skip_upload(self, filename: str, object_key: str) -> None:
+    def _skip_upload(self, filename: str, object_key: str) -> None:
         self.logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
 
-    def do_upload(self, filename: str, object_key: str) -> None:
+    def _do_upload(self, filename: str, object_key: str) -> None:
         try:
             self.logger.info("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
-            self._bucket.upload_file(filename, object_key)
+            bucket = _get_s3_bucket(self.bucket_name)
+            bucket.upload_file(filename, object_key)
         except botocore.exceptions.ClientError as exc:
             error_code = exc.response['Error']['Code']
             self.logger.error("Error code %s for object 's3://%s/%s'", error_code, self.bucket_name, object_key)

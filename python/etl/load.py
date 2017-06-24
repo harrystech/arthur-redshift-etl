@@ -183,6 +183,7 @@ class LoadableRelation:
                 "step": command,
                 "source": source,
                 "destination": destination,
+                "options": {"use_staging": use_staging, "skip_copy": skip_copy},
                 "index": dict(base_index, current=i + 1)
             }
             loadable.append(cls(relation, monitor_info, use_staging, skip_copy=skip_copy))
