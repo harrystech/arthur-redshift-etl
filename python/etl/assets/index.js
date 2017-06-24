@@ -34,6 +34,14 @@ function fetchEtlId() {
     });
 }
 
+function fetchEtlCommandLine() {
+    apiCall("/api/command-line", function (obj, ignored) {
+        document.getElementById("command-line").textContent = obj.args
+    }, function (path) {
+        lostConnection(path)
+    });
+}
+
 function fetchEtlIndices() {
     apiCall("/api/indices", updateEtlIndices, function (path) {
         lostConnection(path, "indices-table-last-modified")
@@ -132,6 +140,7 @@ function updateEtlEvents(etlEvents, lastModified) {
 
 window.onload = function () {
     fetchEtlId();
+    fetchEtlCommandLine();
     fetchEtlIndices();
     fetchEtlEvents();
 };

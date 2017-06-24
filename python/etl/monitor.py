@@ -15,6 +15,7 @@ import queue
 import random
 import re
 import socketserver
+import sys
 import threading
 import time
 import traceback
@@ -469,26 +470,25 @@ class MemoryStorage(PayloadDispatcher):
                 If the command is HEAD (and not GET), only the header is sent. Duh.
                 """
                 parts = urllib.parse.urlparse(self.path.rstrip('/'))
-                path = parts.path or "/index.html"
-                if path == "/api/etl-id":
+                path = (parts.path or "/index.html").lstrip('/')
+                if path == "api/etl-id":
                     result = etl.assets.Content(json={"id": Monitor.etl_id})
-                elif path == "/api/indices":
+                elif path == "api/indices":
                     result = storage.get_indices()
-                elif path == "/api/events":
+                elif path == "api/events":
                     result = storage.get_events()
-                elif path.startswith("/api"):
-                    self.send_response(HTTPStatus.NOT_FOUND)
-                    self.end_headers()
-                    return
-                elif not etl.assets.asset_exists(path.lstrip('/')):
+                elif path == "api/command-line":
+                    result = etl.assets.Content(json={"args": ' '.join(sys.argv)})
+                elif etl.assets.asset_exists(path):
+                    result = etl.assets.get_asset(path)
+                else:
+                    # self.send_response(HTTPStatus.NOT_FOUND)
                     self.send_response(HTTPStatus.MOVED_PERMANENTLY)
                     new_parts = (parts.scheme, parts.netloc, '/', None, None)
                     new_url = urllib.parse.urlunsplit(new_parts)
                     self.send_header("Location", new_url)
                     self.end_headers()
                     return
-                else:
-                    result = etl.assets.get_asset(path.lstrip('/'))
 
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", result.content_type)
