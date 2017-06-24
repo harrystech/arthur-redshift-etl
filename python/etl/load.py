@@ -242,20 +242,6 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         raise RelationConstructionError(exc) from exc
 
 
-def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema],
-                               use_staging: bool, dry_run=False) -> None:
-    """
-    Create schemas necessary for a full rebuild of data warehouse
-    If `use_staging`, create new staging schemas.
-    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
-    """
-    if use_staging:
-        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
-    else:
-        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
-        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
-
-
 def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Create fresh VIEW or TABLE and grant groups access permissions.
@@ -269,7 +255,8 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
             create_view(conn, relation, dry_run=dry_run)
         else:
             create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
-        grant_access(conn, relation, dry_run=dry_run)
+        if not relation.use_staging:
+            grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
@@ -283,13 +270,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     target = relation.target_table_name
     schema_config = relation.schema_config
-    owner, reader_groups, writer_groups = schema_config.owner, schema_config.reader_groups, schema_config.writer_groups
-
-    if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", relation.identifier, owner)
-    else:
-        logger.info("Granting all privileges on '%s' to '%s'", relation.identifier, owner)
-        etl.db.grant_all_to_user(conn, target.schema, target.table, owner)
+    reader_groups, writer_groups = schema_config.reader_groups, schema_config.writer_groups
 
     if reader_groups:
         if dry_run:
@@ -483,6 +464,19 @@ def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWareho
             got_it.add(this_schema.name)
             traversed_in_order.append(this_schema)
     return traversed_in_order
+
+
+def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
+    """
+    Create schemas necessary for a full rebuild of data warehouse
+    If `use_staging`, create new staging schemas.
+    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
+    """
+    if use_staging:
+        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
+    else:
+        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
+        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
 
 
 # ---- Section 3: Functions that tie table operations together ----
@@ -742,11 +736,12 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
         create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
     except ETLRuntimeError:
         if not (no_rollback or use_staging):
+            logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
 
     if use_staging:
-        # We've successfully built staging schemas, so roll them out
+        logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
 

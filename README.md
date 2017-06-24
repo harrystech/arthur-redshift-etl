@@ -341,8 +341,14 @@ arthur.py load  # This will automatically create schemas and tables as necessary
 | Sub-command   | Goal |
 | ---- | ---- |
 | `create_schemas`  | Create schemas; normally `load` will do that for you |
-| `restore_schemas`  | Bring back schemas from backup if `load` was aborted |
+| `promote_schemas`  | Bring back schemas from backup if `load` was aborted or promote staging after fixing any issues |
 
+To test permisions (granting and revoking), use for any schema:
+```
+arthur.py create_schemas schema_name
+arthur.py create_schemas --with-staging schema_name
+arthur.py promote_schemas --from staging schema_name
+```
 
 ### Working with subsets of tables
 
