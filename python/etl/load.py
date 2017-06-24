@@ -41,8 +41,8 @@ import concurrent.futures
 import logging
 import re
 from contextlib import closing
-from itertools import chain
-from typing import Any, Dict, List, Set
+from itertools import chain, dropwhile
+from typing import Any, Dict, List, Optional, Set
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -200,7 +200,7 @@ class LoadableInTransactionRelation(LoadableRelation):
         return False
 
 
-# ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
+# ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
 
 def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
     """
@@ -746,8 +746,10 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
 
-def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=False,
-                           max_concurrency=1, wlm_query_slots=1, only_selected=False, skip_copy=False, dry_run=False):
+def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+                           max_concurrency=1, wlm_query_slots=1,
+                           only_selected=False, continue_from: Optional[str]=None, use_staging=False,
+                           skip_copy=False, dry_run=False) -> None:
     """
     Push new (structural) changes and fresh data through data warehouse.
 
@@ -766,6 +768,12 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     if not selected_relations:
         logger.warning("Found no relations matching: %s", selector)
         return
+    if continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        selected_relations = list(dropwhile(lambda relation: relation.identifier != continue_from, selected_relations))
+        if not selected_relations:
+            logger.warning("Found no relations matching relation '%s'", continue_from)
+            return
 
     relations = LoadableRelation.from_descriptions(selected_relations, "upgrade",
                                                    skip_copy=skip_copy, use_staging=use_staging)
@@ -811,7 +819,8 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         vacuum(tables, dry_run=dry_run)
 
 
-def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector):
+def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector,
+                               continue_from: Optional[str]=None) -> None:
     """
     List the execution order of loads or updates.
 
@@ -820,10 +829,16 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
     complete_sequence = select_execution_order(relations, selector, include_dependents=True)
-    selected_relations = etl.relation.find_matches(complete_sequence, selector)
-    if len(selected_relations) == 0:
+    if len(complete_sequence) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
+    if continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        complete_sequence = list(dropwhile(lambda relation: relation.identifier != continue_from, complete_sequence))
+        if len(complete_sequence) == 0:
+            logger.warning("Found no relations matching relation '%s'", continue_from)
+            return
+    selected_relations = etl.relation.find_matches(complete_sequence, selector)
 
     selected = frozenset(relation.identifier for relation in selected_relations)
     immediate = set(selected)

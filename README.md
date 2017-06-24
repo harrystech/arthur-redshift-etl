@@ -336,6 +336,12 @@ arthur.py extract
 arthur.py load  # This will automatically create schemas and tables as necessary
 ```
 
+Note that when a `load` fails, the work until the failed relation is still in the "staging" schemas. You can continue
+the load after fixing any query errors or input data, using:
+```
+arthur.py upgrade --with-staging-schemas --continue-from failed_relation.in_load_step
+```
+
 ### Dealing with schemas (create, restore)
 
 | Sub-command   | Goal |
