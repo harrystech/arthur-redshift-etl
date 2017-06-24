@@ -242,19 +242,6 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         raise RelationConstructionError(exc) from exc
 
 
-def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
-    """
-    Create schemas necessary for a full rebuild of data warehouse
-    If `use_staging`, create new staging schemas.
-    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
-    """
-    if use_staging:
-        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
-    else:
-        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
-        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
-
-
 def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Create fresh VIEW or TABLE and grant groups access permissions.
@@ -477,6 +464,19 @@ def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWareho
             got_it.add(this_schema.name)
             traversed_in_order.append(this_schema)
     return traversed_in_order
+
+
+def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
+    """
+    Create schemas necessary for a full rebuild of data warehouse
+    If `use_staging`, create new staging schemas.
+    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
+    """
+    if use_staging:
+        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
+    else:
+        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
+        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
 
 
 # ---- Section 3: Functions that tie table operations together ----
