@@ -93,7 +93,7 @@ def change_status_to_rerun(pipeline_id):
     client = boto3.client("datapipeline")
     pipeline_status = get_pipeline_status(client, pipeline_id)
 
-    print("Found pipeline:\n")
+    print("Found ETL pipeline:\n")
     for name in ["name", "pipelineId", "@latestRunTime", "@healthStatus"]:
         print("  {} = {}".format(name, pipeline_status[name]))
     print()
@@ -104,7 +104,7 @@ def change_status_to_rerun(pipeline_id):
         sys.exit(1)
 
     object_statuses = get_shell_activity_status(client, pipeline_id, object_ids)
-    print("  Found objects:\n")
+    print("  Found objects (of type 'ShellCommandActivity'):\n")
     for status in object_statuses:
         for name in ["name", "id", "@healthStatus"]:
             print("    {} = {}".format(name, status[name]))
@@ -130,6 +130,7 @@ def list_pipelines():
             statuses.append(status)
     if not statuses:
         print("Found no scheduled ETL pipelines")
+        print("Note that a pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked up here.")
         return
     for status in sorted(statuses, key=itemgetter("name")):
         print("{pipelineId:24s} - {name} - ({@healthStatus}, {@latestRunTime})".format(**status))

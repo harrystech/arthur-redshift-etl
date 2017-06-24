@@ -513,7 +513,7 @@ class MemoryStorage(PayloadDispatcher):
 
         class BackgroundServer(threading.Thread):
             def run(self):
-                logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
+                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_ADDRESS[1])
                 try:
                     httpd = _ThreadingSimpleServer(MemoryStorage.SERVER_ADDRESS, handler_class)
                     httpd.serve_forever()
@@ -524,7 +524,7 @@ class MemoryStorage(PayloadDispatcher):
             thread = BackgroundServer(daemon=True)
             thread.start()
         except RuntimeError:
-            logger.warning("Failed to start background server:", exc_info=True)
+            logger.warning("Failed to start monitor server:", exc_info=True)
 
 
 class InsertTraceKey(logging.Filter):

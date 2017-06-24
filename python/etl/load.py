@@ -41,8 +41,8 @@ import concurrent.futures
 import logging
 import re
 from contextlib import closing
-from itertools import chain
-from typing import Any, Dict, List, Set
+from itertools import chain, dropwhile
+from typing import Any, Dict, List, Optional, Set
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -183,6 +183,7 @@ class LoadableRelation:
                 "step": command,
                 "source": source,
                 "destination": destination,
+                "options": {"use_staging": use_staging, "skip_copy": skip_copy},
                 "index": dict(base_index, current=i + 1)
             }
             loadable.append(cls(relation, monitor_info, use_staging, skip_copy=skip_copy))
@@ -199,7 +200,7 @@ class LoadableInTransactionRelation(LoadableRelation):
         return False
 
 
-# ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
+# ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
 
 def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
     """
@@ -242,20 +243,6 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         raise RelationConstructionError(exc) from exc
 
 
-def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema],
-                               use_staging: bool, dry_run=False) -> None:
-    """
-    Create schemas necessary for a full rebuild of data warehouse
-    If `use_staging`, create new staging schemas.
-    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
-    """
-    if use_staging:
-        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
-    else:
-        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
-        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
-
-
 def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Create fresh VIEW or TABLE and grant groups access permissions.
@@ -269,7 +256,8 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
             create_view(conn, relation, dry_run=dry_run)
         else:
             create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
-        grant_access(conn, relation, dry_run=dry_run)
+        if not relation.use_staging:
+            grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
@@ -283,13 +271,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     target = relation.target_table_name
     schema_config = relation.schema_config
-    owner, reader_groups, writer_groups = schema_config.owner, schema_config.reader_groups, schema_config.writer_groups
-
-    if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", relation.identifier, owner)
-    else:
-        logger.info("Granting all privileges on '%s' to '%s'", relation.identifier, owner)
-        etl.db.grant_all_to_user(conn, target.schema, target.table, owner)
+    reader_groups, writer_groups = schema_config.reader_groups, schema_config.writer_groups
 
     if reader_groups:
         if dry_run:
@@ -483,6 +465,19 @@ def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWareho
             got_it.add(this_schema.name)
             traversed_in_order.append(this_schema)
     return traversed_in_order
+
+
+def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
+    """
+    Create schemas necessary for a full rebuild of data warehouse
+    If `use_staging`, create new staging schemas.
+    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
+    """
+    if use_staging:
+        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
+    else:
+        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
+        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
 
 
 # ---- Section 3: Functions that tie table operations together ----
@@ -742,16 +737,19 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
         create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
     except ETLRuntimeError:
         if not (no_rollback or use_staging):
+            logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
 
     if use_staging:
-        # We've successfully built staging schemas, so roll them out
+        logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
 
-def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=False,
-                           max_concurrency=1, wlm_query_slots=1, only_selected=False, skip_copy=False, dry_run=False):
+def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+                           max_concurrency=1, wlm_query_slots=1,
+                           only_selected=False, continue_from: Optional[str]=None, use_staging=False,
+                           skip_copy=False, dry_run=False) -> None:
     """
     Push new (structural) changes and fresh data through data warehouse.
 
@@ -770,6 +768,12 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     if not selected_relations:
         logger.warning("Found no relations matching: %s", selector)
         return
+    if continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        selected_relations = list(dropwhile(lambda relation: relation.identifier != continue_from, selected_relations))
+        if not selected_relations:
+            logger.warning("Found no relations matching relation '%s'", continue_from)
+            return
 
     relations = LoadableRelation.from_descriptions(selected_relations, "upgrade",
                                                    skip_copy=skip_copy, use_staging=use_staging)
@@ -815,7 +819,8 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         vacuum(tables, dry_run=dry_run)
 
 
-def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector):
+def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector,
+                               continue_from: Optional[str]=None) -> None:
     """
     List the execution order of loads or updates.
 
@@ -824,10 +829,16 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
     complete_sequence = select_execution_order(relations, selector, include_dependents=True)
-    selected_relations = etl.relation.find_matches(complete_sequence, selector)
-    if len(selected_relations) == 0:
+    if len(complete_sequence) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
+    if continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        complete_sequence = list(dropwhile(lambda relation: relation.identifier != continue_from, complete_sequence))
+        if len(complete_sequence) == 0:
+            logger.warning("Found no relations matching relation '%s'", continue_from)
+            return
+    selected_relations = etl.relation.find_matches(complete_sequence, selector)
 
     selected = frozenset(relation.identifier for relation in selected_relations)
     immediate = set(selected)

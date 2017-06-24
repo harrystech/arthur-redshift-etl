@@ -1,10 +1,13 @@
+body {
+    font-family: 'Montserrat', sans-serif;
+}
+
 .sub-header {
     font-size: large;
     margin-bottom: 1.5em;
 }
 
 .boxed-id {
-    font-family: 'Lucida Console', monospace;
     border: 1px solid darkgray;
     padding: 2px 4px 2px 4px;
 }
@@ -14,7 +17,6 @@
 }
 
 table {
-    font-family: arial, sans-serif;
     border-collapse: collapse;
     width: 100%;
 }

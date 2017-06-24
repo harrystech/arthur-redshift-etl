@@ -337,7 +337,7 @@ class TableSelector:
 
         >>> ts = TableSelector()
         >>> str(ts)
-        '*.*'
+        "['*.*']"
         >>> ts = TableSelector(["finance", "www"])
         >>> str(ts)
         "['finance.*', 'www.*']"
@@ -408,7 +408,7 @@ class TableSelector:
     def __str__(self):
         # See __init__ for tests
         if len(self._patterns) == 0:
-            return '*.*'
+            return "['*.*']"
         else:
             return "[{}]".format(join_with_quotes(p.identifier for p in self._patterns))
 
