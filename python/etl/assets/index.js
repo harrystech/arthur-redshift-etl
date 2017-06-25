@@ -56,7 +56,7 @@ function fetchEtlEvents() {
 
 function updateEtlIndices(etlIndices, lastModified) {
     // Update table with the current progress meter (200px * percentage = 2 * percentage points)
-    var table = "<tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan='2'>Progress</th></tr>";
+    var table = "<tr><th>Name</th><th>Current Index</th><th>Final Index</th><th colspan='2'>Complete</th></tr>";
     var len = etlIndices.length;
     if (len === 0) {
         table += "<tr><td colspan='5'>(waiting...)</td></tr>";
@@ -64,8 +64,8 @@ function updateEtlIndices(etlIndices, lastModified) {
     /* else */
     for (var i = 0; i < len; i++) {
         var e = etlIndices[i];
-        var percentage = (100.0 * e.current) / e.final;
-        var percentageLabel = (percentage >= 10.0) ? percentage.toFixed(0) : percentage.toFixed(1);
+        var percentage = (100.0 * e.counter) / e.final;
+        var percentageLabel = (percentage >= 10.0 || percentage < 0.1) ? percentage.toFixed(0) : percentage.toFixed(1);
         var indexClass;
         if (e.current === e.final) {
             indexClass = "progress complete";
@@ -118,7 +118,7 @@ function updateEtlEvents(etlEvents, lastModified) {
         }
 
         table += "<tr>" +
-            "<td>" + name + " #" + current + "</td>" +
+            "<td><a href='/api/events/" + e.monitor_id + "'>" + name + " #" + current + "</a></td>" +
             "<td>" + e.step + "</td>" +
             "<td class='" + eventClass + "' id='event-" + e.target + "'>" + e.target + "</td>" +
             "<td class='" + eventClass + "'>" + eventLabel + "</td>" +
