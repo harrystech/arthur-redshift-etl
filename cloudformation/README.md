@@ -1,6 +1,6 @@
 # Overview
 
-This directory contains the descriptions and tools to use AWS Cloudformation
+This directory contains the descriptions and tools to use AWS CloudFormation
 to setup a VPC (with subnets, security groups, etc.) and Redshift cluster (with
 parameter groups etc.) to run the ETL.
 
@@ -163,7 +163,7 @@ Uses all defaults except:
 
 # Installation
 
-## Creating the VPC using Cloudformation
+## Creating the VPC using CloudFormation
 
 ### Creating the stack
 
@@ -188,7 +188,7 @@ cloudformation/update_dw_vpc.sh dev your-object-store-dev
 cloudformation/delete_dw_vpc.sh dev
 ```
 
-## Creating the Redshift Cluster using Cloudformation
+## Creating the Redshift Cluster using CloudFormation
 
 The cluster expects the stack for the VPC to export its values.
 ```bash
@@ -213,6 +213,6 @@ cloudformation/update_dns.py cluster-identifier hosted-zone-name hostname
 
 # Future improvements
 
-* Add cloudformation for SNS topics used in data pipeline
+* Add CloudFormation configuration for SNS topics used in data pipeline
 * Create a role to have permission to run cloudformation (bootstrap role)
-* Use notifications for cloud formation ("ETL News")
+* Use notifications during CloudFormation ("ETL News")

@@ -343,7 +343,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     Load data into table in the data warehouse using the COPY command.
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
     """
-    aws_iam_role = etl.config.get_data_lake_config("iam_role")
+    aws_iam_role = etl.config.get_config_value("object_store.iam_role")
     s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
 
     if not relation.has_manifest:

@@ -542,18 +542,21 @@ class InsertTraceKey(logging.Filter):
         return True
 
 
-def set_environment(environment, dynamodb_settings, postgresql_settings):
+def set_environment(environment):
     Monitor.environment = environment
     memory = MemoryStorage()
     MonitorPayload.dispatchers.append(memory)
-    if dynamodb_settings:
-        ddb = DynamoDBStorage(dynamodb_settings["table_prefix"] + '-' + environment,
-                              dynamodb_settings["capacity"],
-                              dynamodb_settings["region"])
+
+    if etl.config.get_config_value("etl_events.dynamodb.table_prefix") is not None:
+        table_name = etl.config.get_config_value("etl_events.dynamodb.table_prefix") + '_' + environment
+        ddb = DynamoDBStorage(table_name,
+                              etl.config.get_config_value("etl_events.dynamodb.capacity"),
+                              etl.config.get_config_value("etl_events.dynamodb.region"))
         MonitorPayload.dispatchers.append(ddb)
-    if postgresql_settings:
-        rel = RelationalStorage(postgresql_settings["table_prefix"] + '_' + environment,
-                                postgresql_settings["write_access"])
+    if etl.config.get_config_value("etl_events.postgresql.table_prefix") is not None:
+        table_name = etl.config.get_config_value("etl_events.postgresql.table_prefix") + '_' + environment
+        rel = RelationalStorage(table_name,
+                                etl.config.get_config_value("etl_events.postgresql.write_access"))
         MonitorPayload.dispatchers.append(rel)
 
 

@@ -19,17 +19,6 @@ PROJ_ENVIRONMENT="${2:-$DEFAULT_PREFIX}"
 START_DATE_TIME="${3:-$START_NOW}"
 OCCURRENCES="${4:-1}"
 
-BINDIR=`dirname $0`
-TOPDIR=`\cd $BINDIR/.. && \pwd`
-CONFIG_SOURCE="$TOPDIR/aws_config"
-
-if [[ ! -d "$CONFIG_SOURCE" ]]; then
-    echo "Cannot find configuration files (aws_config)"
-    exit 1
-else
-    echo "Using local configuration files in $CONFIG_SOURCE"
-fi
-
 # Verify that this bucket/environment pair is set up on s3 with credentials
 VALIDATION_CREDENTIALS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/validation/config/credentials_validation.sh"
 if ! aws s3 ls "$VALIDATION_CREDENTIALS" > /dev/null; then
@@ -46,21 +35,24 @@ if ! GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
 fi
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-    PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Production"
-    PIPELINE_NAME="ETL Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+  ENV_NAME="production"
+  PIPELINE_NAME="ETL Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 else
-    PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Development"
-    PIPELINE_NAME="Validation Pipeline ($USER:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+  ENV_NAME="development"
+  PIPELINE_NAME="Validation Pipeline ($USER:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 fi
+# Note: key/value are lower-case keywords here.
+AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
+
+PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" validation_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
-
-set -e -u -x
 
 aws datapipeline create-pipeline \
     --unique-id validation_pipeline \
     --name "$PIPELINE_NAME" \
-    --tags "$PIPELINE_TAGS" \
+    --tags "$AWS_TAGS" \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
@@ -72,7 +64,7 @@ if [[ -z "$PIPELINE_ID" ]]; then
 fi
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://${CONFIG_SOURCE}/validation_pipeline.json \
+    --pipeline-definition "file://${PIPELINE_DEFINITION_FILE}" \
     --parameter-values \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \

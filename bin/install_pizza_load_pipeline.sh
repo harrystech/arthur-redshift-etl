@@ -15,17 +15,6 @@ WLM_SLOTS="$3"
 
 START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
 
-BINDIR=`dirname $0`
-TOPDIR=`\cd $BINDIR/.. && \pwd`
-CONFIG_SOURCE="$TOPDIR/aws_config"
-
-if [[ ! -d "$CONFIG_SOURCE" ]]; then
-    echo "Cannot find configuration files (aws_config)"
-    exit 1
-else
-    echo "Using local configuration files in $CONFIG_SOURCE"
-fi
-
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
@@ -36,18 +25,24 @@ fi
 set -x
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-    PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Production"
+  ENV_NAME="production"
 else
-    PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Development"
+  ENV_NAME="development"
 fi
+# Note: key/value are lower-case keywords here.
+AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
+
 PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
+
+PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
 aws datapipeline create-pipeline \
     --unique-id pizza-etl-pipeline \
     --name "$PIPELINE_NAME" \
-    --tags "$PIPELINE_TAGS" \
+    --tags "$AWS_TAGS" \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
@@ -59,7 +54,7 @@ if [[ -z "$PIPELINE_ID" ]]; then
 fi
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://${CONFIG_SOURCE}/pizza_load_pipeline.json \
+    --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \

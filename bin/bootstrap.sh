@@ -56,16 +56,16 @@ test -d "$PROJ_TEMP" || mkdir -p "$PROJ_TEMP"
 cd "$PROJ_TEMP"
 
 # Download code to all nodes, this includes Python code and its requirements.txt
-aws s3 cp --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
-aws s3 cp --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
+aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
+aws s3 cp --only-show-errors --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
     --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh
 
 # Download configuration (except for credentials when not in EC2)
 if [[ "$RUNNING_LOCAL" = "no" ]]; then
-    aws s3 cp --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/
+    aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/
 else
-    aws s3 cp --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/ --exclude credentials*.sh
+    aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/ --exclude credentials*.sh
 fi
 
 # Add custom hosts to EMR

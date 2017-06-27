@@ -2,8 +2,6 @@ import re
 
 from etl.errors import MissingMappingError
 
-__all__ = ["Attribute", "ColumnDefinition"]
-
 
 class Attribute:
     """

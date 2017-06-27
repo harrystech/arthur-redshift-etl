@@ -146,7 +146,7 @@ python3 setup.py develop
 echo "source `\cd ../harrys-redshift-etl/etc && \pwd`/arthur_completion.sh" >> $VIRTUAL_ENV/bin/postactivate
 ```
 
-Jumping ahead bit, if you want to use a default environment other than your login name, use _something like` this:
+Jumping ahead bit, if you want to use a default environment other than your login name, use something like this:
 ```
 echo "export ARTHUR_DEFAULT_PREFIX=experimental" >> $VIRTUAL_ENV/bin/postactivate
 ```
@@ -278,9 +278,9 @@ bin/upload_env.sh "<your S3 bucket>" $USER
 
 #### Starting a cluster and submitting commands
 
-Start a cluster (which needs to know about your S3 bucket where the bootstrap code lives):
+Start a cluster:
 ```shell
-bin/aws_emr_cluster.sh -i "<your S3 bucket>"
+bin/launch_emr_cluster.sh
 ```
 
 Now check for the output and pick up the cluster ID. There will be a line that looks something like this:
@@ -400,6 +400,25 @@ arthur.py show_upstream_dependencies -q www.users | tee www_users.txt
 
 arthur.py sync www.users
 arthur.py upgrade --only @www_users.txt
+```
+
+### Using configuration values to fill in templates
+
+AWS service templates can be filled out based on configuration in the ETL.
+
+| Sub-command   | Goal |
+| ---- | ---- |
+| `render_template` | Return a JSON document that has values like `${resources.vpc.id}` filled in |
+| `show_value` | Show value of a single variable based on current configuration|
+| `show_vars` | Show variables and their values based on current configuration |
+
+Note this leaves references like `#{parameter}` used by AWS tools in place.
+
+Example:
+```shell
+arthur.py render_template ec2_instance
+arthur.py show_value object_store.s3.bucket_name
+arthur.py show_vars object_store.s3.*
 ```
 
 ## Working with a staging environment

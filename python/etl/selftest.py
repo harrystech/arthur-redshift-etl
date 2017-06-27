@@ -32,6 +32,7 @@ import etl.names
 import etl.db
 import etl.pipeline
 import etl.relation
+import etl.render_template
 import etl.s3
 import etl.sync
 import etl.thyme
