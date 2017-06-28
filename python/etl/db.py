@@ -183,7 +183,7 @@ def execute(cx, stmt, args=(), return_result=False):
         with Timer() as timer:
             cursor.execute(executable_statement)
         if cursor.rowcount is not None and cursor.rowcount > 0:
-            logger.debug("QUERY STATUS: %s [%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
+            logger.debug("QUERY STATUS: %s [rowcount=%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
         else:
             logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):

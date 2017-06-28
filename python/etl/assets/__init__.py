@@ -28,7 +28,10 @@ def asset_exists(name: str) -> bool:
     """
     Return True only if the desired asset is known to exist.
     """
-    return pkg_resources.resource_exists(__name__, name)
+    if name:
+        return pkg_resources.resource_exists(__name__, name)
+    else:
+        return False  # don't allow access to directory
 
 
 @lru_cache()
