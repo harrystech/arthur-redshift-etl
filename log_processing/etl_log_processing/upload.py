@@ -85,11 +85,11 @@ def lambda_handler(event, context):
     s3_event = event['Records'][0]['s3']
     bucket_name = s3_event['bucket']['name']
     object_key = urllib.parse.unquote_plus(s3_event['object']['key'].encode('utf8'))
-    print("bucket_name: {}, object_key: {}", bucket_name, object_key)
+    print("bucket_name: {}, object_key: {}", bucket_name, object_key, file=sys.stderr)
 
 
 def connect_to_es():
-    print("Connecting to ES endpoint: {}".format(config.MyConfig.endpoint))
+    print("Connecting to ES endpoint: {}".format(config.MyConfig.endpoint), file=sys.stderr)
     return elasticsearch.Elasticsearch(
         hosts=[{"host": config.MyConfig.endpoint, "port": 443}],
         use_ssl=True,
@@ -98,7 +98,7 @@ def connect_to_es():
 
 
 def create_index(client):
-    print("Creating index {} ({})".format(config.MyConfig.index, config.MyConfig.doc_type))
+    print("Creating index {} ({})".format(config.MyConfig.index, config.MyConfig.doc_type), file=sys.stderr)
     client.indices.create(index=config.MyConfig.index, body=parser.LogParser.index(), ignore=400)
     body = dict(mappings={})
     body["mappings"][config.MyConfig.doc_type] = parser.LogParser.index()
@@ -109,7 +109,8 @@ def _build_actions_from(records):
     index = config.MyConfig.index
     doc_type = config.MyConfig.doc_type
     for record in records:
-        print("{sha1} {logfile} {start_pos}..{end_pos}".format(**record))
+        if record["source"] == "examples":
+            print("{sha1} {logfile} {start_pos}..{end_pos}".format(**record), file=sys.stderr)
         yield {
             "_op_type": "index",
             "_index": index,
@@ -120,10 +121,10 @@ def _build_actions_from(records):
 
 
 def index_records(client, records):
-    print("Indexing new records")
+    print("Indexing new records", file=sys.stderr)
     ok, errors = elasticsearch.helpers.bulk(client, _build_actions_from(records))
-    print("Uploaded successfully: {:d}".format(ok))
-    print("Errors: {}".format(errors))
+    print("Uploaded successfully: {:d}".format(ok), file=sys.stderr)
+    print("Errors: {}".format(errors), file=sys.stderr)
 
 
 def main():
