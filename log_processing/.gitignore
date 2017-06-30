@@ -1,2 +1,6 @@
 # This file has the endpoint and IAM roles specific to the account.
 config.py
+
+# The deployment ZIP file or test files
+*.zip
+*.gz

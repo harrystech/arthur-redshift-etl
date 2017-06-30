@@ -1,7 +1,5 @@
 #! /bin/sh
 
-# Create deployment package for lambda function to consume log files
-
 if [[ $# -ne 1 ]]; then
     cat <<USAGE
 
