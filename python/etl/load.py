@@ -113,10 +113,7 @@ class LoadableRelation:
         if (not code) or (code == 's'):
             return str(self)
         elif code == 'x':
-            if self.use_staging:
-                return TableName.from_identifier(self.identifier).as_staging_table_name().identifier
-            else:
-                return self.identifier
+            return self.target_table_name.identifier
         else:
             raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
