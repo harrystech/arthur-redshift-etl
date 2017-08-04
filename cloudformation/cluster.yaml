@@ -88,6 +88,8 @@ Resources:
                 true
             VpcSecurityGroupIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
+    # Note that an option to set enhanced VPC routing is missing in cloudformation, so this must be done using the CLI
+    # aws redshift modify-cluster --cluster-identifier dw-cluster-dev-redshiftcluster-[your ident] --enhanced-vpc-routing
 
 
 Outputs:
