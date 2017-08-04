@@ -98,7 +98,27 @@ class LoadableRelation:
 
     __str__ = RelationDescription.__str__
 
-    __format__ = RelationDescription.__format__
+    def __format__(self, code):
+        """
+        Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
+
+        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
+        >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
+        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
+        'As delimited identifier: "c"."b", as string: c.b'
+        >>> relation_with_staging = LoadableRelation(RelationDescription(fs), {}, use_staging=True, skip_copy=True)
+        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation_with_staging, relation_with_staging)
+        'As delimited identifier: "etl_staging$c"."b", as string: etl_staging$c.b'
+        """
+        if (not code) or (code == 's'):
+            return str(self)
+        elif code == 'x':
+            if self.use_staging:
+                return TableName.from_identifier(self.identifier).as_staging_table_name().identifier
+            else:
+                return self.identifier
+        else:
+            raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
     def __init__(self, relation: RelationDescription, info: dict,
                  use_staging=False, skip_copy=False, in_transaction=False) -> None:
