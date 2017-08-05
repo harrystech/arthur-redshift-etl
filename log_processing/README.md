@@ -26,7 +26,7 @@ After this, you should be able to run the self-test of the parser:
 show_log_examples
 ```
 
-It is not necesary to activate the virtual environment to run the scripts shown below.
+It is not necessary to activate the virtual environment to run the scripts shown below.
 
 ## Searching files locally
 

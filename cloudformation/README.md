@@ -10,7 +10,7 @@ A key pair has to be created beforehand.
 
 # Resources
 
-Note: All resources created will have a tag of `user:project` with value `datawarehouse` to easily
+Note: All resources created will have a tag of `user:project` with value `data-warehouse` to easily
 build a Resource Group and to track costs in Billing. Also, names will start with `dw-` to make them
 easy to find in the AWS Console, which is to say that the `Name` tag is set as much as possible.
 
@@ -35,7 +35,7 @@ Yes
 ### NAT gateway
 
 Yes, will be used by private subnet.  Needs to be associated with an elastic IP (which is a requirement
-that doesn't come in until we run Lambda's to load data into tables in Redshift).
+that doesn't come in until we run Lambdas to load data into tables in Redshift).
 
 ### Service endpoint
 
@@ -154,7 +154,7 @@ Use the public subnet setup for the VPC
 Uses all defaults except:
 * Set `require_ssl` to `true`
 
-TODO Set `query_concurrency` in WLM to 16 (*depends* on environment)
+(TODO: Set `query_concurrency` to value matching the hardware.)
 
 ### Cluster
 
@@ -204,7 +204,15 @@ cloudformation/update_dw_cluster.sh dev your-object-store-dev
 cloudformation/delete_dw_cluster.sh dev
 ```
 
+## Publicizing the new cluster
+
+Run the update script to create resource records in DNS to point to the new cluster
+```bash
+cloudformation/update_dns.py cluster-identifier hosted-zone-name hostname
+```
+
 # Future improvements
 
 * Add cloudformation for SNS topics used in data pipeline
-* Use notifications for cloud formation (same as "ETL News")?
+* Create a role to have permission to run cloudformation (bootstrap role)
+* Use notifications for cloud formation ("ETL News")
