@@ -595,6 +595,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     recent_cutoff = datetime.utcnow() - timedelta(hours=look_back_hours)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
     progress_required_by = 1 + idle_termination_seconds
+    sleep_time = 2
     timer = Timer()
 
     def poll_worker():
@@ -610,14 +611,23 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 item = to_poll.get(block=False)
             except queue.Empty:
                 logger.info("Nothing left to poll")
-                for i in range(max_concurrency):
-                    to_load.put(None)
-                break
+                return
+
             if isinstance(item, int):
-                logger.info("Reached end of relation list, sleeping for %s seconds", item)
-                time.sleep(item)
-                to_poll.put(item)
-                continue
+                logger.info("Reached end of relation list")
+                logger.info("Checking that we have fewer than %s tasks left by %s",
+                            progress_queue_size, progress_required_by)
+                logger.info("We have %s tasks left after %s",
+                            to_poll.qsize(), timer.elapsed)
+                if progress_queue_size <= to_poll.qsize() and timer.elapsed > progress_required_by:
+                    raise ETLRuntimeError("No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
+                else:
+                    logger.info("Sleeping for %s seconds", item)
+                    time.sleep(item)
+                    to_poll.task_done()
+                    if to_poll.qsize():
+                        to_poll.put(item)
+                    continue
 
             logger.info("Polling DynamoDB for finished extract of '%s'", item.identifier)
             res = table.query(
@@ -628,14 +638,9 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
                                            ":step": "extract", ":event": "finish"}
             )
-            # logger.info((len(source_relations), to_poll.qsize(), timer.elapsed))
             if res['Count'] == 0:
                 logger.info("No new extracts for '%s', re-queueing.", item.identifier)
                 to_poll.put(item)
-                if last_size == to_poll.qsize() and timer.elapsed > progress_required_by:
-                    for i in range(max_concurrency):
-                        to_load.put(None)
-                    return
             else:
                 to_load.put(item)
             logger.info("%s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
@@ -680,28 +685,32 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
 
     for relation in source_relations:
         to_poll.put(relation)
-        to_poll.put(15)  # Give DynamoDB a break
+    to_poll.put(sleep_time)  # Give DynamoDB a periodic break
 
     # Track the number of un-extracted relations
-    last_size = to_poll.qsize()
+    progress_queue_size = to_poll.qsize()
     poller = threading.Thread(target=poll_worker)
     poller.start()
     threads.append(poller)
     logger.info("Poller started; %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
 
     while to_poll.qsize():
-        # Update last known queue size
-        last_size = to_poll.qsize()
-        # Check in on the poller slightly less often
-        poller.join(idle_termination_seconds + 1)
+        # Give the poller time to realize it's passed the idle checkpoint if it was sleeping
+        poller.join(idle_termination_seconds + sleep_time)
+        logger.info("Poller joined")
         # Update checkpoint for timer to have made an update
         progress_required_by = timer.elapsed + idle_termination_seconds
-        logger.info("Poller joined")
+        logger.info("Current elapsed time: %s; cancel if no progress by %s", timer, progress_required_by)
+        # Update last known queue size
+        progress_queue_size = to_poll.qsize() - 1
+        logger.info("Current queue length: %s", progress_queue_size)
         if not poller.is_alive():
             # If the poller is not working and the queue isn't empty, give up
+            for i in range(max_concurrency):
+                to_load.put(None)
             for t in threads:
                 t.join()
-            raise ETLRuntimeError("No extracts found after %s seconds, bailing out" % idle_termination_seconds)
+            raise ETLRuntimeError("Extract poller exited while to-poll queue was not empty")
         else:
             continue
 
