@@ -15,16 +15,17 @@ import queue
 import random
 import re
 import socketserver
+import sys
 import threading
 import time
 import traceback
 import urllib.parse
 import uuid
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from contextlib import closing
 from copy import deepcopy
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 try:
     from http import HTTPStatus  # type: ignore
 except ImportError:
@@ -416,7 +417,7 @@ class MemoryStorage(PayloadDispatcher):
     def store(self, payload: dict):
         self.queue.put(payload)
 
-    def drain_queue(self):
+    def _drain_queue(self):
         try:
             while True:
                 payload = self.queue.get_nowait()
@@ -427,8 +428,9 @@ class MemoryStorage(PayloadDispatcher):
             pass
 
     def get_indices(self):
-        self.drain_queue()
+        self._drain_queue()
         indices = {}
+        counter = Counter()
         for payload in self.events.values():
             index = dict(payload.get("extra", {}).get("index", {}))
             name = index.setdefault("name", "N/A")
@@ -436,14 +438,20 @@ class MemoryStorage(PayloadDispatcher):
                 indices[name] = index
             elif index["current"] > indices[name]["current"]:
                 indices[name].update(index)
+            if payload["event"] != "start":
+                counter[name] += 1
+            indices[name]["counter"] = counter[name]
         indices_as_list = [indices[name] for name in sorted(indices)]
         return etl.assets.Content(json=indices_as_list)
 
-    def get_events(self):
-        self.drain_queue()
-        events_as_list = sorted((self.events[key] for key in self.events),
-                                key=lambda p: (2 if p["event"] == "start" else 1, p["timestamp"]),
-                                reverse=True)
+    def get_events(self, event_id: Optional[str]):
+        self._drain_queue()
+        if event_id is None:
+            events_as_list = sorted((self.events[key] for key in self.events),
+                                    key=lambda p: (2 if p["event"] == "start" else 1, p["timestamp"]),
+                                    reverse=True)
+        else:
+            events_as_list = [event for event in self.events.values() if event["monitor_id"] == event_id]
         return etl.assets.Content(json=events_as_list)
 
     def create_handler(self):
@@ -456,9 +464,7 @@ class MemoryStorage(PayloadDispatcher):
         class MonitorHTTPHandler(http.server.BaseHTTPRequestHandler):
 
             server_version = "MonitorHTTPServer/1.0"
-
             log_error = http_logger.error
-
             log_message = http_logger.info
 
             def do_GET(self):
@@ -469,26 +475,26 @@ class MemoryStorage(PayloadDispatcher):
                 If the command is HEAD (and not GET), only the header is sent. Duh.
                 """
                 parts = urllib.parse.urlparse(self.path.rstrip('/'))
-                path = parts.path or "/index.html"
-                if path == "/api/etl-id":
+                path = (parts.path or "/index.html").lstrip('/')
+                if path == "api/etl-id":
                     result = etl.assets.Content(json={"id": Monitor.etl_id})
-                elif path == "/api/indices":
+                elif path == "api/indices":
                     result = storage.get_indices()
-                elif path == "/api/events":
-                    result = storage.get_events()
-                elif path.startswith("/api"):
-                    self.send_response(HTTPStatus.NOT_FOUND)
-                    self.end_headers()
-                    return
-                elif not etl.assets.asset_exists(path.lstrip('/')):
+                elif path.startswith("api/events"):
+                    segment = path.replace("api/events", "").strip('/')
+                    result = storage.get_events(segment or None)
+                elif path == "api/command-line":
+                    result = etl.assets.Content(json={"args": ' '.join(sys.argv)})
+                elif etl.assets.asset_exists(path):
+                    result = etl.assets.get_asset(path)
+                else:
+                    # self.send_response(HTTPStatus.NOT_FOUND)
                     self.send_response(HTTPStatus.MOVED_PERMANENTLY)
                     new_parts = (parts.scheme, parts.netloc, '/', None, None)
                     new_url = urllib.parse.urlunsplit(new_parts)
                     self.send_header("Location", new_url)
                     self.end_headers()
                     return
-                else:
-                    result = etl.assets.get_asset(path.lstrip('/'))
 
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", result.content_type)
@@ -513,7 +519,7 @@ class MemoryStorage(PayloadDispatcher):
 
         class BackgroundServer(threading.Thread):
             def run(self):
-                logger.info("Starting background server on port %d", MemoryStorage.SERVER_ADDRESS[1])
+                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_ADDRESS[1])
                 try:
                     httpd = _ThreadingSimpleServer(MemoryStorage.SERVER_ADDRESS, handler_class)
                     httpd.serve_forever()
@@ -524,7 +530,7 @@ class MemoryStorage(PayloadDispatcher):
             thread = BackgroundServer(daemon=True)
             thread.start()
         except RuntimeError:
-            logger.warning("Failed to start background server:", exc_info=True)
+            logger.warning("Failed to start monitor server:", exc_info=True)
 
 
 class InsertTraceKey(logging.Filter):

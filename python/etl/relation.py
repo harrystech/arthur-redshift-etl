@@ -74,14 +74,10 @@ class RelationDescription:
         self._query_stmt = None  # type: Optional[str]
         self._dependencies = None  # type: Optional[FrozenSet[str]]
         self._is_required = None  # type: Union[None, bool]
-        self.staging = False
 
     @property
-    def target_table_name(self):
-        if self.staging:
-            return self._fileset.target_table_name.as_staging_table_name()
-        else:
-            return self._fileset.target_table_name
+    def target_table_name(self) -> TableName:
+        return self._fileset.target_table_name
 
     @property
     def identifier(self) -> str:

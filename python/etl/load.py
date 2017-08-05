@@ -46,8 +46,8 @@ import queue
 from contextlib import closing
 from datetime import datetime, timedelta
 from calendar import timegm
-from itertools import chain
-from typing import Any, Dict, List, Set
+from itertools import chain, dropwhile
+from typing import Any, Dict, List, Optional, Set
 
 
 import boto3
@@ -107,18 +107,14 @@ class LoadableRelation:
 
     __format__ = RelationDescription.__format__
 
-    def __init__(self, relation: RelationDescription, info: dict, use_staging=False, skip_copy=False) -> None:
+    def __init__(self, relation: RelationDescription, info: dict,
+                 use_staging=False, skip_copy=False, in_transaction=False) -> None:
         self._relation_description = relation
         self.info = info
         self.skip_copy = skip_copy or relation.is_view_relation
         self.failed = False
         self.use_staging = use_staging
-
-    def delete_to_reset(self) -> bool:
-        return False
-
-    def create_to_reset(self) -> bool:
-        return True
+        self.in_transaction = in_transaction
 
     def monitor(self):
         return etl.monitor.Monitor(**self.info)
@@ -139,8 +135,16 @@ class LoadableRelation:
     def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
         unpacked = [r._relation_description for r in relations]  # do DAG operations in terms of RelationDescriptions
         dependent_relations = etl.relation.find_dependents(unpacked, [self._relation_description])
-        dependent_relation_identifiers = set([r.identifier for r in dependent_relations])
+        dependent_relation_identifiers = set(r.identifier for r in dependent_relations)
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
+
+    def skip_dependents(self, relations: List["LoadableRelation"]) -> None:
+        dependents = self.find_dependents(relations)
+        for dep in dependents:
+            dep.skip_copy = True
+        identifiers = [dependent.identifier for dependent in dependents]
+        if identifiers:
+            logger.warning("Continuing while leaving %d relation(s) empty: %s", len(identifiers), join_with_quotes(identifiers))
 
     @property
     def query_stmt(self) -> str:
@@ -156,6 +160,7 @@ class LoadableRelation:
     def table_design(self) -> Dict[str, Any]:
         design = self._relation_description.table_design
         if self.use_staging:
+            # Rewrite foreign table references to point into the correct table
             for column in design['columns']:
                 if 'references' in column:
                     [foreign_table, [foreign_column]] = column['references']
@@ -167,7 +172,7 @@ class LoadableRelation:
 
     @classmethod
     def from_descriptions(cls, relations: List[RelationDescription], command: str,
-                          use_staging=False, skip_copy=False) -> List["LoadableRelation"]:
+                          use_staging=False, skip_copy=False, in_transaction=False) -> List["LoadableRelation"]:
         """
         Build a list of "loadable" relations
         """
@@ -190,23 +195,15 @@ class LoadableRelation:
                 "step": command,
                 "source": source,
                 "destination": destination,
+                "options": {"use_staging": use_staging, "skip_copy": skip_copy},
                 "index": dict(base_index, current=i + 1)
             }
-            loadable.append(cls(relation, monitor_info, use_staging, skip_copy=skip_copy))
+            loadable.append(cls(relation, monitor_info, use_staging, skip_copy, in_transaction=in_transaction))
 
         return loadable
 
 
-class LoadableInTransactionRelation(LoadableRelation):
-
-    def delete_to_reset(self) -> bool:
-        return not self.is_view_relation
-
-    def create_to_reset(self) -> bool:
-        return False
-
-
-# ---- Section 1: Functions that work on relations (creating them, filling them, permissioning them) ----
+# ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
 
 def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
     """
@@ -249,20 +246,6 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         raise RelationConstructionError(exc) from exc
 
 
-def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema],
-                               use_staging: bool, dry_run=False) -> None:
-    """
-    Create schemas necessary for a full rebuild of data warehouse
-    If `use_staging`, create new staging schemas.
-    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
-    """
-    if use_staging:
-        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
-    else:
-        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
-        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
-
-
 def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Create fresh VIEW or TABLE and grant groups access permissions.
@@ -276,7 +259,8 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
             create_view(conn, relation, dry_run=dry_run)
         else:
             create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
-        grant_access(conn, relation, dry_run=dry_run)
+        if not relation.use_staging:
+            grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
@@ -290,13 +274,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     target = relation.target_table_name
     schema_config = relation.schema_config
-    owner, reader_groups, writer_groups = schema_config.owner, schema_config.reader_groups, schema_config.writer_groups
-
-    if dry_run:
-        logger.info("Dry-run: Skipping grant of all privileges on '%s' to '%s'", relation.identifier, owner)
-    else:
-        logger.info("Granting all privileges on '%s' to '%s'", relation.identifier, owner)
-        etl.db.grant_all_to_user(conn, target.schema, target.table, owner)
+    reader_groups, writer_groups = schema_config.reader_groups, schema_config.writer_groups
 
     if reader_groups:
         if dry_run:
@@ -492,6 +470,19 @@ def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWareho
     return traversed_in_order
 
 
+def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
+    """
+    Create schemas necessary for a full rebuild of data warehouse
+    If `use_staging`, create new staging schemas.
+    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
+    """
+    if use_staging:
+        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
+    else:
+        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
+        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
+
+
 # ---- Section 3: Functions that tie table operations together ----
 
 def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -526,14 +517,14 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
     Unless in delete mode, this always makes sure tables and views are created.
 
     Within transaction? Only applies to tables which get emptied and then potentially filled again.
-    Not in transaction? Drop and create all relations, for tables, also potentially fill 'em up again.
+    Not in transaction? Drop and create all relations and for tables also potentially fill 'em up again.
     """
     with relation.monitor():
 
         # Step 1 -- clear out existing data (by deletion or by re-creation)
-        if relation.delete_to_reset():
+        if relation.in_transaction:
             delete_whole_table(conn, relation, dry_run=dry_run)
-        elif relation.create_to_reset():
+        else:
             create_or_replace_relation(conn, relation, dry_run=dry_run)
 
         # Step 2 -- load data (and verify)
@@ -547,7 +538,6 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
-    assert not relation.is_transformation, "submitted view to parallel load"
     conn = pool.getconn()
     conn.set_session(autocommit=True, readonly=dry_run)
     try:
@@ -582,8 +572,17 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 
 
 def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
-                                    look_back_hours=21, idle_termination_seconds=2,
+                                    look_back_hours=21, idle_termination_seconds=60 * 10,
                                     dry_run=False) -> None:
+    """
+    Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
+    We assume here that the relations have no dependencies on each other and just gun it.
+    This will only raise an Exception if one of the created relations was marked as "required".
+
+    Since these relations may have downstream dependents, we make sure to mark skip_copy on
+    any relation from the full set of relations that depends on a source relation that failed
+    to load.
+    """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
 
@@ -595,9 +594,17 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
 
     recent_cutoff = datetime.utcnow() - timedelta(hours=look_back_hours)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
+    progress_required_by = 1 + idle_termination_seconds
     timer = Timer()
 
     def poll_worker():
+        """
+        Check DynamoDB for successful extracts
+        Get items from the queue 'to_poll'
+        When the item
+            - is an identifer: poll DynamoDB
+            - is an int: sleep that many seconds
+        """
         while True:
             try:
                 item = to_poll.get(block=False)
@@ -606,7 +613,13 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 for i in range(max_concurrency):
                     to_load.put(None)
                 break
-            logger.info("Polling for %s", item.identifier)
+            if isinstance(item, int):
+                logger.info("Reached end of relation list, sleeping for %s seconds", item)
+                time.sleep(item)
+                to_poll.put(item)
+                continue
+
+            logger.info("Polling DynamoDB for finished extract of '%s'", item.identifier)
             res = table.query(
                 ConsistentRead=True,
                 KeyConditionExpression="#ts > :dt and target = :table",
@@ -615,10 +628,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
                                            ":step": "extract", ":event": "finish"}
             )
-            logger.info((len(relations), to_poll.qsize(), timer.elapsed))
+            # logger.info((len(source_relations), to_poll.qsize(), timer.elapsed))
             if res['Count'] == 0:
+                logger.info("No new extracts for '%s', re-queueing.", item.identifier)
                 to_poll.put(item)
-                if last_size == to_poll.qsize() and timer.elapsed > idle_termination_seconds:
+                if last_size == to_poll.qsize() and timer.elapsed > progress_required_by:
                     for i in range(max_concurrency):
                         to_load.put(None)
                     return
@@ -628,14 +642,33 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             to_poll.task_done()
 
     def load_worker():
+        """
+        Look for a ready-to-load relation from queue 'to_load'
+        If the item
+            - is a relation: load it using connection pool 'pool'
+            - is None: we're giving up, so return
+        """
         while True:
             item = to_load.get()
             if item is None:
                 break
             logger.info("Found %s ready to be loaded", item.identifier)
-            build_one_relation_using_pool(pool, item, dry_run=dry_run)
+            try:
+                build_one_relation_using_pool(pool, item, dry_run=dry_run)
+            except (RelationConstructionError, RelationDataError):
+                item.failed = True
+                if item.is_required:
+                    logger.error("Failed to build required relation '%s':", item.identifier, exc_info=True)
+                else:
+                    logger.warning("Failed to build relation '%s':", item.identifier, exc_info=True)
+                    item.skip_dependents(relations)
             to_load.task_done()
-            logger.info("%s ready to load", to_load.qsize())
+            logger.info("%s relations ready to load", to_load.qsize())
+
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+        return
 
     to_poll = queue.Queue()
     to_load = queue.Queue()
@@ -645,9 +678,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         t.start()
         threads.append(t)
 
-    for relation in relations:
+    for relation in source_relations:
         to_poll.put(relation)
+        to_poll.put(15)  # Give DynamoDB a break
 
+    # Track the number of un-extracted relations
     last_size = to_poll.qsize()
     poller = threading.Thread(target=poll_worker)
     poller.start()
@@ -657,11 +692,13 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     while to_poll.qsize():
         # Update last known queue size
         last_size = to_poll.qsize()
-        poller.join(idle_termination_seconds)
-        # Update 'progress by' checkpoint
-        idle_termination_seconds += timer.elapsed
+        # Check in on the poller slightly less often
+        poller.join(idle_termination_seconds + 1)
+        # Update checkpoint for timer to have made an update
+        progress_required_by = timer.elapsed + idle_termination_seconds
         logger.info("Poller joined")
         if not poller.is_alive():
+            # If the poller is not working and the queue isn't empty, give up
             for t in threads:
                 t.join()
             raise ETLRuntimeError("No extracts found after %s seconds, bailing out" % idle_termination_seconds)
@@ -671,28 +708,42 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     for t in threads:
         t.join()
     logger.info("Wrapping up work in %d worker(s): (%s)", max_concurrency, timer)
+    failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
+    if failed_and_required:
+        raise RequiredRelationLoadError(failed_and_required)
+
+    failed = [relation.identifier for relation in source_relations if relation.failed]
+    if failed:
+        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+    logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
 # ---- Section 4: Functions related to control flow ----
 
-def create_source_tables_with_data(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
+def create_source_tables_in_parallel(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
     """
-    Pick out all tables in source schemas from the list of relations and build up just those.
-    Return list of identifiers for relations that are now empty (failed to load).
+    Create relations in parallel operations, using a connection pool, a thread pool, and a kiddie pool.
+    We assume here that the relations have no dependencies on each other and just gun it.
+    This will only raise an Exception if one of the created relations was marked as "required".
 
-    Since we know that these relations never have dependencies, we don't have to track any
-    failures while loading them.
+    Since these relations may have downstream dependents, we make sure to mark skip_copy on
+    any relation from the full set of relations that depends on a source relation that failed
+    to load.
     """
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+        return
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
     futures = {}  # type: Dict[str, concurrent.futures.Future]
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            for relation in relations:
+            for relation in source_relations:
                 future = executor.submit(build_one_relation_using_pool, pool, relation, dry_run=dry_run)
                 futures[relation.identifier] = future
-            # TODO for fail fast, switch to FIRST_EXCEPTION
+            # For fail-fast, switch to FIRST_EXCEPTION below.
             done, not_done = concurrent.futures.wait(futures.values(), return_when=concurrent.futures.ALL_COMPLETED)
             cancelled = [future for future in not_done if future.cancel()]
             logger.info("Wrapping up work in %d worker(s): %d done, %d not done (%d cancelled) (%s)",
@@ -700,7 +751,7 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
     finally:
         pool.closeall()
 
-    for relation in relations:
+    for relation in source_relations:
         try:
             futures[relation.identifier].result()
         except concurrent.futures.CancelledError:
@@ -711,28 +762,31 @@ def create_source_tables_with_data(relations: List[LoadableRelation], max_concur
                 logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
             else:
                 logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+                relation.skip_dependents(relations)
 
-    failed_and_required = [relation.identifier for relation in relations if relation.failed and relation.is_required]
+    failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
     if failed_and_required:
         raise RequiredRelationLoadError(failed_and_required)
 
-    failed = [relation.identifier for relation in relations if relation.failed]
+    failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
         logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
-    logger.info("Finished with %d relation(s) in source schemas (%s)", len(relations), timer)
+    logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
-def create_transformations_with_data(relations: List[LoadableRelation], wlm_query_slots: int, dry_run=False) -> None:
+def create_transformations_sequentially(relations: List[LoadableRelation], wlm_query_slots: int, dry_run=False) -> None:
     """
-    Pick out all tables in transformation schemas from the list of relations and build up just those.
-
-    These relations may be dependent on relations that may have failed before we reached them.
+    Create relations one-by-one. If relations do depend on each other, we don't get ourselves in trouble here.
+    If we trip over a "required" relation, an exception is raised.
     If dependencies were left empty, we'll fall back to skip_copy mode.
-    Unless the relation is "required" in which case we abort here.
+
+    Given a dependency tree of:  A(required) <- B(required, per selector) <- C(not required) <- D (not required)
+    Then failing to create either A or B will stop us. But failure on C will just leave D empty.
+    N.B. It is not possible for a relation to be not required but have dependents that are (by construction).
     """
     transformations = [relation for relation in relations if relation.is_transformation]
     if not transformations:
-        logger.info("None of the relations are in transformation schemas")
+        logger.info("None of the selected relations are in transformation schemas")
         return
 
     timer = Timer()
@@ -745,45 +799,36 @@ def create_transformations_with_data(relations: List[LoadableRelation], wlm_quer
             except (RelationConstructionError, RelationDataError) as exc:
                 if relation.is_required:
                     raise RequiredRelationLoadError([relation.identifier]) from exc
-                dependent_relations = relation.find_dependents(transformations)
-                dependent_required = [relation.identifier for relation in dependent_relations if relation.is_required]
-                if dependent_required:
-                    raise RequiredRelationLoadError(dependent_required, relation.identifier) from exc
                 logger.warning("Failed relation '%s' is not required, ignoring this exception:",
                                relation.identifier, exc_info=True)
-                if dependent_relations:
-                    for deb in dependent_relations:
-                        deb.skip_copy = True
-                    dependents = [relation.identifier for relation in dependent_relations]
-                    logger.warning("Continuing while omitting dependent relation(s): %s", join_with_quotes(dependents))
+                relation.skip_dependents(transformations)
 
-    failed = [relation.identifier for relation in relations if relation.failed]
+    failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
         logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
-    skipped = [relation.identifier for relation in relations if relation.failed]
-    if 0 < len(skipped) < len(relations):
+    skipped = [relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation]
+    if 0 < len(skipped) < len(transformations):
         logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_quotes(skipped))
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 
 def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
-    etl.db.run(conn, "Using {} WLM queue slots for transformations.".format(slots),
+    etl.db.run(conn, "Using {} WLM queue slot(s) for transformations".format(slots),
                "SET wlm_query_slot_count TO {}".format(slots), dry_run=dry_run)
 
 
-def create_relations_with_data(relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1,
-                               dry_run=False) -> None:
+def create_relations(relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1,
+                     concurrent_extract=True, dry_run=False) -> None:
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
-    source_relations = [relation for relation in relations if not relation.is_transformation]
-    if not source_relations:
-        logger.info("None of the relations are in source schemas")
-    else:
-        create_source_tables_when_ready(source_relations, max_concurrency, dry_run=dry_run)
-        # create_source_tables_with_data(source_relations, max_concurrency, dry_run=dry_run)
 
-    create_transformations_with_data(relations, wlm_query_slots, dry_run=dry_run)
+    if concurrent_extract:
+        create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
+    else:
+        create_source_tables_in_parallel(relations, max_concurrency, dry_run=dry_run)
+
+    create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
 
 
 def select_execution_order(relations: List[RelationDescription], selector: TableSelector,
@@ -841,19 +886,22 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
 
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
-        create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+        create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
     except ETLRuntimeError:
         if not (no_rollback or use_staging):
+            logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
 
     if use_staging:
-        # We've successfully built staging schemas, so roll them out
+        logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
 
-def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=False,
-                           max_concurrency=1, wlm_query_slots=1, only_selected=False, skip_copy=False, dry_run=False):
+def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
+                           max_concurrency=1, wlm_query_slots=1,
+                           only_selected=False, continue_from: Optional[str]=None, use_staging=False,
+                           skip_copy=False, dry_run=False) -> None:
     """
     Push new (structural) changes and fresh data through data warehouse.
 
@@ -872,6 +920,12 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     if not selected_relations:
         logger.warning("Found no relations matching: %s", selector)
         return
+    if continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        selected_relations = list(dropwhile(lambda relation: relation.identifier != continue_from, selected_relations))
+        if not selected_relations:
+            logger.warning("Found no relations matching relation '%s'", continue_from)
+            return
 
     relations = LoadableRelation.from_descriptions(selected_relations, "upgrade",
                                                    skip_copy=skip_copy, use_staging=use_staging)
@@ -880,7 +934,7 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
 
     etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
-    create_relations_with_data(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+    create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
 
 
 def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
@@ -903,7 +957,7 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         logger.warning("Found no tables matching: %s", selector)
         return
 
-    relations = LoadableInTransactionRelation.from_descriptions(selected_relations, "update")
+    relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
     logger.info("Starting to update %d tables(s)", len(relations))
 
     # Run update within a transaction:
@@ -917,7 +971,8 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         vacuum(tables, dry_run=dry_run)
 
 
-def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector):
+def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector,
+                               continue_from: Optional[str]=None) -> None:
     """
     List the execution order of loads or updates.
 
@@ -926,10 +981,16 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
     complete_sequence = select_execution_order(relations, selector, include_dependents=True)
-    selected_relations = etl.relation.find_matches(complete_sequence, selector)
-    if len(selected_relations) == 0:
+    if len(complete_sequence) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return
+    if continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        complete_sequence = list(dropwhile(lambda relation: relation.identifier != continue_from, complete_sequence))
+        if len(complete_sequence) == 0:
+            logger.warning("Found no relations matching relation '%s'", continue_from)
+            return
+    selected_relations = etl.relation.find_matches(complete_sequence, selector)
 
     selected = frozenset(relation.identifier for relation in selected_relations)
     immediate = set(selected)

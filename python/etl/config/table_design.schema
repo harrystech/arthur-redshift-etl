@@ -50,7 +50,7 @@
             ]
         },
         "compression_encoding": {
-            "description": "Encoding types for columns in Redshift tables",
+            "description": "Encoding types for columns in Redshift tables, see http://docs.aws.amazon.com/redshift/latest/dg/c_Compression_encodings.html",
             "enum": [
                 "raw",
                 "bytedict",
@@ -62,7 +62,8 @@
                 "mostly32",
                 "runlength",
                 "text255",
-                "text32k"
+                "text32k",
+                "zstd"
             ]
         }
     },

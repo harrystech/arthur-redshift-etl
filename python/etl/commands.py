@@ -301,6 +301,9 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY and INSERT commands (leaves tables empty, for debugging)",
                             action="store_true")
+    if "continue-from" in options:
+        parser.add_argument("--continue-from",
+                            help="skip forward in execution until the specified relation, then work forward from it")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
@@ -512,8 +515,8 @@ class SyncWithS3Command(SubCommand):
         if args.force:
             etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
 
-        descriptions = self.find_relation_descriptions(args, default_scheme="file")
-        etl.sync.sync_with_s3(descriptions, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        relations = self.find_relation_descriptions(args, default_scheme="file")
+        etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
 class ExtractToS3Command(SubCommand):
@@ -592,7 +595,7 @@ class LoadDataWarehouseCommand(SubCommand):
                             action="store_true")
         parser.add_argument("--without-staging-schemas",
                             help="do NOT do all the work in hidden schemas and publish to standard names on completion"
-                                 " (default: %(dest)s is %(default)s)",
+                                 " (default: use staging schemas)",
                             default=True, action="store_false", dest='use_staging_schemas')
 
     def callback(self, args, config):
@@ -624,14 +627,15 @@ class UpgradeDataWarehouseCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser,
-                               ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"])
+                               ["pattern", "prefix", "max-concurrency", "wlm-query-slots",
+                                "continue-from", "skip-copy", "dry-run"])
         parser.add_argument("--only-selected",
                             help="skip rebuilding relations that depend on the selected ones"
-                            " (leaves warehouse in inconsistent state, for debugging only)",
+                                 " (leaves warehouse in inconsistent state, for debugging only)",
                             default=False, action="store_true")
         parser.add_argument("--with-staging-schemas",
-                            help=" do all the work in hidden schemas and publish to standard names on completion"
-                                 " (default: %(dest)s is %(default)s)",
+                            help="do all the work in hidden schemas and publish to standard names on completion"
+                                 " (default: do not use staging schemas, note this is the opposite of load command)",
                             default=False, action="store_true", dest='use_staging_schemas')
 
     def callback(self, args, config):
@@ -642,6 +646,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                                         max_concurrency=args.max_concurrency,
                                         wlm_query_slots=args.wlm_query_slots,
                                         only_selected=args.only_selected,
+                                        continue_from=args.continue_from,
                                         use_staging=args.use_staging_schemas,
                                         skip_copy=args.skip_copy,
                                         dry_run=args.dry_run)
@@ -699,13 +704,16 @@ class CreateSchemasCommand(SubCommand):
         super().__init__("create_schemas",
                          "create schemas from data warehouse config",
                          "Create schemas as configured and set permissions."
-                         " Optionally move existing schemas to backup."
+                         " Optionally move existing schemas to backup or create in staging position."
                          " (Any patterns must be schema names.)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
-        parser.add_argument("-b", "--with-backup", help="backup any existing schemas",
-                            default=False, action="store_true")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument("-b", "--with-backup", help="backup any existing schemas",
+                           default=False, action="store_true")
+        group.add_argument("--with-staging", help="create schemas in staging position",
+                           default=False, action="store_true")
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
@@ -713,7 +721,7 @@ class CreateSchemasCommand(SubCommand):
         with etl.db.log_error():
             if args.with_backup:
                 etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
-            etl.data_warehouse.create_schemas(schemas, dry_run=args.dry_run)
+            etl.data_warehouse.create_schemas(schemas, use_staging=args.with_staging, dry_run=args.dry_run)
 
 
 class PromoteSchemasCommand(SubCommand):
@@ -722,8 +730,9 @@ class PromoteSchemasCommand(SubCommand):
         super().__init__("promote_schemas",
                          "move staging or backup schemas into standard position",
                          "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
-                         "When promoting from staging, current standard position schemas are backed up first."
-                         "Promoting (ie, restoring) a backup should only happen after a load succeeded with bad data.")
+                         " When promoting from staging, current standard position schemas are backed up first."
+                         " Promoting (ie, restoring) a backup should only happen after a load finished successfully"
+                         " but left bad data behind.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
@@ -837,13 +846,13 @@ class ShowDownstreamDependentsCommand(SubCommand):
                          aliases=["show_dependents"])
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme", "continue-from"])
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args,
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
-        etl.load.show_downstream_dependents(relations, args.pattern)
+        etl.load.show_downstream_dependents(relations, args.pattern, continue_from=args.continue_from)
 
 
 class ShowUpstreamDependenciesCommand(SubCommand):

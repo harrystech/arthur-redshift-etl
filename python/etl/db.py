@@ -183,7 +183,7 @@ def execute(cx, stmt, args=(), return_result=False):
         with Timer() as timer:
             cursor.execute(executable_statement)
         if cursor.rowcount is not None and cursor.rowcount > 0:
-            logger.debug("QUERY STATUS: %s [%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
+            logger.debug("QUERY STATUS: %s [rowcount=%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
         else:
             logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
@@ -401,12 +401,26 @@ def revoke_usage(cx, schema, group):
     execute(cx, """REVOKE USAGE ON SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
 
 
-def grant_select_in_schema(cx, schema, group):
+def grant_select_on_all_tables_in_schema(cx, schema, group):
     execute(cx, """GRANT SELECT ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
 
 
 def revoke_select_on_all_tables_in_schema(cx, schema, group):
     execute(cx, """REVOKE SELECT ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
+
+
+def grant_select_and_write_on_all_tables_in_schema(cx, schema, group):
+    execute(cx,
+            """GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(
+                schema, group)
+            )
+
+
+def revoke_select_and_write_on_all_tables_in_schema(cx, schema, group):
+    execute(cx,
+            """REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(
+                schema, group)
+            )
 
 
 # ---- TABLES ----
