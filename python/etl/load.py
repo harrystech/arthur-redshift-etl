@@ -610,26 +610,26 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             try:
                 item = to_poll.get(block=False)
             except queue.Empty:
-                logger.info("Nothing left to poll")
+                logger.info("Poller: Nothing left to poll")
                 return
 
             if isinstance(item, int):
-                logger.info("Reached end of relation list")
-                logger.info("Checking that we have fewer than %s tasks left by %s",
-                            progress_queue_size, progress_required_by)
-                logger.info("We have %s tasks left after %s",
-                            to_poll.qsize(), timer.elapsed)
+                logger.debug("Poller: Reached end of relation list")
+                logger.debug("Poller: Checking that we have fewer than %s tasks left by %s",
+                             progress_queue_size, progress_required_by)
+                logger.debug("Poller: We have %s tasks left after %s",
+                             to_poll.qsize(), timer.elapsed)
                 if progress_queue_size <= to_poll.qsize() and timer.elapsed > progress_required_by:
-                    raise ETLRuntimeError("No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
+                    raise ETLRuntimeError(
+                        "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
                 else:
-                    logger.info("Sleeping for %s seconds", item)
+                    logger.debug("Poller: Sleeping for %s seconds", item)
                     time.sleep(item)
                     to_poll.task_done()
                     if to_poll.qsize():
                         to_poll.put(item)
                     continue
-
-            logger.info("Polling DynamoDB for finished extract of '%s'", item.identifier)
+            logger.debug("Poller: Polling DynamoDB for finished extract of '%s'", item.identifier)
             res = table.query(
                 ConsistentRead=True,
                 KeyConditionExpression="#ts > :dt and target = :table",
@@ -639,12 +639,15 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                                            ":step": "extract", ":event": "finish"}
             )
             if res['Count'] == 0:
-                logger.info("No new extracts for '%s', re-queueing.", item.identifier)
+                logger.debug("Poller: No new extracts for '%s', re-queueing.", item.identifier)
                 to_poll.put(item)
             else:
+                logger.info("Poller: Recently completed extract found for '%s', marking as ready.", item.identifier)
                 to_load.put(item)
-            logger.info("%s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
+            logger.debug("Poller: %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
             to_poll.task_done()
+
+    uncaught_load_worker_exception = threading.Event()
 
     def load_worker():
         """
@@ -657,18 +660,22 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             item = to_load.get()
             if item is None:
                 break
-            logger.info("Found %s ready to be loaded", item.identifier)
+            logger.info("Loader: Found %s ready to be loaded", item.identifier)
             try:
                 build_one_relation_using_pool(pool, item, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError):
                 item.failed = True
                 if item.is_required:
-                    logger.error("Failed to build required relation '%s':", item.identifier, exc_info=True)
+                    logger.error("Loader: Failed to build required relation '%s':", item.identifier, exc_info=True)
                 else:
-                    logger.warning("Failed to build relation '%s':", item.identifier, exc_info=True)
+                    logger.warning("Loader: Failed to build relation '%s':", item.identifier, exc_info=True)
                     item.skip_dependents(relations)
+            except:
+                logger.error("Loader: Uncaught exception in load worker while loading '%s':", item.identifier, exc_info=True)
+                uncaught_load_worker_exception.set()
+                raise
             to_load.task_done()
-            logger.info("%s relations ready to load", to_load.qsize())
+            logger.debug("Loader: %s relations ready to load", to_load.qsize())
 
     source_relations = [relation for relation in relations if not relation.is_transformation]
     if not source_relations:
@@ -694,28 +701,29 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     threads.append(poller)
     logger.info("Poller started; %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
 
-    while to_poll.qsize():
+    while to_poll.qsize() and poller.is_alive():
         # Give the poller time to realize it's passed the idle checkpoint if it was sleeping
         poller.join(idle_termination_seconds + sleep_time)
-        logger.info("Poller joined")
+        logger.info("Poller joined or checkpoint timeout reached")
         # Update checkpoint for timer to have made an update
         progress_required_by = timer.elapsed + idle_termination_seconds
         logger.info("Current elapsed time: %s; cancel if no progress by %s", timer, progress_required_by)
         # Update last known queue size
         progress_queue_size = to_poll.qsize() - 1
         logger.info("Current queue length: %s", progress_queue_size)
-        if not poller.is_alive():
-            # If the poller is not working and the queue isn't empty, give up
-            for i in range(max_concurrency):
-                to_load.put(None)
-            for t in threads:
-                t.join()
-            raise ETLRuntimeError("Extract poller exited while to-poll queue was not empty")
-        else:
-            continue
 
+    # When poller is done, send workers a 'stop' event and wait
+    for i in range(max_concurrency):
+        to_load.put(None)
     for t in threads:
         t.join()
+    # If the poller queue wasn't emptied, it exited unhappily
+    if to_poll.qsize():
+        raise ETLRuntimeError("Extract poller exited while to-poll queue was not empty")
+
+    if uncaught_load_worker_exception.is_set():
+        raise ETLRuntimeError("Data source loader thread(s) exited with uncaught exception")
+
     logger.info("Wrapping up work in %d worker(s): (%s)", max_concurrency, timer)
     failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
     if failed_and_required:
