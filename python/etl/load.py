@@ -144,7 +144,8 @@ class LoadableRelation:
             dep.skip_copy = True
         identifiers = [dependent.identifier for dependent in dependents]
         if identifiers:
-            logger.warning("Continuing while leaving %d relation(s) empty: %s", len(identifiers), join_with_quotes(identifiers))
+            logger.warning("Continuing while leaving %d relation(s) empty: %s",
+                           len(identifiers), join_with_quotes(identifiers))
 
     @property
     def query_stmt(self) -> str:
@@ -523,7 +524,8 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
 
         # Step 1 -- clear out existing data (by deletion or by re-creation)
         if relation.in_transaction:
-            delete_whole_table(conn, relation, dry_run=dry_run)
+            if not relation.is_view_relation:
+                delete_whole_table(conn, relation, dry_run=dry_run)
         else:
             create_or_replace_relation(conn, relation, dry_run=dry_run)
 
@@ -823,7 +825,8 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
         logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
-    skipped = [relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation]
+    skipped = [relation.identifier for relation in transformations
+               if relation.skip_copy and not relation.is_view_relation]
     if 0 < len(skipped) < len(transformations):
         logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_quotes(skipped))
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
