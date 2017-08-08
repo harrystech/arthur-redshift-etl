@@ -144,7 +144,8 @@ class LoadableRelation:
             dep.skip_copy = True
         identifiers = [dependent.identifier for dependent in dependents]
         if identifiers:
-            logger.warning("Continuing while leaving %d relation(s) empty: %s", len(identifiers), join_with_quotes(identifiers))
+            logger.warning("Continuing while leaving %d relation(s) empty: %s",
+                           len(identifiers), join_with_quotes(identifiers))
 
     @property
     def query_stmt(self) -> str:
@@ -523,7 +524,8 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
 
         # Step 1 -- clear out existing data (by deletion or by re-creation)
         if relation.in_transaction:
-            delete_whole_table(conn, relation, dry_run=dry_run)
+            if not relation.is_view_relation:
+                delete_whole_table(conn, relation, dry_run=dry_run)
         else:
             create_or_replace_relation(conn, relation, dry_run=dry_run)
 
@@ -572,7 +574,7 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 
 
 def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
-                                    look_back_hours=21, idle_termination_seconds=60 * 10,
+                                    look_back_minutes=30, idle_termination_seconds=60 * 30,
                                     dry_run=False) -> None:
     """
     Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
@@ -592,10 +594,10 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     dynamodb = session.resource('dynamodb')
     table = dynamodb.Table(ddb.table_name)
 
-    recent_cutoff = datetime.utcnow() - timedelta(hours=look_back_hours)
+    recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
     progress_required_by = 1 + idle_termination_seconds
-    sleep_time = 2
+    sleep_time = 30
     timer = Timer()
 
     def poll_worker():
@@ -670,7 +672,8 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     logger.warning("Loader: Failed to build relation '%s':", item.identifier, exc_info=True)
                     item.skip_dependents(relations)
             except:
-                logger.error("Loader: Uncaught exception in load worker while loading '%s':", item.identifier, exc_info=True)
+                logger.error("Loader: Uncaught exception in load worker while loading '%s':",
+                             item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
                 raise
             to_load.task_done()
@@ -822,7 +825,8 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
         logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
-    skipped = [relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation]
+    skipped = [relation.identifier for relation in transformations
+               if relation.skip_copy and not relation.is_view_relation]
     if 0 < len(skipped) < len(transformations):
         logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_quotes(skipped))
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
