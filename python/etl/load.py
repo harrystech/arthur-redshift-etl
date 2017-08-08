@@ -574,7 +574,7 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 
 
 def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
-                                    look_back_minutes=30, idle_termination_seconds=60 * 30,
+                                    look_back_minutes=15, idle_termination_seconds=60 * 30,
                                     dry_run=False) -> None:
     """
     Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
@@ -588,17 +588,15 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
 
-    [ddb] = [dispatcher for dispatcher in etl.monitor.MonitorPayload.dispatchers
-             if isinstance(dispatcher, etl.monitor.DynamoDBStorage)]
-    session = boto3.session.Session(region_name=ddb.region_name)
-    dynamodb = session.resource('dynamodb')
-    table = dynamodb.Table(ddb.table_name)
-
     recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
-    progress_required_by = 1 + idle_termination_seconds
     sleep_time = 30
+    checkpoint_time_cutoff = sleep_time + idle_termination_seconds
     timer = Timer()
+
+    for dispatcher in etl.monitor.MonitorPayload.dispatchers:
+        if isinstance(dispatcher, etl.monitor.DynamoDBStorage):
+            table = dispatcher._get_table()  # Note, not thread-safe, so we can only have one poller
 
     def poll_worker():
         """
@@ -618,20 +616,20 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             if isinstance(item, int):
                 logger.debug("Poller: Reached end of relation list")
                 logger.debug("Poller: Checking that we have fewer than %s tasks left by %s",
-                             progress_queue_size, progress_required_by)
+                             checkpoint_queue_size_cutoff, checkpoint_time_cutoff)
                 logger.debug("Poller: %s left to poll, %s ready to load, %s elapsed",
                              to_poll.qsize(), to_load.qsize(), timer.elapsed)
-                if progress_queue_size <= to_poll.qsize() and timer.elapsed > progress_required_by:
+                if checkpoint_queue_size_cutoff == to_poll.qsize() and timer.elapsed > checkpoint_time_cutoff:
                     raise ETLRuntimeError(
                         "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
                 else:
                     logger.debug("Poller: Sleeping for %s seconds", item)
                     time.sleep(item)
-                    to_poll.task_done()
                     if to_poll.qsize():
                         to_poll.put(item)
                     continue
             logger.debug("Poller: Polling DynamoDB for finished extract of '%s'", item.identifier)
+
             res = table.query(
                 ConsistentRead=True,
                 KeyConditionExpression="#ts > :dt and target = :table",
@@ -646,7 +644,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             else:
                 logger.info("Poller: Recently completed extract found for '%s', marking as ready.", item.identifier)
                 to_load.put(item)
-            to_poll.task_done()
 
     uncaught_load_worker_exception = threading.Event()
 
@@ -676,7 +673,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                              item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
                 raise
-            to_load.task_done()
             logger.debug("Loader: %s relations ready to load", to_load.qsize())
 
     source_relations = [relation for relation in relations if not relation.is_transformation]
@@ -696,23 +692,23 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         to_poll.put(relation)
     to_poll.put(sleep_time)  # Give DynamoDB a periodic break
 
-    # Track the number of un-extracted relations
-    progress_queue_size = to_poll.qsize()
+    # Track the queue size to detect progress
+    checkpoint_queue_size_cutoff = to_poll.qsize() - 1  # -1 because worker will have one task 'in hand'
     poller = threading.Thread(target=poll_worker)
     poller.start()
     threads.append(poller)
     logger.info("Poller started; %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
 
-    while to_poll.qsize() and poller.is_alive():
+    while poller.is_alive():
         # Give the poller time to realize it's passed the idle checkpoint if it was sleeping
         poller.join(idle_termination_seconds + sleep_time)
         logger.info("Poller joined or checkpoint timeout reached")
         # Update checkpoint for timer to have made an update
-        progress_required_by = timer.elapsed + idle_termination_seconds
-        logger.info("Current elapsed time: %s; cancel if no progress by %s", timer, progress_required_by)
+        checkpoint_time_cutoff = timer.elapsed + idle_termination_seconds
+        logger.info("Current elapsed time: %s; cancel if no progress by %s", timer, checkpoint_time_cutoff)
         # Update last known queue size
-        progress_queue_size = to_poll.qsize() - 1
-        logger.info("Current queue length: %s", progress_queue_size)
+        checkpoint_queue_size_cutoff = to_poll.qsize()
+        logger.info("Current queue length: %s", checkpoint_queue_size_cutoff)
 
     # When poller is done, send workers a 'stop' event and wait
     for i in range(max_concurrency):
@@ -838,7 +834,7 @@ def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
 
 
 def create_relations(relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1,
-                     concurrent_extract=True, dry_run=False) -> None:
+                     concurrent_extract=False, dry_run=False) -> None:
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
@@ -869,7 +865,8 @@ def select_execution_order(relations: List[RelationDescription], selector: Table
 # ---- Section 5: "Callbacks" (functions that implement commands) ----
 
 def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=True,
-                        max_concurrency=1, wlm_query_slots=1, skip_copy=False, no_rollback=False, dry_run=False):
+                        max_concurrency=1, wlm_query_slots=1, concurrent_extract=False,
+                        skip_copy=False, dry_run=False):
     """
     Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
 
@@ -884,7 +881,7 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
           If it's a source table, use COPY to load data.
           If it's a CTAS with an identity column, create temp table, then move data into final table.
           If it's a CTAS without an identity column, insert values straight into final table.
-    On error: restore the backup (unless asked not to rollback)
+    On error: exit if use_staging, otherwise restore schemas from backup position
 
     N.B. If arthur gets interrupted (eg. because the instance is inadvertently shut down),
     then there will be an incomplete state.
@@ -906,9 +903,10 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
 
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
-        create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+        create_relations(relations, max_concurrency, wlm_query_slots,
+                         concurrent_extract=concurrent_extract, dry_run=dry_run)
     except ETLRuntimeError:
-        if not (no_rollback or use_staging):
+        if not use_staging:
             logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
