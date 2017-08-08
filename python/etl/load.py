@@ -617,8 +617,8 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 logger.debug("Poller: Reached end of relation list")
                 logger.debug("Poller: Checking that we have fewer than %s tasks left by %s",
                              progress_queue_size, progress_required_by)
-                logger.debug("Poller: We have %s tasks left after %s",
-                             to_poll.qsize(), timer.elapsed)
+                logger.debug("Poller: %s left to poll, %s ready to load, %s elapsed",
+                             to_poll.qsize(), to_load.qsize())
                 if progress_queue_size <= to_poll.qsize() and timer.elapsed > progress_required_by:
                     raise ETLRuntimeError(
                         "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
@@ -644,7 +644,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             else:
                 logger.info("Poller: Recently completed extract found for '%s', marking as ready.", item.identifier)
                 to_load.put(item)
-            logger.debug("Poller: %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
             to_poll.task_done()
 
     uncaught_load_worker_exception = threading.Event()
