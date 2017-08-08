@@ -620,7 +620,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 logger.debug("Poller: Checking that we have fewer than %s tasks left by %s",
                              progress_queue_size, progress_required_by)
                 logger.debug("Poller: %s left to poll, %s ready to load, %s elapsed",
-                             to_poll.qsize(), to_load.qsize())
+                             to_poll.qsize(), to_load.qsize(), timer.elapsed)
                 if progress_queue_size <= to_poll.qsize() and timer.elapsed > progress_required_by:
                     raise ETLRuntimeError(
                         "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
