@@ -108,12 +108,15 @@ class LoadableRelation:
         'As delimited identifier: "c"."b", as string: c.b'
         >>> relation_with_staging = LoadableRelation(RelationDescription(fs), {}, use_staging=True, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation_with_staging, relation_with_staging)
-        'As delimited identifier: "etl_staging$c"."b", as string: etl_staging$c.b'
+        'As delimited identifier: "etl_staging$c"."b", as string: \\'c.b\\' (in staging)'
         """
         if (not code) or (code == 's'):
             return str(self)
         elif code == 'x':
-            return self.target_table_name.identifier
+            if self.use_staging:
+                return "'{}' (in staging)".format(self.identifier)
+            else:
+                return self.identifier
         else:
             raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
@@ -239,7 +242,7 @@ def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> 
     view_name = relation.target_table_name
     columns = join_column_list(relation.unquoted_columns)
     stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
-    etl.db.run(conn, "Creating view '{:x}'".format(relation), stmt, dry_run=dry_run)
+    etl.db.run(conn, "Creating view {:x}".format(relation), stmt, dry_run=dry_run)
 
 
 def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -251,7 +254,7 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         kind = etl.db.relation_kind(conn, relation.target_table_name.schema, relation.target_table_name.table)
         if kind is not None:
             stmt = """DROP {} {} CASCADE""".format(kind, relation)
-            etl.db.run(conn, "Dropping {} '{:x}'".format(kind.lower(), relation), stmt, dry_run=dry_run)
+            etl.db.run(conn, "Dropping {} {:x}".format(kind.lower(), relation), stmt, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
@@ -310,7 +313,7 @@ def delete_whole_table(conn: connection, table: LoadableRelation, dry_run=False)
     Delete all rows from this table.
     """
     stmt = """DELETE FROM {}""".format(table)
-    etl.db.run(conn, "Deleting all rows in table '{:x}'".format(table), stmt, dry_run=dry_run)
+    etl.db.run(conn, "Deleting all rows in table {:x}".format(table), stmt, dry_run=dry_run)
 
 
 def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
@@ -402,7 +405,7 @@ def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
     """
     Update table statistics.
     """
-    etl.db.run(conn, "Running analyze step on table '{:x}'".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
+    etl.db.run(conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
 
 
 def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -574,7 +577,7 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for relation in relations:
-            etl.db.run(conn, "Running vacuum on '{:x}'".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
+            etl.db.run(conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
         if not dry_run:
             logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
 
