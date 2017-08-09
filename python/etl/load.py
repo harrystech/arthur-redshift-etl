@@ -102,6 +102,9 @@ class LoadableRelation:
         """
         Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
 
+        Compared to RelationDescription, we have the additional complexity of dealing with
+        the position (staging or not) of a table.
+
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
@@ -114,9 +117,9 @@ class LoadableRelation:
             return str(self)
         elif code == 'x':
             if self.use_staging:
-                return "'{}' (in staging)".format(self.identifier)
+                return "'{:s}' (in staging)".format(self.identifier)
             else:
-                return "'{}'".format(self.identifier)
+                return "'{:s}'".format(self.identifier)
         else:
             raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
@@ -219,9 +222,11 @@ class LoadableRelation:
 
 # ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
 
-def create_table(conn: connection, relation: LoadableRelation, temp_name=None, dry_run=False) -> None:
+def create_table(conn: connection, relation: LoadableRelation, table_name: Optional[TableName]=None,
+                 dry_run=False) -> None:
     """
-    Create a table matching this design (but possibly under another name, e.g. for temp tables).
+    Create a table matching this design (but possibly under another name).
+    If a name is specified, we'll assume that this should be an intermediate, aka temp table.
 
     Columns must have a name and a SQL type (compatible with Redshift).
     They may have an attribute of the compression encoding and the nullable constraint.
@@ -232,11 +237,17 @@ def create_table(conn: connection, relation: LoadableRelation, temp_name=None, d
     Tables may have attributes such as a distribution style and sort key.
     Depending on the distribution style, they may also have a distribution key.
     """
-    is_temp = (temp_name is not None)
-    table_name = temp_name or relation.target_table_name
-    table_design = relation.table_design
-    ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
-    etl.db.run(conn, "Creating table {:x}".format(relation), ddl_stmt, dry_run=dry_run)
+    if table_name is None:
+        ddl_table_name = relation.target_table_name
+        message = "Creating table {:x}".format(relation)
+        is_temp = False
+    else:
+        ddl_table_name = table_name
+        message = "Creating temporary table for {:x}".format(relation)
+        is_temp = True
+
+    ddl_stmt = etl.design.redshift.build_table_ddl(relation.table_design, ddl_table_name, is_temp=is_temp)
+    etl.db.run(conn, message, ddl_stmt, dry_run=dry_run)
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -295,19 +306,19 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
 
     if reader_groups:
         if dry_run:
-            logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
-                        relation.identifier, join_with_quotes(reader_groups))
+            logger.info("Dry-run: Skipping granting of select access on {:x} to {}".format(
+                            relation, join_with_quotes(reader_groups)))
         else:
-            logger.info("Granting select access on '%s' to %s", relation.identifier, join_with_quotes(reader_groups))
+            logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
             for reader in reader_groups:
                 etl.db.grant_select(conn, target.schema, target.table, reader)
 
     if writer_groups:
         if dry_run:
-            logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
-                        relation.identifier, join_with_quotes(writer_groups))
+            logger.info("Dry-run: Skipping granting of write access on {:x} to {}".format(
+                            relation, join_with_quotes(writer_groups)))
         else:
-            logger.info("Granting write access on '%s' to %s", relation.identifier, join_with_quotes(writer_groups))
+            logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
             for writer in writer_groups:
                 etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
 
@@ -330,31 +341,45 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
 
     if not relation.has_manifest:
         if dry_run:
-            logger.info("Dry-run: Ignoring that relation '%s' is missing manifest file '%s'",
-                        relation.identifier, s3_uri)
+            logger.info("Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
+                            relation.identifier, s3_uri))
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
-                relation.identifier, s3_uri))
+                                           relation.identifier, s3_uri))
 
     etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
                                       need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
 
-def insert_from_query(conn: connection, table_name: TableName, columns: List[str], query: str, dry_run=False) -> None:
+def insert_from_query(conn: connection, relation: LoadableRelation,
+                      table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
+                      query_stmt: Optional[str]=None, dry_run=False) -> None:
     """
-    Load data into table from its query (aka materializing a view). The table name must be specified since
-    the load goes either into the target table or a temporary one.
+    Load data into table from its query (aka materializing a view).
+    The table name, query, and columns may be overridden from their defaults, which are the values from the relation.
+    (If the table name is specified, we'll assume that it's a temp table for logging.)
     """
+    if table_name is None:
+        table_name = relation.target_table_name
+        message = "Loading data into {:x} from query".format(relation)
+    else:
+        message = "Loading data into temporary table for {:x} from query".format(relation)
+    if columns is None:
+        columns = relation.unquoted_columns
+    if query_stmt is None:
+        query_stmt = relation.query_stmt
+
     stmt = """INSERT INTO {table} (\n  {columns}\n)""".format(table=table_name, columns=join_column_list(columns))
-    stmt += "\n" + query
-    etl.db.run(conn, "Loading data into '{:x}' from query".format(table_name), stmt, dry_run=dry_run)
+    stmt += "\n" + query_stmt
+
+    etl.db.run(conn, message, stmt, dry_run=dry_run)
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Run query to fill CTAS relation. (Not to be used for dimensions etc.)
     """
-    insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, relation.query_stmt, dry_run=dry_run)
+    insert_from_query(conn, relation, dry_run=dry_run)
 
 
 def create_missing_dimension_row(columns: List[dict]) -> List[str]:
@@ -388,21 +413,21 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
     temp_name = TempTableName.for_table(relation.target_table_name)
-    create_table(conn, relation, temp_name=temp_name, dry_run=dry_run)
+    create_table(conn, relation, table_name=temp_name, dry_run=dry_run)
     try:
         temp_columns = [column["name"] for column in relation.table_design["columns"]
                         if not (column.get("skipped") or column.get("identity"))]
-        insert_from_query(conn, temp_name, temp_columns, relation.query_stmt, dry_run=dry_run)
+        insert_from_query(conn, relation, table_name=temp_name, columns=temp_columns, dry_run=dry_run)
 
         inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), temp_name)
         if relation.target_table_name.table.startswith("dim_"):
             missing_dimension = create_missing_dimension_row(relation.table_design["columns"])
             inner_stmt += "\nUNION ALL SELECT {}".format(", ".join(missing_dimension))
 
-        insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, inner_stmt, dry_run=dry_run)
+        insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
     finally:
         stmt = "DROP TABLE {}".format(temp_name)
-        etl.db.run(conn, "Dropping temporary table '{:x}'".format(temp_name), stmt, dry_run=dry_run)
+        etl.db.run(conn, "Dropping temporary table for {:x}".format(relation), stmt, dry_run=dry_run)
 
 
 def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
@@ -430,11 +455,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
     """
     constraints = relation.table_design.get("constraints")
     if constraints is None:
-        logger.info("No constraints to verify for '%s'", relation.identifier)
+        logger.info("No constraints to verify for '{:s}'".format(relation.identifier))
         return
 
     # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
-    # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voila!
+    # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voilà!
     statement_template = """
         SELECT DISTINCT
                {columns}
@@ -456,12 +481,12 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
 
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
-            logger.info("Dry-run: Skipping check of %s constraint in '%s' on column(s): %s",
-                        constraint_type, relation.identifier, join_with_quotes(columns))
+            logger.info("Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
+                            constraint_type, relation, join_with_quotes(columns)))
             etl.db.skip_query(conn, statement)
         else:
-            logger.info("Checking %s constraint in '%s' on column(s): %s",
-                        constraint_type, relation.identifier, join_with_quotes(columns))
+            logger.info("Checking {} constraint in {:x} on column(s): {}".format(
+                            constraint_type, relation, join_with_quotes(columns)))
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
@@ -549,7 +574,7 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if relation.is_view_relation:
             pass
         elif relation.skip_copy:
-            logger.info("Skipping loading data into '%s'", relation.identifier)
+            logger.info("Skipping loading data into {:x}".format(relation))
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
@@ -564,9 +589,9 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         # Add (some) exception information close to when it happened
         message = str(exc).split('\n', 1)[0]
         if relation.is_required:
-            logger.error("Exception information for required relation '%s': %s", relation.identifier, message)
+            logger.error("Exception information for required relation {:x}: {}".format(relation, message))
         else:
-            logger.warning("Exception information for relation '%s': %s", relation.identifier, message)
+            logger.warning("Exception information for relation {:x}: {}".format(relation, message))
         pool.putconn(conn, close=True)
         raise
     else:
@@ -628,9 +653,9 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
         except (RelationConstructionError, RelationDataError):
             relation.failed = True
             if relation.is_required:
-                logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+                logger.error("Failed to build required relation {:x}:".format(relation), exc_info=True)
             else:
-                logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+                logger.warning("Failed to build relation {:x}:".format(relation), exc_info=True)
                 relation.skip_dependents(relations)
 
     failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
