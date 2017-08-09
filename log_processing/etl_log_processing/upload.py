@@ -16,9 +16,10 @@ import sys
 import boto3
 import elasticsearch
 import elasticsearch.helpers
+import requests_aws4auth
 
-from . import config
-from . import parser
+from etl_log_processing import config
+from etl_log_processing import parser
 
 
 def load_records(sources):
@@ -29,15 +30,17 @@ def load_records(sources):
         else:
             if source.startswith("s3://"):
                 for full_name in list_files(source):
-                    lines = load_remote_content(full_name)
-                    log_parser = parser.LogParser(full_name)
-                    for record in log_parser.split_log_lines(lines):
+                    for record in _load_records_using(load_remote_content, full_name):
                         yield record
             else:
-                lines = load_local_content(source)
-                log_parser = parser.LogParser(source)
-                for record in log_parser.split_log_lines(lines):
+                for record in _load_records_using(load_local_content, source):
                     yield record
+
+
+def _load_records_using(content_opener, content_location):
+    lines = content_opener(content_location)
+    log_parser = parser.LogParser(content_location)
+    return log_parser.split_log_lines(lines)
 
 
 def load_local_content(filename):
@@ -69,7 +72,7 @@ def load_remote_content(uri):
         stream = io.BytesIO(response.read())
         lines = gzip.GzipFile(fileobj=stream).read().decode()
     else:
-        lines = response.read()
+        lines = response.read().decode()
     return lines
 
 
@@ -81,23 +84,34 @@ def list_files(uri):
         yield "s3://{}/{}".format(summary.bucket_name, summary.key)
 
 
-def lambda_handler(event, context):
-    s3_event = event['Records'][0]['s3']
-    bucket_name = s3_event['bucket']['name']
-    object_key = urllib.parse.unquote_plus(s3_event['object']['key'].encode('utf8'))
-    print("bucket_name: {}, object_key: {}", bucket_name, object_key, file=sys.stderr)
+def aws_auth():
+    # https://github.com/sam-washington/requests-aws4auth/pull/2
+    print("Retrieving credentials", file=sys.stderr)
+    session = boto3.Session()
+    credentials = session.get_credentials()
+    aws4auth = requests_aws4auth.AWS4Auth(credentials.access_key, credentials.secret_key, config.MyConfig.region, "es",
+                                          session_token=credentials.token)
+
+    def wrapped_aws4auth(request):
+        return aws4auth(request)
+
+    return wrapped_aws4auth
 
 
-def connect_to_es():
+def _connect_to_es(http_auth):
     print("Connecting to ES endpoint: {}".format(config.MyConfig.endpoint), file=sys.stderr)
-    return elasticsearch.Elasticsearch(
+    es = elasticsearch.Elasticsearch(
         hosts=[{"host": config.MyConfig.endpoint, "port": 443}],
         use_ssl=True,
-        verify_certs=True
+        verify_certs=True,
+        connection_class=elasticsearch.connection.RequestsHttpConnection,
+        http_auth=http_auth,
+        send_get_body_as="POST"
     )
+    return es
 
 
-def create_index(client):
+def _create_index(client):
     print("Creating index {} ({})".format(config.MyConfig.index, config.MyConfig.doc_type), file=sys.stderr)
     client.indices.create(index=config.MyConfig.index, body=parser.LogParser.index(), ignore=400)
     body = dict(mappings={})
@@ -110,7 +124,7 @@ def _build_actions_from(records):
     doc_type = config.MyConfig.doc_type
     for record in records:
         if record["source"] == "examples":
-            print("{sha1} {logfile} {start_pos}..{end_pos}".format(**record), file=sys.stderr)
+            print("Example record ... _id={sha1} timestamp={timestamp}".format(**record))
         yield {
             "_op_type": "index",
             "_index": index,
@@ -120,21 +134,44 @@ def _build_actions_from(records):
         }
 
 
-def index_records(client, records):
+def _bulk_index(client, records):
     print("Indexing new records", file=sys.stderr)
     ok, errors = elasticsearch.helpers.bulk(client, _build_actions_from(records))
     print("Uploaded successfully: {:d}".format(ok), file=sys.stderr)
     print("Errors: {}".format(errors), file=sys.stderr)
 
 
+def index_records(es, records_generator):
+    _create_index(es)
+    _bulk_index(es, records_generator)
+
+
+def lambda_handler(event, context):
+    event_data = event['Records'][0]
+    bucket_name = event_data['s3']['bucket']['name']
+    object_key = urllib.parse.unquote_plus(event_data['s3']['object']['key'])
+    full_name = "s3://{}/{}".format(bucket_name, object_key)
+    print("Event: eventSource={}, eventName={}, bucket_name={}, object_key={}".format(
+        event_data['eventSource'], event_data['eventName'], bucket_name, object_key))
+
+    processed = _load_records_using(load_remote_content, full_name)
+    es = _connect_to_es(aws_auth())
+    print("Time remaining (ms):", context.get_remaining_time_in_millis())
+
+    index_records(es, processed)
+    print("Time remaining (ms):", context.get_remaining_time_in_millis())
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: {} LOGFILE [LOGFILE ...]".format(sys.argv[0]))
         exit(1)
-    client = connect_to_es()
-    create_index(client)
     processed = load_records(sys.argv[1:])
-    index_records(client, processed)
+    # If you have enabled your IP address to have access, skip the authentication:
+    es = _connect_to_es(None)
+    # If you have only specific users (and roles) permitted:
+    # es = _connect_to_es(aws_auth())
+    index_records(es, processed)
 
 
 if __name__ == "__main__":
