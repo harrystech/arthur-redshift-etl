@@ -119,7 +119,6 @@ def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) ->
     """
     Assemble the DDL of a table in a Redshift data warehouse.
     """
-    # FIXME We should derive is_temp from the table_name
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
     attributes = build_table_attributes(table_design)

@@ -98,13 +98,13 @@ class RelationDescription:
 
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
-        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as string: c.b'
+        >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
+        'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
         """
         if (not code) or (code == 's'):
-            return str(self)
+            return str(self.target_table_name)
         elif code == 'x':
-            return self.identifier
+            return "{:x}".format(self.target_table_name)
         else:
             raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
 
