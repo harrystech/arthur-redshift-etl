@@ -1,0 +1,111 @@
+Description: >
+    This stack contains a Redshift cluster with its subnet group and parameter group.
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+
+Parameters:
+
+    VpcStackName:
+        Description: Name of cloudformation stack with VPC
+        Type: String
+
+    MasterUsername:
+        Description: User name for the primary user
+        Type: String
+        Default: admin
+        AllowedPattern: "([a-z])([a-z]|[0-9])*"
+
+    MasterUserPassword:
+        Description: Password for the primary user (with lowercase, uppercase, numbers etc.)
+        Type: String
+        NoEcho: true
+
+    NodeType:
+        Description: The type of node to be provisioned
+        Type: String
+        Default: dc1.large
+        AllowedValues:
+            - dc1.large
+            - dc1.8xlarge
+            - ds2.xlarge
+            - ds2.8xlarge
+
+
+Resources:
+
+    RedshiftClusterSubnetGroup:
+        Type: "AWS::Redshift::ClusterSubnetGroup"
+        Properties:
+            Description: "Must cross-reference public subnet id from VPC stack"
+            SubnetIds:
+              - Fn::ImportValue: !Sub "${VpcStackName}::public-subnet-id"
+
+    RedshiftClusterParameterGroup:
+        Type: "AWS::Redshift::ClusterParameterGroup"
+        Properties:
+            Description: "Require SSL for connections"
+            ParameterGroupFamily: "redshift-1.0"
+            Parameters:
+              - ParameterName: "require_ssl"
+                ParameterValue: "true"
+
+    RedshiftEIP:
+        Type: "AWS::EC2::EIP"
+        Properties:
+            Domain: vpc
+
+    RedshiftCluster:
+        Type: "AWS::Redshift::Cluster"
+        Properties:
+            AutomatedSnapshotRetentionPeriod:
+                30
+            AvailabilityZone:
+                Fn::ImportValue: !Sub "${VpcStackName}::vpc-az"
+            ClusterParameterGroupName:
+                !Ref RedshiftClusterParameterGroup
+            ClusterSubnetGroupName:
+                !Ref RedshiftClusterSubnetGroup
+            ClusterType:
+                "multi-node"
+            DBName:
+                "dev"
+            ElasticIp:
+                !Ref RedshiftEIP
+            Encrypted:
+                true
+            IamRoles:
+                - Fn::ImportValue: !Sub "${VpcStackName}::redshift-iam-role"
+            MasterUsername:
+                !Ref MasterUsername
+            MasterUserPassword:
+                !Ref MasterUserPassword
+            NodeType:
+                !Ref NodeType
+            NumberOfNodes:
+                2
+            PubliclyAccessible:
+                true
+            VpcSecurityGroupIds:
+                - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
+    # Note that an option to set enhanced VPC routing is missing in cloudformation, so this must be done using the CLI
+    # aws redshift modify-cluster --cluster-identifier dw-cluster-dev-redshiftcluster-[your ident] --enhanced-vpc-routing
+
+
+Outputs:
+
+    RedshiftClusterEndpoint:
+        Description: Cluster endpoint
+        Value: !Sub "${RedshiftCluster.Endpoint.Address}:${RedshiftCluster.Endpoint.Port}"
+
+    RedshiftClusterName:
+        Description: Name of Redshift cluster
+        Value: !Ref RedshiftCluster
+
+    RedshiftClusterSubnetGroup:
+        Description: A reference to the created subnet group
+        Value: !Ref RedshiftClusterSubnetGroup
+
+    RedshiftClusterParameterGroup:
+        Description: A reference to the created parameter group
+        Value: !Ref RedshiftClusterParameterGroup

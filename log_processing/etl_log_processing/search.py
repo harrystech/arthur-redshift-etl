@@ -11,7 +11,7 @@ import sys
 from functools import partial
 from operator import itemgetter
 
-from . import upload
+from etl_log_processing import upload
 
 
 def print_message(record):

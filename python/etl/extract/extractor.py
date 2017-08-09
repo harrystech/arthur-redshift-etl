@@ -153,15 +153,18 @@ class Extractor:
         manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
         if self.dry_run:
-            if not manifest:
+            if not remote_files:
                 self.logger.warning("Dry-run: Found no CSV files")
             else:
                 self.logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s' for %d CSV file(s)",
                                  relation.bucket_name, relation.manifest_file_name, len(csv_files))
         else:
-            if not manifest:
+            if not remote_files:
                 raise MissingCsvFilesError("Found no CSV files")
-            else:
-                self.logger.info("Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
-                                 relation.bucket_name, relation.manifest_file_name, len(csv_files))
-                etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
+
+            self.logger.info("Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
+                             relation.bucket_name, relation.manifest_file_name, len(csv_files))
+            etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
+
+            # Make sure file exists before proceeding
+            etl.s3.get_s3_object_last_modified(relation.bucket_name, relation.manifest_file_name, wait=True)
