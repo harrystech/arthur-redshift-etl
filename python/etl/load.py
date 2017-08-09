@@ -105,7 +105,7 @@ class LoadableRelation:
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as string: c.b'
+        'As delimited identifier: "c"."b", as string: \\'c.b\\''
         >>> relation_with_staging = LoadableRelation(RelationDescription(fs), {}, use_staging=True, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation_with_staging, relation_with_staging)
         'As delimited identifier: "etl_staging$c"."b", as string: \\'c.b\\' (in staging)'
@@ -116,7 +116,7 @@ class LoadableRelation:
             if self.use_staging:
                 return "'{}' (in staging)".format(self.identifier)
             else:
-                return self.identifier
+                return "'{}'".format(self.identifier)
         else:
             raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
@@ -219,7 +219,7 @@ class LoadableRelation:
 
 # ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
 
-def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
+def create_table(conn: connection, relation: LoadableRelation, temp_name=None, dry_run=False) -> None:
     """
     Create a table matching this design (but possibly under another name, e.g. for temp tables).
 
@@ -232,8 +232,11 @@ def create_table(conn: connection, table_design: dict, table_name: TableName, is
     Tables may have attributes such as a distribution style and sort key.
     Depending on the distribution style, they may also have a distribution key.
     """
+    is_temp = (temp_name is not None)
+    table_name = temp_name or relation.target_table_name
+    table_design = relation.table_design
     ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
-    etl.db.run(conn, "Creating table '{:x}'".format(table_name), ddl_stmt, dry_run=dry_run)
+    etl.db.run(conn, "Creating table {:x}".format(relation), ddl_stmt, dry_run=dry_run)
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -272,7 +275,7 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
         if relation.is_view_relation:
             create_view(conn, relation, dry_run=dry_run)
         else:
-            create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
+            create_table(conn, relation, dry_run=dry_run)
         if not relation.use_staging:
             grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
@@ -385,7 +388,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
     temp_name = TempTableName.for_table(relation.target_table_name)
-    create_table(conn, relation.table_design, temp_name, is_temp=True, dry_run=dry_run)
+    create_table(conn, relation, temp_name=temp_name, dry_run=dry_run)
     try:
         temp_columns = [column["name"] for column in relation.table_design["columns"]
                         if not (column.get("skipped") or column.get("identity"))]
