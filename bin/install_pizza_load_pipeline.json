@@ -2,7 +2,7 @@
 
 if [[ $# -ne 2 || "$1" = "-h" ]]; then
     echo "Pizza delivery! Right on time or it's free! Runs once, starting now."
-    echo "Expects you to have already extracted data and started a load, which then failed."
+    echo "Expects prefix to already have all necessary manifests for source data."
     echo "Usage: `basename $0` <bucket_name> <environment>"
     exit 0
 fi
