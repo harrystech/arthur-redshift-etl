@@ -13,7 +13,6 @@ PROJ_BUCKET="$1"
 PROJ_ENVIRONMENT="$2"
 
 START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
-OCCURRENCES=1
 
 BINDIR=`dirname $0`
 TOPDIR=`\cd $BINDIR/.. && \pwd`
@@ -40,7 +39,7 @@ if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
 else
     PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Development"
 fi
-PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
@@ -64,7 +63,6 @@ aws datapipeline put-pipeline-definition \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
-        myOccurrences="$OCCURRENCES" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
