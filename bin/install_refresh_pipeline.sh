@@ -73,6 +73,9 @@ aws datapipeline put-pipeline-definition \
         myOccurrences="$OCCURRENCES" \
         mySelection="$SELECTION" \
         myCommaSeparatedSelection="$C_S_SELECTION" \
+        myMaxPartitions="16" \
+        myMaxConcurrency="4" \
+        myWlmQuerySlots="3" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"

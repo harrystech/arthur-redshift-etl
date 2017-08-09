@@ -63,6 +63,8 @@ aws datapipeline put-pipeline-definition \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
+        myMaxConcurrency="4" \
+        myWlmQuerySlots="3" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"

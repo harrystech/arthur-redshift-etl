@@ -64,6 +64,9 @@ aws datapipeline put-pipeline-definition \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
+        myMaxPartitions="16" \
+        myMaxConcurrency="4" \
+        myWlmQuerySlots="3" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
