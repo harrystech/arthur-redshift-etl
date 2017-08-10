@@ -676,7 +676,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     if to_poll.qsize():
                         to_poll.put(item)
                     continue
-            logger.debug("Poller: Polling DynamoDB for finished extract of '%s'", item.identifier)
 
             res = table.query(
                 ConsistentRead=True,
@@ -687,7 +686,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                                            ":step": "extract", ":event": "finish"}
             )
             if res['Count'] == 0:
-                logger.debug("Poller: No new extracts for '%s', re-queueing.", item.identifier)
                 to_poll.put(item)
             else:
                 logger.info("Poller: Recently completed extract found for '%s', marking as ready.", item.identifier)
@@ -721,7 +719,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                              item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
                 raise
-            logger.debug("Loader: %s relations ready to load", to_load.qsize())
 
     source_relations = [relation for relation in relations if not relation.is_transformation]
     if not source_relations:
@@ -737,6 +734,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         threads.append(t)
 
     for relation in source_relations:
+        logger.debug("Putting %s into poller queue", relation.identifier)
         to_poll.put(relation)
     to_poll.put(sleep_time)  # Give DynamoDB a periodic break
 
