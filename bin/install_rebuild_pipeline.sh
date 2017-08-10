@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences>"
+if [[ $# -ne 5 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences> <wlm-slots>"
     echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     exit 0
 fi
@@ -13,6 +13,7 @@ PROJ_ENVIRONMENT="$2"
 
 START_DATE_TIME="$3"
 OCCURRENCES="$4"
+WLM_SLOTS="$5"
 
 BINDIR=`dirname $0`
 TOPDIR=`\cd $BINDIR/.. && \pwd`
@@ -66,7 +67,7 @@ aws datapipeline put-pipeline-definition \
         myOccurrences="$OCCURRENCES" \
         myMaxPartitions="16" \
         myMaxConcurrency="4" \
-        myWlmQuerySlots="3" \
+        myWlmQuerySlots="$WLM_SLOTS" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
