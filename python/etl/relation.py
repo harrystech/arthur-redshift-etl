@@ -68,7 +68,6 @@ class RelationDescription:
             self.prefix = None
         # Note the subtle difference to TableFileSet--here the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
-        self.has_manifest = discovered_files.manifest_file_name is not None
         # Lazy-loading of table design and query statement and any derived information from the table design
         self._table_design = None  # type: Optional[Dict[str, Any]]
         self._query_stmt = None  # type: Optional[str]
@@ -78,6 +77,10 @@ class RelationDescription:
     @property
     def target_table_name(self) -> TableName:
         return self._fileset.target_table_name
+
+    @property
+    def has_manifest(self):
+        return etl.s3.get_s3_object_last_modified(self.bucket_name, self.manifest_file_name, wait=False) is not None
 
     @property
     def identifier(self) -> str:
@@ -95,13 +98,13 @@ class RelationDescription:
 
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
-        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as string: c.b'
+        >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
+        'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
         """
         if (not code) or (code == 's'):
-            return str(self)
+            return str(self.target_table_name)
         elif code == 'x':
-            return self.identifier
+            return "{:x}".format(self.target_table_name)
         else:
             raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
 

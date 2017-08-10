@@ -40,10 +40,17 @@ These are the general pre-requisites:
 import concurrent.futures
 import logging
 import re
+import time
+import threading
+import queue
 from contextlib import closing
+from datetime import datetime, timedelta
+from calendar import timegm
 from itertools import chain, dropwhile
 from typing import Any, Dict, List, Optional, Set
 
+
+import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -98,7 +105,30 @@ class LoadableRelation:
 
     __str__ = RelationDescription.__str__
 
-    __format__ = RelationDescription.__format__
+    def __format__(self, code):
+        """
+        Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
+
+        Compared to RelationDescription, we have the additional complexity of dealing with
+        the position (staging or not) of a table.
+
+        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
+        >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
+        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
+        'As delimited identifier: "c"."b", as string: \\'c.b\\''
+        >>> relation_with_staging = LoadableRelation(RelationDescription(fs), {}, use_staging=True, skip_copy=True)
+        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation_with_staging, relation_with_staging)
+        'As delimited identifier: "etl_staging$c"."b", as string: \\'c.b\\' (in staging)'
+        """
+        if (not code) or (code == 's'):
+            return str(self)
+        elif code == 'x':
+            if self.use_staging:
+                return "'{:s}' (in staging)".format(self.identifier)
+            else:
+                return "'{:s}'".format(self.identifier)
+        else:
+            raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
     def __init__(self, relation: RelationDescription, info: dict,
                  use_staging=False, skip_copy=False, in_transaction=False) -> None:
@@ -199,9 +229,11 @@ class LoadableRelation:
 
 # ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
 
-def create_table(conn: connection, table_design: dict, table_name: TableName, is_temp=False, dry_run=False) -> None:
+def create_table(conn: connection, relation: LoadableRelation, table_name: Optional[TableName]=None,
+                 dry_run=False) -> None:
     """
-    Create a table matching this design (but possibly under another name, e.g. for temp tables).
+    Create a table matching this design (but possibly under another name).
+    If a name is specified, we'll assume that this should be an intermediate, aka temp table.
 
     Columns must have a name and a SQL type (compatible with Redshift).
     They may have an attribute of the compression encoding and the nullable constraint.
@@ -212,8 +244,17 @@ def create_table(conn: connection, table_design: dict, table_name: TableName, is
     Tables may have attributes such as a distribution style and sort key.
     Depending on the distribution style, they may also have a distribution key.
     """
-    ddl_stmt = etl.design.redshift.build_table_ddl(table_design, table_name, is_temp=is_temp)
-    etl.db.run(conn, "Creating table '{:x}'".format(table_name), ddl_stmt, dry_run=dry_run)
+    if table_name is None:
+        ddl_table_name = relation.target_table_name
+        message = "Creating table {:x}".format(relation)
+        is_temp = False
+    else:
+        ddl_table_name = table_name
+        message = "Creating temporary table for {:x}".format(relation)
+        is_temp = True
+
+    ddl_stmt = etl.design.redshift.build_table_ddl(relation.table_design, ddl_table_name, is_temp=is_temp)
+    etl.db.run(conn, message, ddl_stmt, dry_run=dry_run)
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -223,7 +264,7 @@ def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> 
     view_name = relation.target_table_name
     columns = join_column_list(relation.unquoted_columns)
     stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
-    etl.db.run(conn, "Creating view '{:x}'".format(relation), stmt, dry_run=dry_run)
+    etl.db.run(conn, "Creating view {:x}".format(relation), stmt, dry_run=dry_run)
 
 
 def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -235,7 +276,7 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         kind = etl.db.relation_kind(conn, relation.target_table_name.schema, relation.target_table_name.table)
         if kind is not None:
             stmt = """DROP {} {} CASCADE""".format(kind, relation)
-            etl.db.run(conn, "Dropping {} '{:x}'".format(kind.lower(), relation), stmt, dry_run=dry_run)
+            etl.db.run(conn, "Dropping {} {:x}".format(kind.lower(), relation), stmt, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
@@ -252,7 +293,7 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
         if relation.is_view_relation:
             create_view(conn, relation, dry_run=dry_run)
         else:
-            create_table(conn, relation.table_design, relation.target_table_name, dry_run=dry_run)
+            create_table(conn, relation, dry_run=dry_run)
         if not relation.use_staging:
             grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
@@ -272,19 +313,19 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
 
     if reader_groups:
         if dry_run:
-            logger.info("Dry-run: Skipping granting of select access on '%s' to %s",
-                        relation.identifier, join_with_quotes(reader_groups))
+            logger.info("Dry-run: Skipping granting of select access on {:x} to {}".format(
+                            relation, join_with_quotes(reader_groups)))
         else:
-            logger.info("Granting select access on '%s' to %s", relation.identifier, join_with_quotes(reader_groups))
+            logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
             for reader in reader_groups:
                 etl.db.grant_select(conn, target.schema, target.table, reader)
 
     if writer_groups:
         if dry_run:
-            logger.info("Dry-run: Skipping granting of write access on '%s' to %s",
-                        relation.identifier, join_with_quotes(writer_groups))
+            logger.info("Dry-run: Skipping granting of write access on {:x} to {}".format(
+                            relation, join_with_quotes(writer_groups)))
         else:
-            logger.info("Granting write access on '%s' to %s", relation.identifier, join_with_quotes(writer_groups))
+            logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
             for writer in writer_groups:
                 etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
 
@@ -294,7 +335,7 @@ def delete_whole_table(conn: connection, table: LoadableRelation, dry_run=False)
     Delete all rows from this table.
     """
     stmt = """DELETE FROM {}""".format(table)
-    etl.db.run(conn, "Deleting all rows in table '{:x}'".format(table), stmt, dry_run=dry_run)
+    etl.db.run(conn, "Deleting all rows in table {:x}".format(table), stmt, dry_run=dry_run)
 
 
 def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
@@ -307,31 +348,45 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
 
     if not relation.has_manifest:
         if dry_run:
-            logger.info("Dry-run: Ignoring that relation '%s' is missing manifest file '%s'",
-                        relation.identifier, s3_uri)
+            logger.info("Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
+                            relation.identifier, s3_uri))
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
-                relation.identifier, s3_uri))
+                                           relation.identifier, s3_uri))
 
     etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
                                       need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
 
-def insert_from_query(conn: connection, table_name: TableName, columns: List[str], query: str, dry_run=False) -> None:
+def insert_from_query(conn: connection, relation: LoadableRelation,
+                      table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
+                      query_stmt: Optional[str]=None, dry_run=False) -> None:
     """
-    Load data into table from its query (aka materializing a view). The table name must be specified since
-    the load goes either into the target table or a temporary one.
+    Load data into table from its query (aka materializing a view).
+    The table name, query, and columns may be overridden from their defaults, which are the values from the relation.
+    (If the table name is specified, we'll assume that it's a temp table for logging.)
     """
+    if table_name is None:
+        table_name = relation.target_table_name
+        message = "Loading data into {:x} from query".format(relation)
+    else:
+        message = "Loading data into temporary table for {:x} from query".format(relation)
+    if columns is None:
+        columns = relation.unquoted_columns
+    if query_stmt is None:
+        query_stmt = relation.query_stmt
+
     stmt = """INSERT INTO {table} (\n  {columns}\n)""".format(table=table_name, columns=join_column_list(columns))
-    stmt += "\n" + query
-    etl.db.run(conn, "Loading data into '{:x}' from query".format(table_name), stmt, dry_run=dry_run)
+    stmt += "\n" + query_stmt
+
+    etl.db.run(conn, message, stmt, dry_run=dry_run)
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Run query to fill CTAS relation. (Not to be used for dimensions etc.)
     """
-    insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, relation.query_stmt, dry_run=dry_run)
+    insert_from_query(conn, relation, dry_run=dry_run)
 
 
 def create_missing_dimension_row(columns: List[dict]) -> List[str]:
@@ -365,28 +420,28 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
     Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
     """
     temp_name = TempTableName.for_table(relation.target_table_name)
-    create_table(conn, relation.table_design, temp_name, is_temp=True, dry_run=dry_run)
+    create_table(conn, relation, table_name=temp_name, dry_run=dry_run)
     try:
         temp_columns = [column["name"] for column in relation.table_design["columns"]
                         if not (column.get("skipped") or column.get("identity"))]
-        insert_from_query(conn, temp_name, temp_columns, relation.query_stmt, dry_run=dry_run)
+        insert_from_query(conn, relation, table_name=temp_name, columns=temp_columns, dry_run=dry_run)
 
         inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), temp_name)
         if relation.target_table_name.table.startswith("dim_"):
             missing_dimension = create_missing_dimension_row(relation.table_design["columns"])
             inner_stmt += "\nUNION ALL SELECT {}".format(", ".join(missing_dimension))
 
-        insert_from_query(conn, relation.target_table_name, relation.unquoted_columns, inner_stmt, dry_run=dry_run)
+        insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
     finally:
         stmt = "DROP TABLE {}".format(temp_name)
-        etl.db.run(conn, "Dropping temporary table '{:x}'".format(temp_name), stmt, dry_run=dry_run)
+        etl.db.run(conn, "Dropping temporary table for {:x}".format(relation), stmt, dry_run=dry_run)
 
 
 def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
     """
     Update table statistics.
     """
-    etl.db.run(conn, "Running analyze step on table '{:x}'".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
+    etl.db.run(conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
 
 
 def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -407,11 +462,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
     """
     constraints = relation.table_design.get("constraints")
     if constraints is None:
-        logger.info("No constraints to verify for '%s'", relation.identifier)
+        logger.info("No constraints to verify for '{:s}'".format(relation.identifier))
         return
 
     # To make this work in DataGrip, define '\{(\w+)\}' under Tools -> Database -> User Parameters.
-    # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voila!
+    # Then execute the SQL using command-enter, enter the values for `cols` and `table`, et voilà!
     statement_template = """
         SELECT DISTINCT
                {columns}
@@ -433,12 +488,12 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
 
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
-            logger.info("Dry-run: Skipping check of %s constraint in '%s' on column(s): %s",
-                        constraint_type, relation.identifier, join_with_quotes(columns))
+            logger.info("Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
+                            constraint_type, relation, join_with_quotes(columns)))
             etl.db.skip_query(conn, statement)
         else:
-            logger.info("Checking %s constraint in '%s' on column(s): %s",
-                        constraint_type, relation.identifier, join_with_quotes(columns))
+            logger.info("Checking {} constraint in {:x} on column(s): {}".format(
+                            constraint_type, relation, join_with_quotes(columns)))
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
@@ -526,7 +581,7 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if relation.is_view_relation:
             pass
         elif relation.skip_copy:
-            logger.info("Skipping loading data into '%s'", relation.identifier)
+            logger.info("Skipping loading data into {:x}".format(relation))
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
@@ -541,9 +596,9 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         # Add (some) exception information close to when it happened
         message = str(exc).split('\n', 1)[0]
         if relation.is_required:
-            logger.error("Exception information for required relation '%s': %s", relation.identifier, message)
+            logger.error("Exception information for required relation {:x}: {}".format(relation, message))
         else:
-            logger.warning("Exception information for relation '%s': %s", relation.identifier, message)
+            logger.warning("Exception information for relation {:x}: {}".format(relation, message))
         pool.putconn(conn, close=True)
         raise
     else:
@@ -559,9 +614,169 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for relation in relations:
-            etl.db.run(conn, "Running vacuum on '{:x}'".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
+            etl.db.run(conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
         if not dry_run:
             logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
+
+# ---- Experimental Section: load during extract ----
+
+
+def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
+                                    look_back_minutes=15, idle_termination_seconds=60 * 30,
+                                    dry_run=False) -> None:
+    """
+    Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
+    We assume here that the relations have no dependencies on each other and just gun it.
+    This will only raise an Exception if one of the created relations was marked as "required".
+
+    Since these relations may have downstream dependents, we make sure to mark skip_copy on
+    any relation from the full set of relations that depends on a source relation that failed
+    to load.
+    """
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+
+    recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
+    cutoff_epoch = timegm(recent_cutoff.utctimetuple())
+    sleep_time = 30
+    checkpoint_time_cutoff = sleep_time + idle_termination_seconds
+    timer = Timer()
+
+    for dispatcher in etl.monitor.MonitorPayload.dispatchers:
+        if isinstance(dispatcher, etl.monitor.DynamoDBStorage):
+            table = dispatcher._get_table()  # Note, not thread-safe, so we can only have one poller
+
+    def poll_worker():
+        """
+        Check DynamoDB for successful extracts
+        Get items from the queue 'to_poll'
+        When the item
+            - is an identifer: poll DynamoDB
+            - is an int: sleep that many seconds
+        """
+        while True:
+            try:
+                item = to_poll.get(block=False)
+            except queue.Empty:
+                logger.info("Poller: Nothing left to poll")
+                return
+
+            if isinstance(item, int):
+                logger.debug("Poller: Reached end of relation list")
+                logger.debug("Poller: Checking that we have fewer than %s tasks left by %s",
+                             checkpoint_queue_size_cutoff, checkpoint_time_cutoff)
+                logger.debug("Poller: %s left to poll, %s ready to load, %s elapsed",
+                             to_poll.qsize(), to_load.qsize(), timer.elapsed)
+                if checkpoint_queue_size_cutoff == to_poll.qsize() and timer.elapsed > checkpoint_time_cutoff:
+                    raise ETLRuntimeError(
+                        "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
+                else:
+                    logger.debug("Poller: Sleeping for %s seconds", item)
+                    time.sleep(item)
+                    if to_poll.qsize():
+                        to_poll.put(item)
+                    continue
+
+            res = table.query(
+                ConsistentRead=True,
+                KeyConditionExpression="#ts > :dt and target = :table",
+                FilterExpression="step = :step and event = :event",
+                ExpressionAttributeNames={"#ts": "timestamp"},
+                ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
+                                           ":step": "extract", ":event": "finish"}
+            )
+            if res['Count'] == 0:
+                to_poll.put(item)
+            else:
+                logger.info("Poller: Recently completed extract found for '%s', marking as ready.", item.identifier)
+                to_load.put(item)
+
+    uncaught_load_worker_exception = threading.Event()
+
+    def load_worker():
+        """
+        Look for a ready-to-load relation from queue 'to_load'
+        If the item
+            - is a relation: load it using connection pool 'pool'
+            - is None: we're giving up, so return
+        """
+        while True:
+            item = to_load.get()
+            if item is None:
+                break
+            logger.info("Loader: Found %s ready to be loaded", item.identifier)
+            try:
+                build_one_relation_using_pool(pool, item, dry_run=dry_run)
+            except (RelationConstructionError, RelationDataError):
+                item.failed = True
+                if item.is_required:
+                    logger.error("Loader: Failed to build required relation '%s':", item.identifier, exc_info=True)
+                else:
+                    logger.warning("Loader: Failed to build relation '%s':", item.identifier, exc_info=True)
+                    item.skip_dependents(relations)
+            except:
+                logger.error("Loader: Uncaught exception in load worker while loading '%s':",
+                             item.identifier, exc_info=True)
+                uncaught_load_worker_exception.set()
+                raise
+
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+        return
+
+    to_poll = queue.Queue()
+    to_load = queue.Queue()
+    threads = []
+    for i in range(max_concurrency):
+        t = threading.Thread(target=load_worker)
+        t.start()
+        threads.append(t)
+
+    for relation in source_relations:
+        logger.debug("Putting %s into poller queue", relation.identifier)
+        to_poll.put(relation)
+    to_poll.put(sleep_time)  # Give DynamoDB a periodic break
+
+    # Track the queue size to detect progress
+    checkpoint_queue_size_cutoff = to_poll.qsize() - 1  # -1 because worker will have one task 'in hand'
+    poller = threading.Thread(target=poll_worker)
+    poller.start()
+    threads.append(poller)
+    logger.info("Poller started; %s left to poll, %s ready to load", to_poll.qsize(), to_load.qsize())
+
+    while poller.is_alive():
+        # Give the poller time to realize it's passed the idle checkpoint if it was sleeping
+        poller.join(idle_termination_seconds + sleep_time)
+        logger.info("Poller joined or checkpoint timeout reached")
+        # Update checkpoint for timer to have made an update
+        checkpoint_time_cutoff = timer.elapsed + idle_termination_seconds
+        logger.info("Current elapsed time: %s; cancel if no progress by %s", timer, checkpoint_time_cutoff)
+        # Update last known queue size
+        checkpoint_queue_size_cutoff = to_poll.qsize()
+        logger.info("Current queue length: %s", checkpoint_queue_size_cutoff)
+
+    # When poller is done, send workers a 'stop' event and wait
+    for i in range(max_concurrency):
+        to_load.put(None)
+    for t in threads:
+        t.join()
+    # If the poller queue wasn't emptied, it exited unhappily
+    if to_poll.qsize():
+        raise ETLRuntimeError("Extract poller exited while to-poll queue was not empty")
+
+    if uncaught_load_worker_exception.is_set():
+        raise ETLRuntimeError("Data source loader thread(s) exited with uncaught exception")
+
+    logger.info("Wrapping up work in %d worker(s): (%s)", max_concurrency, timer)
+    failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
+    if failed_and_required:
+        raise RequiredRelationLoadError(failed_and_required)
+
+    failed = [relation.identifier for relation in source_relations if relation.failed]
+    if failed:
+        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+    logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
 # ---- Section 4: Functions related to control flow ----
@@ -605,9 +820,9 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
         except (RelationConstructionError, RelationDataError):
             relation.failed = True
             if relation.is_required:
-                logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+                logger.error("Failed to build required relation {:x}:".format(relation), exc_info=True)
             else:
-                logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+                logger.warning("Failed to build relation {:x}:".format(relation), exc_info=True)
                 relation.skip_dependents(relations)
 
     failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
@@ -665,11 +880,15 @@ def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
 
 
 def create_relations(relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1,
-                     dry_run=False) -> None:
+                     concurrent_extract=False, dry_run=False) -> None:
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
-    create_source_tables_in_parallel(relations, max_concurrency, dry_run=dry_run)
+
+    if concurrent_extract:
+        create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
+    else:
+        create_source_tables_in_parallel(relations, max_concurrency, dry_run=dry_run)
 
     create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
 
@@ -692,7 +911,8 @@ def select_execution_order(relations: List[RelationDescription], selector: Table
 # ---- Section 5: "Callbacks" (functions that implement commands) ----
 
 def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=True,
-                        max_concurrency=1, wlm_query_slots=1, skip_copy=False, no_rollback=False, dry_run=False):
+                        max_concurrency=1, wlm_query_slots=1, concurrent_extract=False,
+                        skip_copy=False, dry_run=False):
     """
     Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
 
@@ -707,7 +927,7 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
           If it's a source table, use COPY to load data.
           If it's a CTAS with an identity column, create temp table, then move data into final table.
           If it's a CTAS without an identity column, insert values straight into final table.
-    On error: restore the backup (unless asked not to rollback)
+    On error: exit if use_staging, otherwise restore schemas from backup position
 
     N.B. If arthur gets interrupted (eg. because the instance is inadvertently shut down),
     then there will be an incomplete state.
@@ -729,9 +949,10 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
 
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
-        create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+        create_relations(relations, max_concurrency, wlm_query_slots,
+                         concurrent_extract=concurrent_extract, dry_run=dry_run)
     except ETLRuntimeError:
-        if not (no_rollback or use_staging):
+        if not use_staging:
             logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise

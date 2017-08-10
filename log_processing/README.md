@@ -11,6 +11,20 @@ You have to have an Amazon ES domain running. Add the endpoint to `config.py`, s
 
 For more information about Elasticsearch in AWS, see [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
 
+
+### Lambda Permissions
+
+To use the lambda function to automatically upload to ES any log files to show up in S3,
+you will have to create a new role to use with the lambda.
+
+The role must have these permissions:
+* `AWSLambdaBasicExecutionRole`
+* Read permissions for your S3 bucket
+* Write permissions for your ES domain
+
+TODO Create role automatically, `temp-log-parser`, add to config
+
+
 ### Python virtual environment
 
 This code uses Python 3. See the [toplevel README](../README.md) for installation instructions.
@@ -18,7 +32,7 @@ This code uses Python 3. See the [toplevel README](../README.md) for installatio
 In order to run this code locally or to upload it as a lambda function, you have to have a
 virtual environment setup:
 ```shell
-./install.sh venv
+./install_packages.sh venv
 ```
 
 After this, you should be able to run the self-test of the parser:
@@ -26,7 +40,7 @@ After this, you should be able to run the self-test of the parser:
 show_log_examples
 ```
 
-It is not necesary to activate the virtual environment to run the scripts shown below.
+It is not necessary to activate the virtual environment to run the scripts shown below.
 
 ## Searching files locally
 
@@ -40,7 +54,7 @@ log_search ERROR examples
 # local files
 log_search FD1B9A50D12C41C3 arthur.log*
 # remote files (specified by prefix)
-log_search 'finished successfully' s3://example/logs/df-pipeline-id
+log_search 'finished successfully' s3://example-bucket/logs/
 ```
 
 ## Uploading log records from files manually
@@ -62,3 +76,17 @@ log_upload s3://example/logs/df-pipeline-id
 When the ETL is scheduled through the data pipeline, log files are automatically uploaded to S3.
 We take advantage of this to trigger Lambda functions that parse the new log files and
 add the log records to an ES domain.
+
+### Create lambda and configure trigger
+
+Set a trigger to have an S3 `PUT` call the Lambda function
+
+
+### Upload code using deployment package
+
+Create the deployment package:
+```
+./create_deployment.sh venv
+```
+
+See https://aws.amazon.com/blogs/security/how-to-control-access-to-your-amazon-elasticsearch-service-domain/

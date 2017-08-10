@@ -589,10 +589,10 @@ class LoadDataWarehouseCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser,
                                ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"])
-        parser.add_argument("--no-rollback",
-                            help="DEPRECATED: Staging loads don't rollback;\n"
-                            "in case of error, leave warehouse in partially completed state (for debugging)",
-                            action="store_true")
+        parser.add_argument("--concurrent-extract",
+                            help="watch DynamoDB for extract step completion and load source tables as extracts finish"
+                                 " assuming another Arthur in this prefix is running extract (default: %(default)s)",
+                            default=False, action="store_true")
         parser.add_argument("--without-staging-schemas",
                             help="do NOT do all the work in hidden schemas and publish to standard names on completion"
                                  " (default: use staging schemas)",
@@ -610,9 +610,9 @@ class LoadDataWarehouseCommand(SubCommand):
         etl.load.load_data_warehouse(relations, args.pattern,
                                      max_concurrency=args.max_concurrency,
                                      wlm_query_slots=args.wlm_query_slots,
+                                     concurrent_extract=args.concurrent_extract,
                                      skip_copy=args.skip_copy,
                                      use_staging=args.use_staging_schemas,
-                                     no_rollback=args.no_rollback,
                                      dry_run=args.dry_run)
 
 

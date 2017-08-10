@@ -164,16 +164,16 @@ class TableName:
 
     def __format__(self, code):
         """
-        Format name as delimited identifier (by default, or 's') or just as identifier (using 'x').
+        Format name as delimited identifier (by default, or 's') or just as quoted identifier (using 'x').
 
         >>> pu = TableName("public", "users")
         >>> format(pu)
         '"public"."users"'
         >>> format(pu, 'x')
-        'public.users'
+        "'public.users'"
         >>> "SELECT * FROM {:s}".format(pu)
         'SELECT * FROM "public"."users"'
-        >>> "Table '{:x}' contains users".format(pu)  # new style with using formatting code
+        >>> "Table {:x} contains users".format(pu)  # new style with using formatting code
         "Table 'public.users' contains users"
         >>> "Table '{}' contains users".format(pu.identifier)  # old style by accessing property
         "Table 'public.users' contains users"
@@ -184,7 +184,7 @@ class TableName:
         if (not code) or (code == 's'):
             return str(self)
         elif code == 'x':
-            return self.identifier
+            return "'{:s}'".format(self.identifier)
         else:
             raise ValueError("Unknown format code '{}' for {}".format(code, self.__class__.__name__))
 
@@ -258,7 +258,7 @@ class TempTableName(TableName):
     >>> temp.identifier
     '#hello'
     >>> "For SQL: {:s}, for logging: {:x}".format(temp, temp)
-    'For SQL: "#hello", for logging: #hello'
+    'For SQL: "#hello", for logging: \\'#hello\\''
 
     Schema and name comparison in SQL continues to work if you use LIKE for schema names:
     >>> temp.schema
