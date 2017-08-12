@@ -621,6 +621,15 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 # ---- Experimental Section: load during extract ----
 
 
+def _mark_failure(relation, relations):
+    relation.failed = True
+    if relation.is_required:
+        logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+    else:
+        logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+        relation.skip_dependents(relations)
+
+
 def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
                                     look_back_minutes=15, idle_termination_seconds=60 * 30,
                                     dry_run=False) -> None:
@@ -680,16 +689,23 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             res = table.query(
                 ConsistentRead=True,
                 KeyConditionExpression="#ts > :dt and target = :table",
-                FilterExpression="step = :step and event = :event",
+                FilterExpression="step = :step and event <> :event",
                 ExpressionAttributeNames={"#ts": "timestamp"},
                 ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
-                                           ":step": "extract", ":event": "finish"}
+                                           ":step": "extract", ":event": "start"}
             )
             if res['Count'] == 0:
                 to_poll.put(item)
             else:
-                logger.info("Poller: Recently completed extract found for '%s', marking as ready.", item.identifier)
-                to_load.put(item)
+                for extract_payload in res['Items']:
+                    if extract_payload['event'] == 'finish':
+                        logger.info("Poller: Recently completed extract found for '%s', marking as ready.",
+                                    item.identifier)
+                        to_load.put(item)
+                    elif extract_payload['event'] == 'fail':
+                        logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
+                                    item.identifier)
+                        _mark_failure(item, relations)
 
     uncaught_load_worker_exception = threading.Event()
 
@@ -708,12 +724,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             try:
                 build_one_relation_using_pool(pool, item, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError):
-                item.failed = True
-                if item.is_required:
-                    logger.error("Loader: Failed to build required relation '%s':", item.identifier, exc_info=True)
-                else:
-                    logger.warning("Loader: Failed to build relation '%s':", item.identifier, exc_info=True)
-                    item.skip_dependents(relations)
+                _mark_failure(item, relations)
             except:
                 logger.error("Loader: Uncaught exception in load worker while loading '%s':",
                              item.identifier, exc_info=True)
@@ -818,12 +829,7 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
         except concurrent.futures.CancelledError:
             pass
         except (RelationConstructionError, RelationDataError):
-            relation.failed = True
-            if relation.is_required:
-                logger.error("Failed to build required relation {:x}:".format(relation), exc_info=True)
-            else:
-                logger.warning("Failed to build relation {:x}:".format(relation), exc_info=True)
-                relation.skip_dependents(relations)
+            _mark_failure(relation, relations)
 
     failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
     if failed_and_required:
