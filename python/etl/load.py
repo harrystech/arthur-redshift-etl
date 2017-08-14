@@ -161,27 +161,21 @@ class LoadableRelation:
         dependent_relation_identifiers = set(r.identifier for r in dependent_relations)
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
-    def mark_failure(self, relations: List["LoadableRelation"], raise_if_required=False) -> None:
-        """
-        Mark this relation as failed and set dependents (elements from :relations) to skip_copy
-        If raise_if_required, a RequiredRelationLoadError will be raised if this relation is required
-        """
+    def mark_failure(self, relations: List["LoadableRelation"]) -> None:
+        """Mark this relation as failed and set dependents (elements from :relations) to skip_copy"""
         self.failed = True
         if relation.is_required:
-            if raise_if_required:
-                raise RequiredRelationLoadError([self.identifier])
-            else:
-                logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+            logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
         else:
             logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
-            # Skip copy on all dependents
-            dependents = self.find_dependents(relations)
-            for dep in dependents:
-                dep.skip_copy = True
-            identifiers = [dependent.identifier for dependent in dependents]
-            if identifiers:
-                logger.warning("Continuing while leaving %d relation(s) empty: %s",
-                               len(identifiers), join_with_quotes(identifiers))
+        # Skip copy on all dependents
+        dependents = self.find_dependents(relations)
+        for dep in dependents:
+            dep.skip_copy = True
+        identifiers = [dependent.identifier for dependent in dependents]
+        if identifiers:
+            logger.warning("Continuing while leaving %d relation(s) empty: %s",
+                           len(identifiers), join_with_quotes(identifiers))
 
     @property
     def query_stmt(self) -> str:
@@ -868,7 +862,9 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError) as exc:
-                relation.mark_failure(relations, raise_if_required=True)
+                if relation.is_required:
+                    raise RequiredRelationLoadError([self.identifier]) from exc
+                relation.mark_failure(relations)
 
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
