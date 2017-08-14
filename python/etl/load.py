@@ -161,14 +161,23 @@ class LoadableRelation:
         dependent_relation_identifiers = set(r.identifier for r in dependent_relations)
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
-    def skip_dependents(self, relations: List["LoadableRelation"]) -> None:
-        dependents = self.find_dependents(relations)
-        for dep in dependents:
-            dep.skip_copy = True
-        identifiers = [dependent.identifier for dependent in dependents]
-        if identifiers:
-            logger.warning("Continuing while leaving %d relation(s) empty: %s",
-                           len(identifiers), join_with_quotes(identifiers))
+    def mark_failure(self, relations: List["LoadableRelation"], raise_if_required=False) -> None:
+        self.failed = True
+        if relation.is_required:
+            if raise_if_required:
+                raise RequiredRelationLoadError([self.identifier])
+            else:
+                logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+        else:
+            logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+            # Skip copy on all dependents
+            dependents = self.find_dependents(relations)
+            for dep in dependents:
+                dep.skip_copy = True
+            identifiers = [dependent.identifier for dependent in dependents]
+            if identifiers:
+                logger.warning("Continuing while leaving %d relation(s) empty: %s",
+                               len(identifiers), join_with_quotes(identifiers))
 
     @property
     def query_stmt(self) -> str:
@@ -621,15 +630,6 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 # ---- Experimental Section: load during extract ----
 
 
-def _mark_failure(relation, relations):
-    relation.failed = True
-    if relation.is_required:
-        logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
-    else:
-        logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
-        relation.skip_dependents(relations)
-
-
 def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
                                     look_back_minutes=15, idle_termination_seconds=60 * 30,
                                     dry_run=False) -> None:
@@ -705,7 +705,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     elif extract_payload['event'] == 'fail':
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
-                        _mark_failure(item, relations)
+                        item.mark_failure(relations)
 
     uncaught_load_worker_exception = threading.Event()
 
@@ -724,7 +724,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             try:
                 build_one_relation_using_pool(pool, item, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError):
-                _mark_failure(item, relations)
+                item.mark_failure(relations)
             except:
                 logger.error("Loader: Uncaught exception in load worker while loading '%s':",
                              item.identifier, exc_info=True)
@@ -829,7 +829,7 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
         except concurrent.futures.CancelledError:
             pass
         except (RelationConstructionError, RelationDataError):
-            _mark_failure(relation, relations)
+            relation.mark_failure(relations)
 
     failed_and_required = [rel.identifier for rel in source_relations if rel.failed and rel.is_required]
     if failed_and_required:
@@ -864,11 +864,7 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError) as exc:
-                if relation.is_required:
-                    raise RequiredRelationLoadError([relation.identifier]) from exc
-                logger.warning("Failed relation '%s' is not required, ignoring this exception:",
-                               relation.identifier, exc_info=True)
-                relation.skip_dependents(transformations)
+                relation.mark_failure(relations, raise_if_required=True)
 
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
