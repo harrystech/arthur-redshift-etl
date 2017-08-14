@@ -49,6 +49,12 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
+STEP_START = "start"
+STEP_FINISH = "finish"
+STEP_FAIL = "fail"
+STEP_EVENTS = [STEP_START, STEP_FINISH, STEP_FAIL]
+
+
 def trace_key():
     """
     Return a "trace key" suitable to track program execution.  It's most likely unique between invocations.
@@ -116,7 +122,7 @@ class Monitor(metaclass=MetaMonitor):
         step: command that is running, like 'dump', or 'load'
 
     The payloads will have at least the properties of the Monitor instance and:
-        event: one of 'start', 'finish', 'fail'
+        event: one of STEP_EVENTS ('start', 'finish', 'fail')
         timestamp: UTC timestamp
 
     In case of errors, they are added as an array 'errors'.  It is also possible to send
@@ -196,7 +202,7 @@ class Monitor(metaclass=MetaMonitor):
         else:
             logger.info("Starting %s step for '%s'", self.step, self.target)
         self._start_time = utc_now()
-        payload = MonitorPayload(self, "start", self._start_time, extra=self._extra)
+        payload = MonitorPayload(self, STEP_START, self._start_time, extra=self._extra)
         payload.emit(dry_run=self._dry_run)
         return self
 
@@ -205,10 +211,10 @@ class Monitor(metaclass=MetaMonitor):
         seconds = elapsed_seconds(self._start_time, self._end_time)
         if exc_type is None:
             logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, "finish", self._end_time, elapsed=seconds, extra=self._extra)
+            payload = MonitorPayload(self, STEP_FINISH, self._end_time, elapsed=seconds, extra=self._extra)
         else:
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, "fail", self._end_time, elapsed=seconds, extra=self._extra)
+            payload = MonitorPayload(self, STEP_FAIL, self._end_time, elapsed=seconds, extra=self._extra)
             payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
@@ -438,7 +444,7 @@ class MemoryStorage(PayloadDispatcher):
                 indices[name] = index
             elif index["current"] > indices[name]["current"]:
                 indices[name].update(index)
-            if payload["event"] != "start":
+            if payload["event"] != STEP_START:
                 counter[name] += 1
             indices[name]["counter"] = counter[name]
         indices_as_list = [indices[name] for name in sorted(indices)]
@@ -448,7 +454,7 @@ class MemoryStorage(PayloadDispatcher):
         self._drain_queue()
         if event_id is None:
             events_as_list = sorted((self.events[key] for key in self.events),
-                                    key=lambda p: (2 if p["event"] == "start" else 1, p["timestamp"]),
+                                    key=lambda p: (2 if p["event"] == STEP_START else 1, p["timestamp"]),
                                     reverse=True)
         else:
             events_as_list = [event for event in self.events.values() if event["monitor_id"] == event_id]
