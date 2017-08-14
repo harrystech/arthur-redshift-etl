@@ -37,6 +37,7 @@
             "minItems": 1
         },
         "path_template" : {
+            "description": "'Templates' used in static sources to configure their effective prefix",
             "type": "string",
             "pattern": "^[(\\w+/)|(\\${\\w+})]+$"
         },
@@ -76,13 +77,17 @@
             "additionalProperties": false
         },
         "cluster_group": {
+            "description": "Either the master or core group for an EMR cluster",
             "type": "object",
             "properties": {
-                "instance-type": { "type": "string" },
-                "instance-count": { "type": "integer" },
-                "managed-security-group": { "type": "string" }
+                "instance_type": { "type": "string" },
+                "instance_count": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "managed_security_group": { "type": "string" }
             },
-            "required": [ "instance-type", "managed-security-group" ],
+            "required": [ "instance_type", "managed_security_group" ],
             "additionalProperties": false
         },
         "aws_arn": {
@@ -136,7 +141,13 @@
                     },
                     "uniqueItems": true
                 },
-                "required_in_full_load": { "$ref": "#/definitions/glob_pattern_list" }
+                "required_for_success": {
+                    "description": "List of patterns to identify 'required' relations whose fault will stop the ETL",
+                    "oneOf": [
+                        { "$ref": "#/definitions/glob_pattern_list" },
+                        { "type": "boolean" }
+                    ]
+                }
             },
             "required": [ "admin_access", "etl_access", "reference_warehouse_access", "owner" ],
             "additionalProperties": false
@@ -174,7 +185,7 @@
             "additionalProperties": false
         },
         "s3": {
-            "description": "DEPRECATED use setting in data_lake",
+            "description": "DEPRECATED use setting in object_store",
             "type": "object",
             "properties": {
                 "bucket_name": { "$ref": "#/definitions/identifier" }
@@ -183,7 +194,24 @@
             "additionalProperties": false
         },
         "data_lake": {
-            "description": "Location and attributes of our data lake",
+            "description": "DEPRECATED use setting in object_store",
+            "type": "object",
+            "properties": {
+                "s3": {
+                    "type": "object",
+                    "properties": {
+                        "bucket_name": { "$ref": "#/definitions/identifier" }
+                    },
+                    "required": [ "bucket_name" ],
+                    "additionalProperties": false
+                },
+                "iam_role": { "$ref": "#/definitions/aws_arn" }
+            },
+            "required": [ "s3", "iam_role" ],
+            "additionalProperties": false
+        },
+        "object_store": {
+            "description": "Location and attributes for (temporary) storage",
             "type": "object",
             "properties": {
                 "s3": {
@@ -202,42 +230,39 @@
         "resources": {
             "type": "object",
             "properties": {
-                "key-name": { "type": "string" },
+                "key_name": { "type": "string" },
                 "VPC": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "string" },
-                        "subnet": { "type": "string" },
-                        "whitelist-security-group": { "type": "string" },
-                        "region": { "type": "string" }
+                        "public_subnet": { "type": "string" },
+                        "whitelist_security_group": { "type": "string" },
+                        "region": { "type": "string" },
+                        "account": { "type": "string" }
                     },
-                    "required": [ "id", "subnet", "whitelist-security-group", "region" ],
+                    "required": [ "id", "public_subnet", "whitelist_security_group", "region" ],
                     "additionalProperties": false
                 },
                 "EC2": {
                     "type": "object",
                     "properties": {
-                        "instance-type": { "type": "string" },
-                        "image-id": { "type": "string" },
-                        "public-security-group": { "type": "string" },
-                        "iam-instance-profile": { "type": "string" }
+                        "instance_type": { "type": "string" },
+                        "image_id": { "type": "string" },
+                        "public_security_group": { "type": "string" },
+                        "iam_instance_profile": { "type": "string" }
                     },
-                    "required": [ "instance-type", "image-id", "public-security-group", "iam-instance-profile" ],
+                    "required": [ "instance_type", "image_id", "public_security_group", "iam_instance_profile" ],
                     "additionalProperties": false
                 },
                 "EMR": {
                     "type": "object",
                     "properties": {
-                        "release-label": { "type": "string" },
-                        "applications": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "uniqueItems": true,
-                            "minItems": 1
-                        },
+                        "release_label": { "type": "string" },
                         "master": { "$ref": "#/definitions/cluster_group" },
                         "core": { "$ref": "#/definitions/cluster_group" }
-                    }
+                    },
+                    "required": [ "release_label", "master", "core" ],
+                    "additionalProperties": false
                 },
                 "SNS": {
                     "type": "object",
@@ -260,7 +285,7 @@
                     "additionalProperties": false
                 }
             },
-            "required": [ "key-name", "VPC", "EC2", "EMR" ],
+            "required": [ "key_name", "VPC", "EC2", "EMR" ],
             "additionalProperties": false
         },
         "pipelines": {
@@ -289,6 +314,7 @@
                         "capacity": { "type": "integer" },
                         "region": { "type": "string" }
                     },
+                    "required": [ "table_prefix", "capacity", "region" ],
                     "additionalProperties": false
                 },
                 "postgresql": {
@@ -297,12 +323,16 @@
                         "table_prefix": { "type": "string" },
                         "write_access": { "type": "string" }
                     },
+                    "required": [ "table_prefix", "write_access" ],
                     "additionalProperties": false
                 }
             },
             "additionalProperties": false
         },
-        "required_in_full_load": { "$ref": "#/definitions/glob_pattern_list" }
+        "required_in_full_load": {
+            "description": "DEPRECATED USE 'required_for_success' instead",
+            "$ref": "#/definitions/glob_pattern_list"
+        }
     },
     "required": [ "data_warehouse", "sources", "type_maps" ],
     "additionalProperties": false

@@ -38,8 +38,6 @@ from etl.extract.static import StaticExtractor
 from etl.names import join_with_quotes
 from etl.relation import RelationDescription
 
-__all__ = ["extract_upstream_sources"]
-
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 

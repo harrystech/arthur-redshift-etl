@@ -31,11 +31,12 @@ import etl.names
 import etl.db
 import etl.pipeline
 import etl.relation
+import etl.render_template
 import etl.selftest
 import etl.sync
 import etl.unload
 import etl.validate
-from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentsError
+from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ def execute_or_bail():
     timer = Timer()
     try:
         yield
-    except InvalidArgumentsError as exc:
+    except InvalidArgumentError as exc:
         logger.exception("ETL never got off the ground:")
         croak(exc, 1)
     except ETLError as exc:
@@ -110,18 +111,18 @@ def run_arg_as_command(my_name="arthur.py"):
             croak(exc, 1)
 
         with execute_or_bail():
-            settings = etl.config.load_config(args.config)
-            setattr(args, "bucket_name", etl.config.get_data_lake_config("s3")["bucket_name"])
+            etl.config.load_config(args.config)
 
+            setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
-                # Only commands which require an environment should require a monitor.
-                etl.monitor.set_environment(args.prefix,
-                                            dynamodb_settings=settings["etl_events"].get("dynamodb", {}),
-                                            postgresql_settings=settings["etl_events"].get("postgresql", {}))
+                etl.config.set_config_value("object_store.s3.prefix", args.prefix)
+                etl.monitor.set_environment(args.prefix)
 
             dw_config = etl.config.get_dw_config()
             if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
                 args.pattern.base_schemas = [s.name for s in dw_config.schemas]
+
+            # TODO Remove dw_config and let subcommands handle it!
             args.func(args, dw_config)
 
 
@@ -257,8 +258,12 @@ def build_full_parser(prog_name):
             # Helper commands
             CreateSchemasCommand, PromoteSchemasCommand,
             ListFilesCommand, PingCommand,
-            ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand, ShowPipelinesCommand,
-            EventsQueryCommand, SelfTestCommand]:
+            ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
+            # Environment commands
+            RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
+            EventsQueryCommand,
+            # Development commands
+            SelfTestCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -277,7 +282,7 @@ def add_standard_arguments(parser, options):
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
         parser.add_argument("-p", "--prefix",
-                            help="select prefix in S3 bucket (default: '%(default)s')",
+                            help="select prefix in S3 bucket (default unless value is set in settings: '%(default)s')",
                             default=etl.config.env.get_default_prefix())
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
@@ -552,7 +557,7 @@ class ExtractToS3Command(SubCommand):
 
     def callback(self, args, config):
         if args.max_partitions < 1:
-            raise InvalidArgumentsError("Option for max partitions must be >= 1")
+            raise InvalidArgumentError("Option for max partitions must be >= 1")
         if args.extractor not in ("sqoop", "spark", "manifest-only"):
             raise ETLSystemError("bad extractor value: {}".format(args.extractor))
 
@@ -602,7 +607,7 @@ class LoadDataWarehouseCommand(SubCommand):
         try:
             args.pattern.selected_schemas()
         except ValueError as exc:
-            raise InvalidArgumentsError(exc) from exc
+            raise InvalidArgumentError(exc) from exc
 
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
@@ -871,6 +876,62 @@ class ShowUpstreamDependenciesCommand(SubCommand):
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
         etl.load.show_upstream_dependencies(relations, args.pattern)
+
+
+class RenderTemplateCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("render_template",
+                         "render selected template by filling in configuration settings",
+                         "Print template after replacing placeholders (like '${resources.VPC.id}') with values"
+                         " from the settings files")
+
+    def add_arguments(self, parser):
+        parser.set_defaults(log_level="CRITICAL")
+        add_standard_arguments(parser, ["prefix"])
+        group = parser.add_mutually_exclusive_group(required=True)
+        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("template", help="name of template", nargs="?")
+        parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
+
+    def callback(self, args, config):
+        if args.list:
+            etl.render_template.list_templates(compact=args.compact)
+        elif args.template:
+            etl.render_template.render(args.template, compact=args.compact)
+
+
+class ShowValueCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("show_value",
+                         "show variable setting",
+                         "Print value of variable based on the configuration files.")
+
+    def add_arguments(self, parser):
+        parser.set_defaults(log_level="CRITICAL")
+        add_standard_arguments(parser, ["prefix"])
+        parser.add_argument("name", help="print the value for the chosen setting")
+
+    def callback(self, args, config):
+        etl.render_template.show_value(args.name)
+
+
+class ShowVarsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("show_vars",
+                         "show variables available for template files",
+                         "Print list of variables and their values based on the configuration files."
+                         " These variables can be used with ${name} substitutions in templates.")
+
+    def add_arguments(self, parser):
+        parser.set_defaults(log_level="CRITICAL")
+        add_standard_arguments(parser, ["prefix"])
+        parser.add_argument("name", nargs="?", help="print just the value for the chosen setting")
+
+    def callback(self, args, config):
+        etl.render_template.show_vars(args.name)
 
 
 class ShowPipelinesCommand(SubCommand):

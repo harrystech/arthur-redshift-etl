@@ -50,7 +50,13 @@ class SchemaValidationError(ETLConfigError):
     pass
 
 
-class InvalidArgumentsError(ETLRuntimeError):
+class MissingValueTemplateError(ETLSystemError):
+    """
+    Exception when a template cannot be rendered because a configuration setting is missing.
+    """
+
+
+class InvalidArgumentError(ETLRuntimeError):
     """
     Exception when arguments are detected to be invalid by the command callback
     """

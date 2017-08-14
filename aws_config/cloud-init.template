@@ -1,5 +1,0 @@
-#cloud-config
-runcmd:
- - [ yum, -y, update, aws-cli ]
- - [ /usr/bin/aws, s3, cp, "s3://#{bucket_name}/#{etl_environment}/bin/bootstrap.sh", "/tmp/bootstrap.sh" ]
- - [ sudo, -u, ec2-user, bash, "/tmp/bootstrap.sh", "#{bucket_name}", "#{etl_environment}" ]

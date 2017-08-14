@@ -12,19 +12,15 @@ set -e -u
 # === Command line args ===
 
 show_usage_and_exit() {
-    echo "Usage: $0 [-i] <bucket_name> [<environment>]"
+    echo "Usage: $0 [<environment>]"
     echo "The environment defaults to \"$DEFAULT_PREFIX\"."
     exit ${1-0}
 }
 
-while getopts ":hi" opt; do
+while getopts ":h" opt; do
   case $opt in
     h)
       show_usage_and_exit
-      ;;
-    i)
-      echo "\nThe option '-i' is now default and need no longer be supplied.\n"
-      shift
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -33,7 +29,7 @@ while getopts ":hi" opt; do
   esac
 done
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+if [[ $# -gt 1 ]]; then
     show_usage_and_exit 1
 fi
 
@@ -41,23 +37,23 @@ set -x
 
 # === Basic configuration ===
 
-PROJ_BUCKET="$1"
-PROJ_ENVIRONMENT="${2-$DEFAULT_PREFIX}"
+PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
+PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${2-$DEFAULT_PREFIX}" object_store.s3.prefix )
 
-CLUSTER_RELEASE_LABEL="emr-5.3.0"
+CLUSTER_RELEASE_LABEL=$( arthur.py show_value resources.EMR.release_label )
 CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
-CLUSTER_REGION="us-east-1"
+CLUSTER_REGION=$( arthur.py show_value resources.VPC.region )
 
 # === Derived configuration ===
 
 CLUSTER_LOGS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, `date +'%Y-%m-%d %H:%M'`)"
-
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-    AWS_TAGS="DataWarehouseEnvironment=Production"
+  ENV_NAME="production"
 else
-    AWS_TAGS="DataWarehouseEnvironment=Development"
+  ENV_NAME="development"
 fi
+AWS_TAGS="Key=user:project,Value=data-warehouse Key=user:env,Value=$ENV_NAME"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -71,28 +67,14 @@ fi
 
 # === Fill in config templates ===
 
-BINDIR=`dirname $0`
-TOPDIR=`\cd $BINDIR/.. && \pwd`
-CONFIG_SOURCE="$TOPDIR/aws_config"
-CONFIG_DIR="/tmp/cluster_config_${USER}$$"
-if [[ -d "$CONFIG_DIR" ]]; then
-    rm -f "$CONFIG_DIR"/*
-else
-    mkdir "$CONFIG_DIR"
-fi
-
-for JSON_IN_FILE in "$CONFIG_SOURCE/application_env.json" \
-                 "$CONFIG_SOURCE/bootstrap_actions.json"
-do
-    JSON_OUT_FILE="$CONFIG_DIR"/`basename $JSON_IN_FILE`
-    sed -e "s,#{bucket_name},$PROJ_BUCKET,g" \
-        -e "s,#{etl_environment},$PROJ_ENVIRONMENT,g" \
-        "$JSON_IN_FILE" > "$JSON_OUT_FILE"
-done
+INSTANCE_GROUPS_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact instance_groups )
+APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact application_env )
+EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact ec2_attributes )
+BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact bootstrap_actions )
 
 # ===  Start cluster ===
 
-CLUSTER_ID_FILE="$CONFIG_DIR/cluster_id_${USER}$$.json"
+CLUSTER_ID_FILE="/tmp/cluster_id_${USER}$$.json"
 
 aws emr create-cluster \
         --name "$CLUSTER_NAME" \
@@ -102,11 +84,11 @@ aws emr create-cluster \
         --log-uri "$CLUSTER_LOGS" \
         --enable-debugging \
         --region "$CLUSTER_REGION" \
-        --instance-groups "file://$CONFIG_SOURCE/instance_groups.json" \
+        --instance-groups "$INSTANCE_GROUPS_JSON" \
         --use-default-roles \
-        --configurations "file://$CONFIG_DIR/application_env.json" \
-        --ec2-attributes "file://$CONFIG_SOURCE/ec2_attributes.json" \
-        --bootstrap-actions "file://$CONFIG_DIR/bootstrap_actions.json" \
+        --configurations "$APPLICATION_ENV_JSON" \
+        --ec2-attributes "$EC2_ATTRIBUTES_JSON" \
+        --bootstrap-actions "$BOOTSTRAP_ACTIONS_JSON" \
         --no-auto-terminate --termination-protected \
         | tee "$CLUSTER_ID_FILE"
 

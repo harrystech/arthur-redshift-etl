@@ -7,7 +7,7 @@
                 "Configurations": [],
                 "Properties": {
                     "PYSPARK_PYTHON": "/tmp/redshift_etl/venv/bin/python3",
-                    "ETL_ENVIRONMENT": "#{etl_environment}"
+                    "ETL_ENVIRONMENT": "${object_store.s3.prefix}"
                 }
             }
         ],

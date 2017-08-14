@@ -1,0 +1,10 @@
+{
+    "KeyName": "${resources.key_name}",
+    "SubnetId": "${resources.VPC.public_subnet}",
+    "EmrManagedMasterSecurityGroup": "${resources.EMR.master.managed_security_group}",
+    "EmrManagedSlaveSecurityGroup": "${resources.EMR.core.managed_security_group}",
+    "AdditionalMasterSecurityGroups": [
+        "${resources.EC2.public_security_group}",
+        "${resources.VPC.whitelist_security_group}"
+    ]
+}

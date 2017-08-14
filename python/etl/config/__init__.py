@@ -12,6 +12,7 @@ import logging.config
 import os
 import os.path
 import sys
+from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
@@ -25,20 +26,13 @@ from etl.config.dw import DataWarehouseConfig
 from etl.errors import SchemaInvalidError, SchemaValidationError
 import etl.monitor
 
-__all__ = [
-    "package_version",  # retrieve ETL version from package information
-    "configure_logging", "load_config",  # should be called once at app start
-    "get_dw_config", "get_data_lake_config", "etl_tmp_dir",  # retrieve config after load
-    "validate_with_schema"  # utility to validate schema
-]
-
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-# Global config objects - always use accessors
+# Global config objects - always use accessors!
 _dw_config = None  # type: Optional[DataWarehouseConfig]
-_data_lake_config = None  # type: Optional[Dict[str, Any]]
+_mapped_config = None  # type: Optional[Dict[str, str]]
 
 # Local temp directory used for bootstrap, temp files, etc.
 ETL_TMP_DIR = "/tmp/redshift_etl"
@@ -53,13 +47,35 @@ def get_dw_config():
     return _dw_config
 
 
-def get_data_lake_config(propname: str=None):
-    if _data_lake_config is None:
-        return None
-    elif propname is not None:
-        return _data_lake_config[propname]
-    else:
-        return _data_lake_config
+def get_config_value(name: str) -> Optional[str]:
+    return _mapped_config.get(name)
+
+
+def set_config_value(name: str, value: str) -> None:
+    _mapped_config.setdefault(name, value)
+
+
+def get_config_map() -> Dict[str, str]:
+    return dict(_mapped_config)
+
+
+def _flatten_hier(prefix, props):
+    assert isinstance(props, dict), "oops, this should only be called with dicts, got {}".format(type(props))
+    for key in sorted(props):
+        full_key = "{}.{}".format(prefix, key)
+        if isinstance(props[key], dict):
+            for sub_key, sub_prop in _flatten_hier(full_key, props[key]):
+                yield sub_key, sub_prop
+        else:
+            yield full_key, props[key]
+
+
+def _build_config_map(settings):
+    mapping = OrderedDict()
+    for section in {"object_store", "resources", "etl_events"}.intersection(settings):
+        for name, value in _flatten_hier(section, settings[section]):
+            mapping[name] = value
+    return mapping
 
 
 def etl_tmp_dir(path: str) -> str:
@@ -161,14 +177,13 @@ def yield_config_files(config_files: Sequence[str], default_file: str=None) -> I
             yield filename
 
 
-def load_config(config_files: Sequence[str], default_file: str="default_settings.yaml") -> dict:
+def load_config(config_files: Sequence[str], default_file: str="default_settings.yaml") -> None:
     """
-    Load settings and environment from config files (starting with the default if provided).
+    Load settings and environment from config files (starting with the default if provided),
+    set our global settings.
 
-    If the config "file" is actually a directory, (try to) read all the
-    files in that directory.
-
-    The settings are validated against their schema before being returned.
+    The settings are validated against their schema.
+    If the config "file" is actually a directory, (try to) read all the files in that directory.
     """
     settings = dict()  # type: Dict[str, Any]
     count_settings = 0
@@ -187,19 +202,19 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     validate_with_schema(settings, "settings.schema")
 
-    global _data_lake_config
-    _data_lake_config = settings.get("data_lake")
-    # FIXME Clean this up after v0.23.0! For now, copy from old locations
-    if _data_lake_config is None:
-        _data_lake_config = {
-            "s3": {"bucket_name": settings["s3"]["bucket_name"]},
-            "iam_role": settings["data_warehouse"]["iam_role"]
-        }
+    # TODO Clean up this backwards-compatible code
+    s3_bucket_name = settings.get("data_lake", {}).get("s3", {}).get("bucket_name")
+    if s3_bucket_name is not None:
+        settings.setdefault("object_store", {"s3": {"bucket_name": s3_bucket_name}})
+    iam_role = settings.get("data_lake", {}).get("iam_role")
+    if iam_role is not None:
+        settings.setdefault("object_store", {"iam_role": iam_role})
+
+    global _mapped_config
+    _mapped_config = _build_config_map(settings)
 
     global _dw_config
     _dw_config = etl.config.dw.DataWarehouseConfig(settings)
-
-    return settings
 
 
 def validate_with_schema(obj: dict, schema_name: str) -> None:

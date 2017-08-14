@@ -1,0 +1,26 @@
+{
+    "IamInstanceProfile": { "Name": "${resources.EC2.iam_instance_profile}" },
+    "ImageId": "${resources.EC2.image_id}",
+    "InstanceInitiatedShutdownBehavior": "terminate",
+    "InstanceType": "${resources.EC2.instance_type}",
+    "KeyName": "${resources.key_name}",
+    "MaxCount": 1,
+    "MinCount": 1,
+    "Monitoring": { "Enabled": true },
+    "NetworkInterfaces": [
+        { "DeviceIndex": 0, "AssociatePublicIpAddress": true }
+    ],
+    "SecurityGroupIds": [
+        "${resources.EC2.public_security_group}",
+        "${resources.VPC.whitelist_security_group}"
+    ],
+    "SubnetId": "${resources.VPC.public_subnet}",
+    "TagSpecifications": [
+        {
+            "ResourceType": "instance",
+            "Tags": [
+                { "Key": "user:config", "Value": "ec2_instance.json" }
+            ]
+        }
+    ]
+}

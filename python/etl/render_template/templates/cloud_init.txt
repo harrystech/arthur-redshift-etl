@@ -1,0 +1,5 @@
+#cloud-config
+runcmd:
+ - [ yum, -y, update, aws-cli ]
+ - [ /usr/bin/aws, s3, cp, "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh", "/tmp/bootstrap.sh" ]
+ - [ sudo, -u, ec2-user, bash, "/tmp/bootstrap.sh", "${object_store.s3.bucket_name}", "${object_store.s3.prefix}" ]

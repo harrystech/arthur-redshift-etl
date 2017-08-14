@@ -17,7 +17,8 @@ _arthur_completion()
                   extract load upgrade update unload
                   create_schemas promote_schemas
                   show_downstream_dependents show_dependents show_upstream_dependencies
-                  show_pipelines selftest self-test
+                  render_template show_value show_vars show_pipelines
+                  selftest self-test
                   --submit --config"
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;

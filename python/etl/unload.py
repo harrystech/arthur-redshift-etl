@@ -89,8 +89,7 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
 
 
 def unload_relation(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema,
-                    aws_iam_role: str, prefix: str, index: dict,
-                    allow_overwrite=False, dry_run=False) -> None:
+                    prefix: str, index: dict, allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
@@ -99,6 +98,7 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
     schema_table_name = "{0.schema}-{0.table}".format(relation.target_table_name)
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
+    aws_iam_role = etl.config.get_config_value("object_store.iam_role")
 
     with etl.monitor.Monitor(relation.identifier,
                              "unload",
@@ -144,7 +144,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
                 index = {"current": i+1, "final": len(relation_target_tuples)}
-                unload_relation(conn, relation, unload_schema, config.iam_role, prefix, index,
+                unload_relation(conn, relation, unload_schema, prefix, index,
                                 allow_overwrite=allow_overwrite, dry_run=dry_run)
             except Exception as exc:
                 if keep_going:

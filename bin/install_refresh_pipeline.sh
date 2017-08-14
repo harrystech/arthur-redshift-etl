@@ -17,17 +17,6 @@ PROJ_ENVIRONMENT="$2"
 START_DATE_TIME="$3"
 OCCURRENCES="$4"
 
-BINDIR=`dirname $0`
-TOPDIR=`\cd $BINDIR/.. && \pwd`
-CONFIG_SOURCE="$TOPDIR/aws_config"
-
-if [[ ! -d "$CONFIG_SOURCE" ]]; then
-    echo "Cannot find configuration files (aws_config)"
-    exit 1
-else
-    echo "Using local configuration files in $CONFIG_SOURCE"
-fi
-
 shift 4
 SELECTION="$@"
 C_S_SELECTION="$(join_by ',' $SELECTION)"
@@ -42,18 +31,24 @@ fi
 set -x
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-    PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Production"
+  ENV_NAME="production"
 else
-    PIPELINE_TAGS="key=DataWarehouseEnvironment,value=Development"
+  ENV_NAME="development"
 fi
+# Note: key/value are lower-case keywords here.
+AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
+
 PIPELINE_NAME="ETL Refresh Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+
+PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" refresh_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
 aws datapipeline create-pipeline \
     --unique-id refresh-etl-pipeline \
     --name "$PIPELINE_NAME" \
-    --tags "$PIPELINE_TAGS" \
+    --tags "$AWS_TAGS" \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
@@ -65,7 +60,7 @@ if [[ -z "$PIPELINE_ID" ]]; then
 fi
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition file://${CONFIG_SOURCE}/refresh_pipeline.json \
+    --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
