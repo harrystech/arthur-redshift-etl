@@ -162,6 +162,10 @@ class LoadableRelation:
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
     def mark_failure(self, relations: List["LoadableRelation"], raise_if_required=False) -> None:
+        """
+        Mark this relation as failed and set dependents (elements from :relations) to skip_copy
+        If raise_if_required, a RequiredRelationLoadError will be raised if this relation is required
+        """
         self.failed = True
         if relation.is_required:
             if raise_if_required:
@@ -631,7 +635,7 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 
 
 def create_source_tables_when_ready(relations: List[LoadableRelation], max_concurrency=1,
-                                    look_back_minutes=15, idle_termination_seconds=60 * 30,
+                                    look_back_minutes=15, idle_termination_seconds=60 * 60,
                                     dry_run=False) -> None:
     """
     Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
@@ -692,17 +696,17 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 FilterExpression="step = :step and event <> :event",
                 ExpressionAttributeNames={"#ts": "timestamp"},
                 ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
-                                           ":step": "extract", ":event": "start"}
+                                           ":step": "extract", ":event": etl.monitor.STEP_START}
             )
             if res['Count'] == 0:
                 to_poll.put(item)
             else:
                 for extract_payload in res['Items']:
-                    if extract_payload['event'] == 'finish':
+                    if extract_payload['event'] == etl.monitor.STEP_FINISH:
                         logger.info("Poller: Recently completed extract found for '%s', marking as ready.",
                                     item.identifier)
                         to_load.put(item)
-                    elif extract_payload['event'] == 'fail':
+                    elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
                         item.mark_failure(relations)
