@@ -38,8 +38,7 @@ _mapped_config = None  # type: Optional[Dict[str, str]]
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
-# TODO rename package to "redshift_etl"
-def package_version(package_name="redshift-etl"):
+def package_version(package_name="redshift_etl"):
     return "{} v{}".format(package_name, pkg_resources.get_distribution(package_name).version)
 
 

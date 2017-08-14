@@ -93,10 +93,10 @@ pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
 # This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
 # so that the sort command can split correctly on '.' with the -t option.
 # We then use the major (3), minor (4) and patch (5) version to sort numerically in reverse order.
-LATEST_TAR_FILE=`ls -1 ./jars/redshift-etl*tar.gz |
-    sed 's,redshift-etl-,redshift-etl.,' |
+LATEST_TAR_FILE=`ls -1 ./jars/redshift_etl*tar.gz |
+    sed 's,redshift_etl-,redshift_etl.,' |
     sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |
-    sed 's,redshift-etl\.,redshift-etl-,' |
+    sed 's,redshift_etl\.,redshift_etl-,' |
     head -1`
 pip3 install --upgrade "$LATEST_TAR_FILE" --disable-pip-version-check
 

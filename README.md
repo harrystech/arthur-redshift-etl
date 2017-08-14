@@ -1,22 +1,20 @@
 **ETL Code for Loading Data Into a Redshift-based Data Warehouse**
 
 ```
-  _    _                       _       _____          _     _     _  __ _     ______ _______ _
- | |  | |                     ( )     |  __ \        | |   | |   (_)/ _| |   |  ____|__   __| |
- | |__| | __ _ _ __ _ __ _   _|/ ___  | |__) |___  __| |___| |__  _| |_| |_  | |__     | |  | |
- |  __  |/ _` | '__| '__| | | | / __| |  _  // _ \/ _` / __| '_ \| |  _| __| |  __|    | |  | |
- | |  | | (_| | |  | |  | |_| | \__ \ | | \ \  __/ (_| \__ \ | | | | | | |_  | |____   | |  | |____
- |_|  |_|\__,_|_|  |_|   \__, | |___/ |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
-                          __/ |
-                         |___/
+                _   _                  _____          _     _     _  __ _     ______ _______ _
+     /\        | | | |                |  __ \        | |   | |   (_)/ _| |   |  ____|__   __| |
+    /  \   _ __| |_| |__  _   _ _ __  | |__) |___  __| |___| |__  _| |_| |_  | |__     | |  | |
+   / /\ \ | '__| __| '_ \| | | | '__| |  _  // _ \/ _` / __| '_ \| |  _| __| |  __|    | |  | |
+  / ____ \| |  | |_| | | | |_| | |    | | \ \  __/ (_| \__ \ | | | | | | |_  | |____   | |  | |____
+ /_/    \_\_|   \__|_| |_|\__,_|_|    |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
 ```
 
 This README outlines how to get started with the ETL.
 This includes information about setting up _Arthur_ which is the driver for ETL activities.
 
-You are probably (also) looking for the [Wiki](https://github.com/harrystech/harrys-redshift-etl/wiki) pages,
+You are probably (also) looking for the [Wiki](https://github.com/harrystech/arthur-redshift-etl/wiki) pages,
 which include a lot more information about the ETL and what it does (and why it does what it does).
-And if something appears amiss, check out the [issues page](https://github.com/harrystech/harrys-redshift-etl/issues).
+And if something appears amiss, check out the [issues page](https://github.com/harrystech/arthur-redshift-etl/issues).
 
 # Getting ready to run ETLs
 
@@ -130,7 +128,7 @@ workon dw
 
 Use the same name for the virtual env that is the name of the repo:
 ```shell
-mkvirtualenv --python=python3 harrys-redshift-etl
+mkvirtualenv --python=python3 arthur-redshift-etl
 ```
 This will make it easier later when you're in the directory to say:
 ```
@@ -143,7 +141,7 @@ pip3 install --requirement ./requirements.txt
 python3 setup.py develop
 
 # Make sure to check the path below
-echo "source `\cd ../harrys-redshift-etl/etc && \pwd`/arthur_completion.sh" >> $VIRTUAL_ENV/bin/postactivate
+echo "source `\cd ../arthur-redshift-etl/etc && \pwd`/arthur_completion.sh" >> $VIRTUAL_ENV/bin/postactivate
 ```
 
 Jumping ahead bit, if you want to use a default environment other than your login name, use something like this:
@@ -212,7 +210,7 @@ EOF
 The best approach is to have a separate repo for your data warehouse that contains the configuration files
 and all the table design files and transformations.  The documentation will in many places assume
 that you have a "*sibling*" repo so that when within the repo for your local data warehouse (with
-configuration, credentials, and table designs), you can simply use `../harrys-redshift-etl/` to find
+configuration, credentials, and table designs), you can simply use `../arthur-redshift-etl/` to find
 your way back to this ETL code.
 
 ### Redshift cluster and users
@@ -228,7 +226,7 @@ folder in S3.
 
 ### Sources
 
-See the [Wiki](https://github.com/harrystech/harrys-redshift-etl/wiki) pages about
+See the [Wiki](https://github.com/harrystech/arthur-redshift-etl/wiki) pages about
 a description of configurations.
 
 ## Running the ETL (`arthur.py`)
@@ -493,8 +491,8 @@ running code in development cluster first should go through a release candidate.
 
 * Test then merge the PR with your release candidate into `next`.
 
-* Create a release under [Releases](https://github.com/harrystech/harrys-redshift-etl/releases).
-    * Create a new release and set the release version, e.g. `v0.22.0`.
+* Create a release under [Releases](https://github.com/harrystech/arthur-redshift-etl/releases).
+    * Create a new release and set the release version, e.g. `v1.2.0`.
     * Copy the comments from the PR where you collected all the changes into the release notes.
     * Save the release which will add the tag of the release.
 
@@ -531,7 +529,7 @@ source etc/arthur_completion.sh
 
 If you are normally in the repo for your data warehouse configuration, then this might be better:
 ```shell
-source ../harrys-redshift-etl/etc/arthur_completion.sh
+source ../arthur-redshift-etl/etc/arthur_completion.sh
 ```
 
 And if you're using `virtualenv-wrapper`, then you should make this part of the activation sequence.

@@ -2,11 +2,11 @@ from setuptools import find_packages, setup
 
 
 setup(
-    name="etl-log-processing",
+    name="etl_log_processing",
     version="0.1.0",
     author="Harry's Data Engineering and Contributors",
     license="MIT",
-    url="https://github.com/harrystech/harrys-redshift-etl",
+    url="https://github.com/harrystech/arthur-redshift-etl",
     packages=find_packages(),
     entry_points={
         "console_scripts": [

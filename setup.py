@@ -2,13 +2,13 @@ from setuptools import find_packages, setup
 
 
 setup(
-    name="redshift-etl",
-    version="0.28.0",
+    name="redshift_etl",
+    version="1.0.0",
     author="Harry's Data Engineering and Contributors",
     description="ETL code to ferry data from PostgreSQL databases (or S3 files) to Redshift cluster",
     license="MIT",
     keywords="redshift postgresql ETL ELT extract transform load",
-    url="https://github.com/harrystech/harrys-redshift-etl",
+    url="https://github.com/harrystech/arthur-redshift-etl",
     package_dir={"": "python"},
     packages=find_packages("python"),
     package_data={

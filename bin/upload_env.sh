@@ -68,7 +68,7 @@ echo "date=`date '+%Y-%m-%d %H:%M:%S%z'`" >> "$RELEASE_FILE"
 cat "$RELEASE_FILE" > "python/etl/config/release.txt"
 
 python3 setup.py sdist
-LATEST_TAR_FILE=`ls -1t dist/redshift-etl*tar.gz | head -1`
+LATEST_TAR_FILE=`ls -1t dist/redshift_etl*tar.gz | head -1`
 for FILE in requirements.txt "$LATEST_TAR_FILE"
 do
     aws s3 cp "$FILE" "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/jars/"
