@@ -35,7 +35,7 @@ AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
 PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" pizza_load_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 

@@ -863,7 +863,7 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
                 build_one_relation(conn, relation, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError) as exc:
                 if relation.is_required:
-                    raise RequiredRelationLoadError([self.identifier]) from exc
+                    raise RequiredRelationLoadError([relation.identifier]) from exc
                 relation.mark_failure(relations)
 
     failed = [relation.identifier for relation in transformations if relation.failed]
