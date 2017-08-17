@@ -53,7 +53,7 @@ if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
 else
   ENV_NAME="development"
 fi
-AWS_TAGS="Key=user:project,Value=data-warehouse Key=user:env,Value=$ENV_NAME"
+AWS_TAGS="user:project=data-warehouse user:env=$ENV_NAME"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -80,7 +80,7 @@ aws emr create-cluster \
         --name "$CLUSTER_NAME" \
         --release-label "$CLUSTER_RELEASE_LABEL" \
         --applications "$CLUSTER_APPLICATIONS" \
-        --tags "$AWS_TAGS" \
+        --tags $AWS_TAGS \
         --log-uri "$CLUSTER_LOGS" \
         --enable-debugging \
         --region "$CLUSTER_REGION" \

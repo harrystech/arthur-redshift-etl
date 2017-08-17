@@ -14,13 +14,5 @@
         "${resources.EC2.public_security_group}",
         "${resources.VPC.whitelist_security_group}"
     ],
-    "SubnetId": "${resources.VPC.public_subnet}",
-    "TagSpecifications": [
-        {
-            "ResourceType": "instance",
-            "Tags": [
-                { "Key": "user:config", "Value": "ec2_instance.json" }
-            ]
-        }
-    ]
+    "SubnetId": "${resources.VPC.public_subnet}"
 }

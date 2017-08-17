@@ -103,7 +103,6 @@
             "properties": {
                 "admin_access": { "$ref": "#/definitions/identifier" },
                 "etl_access": { "$ref": "#/definitions/identifier" },
-                "reference_warehouse_access": { "$ref": "#/definitions/identifier" },
                 "owner": { "$ref": "#/definitions/user_info" },
                 "users": {
                     "type": "array",
@@ -149,7 +148,7 @@
                     ]
                 }
             },
-            "required": [ "admin_access", "etl_access", "reference_warehouse_access", "owner" ],
+            "required": [ "admin_access", "etl_access", "owner" ],
             "additionalProperties": false
         },
         "sources": {

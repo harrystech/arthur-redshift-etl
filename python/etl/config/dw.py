@@ -110,7 +110,6 @@ class DataWarehouseConfig:
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
         self._check_access_to_cluster()
-        self._reference_warehouse_access = dw_settings["reference_warehouse_access"]
         root = DataWarehouseUser(dw_settings["owner"])
         # Users are in the order from the config
         other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
@@ -173,10 +172,6 @@ class DataWarehouseConfig:
     def dsn_admin_on_etl_db(self) -> Dict[str, str]:
         # To connect as a superuser, but on the same database on which you would ETL
         return dict(self.dsn_admin, database=self.dsn_etl['database'])
-
-    @property
-    def dsn_reference(self) -> Dict[str, str]:
-        return etl.db.parse_connection_string(etl.config.env.get(self._reference_warehouse_access))
 
     def schema_lookup(self, schema_name) -> DataWarehouseSchema:
         return self._schema_lookup[schema_name]

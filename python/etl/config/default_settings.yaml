@@ -5,8 +5,6 @@
         "admin_access": "DATA_WAREHOUSE_ADMIN",
         # The environment variable must contain a full connection string for an ETL user.
         "etl_access": "DATA_WAREHOUSE_ETL",
-        # The environment variable must contain a full connection string for a reference database (for comparing state)
-        "reference_warehouse_access": "REFERENCE_WAREHOUSE_ETL",
         # All schemas, tables, etc. will be assigned to this user.  The owner's group will be the ETL group.
         "owner": {
             "name": "dw",

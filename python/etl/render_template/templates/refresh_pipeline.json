@@ -74,7 +74,7 @@
             "actionOnTaskFailure": "terminate",
             "actionOnResourceFailure": "retryAll",
             "instanceType": "${resources.EC2.instance_type}",
-            "imageId": "${resources.EC2.image_type}",
+            "imageId": "${resources.EC2.image_id}",
             "securityGroupIds": [
                 "${resources.EC2.public_security_group}",
                 "${resources.VPC.whitelist_security_group}"
