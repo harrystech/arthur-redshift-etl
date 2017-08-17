@@ -47,15 +47,22 @@ def get_dw_config():
 
 
 def get_config_value(name: str) -> Optional[str]:
-    return _mapped_config.get(name)
+    if _mapped_config is None:
+        return None
+    else:
+        return _mapped_config.get(name)
 
 
 def set_config_value(name: str, value: str) -> None:
-    _mapped_config.setdefault(name, value)
+    if _mapped_config is not None:
+        _mapped_config.setdefault(name, value)
 
 
 def get_config_map() -> Dict[str, str]:
-    return dict(_mapped_config)
+    if _mapped_config is None:
+        return {}
+    else:
+        return dict(_mapped_config)
 
 
 def _flatten_hier(prefix, props):
@@ -202,12 +209,13 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
     validate_with_schema(settings, "settings.schema")
 
     # TODO Clean up this backwards-compatible code
+    settings.setdefault("object_store", {})
     s3_bucket_name = settings.get("data_lake", {}).get("s3", {}).get("bucket_name")
     if s3_bucket_name is not None:
-        settings.setdefault("object_store", {"s3": {"bucket_name": s3_bucket_name}})
+        settings["object_store"].setdefault("s3", {"bucket_name": s3_bucket_name})
     iam_role = settings.get("data_lake", {}).get("iam_role")
     if iam_role is not None:
-        settings.setdefault("object_store", {"iam_role": iam_role})
+        settings["object_store"].setdefault("iam_role", iam_role)
 
     global _mapped_config
     _mapped_config = _build_config_map(settings)

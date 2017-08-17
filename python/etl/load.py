@@ -164,10 +164,10 @@ class LoadableRelation:
     def mark_failure(self, relations: List["LoadableRelation"]) -> None:
         """Mark this relation as failed and set dependents (elements from :relations) to skip_copy"""
         self.failed = True
-        if relation.is_required:
-            logger.error("Failed to build required relation '%s':", relation.identifier, exc_info=True)
+        if self.is_required:
+            logger.error("Failed to build required relation '%s':", self.identifier, exc_info=True)
         else:
-            logger.warning("Failed to build relation '%s':", relation.identifier, exc_info=True)
+            logger.warning("Failed to build relation '%s':", self.identifier, exc_info=True)
         # Skip copy on all dependents
         dependents = self.find_dependents(relations)
         for dep in dependents:
@@ -351,6 +351,8 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
     """
     aws_iam_role = etl.config.get_config_value("object_store.iam_role")
+    assert aws_iam_role is not None, "Forgot to set the object_store.iam_role"
+
     s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
 
     if not relation.has_manifest:
@@ -734,8 +736,8 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         logger.info("None of the relations are in source schemas")
         return
 
-    to_poll = queue.Queue()
-    to_load = queue.Queue()
+    to_poll = queue.Queue()  # type: ignore
+    to_load = queue.Queue()  # type: ignore
     threads = []
     for i in range(max_concurrency):
         t = threading.Thread(target=load_worker)
