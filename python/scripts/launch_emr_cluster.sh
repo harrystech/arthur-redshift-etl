@@ -38,7 +38,7 @@ set -x
 # === Basic configuration ===
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${2-$DEFAULT_PREFIX}" object_store.s3.prefix )
+PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix )
 
 CLUSTER_RELEASE_LABEL=$( arthur.py show_value resources.EMR.release_label )
 CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
@@ -67,10 +67,10 @@ fi
 
 # === Fill in config templates ===
 
-INSTANCE_GROUPS_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact instance_groups )
-APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact application_env )
-EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact ec2_attributes )
-BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact bootstrap_actions )
+INSTANCE_GROUPS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact instance_groups )
+APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact application_env )
+EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_attributes )
+BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact bootstrap_actions )
 
 # ===  Start cluster ===
 

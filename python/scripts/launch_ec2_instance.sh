@@ -35,7 +35,7 @@ set -x
 # === Basic configuration ===
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${2-$DEFAULT_PREFIX}" object_store.s3.prefix )
+PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix )
 
 # === Derived configuration ===
 
