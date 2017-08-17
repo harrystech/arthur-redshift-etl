@@ -48,7 +48,7 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 aws datapipeline create-pipeline \
     --unique-id refresh-etl-pipeline \
     --name "$PIPELINE_NAME" \
-    --tags "$AWS_TAGS" \
+    --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
