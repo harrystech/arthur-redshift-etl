@@ -9,6 +9,8 @@
  /_/    \_\_|   \__|_| |_|\__,_|_|    |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
 ```
 
+Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem. Arthur is designed to manage a warehouse in full-rebuild mode where the entire warehouse is rebuilt, from scratch, every night. Arthur is *not* designed to support streaming or micro-batch ETL. Arthur is best suited for organizations whose data are managed in a stateful transactional database and have lots of complicated business logic for their data transformations that they want to be able to manage effectively.
+
 This README outlines how to get started with the ETL.
 This includes information about setting up _Arthur_ which is the driver for ETL activities.
 
