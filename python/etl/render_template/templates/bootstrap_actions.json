@@ -1,10 +1,10 @@
 [
     {
         "Name": "ETL Bootstrap",
-        "Path": "s3://#{bucket_name}/#{etl_environment}/bin/bootstrap.sh",
+        "Path": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh",
         "Args": [
-            "#{bucket_name}",
-            "#{etl_environment}"
+            "${object_store.s3.bucket_name}",
+            "${object_store.s3.prefix}"
         ]
     }
 ]
