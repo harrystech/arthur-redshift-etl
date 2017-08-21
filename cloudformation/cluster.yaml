@@ -31,6 +31,25 @@ Parameters:
             - ds2.xlarge
             - ds2.8xlarge
 
+    NumberOfNodes:
+        Description: The number of compute nodes in the cluster
+        Type: Number
+        Default: 2
+
+    SnapshotIdentifier:
+        Description: The identifier of an existing snapshot (leave empty to skip)
+        Type: String
+        Default: ""
+
+
+Conditions:
+
+    IsSingleNodeCluster:
+        !Equals [ !Ref "NumberOfNodes", 1 ]
+
+    HasSnapshotIdentifier:
+        !Not [ !Equals [ !Ref "SnapshotIdentifier", "" ] ]
+
 
 Resources:
 
@@ -66,8 +85,6 @@ Resources:
                 !Ref RedshiftClusterParameterGroup
             ClusterSubnetGroupName:
                 !Ref RedshiftClusterSubnetGroup
-            ClusterType:
-                "multi-node"
             DBName:
                 "dev"
             ElasticIp:
@@ -82,12 +99,17 @@ Resources:
                 !Ref MasterUserPassword
             NodeType:
                 !Ref NodeType
+            ClusterType:
+                !If [ "IsSingleNodeCluster", "single-node", "multi-node" ]
             NumberOfNodes:
-                2
+                !If [ "IsSingleNodeCluster", !Ref "AWS::NoValue", !Ref NumberOfNodes ]
             PubliclyAccessible:
                 true
             VpcSecurityGroupIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
+            SnapshotIdentifier:
+                !If [ "HasSnapshotIdentifier", !Ref "SnapshotIdentifier", !Ref "AWS::NoValue" ]
+
     # Note that an option to set enhanced VPC routing is missing in cloudformation, so this must be done using the CLI
     # aws redshift modify-cluster --cluster-identifier dw-cluster-dev-redshiftcluster-[your ident] --enhanced-vpc-routing
 
