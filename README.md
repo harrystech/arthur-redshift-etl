@@ -11,6 +11,8 @@
 
 Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem. Arthur is designed to manage a warehouse in full-rebuild mode where the entire warehouse is rebuilt, from scratch, every night. Arthur is *not* designed to support streaming or micro-batch ETL. Arthur is best suited for organizations whose data are managed in a stateful transactional database and have lots of complicated business logic for their data transformations that they want to be able to manage effectively.
 
+If you’re interested in this approach or are in a similar situation, then we’d like to talk to you.  Please reach out and let’s have a data & analytics meetup.
+
 This README outlines how to get started with the ETL.
 This includes information about setting up _Arthur_ which is the driver for ETL activities.
 
@@ -18,196 +20,12 @@ You are probably (also) looking for the [Wiki](https://github.com/harrystech/art
 which include a lot more information about the ETL and what it does (and why it does what it does).
 And if something appears amiss, check out the [issues page](https://github.com/harrystech/arthur-redshift-etl/issues).
 
-# Getting ready to run ETLs
+# Installing the code
 
-What all you need in order to use this ETL tool depends on where you'd like run it and whether you anticipate
-making changes to the ETL code.
+See the separate [INSTALL.md](./INSTALL.md) file.
 
-## Pre-requisites for "end users"
 
-Let's go through your setup steps in order to run the CLI, `arthur.py`, assuming that you will not work on the code base.
-
-### Clone this project
-
-Should be obvious ... but you need to `git clone` this repo using the handy link in Github.
-
-### AWS CLI
-
-We are using some shell scripts that use the AWS CLI and so this must be installed. We strongly suggest
-that you use a packaging tool, like [Homebrew](https://brew.sh/) on macOS.
-```shell
-brew install awscli
-aws --version
-# Should be better than 1.10
-```
-
-In order to interact with the S3 bucket with ETL data, a.k.a. your data lake, you will need
-to set up credentials.
-```shell
-aws configure
-```
-* If you have to work with multiple access keys, check out the support of profiles in the CLI.
-* It is important to setup a **default region** since the start scripts do not specify one.
-* To test, try to list the contents of your company's data lake:
-```shell
-aws s3 ls 's3://<your s3 bucket>'
-```
-
-### Other commands
-
-We also use a tool called [jq](https://stedolan.github.io/jq/manual/v1.5/) to help parse responses
-from AWS CLI commands.
-```shell
-brew install jq
-```
-
-### Python and virtual environment
-
-Our ETL code is using [Python3](https://docs.python.org/3/) so you may have to install that first.
-On a Mac, simply use [Homebrew](http://brew.sh/) for an easy installation.
-We strongly suggest that you always work within a virtual environment.
-```shell
-brew install python3
-# Using the newly installed pip3
-pip3 install virtualenv
-```
-
-For new versions of pip, make sure to run this **outside** the virtual environment:
-```
-pip3 install pip --upgrade --disable-pip-version-check
-```
-
-To run code locally, you'll need to create a virtual environment with additional packages.
-These packages are listed (with their expected versions) in the `requirements.txt` file.
-The most prominent packages are:
-* [Psycopg2](http://initd.org/psycopg/docs/) to connect to PostgreSQL and Redshift easily
-* [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
-* [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
-* [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
-* [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
-* [mypy](http://mypy-lang.org/) for static type checking
-
-For running the ETL remotely in EC2, the `bin/bootstrap.sh` script will take care of the creation
-of the virtual environment.
-
-#### Using vanilla virtualenv
-
-**Note** this assumes you are in the **top-level** directory of the Redshift ETL.
-
-```shell
-mkdir venv
-virtualenv --python=python3 venv
-source venv/bin/activate
-pip3 install --requirement ./requirements.txt --disable-pip-version-check
-python3 setup.py develop
-```
-
-_Hint_: Don't worry if you get assertion violations while building a wheel for PyYAML.
-
-#### Using virtualenv wrapper
-
-Feel free to use [`virtualenv-wrapper`](https://virtualenvwrapper.readthedocs.io/en/latest/) to make
-your life switching in and out of virtual environments easier.
-
-Assuming you already have setup your environment to take advantage of the virtualenv wrapper tool
-by
-* setting the environment variable `WORKON_HOME`
-* setting the environment variable `VIRTUALENVWRAPPER_PYTHON` to `/usr/local/bin/python3`
-* making sure that `/usr/local/bin/virtualenvwrapper.sh` is _source_d in your shell profile.
-
-**Creating virtual env if you don't plan on changing the ETL code**
-
-First, change into the directory where your data warehouse setup will live, then:
-```shell
-mkvirtualenv --python=python3 -a `pwd` dw
-```
-The option `-a` will send you into this directory everytime you run:
-```
-workon dw
-```
-
-**Creating virtual env as an ETL developer**
-
-Use the same name for the virtual env that is the name of the repo:
-```shell
-mkvirtualenv --python=python3 arthur-redshift-etl
-```
-This will make it easier later when you're in the directory to say:
-```
-workon .
-```
-
-**Updating the environment (under either scenario)**
-```
-pip3 install --requirement ./requirements.txt
-python3 setup.py develop
-
-# Make sure to check the path below
-echo "source `\cd ../arthur-redshift-etl/etc && \pwd`/arthur_completion.sh" >> $VIRTUAL_ENV/bin/postactivate
-```
-
-Jumping ahead bit, if you want to use a default environment other than your login name, use something like this:
-```
-echo "export ARTHUR_DEFAULT_PREFIX=experimental" >> $VIRTUAL_ENV/bin/postactivate
-```
-
-## Additional pre-requisites for developers
-
-Ok, so even if you want to work on the ETL code, you should *first* follow the steps above to get to a running setup.
-This section describes what *else* you should do when you want to develop here.
-
-### Spark
-
-Install Spark if you'd like to be able to test jobs on your local machine.
-On a Mac, simply use `brew install apache-spark`.
-
-Our ETL code base includes everything to run the ETL in a Spark cluster on AWS
-using [Amazon EMR](https://aws.amazon.com/elasticmapreduce/) so that local testing may be less important to you.
-Running it locally offers shorter development cycles while running it in AWS means less network activity (going in
-and out of your VPC).
-
-### JAR files
-
-Download the JAR files for the following software before deployment into an AWS Spark Cluster in order
-to be able to connect to PostgreSQL databases and write CSV files for a Dataframe:
-
-| Software | Version | JAR file  |
-|---|---|---|
-| [PostgreSQL JDBC](https://jdbc.postgresql.org/) driver | 9.4 | [postgresql-9.4.1208.jar](https://jdbc.postgresql.org/download/postgresql-9.4.1208.jar) |
-| [Redshift JDBC](http://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc-connection.html#download-jdbc-driver) | 1.2.1 | [RedshiftJDBC41-1.2.1.1001.jar](https://s3.amazonaws.com/redshift-downloads/drivers/RedshiftJDBC41-1.2.1.1001.jar) |
-
-Additionally, you'll need the following JAR files when running Spark jobs **locally** and want to push files into S3:
-
-| Software (local) | Version | JAR file  |
-|---|---|---|
-| [Hadoop AWS](https://hadoop.apache.org/docs/r2.7.1/api/org/apache/hadoop/fs/s3native/NativeS3FileSystem.html) | 2.7.1 | [hadoop-aws-2.7.1.jar](http://central.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.7.1/hadoop-aws-2.7.1.jar) |
-| [AWS Java SDK](https://aws.amazon.com/sdk-for-java/) | 1.7.4 | [aws-java-sdk-1.7.4.2.jar](http://central.maven.org/maven2/com/amazonaws/aws-java-sdk/1.7.4.2/aws-java-sdk-1.7.4.2.jar) |
-
-Do not upload these last two into EMR because EMR comes with all the correct versions out of the box.
-
-The JAR files should be stored into the `jars` directory locally and in the `jars` folder of your selected
-environment (see below).  A bootstrap action will copy them from S3 to the EMR cluster.
-
-_Hint_: There is a download script in `bin/download_jars.sh` to pull the versions with which the ETL was tested.
-
-The EMR releases 4.5 and later include python3 so there's no need to install Python 3 using a bootstrap action.
-
-#### Adding PySpark to your IDE
-
-The easiest way to add PySpark so that code completion and type checking works while working on ETL code
-might be to just add a pointer in the virtual environment.
-
-First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set.
-
-Then, with Spark 2.1.1, try this for example:
-```shell
-cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
-/usr/local/Cellar/apache-spark/2.1.1/libexec/python
-/usr/local/Cellar/apache-spark/2.1.1/libexec/python/lib/py4j-0.10.4-src.zip
-EOF
-```
-
-## Configuring the ETL (and upstream sources)
+# Configuring the ETL (and upstream sources)
 
 The best approach is to have a separate repo for your data warehouse that contains the configuration files
 and all the table design files and transformations.  The documentation will in many places assume
@@ -215,7 +33,7 @@ that you have a "*sibling*" repo so that when within the repo for your local dat
 configuration, credentials, and table designs), you can simply use `../arthur-redshift-etl/` to find
 your way back to this ETL code.
 
-### Redshift cluster and users
+## Redshift cluster and users
 
 Although the Redshift cluster can be administered using the AWS console and `psql`, some
 helper scripts will make setting up the cluster consistently much easier.
@@ -226,14 +44,14 @@ to your settings file so that Redshift has the needed permissions to access the
 folder in S3.
 (And don't forget to add the role to the list of known IAM roles in Redshift.)
 
-### Sources
+## Sources
 
 See the [Wiki](https://github.com/harrystech/arthur-redshift-etl/wiki) pages about
 a description of configurations.
 
-## Running the ETL (`arthur.py`)
+# Running the ETL (`arthur.py`)
 
-### General notes about the CLI
+## General notes about the CLI
 
 * Commands expect a config file and will start by picking up all files in a local `./config` directory.
 * Commands accept `--dry-run` command line flag to test without modifying the environment.
@@ -246,9 +64,9 @@ a description of configurations.
 * You could copy data manually, but you probably shouldn't and let `arthur.py sync` manage files.
 * You can use environment variables to pass in credentials for database access, but you should probably use a file for that.
 
-### Prerequisites for running the ETL in a cluster
+## Prerequisites for running the ETL in a cluster
 
-#### Creating a credentials file
+### Creating a credentials file
 
 All credentials can be picked up from environment variables by the ETL. Instead of setting these
 variables before starting the ETL, you can also add a file with credentials to the `config` directory
@@ -267,7 +85,7 @@ to execute in Redshift.  Make sure this file exists in your data warehouse repo 
 DATA_WAREHOUSE_ETL=postgres://etl:<password>@<host>:<port>/<dbname>?sslmode=require
 ```
 
-#### Copying code into the S3 bucket
+### Copying code into the S3 bucket
 
 Copy the ETL code (including bootstrap scripts and configuration):
 ```shell
@@ -276,7 +94,7 @@ export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentia
 bin/upload_env.sh "<your S3 bucket>" $USER
 ```
 
-#### Starting a cluster and submitting commands
+### Starting a cluster and submitting commands
 
 Start a cluster:
 ```shell
@@ -294,7 +112,7 @@ Note that the `--submit` option must be between `arthur.py` and the sub-command 
 arthur.py --submit "<cluster ID>" load --prolix --prefix $USER
 ```
 
-### Initializing the Redshift cluster
+## Initializing the Redshift cluster
 
 | Sub-command   | Goal |
 | ---- | ---- |
@@ -307,7 +125,7 @@ arthur.py initialize  # NOP but errors out
 arthur.py initialize development --with-user-creation  # Must create users and groups on first call
 ```
 
-### Starting with design files (and managing them)
+## Starting with design files (and managing them)
 
 | Sub-command   | Goal |
 | ---- | ---- |
@@ -322,7 +140,7 @@ arthur.py sync "<schema>"  # This will upload local files related to one schema 
 arthur.py sync "<schema>.<table>"  # This will upload local files for just one table
 ```
 
-### Loading and updating data
+## Loading and updating data
 
 | Sub-command   | Goal |
 | ---- | ---- |
@@ -342,7 +160,7 @@ the load after fixing any query errors or input data, using:
 arthur.py upgrade --with-staging-schemas --continue-from failed_relation.in_load_step
 ```
 
-### Dealing with schemas (create, restore)
+## Dealing with schemas (create, restore)
 
 | Sub-command   | Goal |
 | ---- | ---- |
@@ -356,7 +174,7 @@ arthur.py create_schemas --with-staging schema_name
 arthur.py promote_schemas --from staging schema_name
 ```
 
-### Working with subsets of tables
+## Working with subsets of tables
 
 | Sub-command   | Goal |
 | ---- | ---- |
@@ -367,7 +185,7 @@ The patterns used by commands like `extract` or `load` may be provided using fil
 Together with `show_downstream_dependents` and `show_upstream_dependencies`, this opens up
 opportunities to work on a "sub-tree" of the data warehouse.
 
-#### Working with just the source schemas or transformation schemas
+### Working with just the source schemas or transformation schemas
 
 At the beginning it might be worthwhile to focus just on tables in source schemas -- those
 tables that get loaded using CSV files after `extract`.
@@ -389,7 +207,7 @@ arthur.py sync @transformations.txt
 arthur.py upgrade --only @transformations.txt
 ```
 
-#### Working with a table and everything feeding it
+### Working with a table and everything feeding it
 
 While working on transformations or constraints, it might be useful to focus on just a
 set of of tables that feed data into it.
@@ -402,7 +220,7 @@ arthur.py sync www.users
 arthur.py upgrade --only @www_users.txt
 ```
 
-### Using configuration values to fill in templates
+## Using configuration values to fill in templates
 
 AWS service templates can be filled out based on configuration in the ETL.
 
@@ -421,7 +239,7 @@ arthur.py show_value object_store.s3.bucket_name
 arthur.py show_vars object_store.s3.*
 ```
 
-## Working with a staging environment
+# Working with a staging environment
 
 A staging environment can help with deploying data that you'll be confident to release into production.
 
