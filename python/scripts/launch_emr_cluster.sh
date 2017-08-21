@@ -116,7 +116,7 @@ cat <<EOF
 
 # If you want to submit steps, use:
 
-  arthur.py --submit "$CLUSTER_ID" [command] --prolix --prefix $DEFAULT_PREFIX [options ...]
+  arthur.py --submit "$CLUSTER_ID" [command] --prolix --prefix "$PROJ_ENVIRONMENT" [options ...]
 
 # To easily reference this cluster, user:
 
