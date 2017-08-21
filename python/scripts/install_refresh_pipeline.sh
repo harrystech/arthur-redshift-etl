@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 5 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> <environment> <startdatetime> <occurrences> <wlm-slots>"
+if [[ $# -lt 4 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]"
     echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Specify source tables using space-delimited arthur pattern globs."
     exit 0
 fi
 
 set -e -u
 
-PROJ_BUCKET="$1"
-PROJ_ENVIRONMENT="$2"
+function join_by { local IFS="$1"; shift; echo "$*"; }
 
-START_DATE_TIME="$3"
-OCCURRENCES="$4"
-WLM_SLOTS="$5"
+PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
+PROJ_ENVIRONMENT="$1"
+
+START_DATE_TIME="$2"
+OCCURRENCES="$3"
+
+shift 3
+SELECTION="$@"
+C_S_SELECTION="$(join_by ',' $SELECTION)"
 
 # Verify that this bucket/environment pair is set up on s3
-BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
+BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/current/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
     exit 1
@@ -32,15 +38,15 @@ fi
 # Note: key/value are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
 
-PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+PIPELINE_NAME="ETL Refresh Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" refresh_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 
 aws datapipeline create-pipeline \
-    --unique-id rebuild-etl-pipeline \
+    --unique-id refresh-etl-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
@@ -60,9 +66,11 @@ aws datapipeline put-pipeline-definition \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
+        mySelection="$SELECTION" \
+        myCommaSeparatedSelection="$C_S_SELECTION" \
         myMaxPartitions="16" \
         myMaxConcurrency="4" \
-        myWlmQuerySlots="$WLM_SLOTS" \
+        myWlmQuerySlots="3" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"

@@ -46,11 +46,9 @@ def get_dw_config():
     return _dw_config
 
 
-def get_config_value(name: str) -> Optional[str]:
-    if _mapped_config is None:
-        return None
-    else:
-        return _mapped_config.get(name)
+def get_config_value(name: str, default: Optional[str]=None) -> Optional[str]:
+    assert _mapped_config is not None, "attempted to get config value before reading config map"
+    return _mapped_config.get(name, default)
 
 
 def set_config_value(name: str, value: str) -> None:

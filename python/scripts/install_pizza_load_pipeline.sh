@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 3 || "$1" = "-h" ]]; then
+if [[ $# -ne 2 || "$1" = "-h" ]]; then
     echo "Pizza delivery! Right on time or it's free! Runs once, starting now."
     echo "Expects prefix to already have all necessary manifests for source data."
-    echo "Usage: `basename $0` <bucket_name> <environment> <wlm-slots>"
+    echo "Usage: `basename $0` <environment> <wlm-slots>"
     exit 0
 fi
 
 set -e -u
 
-PROJ_BUCKET="$1"
-PROJ_ENVIRONMENT="$2"
-WLM_SLOTS="$3"
+PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
+PROJ_ENVIRONMENT="$1"
+WLM_SLOTS="$2"
 
 START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
 

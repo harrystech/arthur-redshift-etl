@@ -98,8 +98,7 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
     schema_table_name = "{0.schema}-{0.table}".format(relation.target_table_name)
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
-    # FIXME Should we fail in `get_config_value`?
-    aws_iam_role = etl.config.get_config_value("object_store.iam_role") or "missing_iam_role"
+    aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
 
     with etl.monitor.Monitor(relation.identifier,
                              "unload",
