@@ -72,7 +72,7 @@ def validate_semantics(relations: List[RelationDescription], keep_going=False) -
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         result = executor.map(lambda relation: validate_relation_description(relation, keep_going), relations)
     # Drop all relations from the result which returned None (meaning they failed validation).
-    return list(filter(None, result))
+    return list(filter(None, result))  # type: ignore
 
 
 def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Optional[str]:

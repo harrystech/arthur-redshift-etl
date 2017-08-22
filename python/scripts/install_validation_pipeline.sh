@@ -3,8 +3,8 @@
 START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
-if [[ $# -lt 1 || $# -gt 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <bucket_name> [<environment> [<startdatetime> [<occurrences>]]]"
+if [[ $# -gt 3 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` [<environment> [<startdatetime> [<occurrences>]]]"
     echo "      The environment defaults to \"$DEFAULT_PREFIX\"."
     echo "      Start time should take the ISO8601 format, defaults to \"$START_NOW\" (now)."
     echo "      The number of occurrences defaults to 1."
@@ -13,11 +13,11 @@ fi
 
 set -e -u
 
-PROJ_BUCKET="$1"
-PROJ_ENVIRONMENT="${2:-$DEFAULT_PREFIX}"
+PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
+PROJ_ENVIRONMENT="${1:-$DEFAULT_PREFIX}"
 
-START_DATE_TIME="${3:-$START_NOW}"
-OCCURRENCES="${4:-1}"
+START_DATE_TIME="${2:-$START_NOW}"
+OCCURRENCES="${3:-1}"
 
 # Verify that this bucket/environment pair is set up on s3 with credentials
 VALIDATION_CREDENTIALS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/validation/config/credentials_validation.sh"
@@ -52,7 +52,7 @@ PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
 aws datapipeline create-pipeline \
     --unique-id validation_pipeline \
     --name "$PIPELINE_NAME" \
-    --tags "$AWS_TAGS" \
+    --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`

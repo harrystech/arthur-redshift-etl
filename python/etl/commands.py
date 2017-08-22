@@ -116,7 +116,8 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                etl.monitor.set_environment(args.prefix)
+                if getattr(args, "use_monitor", False):
+                    etl.monitor.set_environment(args.prefix)
 
             dw_config = etl.config.get_dw_config()
             if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
@@ -403,6 +404,15 @@ class SubCommand:
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
 
+class MonitoredSubCommand(SubCommand):
+    """
+    A subcommand that will also use monitors to update some event table
+    """
+    def add_arguments(self, parser):
+        super().add_arguments(parser)
+        parser.set_defaults(use_monitor=True)
+
+
 class InitializeSetupCommand(SubCommand):
 
     def __init__(self):
@@ -524,7 +534,7 @@ class SyncWithS3Command(SubCommand):
         etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
-class ExtractToS3Command(SubCommand):
+class ExtractToS3Command(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("extract",
@@ -582,7 +592,7 @@ class ExtractToS3Command(SubCommand):
                                              dry_run=args.dry_run)
 
 
-class LoadDataWarehouseCommand(SubCommand):
+class LoadDataWarehouseCommand(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("load",
@@ -621,7 +631,7 @@ class LoadDataWarehouseCommand(SubCommand):
                                      dry_run=args.dry_run)
 
 
-class UpgradeDataWarehouseCommand(SubCommand):
+class UpgradeDataWarehouseCommand(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("upgrade",
@@ -657,7 +667,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                                         dry_run=args.dry_run)
 
 
-class UpdateDataWarehouseCommand(SubCommand):
+class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("update",
@@ -681,7 +691,7 @@ class UpdateDataWarehouseCommand(SubCommand):
                                        dry_run=args.dry_run)
 
 
-class UnloadDataToS3Command(SubCommand):
+class UnloadDataToS3Command(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("unload",
@@ -912,9 +922,10 @@ class ShowValueCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         parser.add_argument("name", help="print the value for the chosen setting")
+        parser.add_argument("default", nargs="?", help="set default in case the setting is unset")
 
     def callback(self, args, config):
-        etl.render_template.show_value(args.name)
+        etl.render_template.show_value(args.name, args.default)
 
 
 class ShowVarsCommand(SubCommand):

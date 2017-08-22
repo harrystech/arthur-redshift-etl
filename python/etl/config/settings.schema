@@ -239,7 +239,7 @@
                         "region": { "type": "string" },
                         "account": { "type": "string" }
                     },
-                    "required": [ "id", "public_subnet", "whitelist_security_group", "region" ],
+                    "required": [ "account", "public_subnet", "whitelist_security_group", "region" ],
                     "additionalProperties": false
                 },
                 "EC2": {
@@ -279,6 +279,20 @@
                                 "topicArn": { "$ref": "#/definitions/aws_arn" }
                             },
                             "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "RedshiftCluster": {
+                    "type": "object",
+                    "properties": {
+                        "max_concurrency": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "wlm_query_slots": {
+                            "type": "integer",
+                            "minimum": 1
                         }
                     },
                     "additionalProperties": false

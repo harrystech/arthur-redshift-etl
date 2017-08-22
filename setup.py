@@ -19,6 +19,10 @@ setup(
         ]
     },
     scripts=[
+        "python/scripts/install_pizza_load_pipeline.sh",
+        "python/scripts/install_rebuild_pipeline.sh",
+        "python/scripts/install_refresh_pipeline.sh",
+        "python/scripts/install_validation_pipeline.sh",
         "python/scripts/launch_ec2_instance.sh",
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",

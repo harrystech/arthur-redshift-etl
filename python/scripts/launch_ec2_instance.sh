@@ -59,8 +59,8 @@ fi
 
 # === Fill in config templates ===
 
-CLI_INPUT_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact ec2_instance )
-USER_DATA_JSON=$( arthur.py render_template --prefix "${2-$DEFAULT_PREFIX}" --compact cloud_init )
+CLI_INPUT_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_instance )
+USER_DATA_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact cloud_init )
 
 # ===  Start instance ===
 
