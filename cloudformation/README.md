@@ -123,7 +123,7 @@ groups are used by EMR and will be automatically updated when clusters are runni
 #### Access from our office IP addresses
 
 * Name prefix: `dw-sg-office`
-* Access using SSH from our offices
+* Access using SSH from whitelisted IP address ranges
 
 #### Access to data warehouse
 
@@ -137,6 +137,7 @@ This references all the prior security groups
     * Security group for "lambda (Tallboy)"
     * Security group for EC2 instances
     * IP addresses from our office
+    * IP addresses from other applications
     
 ### Roles and instance profiles (for EMR)
 
@@ -163,6 +164,8 @@ Uses all defaults except:
 
 # Installation
 
+The commands below assume that your role has the necessary privileges for CloudFormation.
+
 ## Creating the VPC using CloudFormation
 
 ### Creating the stack
@@ -173,7 +176,7 @@ cloudformation/create_dw_vpc.sh dev your-object-store-dev
 
 If you want to specify a specific IP address:
 ```bash
-cloudformation/create_dw_vpc.sh dev your-object-store-dev ParameterKey=OfficeCIDR,ParameterValue=192.168.1.1/32
+cloudformation/create_dw_vpc.sh dev your-object-store-dev ParameterKey=WhitelistCIDR1,ParameterValue=192.168.1.1/32
 ```
 
 ### Updating the stack
