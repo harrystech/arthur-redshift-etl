@@ -81,14 +81,14 @@ def render(template_name: str, compact=False) -> None:
         print(rendered, end='')
 
 
-def show_value(name: str) -> None:
+def show_value(name: str, default: Optional[str]) -> None:
     """
-    Show value of a specific variable.
+    Show value of a specific variable. This fails if the variable is not set and no default is provided.
     """
-    try:
-        print(etl.config.get_config_value(name))
-    except KeyError as exc:
-        raise InvalidArgumentError() from exc
+    value = etl.config.get_config_value(name, default)
+    if value is None:
+        raise InvalidArgumentError("setting '{}' has no value".format(name))
+    print(value)
 
 
 def show_vars(name: Optional[str]) -> None:

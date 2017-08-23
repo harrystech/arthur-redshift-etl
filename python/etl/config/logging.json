@@ -33,11 +33,11 @@
             "backupCount": 5,
             "filters": [ "insert_trace_key" ]
         },
-        "monitor_http": {
+        "arthur_http": {
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "console",
             "level": "DEBUG",
-            "filename": "monitor_http.log",
+            "filename": "arthur_http.log",
             "mode": "a",
             "maxBytes": 10000,
             "backupCount": 1,
@@ -74,9 +74,9 @@
             "level": "WARNING",
             "propagate": 0
         },
-        "monitor_http": {
-            "qualname": "monitor_http",
-            "handlers": ["monitor_http"],
+        "arthur_http": {
+            "qualname": "arthur_http",
+            "handlers": [ "arthur_http" ],
             "level": "INFO",
             "propagate": 0
         },

@@ -116,10 +116,11 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                etl.monitor.set_environment(args.prefix)
+                if getattr(args, "use_monitor"):
+                    etl.monitor.set_environment(args.prefix)
 
             dw_config = etl.config.get_dw_config()
-            if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
+            if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
                 args.pattern.base_schemas = [s.name for s in dw_config.schemas]
 
             # TODO Remove dw_config and let subcommands handle it!
@@ -225,6 +226,7 @@ def build_basic_parser(prog_name, description=None):
     parser.set_defaults(prolix=None)
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
+    parser.set_defaults(use_monitor=False)
     return parser
 
 
@@ -335,7 +337,7 @@ class SubCommand:
         self.description = description
         self.aliases = aliases
 
-    def add_to_parser(self, parent_parser):
+    def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         if self.aliases is not None:
             parser = parent_parser.add_parser(self.name, help=self.help, description=self.description,
                                               aliases=self.aliases)
@@ -401,6 +403,16 @@ class SubCommand:
     def callback(self, args, config):
         """Override this method for sub-classes"""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
+
+
+class MonitoredSubCommand(SubCommand):
+    """
+    A subcommand that will also use monitors to update some event table
+    """
+    def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
+        parser = super().add_to_parser(parent_parser)
+        parser.set_defaults(use_monitor=True)
+        return parser
 
 
 class InitializeSetupCommand(SubCommand):
@@ -524,7 +536,7 @@ class SyncWithS3Command(SubCommand):
         etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
 
 
-class ExtractToS3Command(SubCommand):
+class ExtractToS3Command(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("extract",
@@ -582,7 +594,7 @@ class ExtractToS3Command(SubCommand):
                                              dry_run=args.dry_run)
 
 
-class LoadDataWarehouseCommand(SubCommand):
+class LoadDataWarehouseCommand(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("load",
@@ -621,7 +633,7 @@ class LoadDataWarehouseCommand(SubCommand):
                                      dry_run=args.dry_run)
 
 
-class UpgradeDataWarehouseCommand(SubCommand):
+class UpgradeDataWarehouseCommand(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("upgrade",
@@ -657,7 +669,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                                         dry_run=args.dry_run)
 
 
-class UpdateDataWarehouseCommand(SubCommand):
+class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("update",
@@ -681,7 +693,7 @@ class UpdateDataWarehouseCommand(SubCommand):
                                        dry_run=args.dry_run)
 
 
-class UnloadDataToS3Command(SubCommand):
+class UnloadDataToS3Command(MonitoredSubCommand):
 
     def __init__(self):
         super().__init__("unload",
@@ -912,9 +924,10 @@ class ShowValueCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         parser.add_argument("name", help="print the value for the chosen setting")
+        parser.add_argument("default", nargs="?", help="set default in case the setting is unset")
 
     def callback(self, args, config):
-        etl.render_template.show_value(args.name)
+        etl.render_template.show_value(args.name, args.default)
 
 
 class ShowVarsCommand(SubCommand):

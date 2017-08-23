@@ -52,7 +52,7 @@ Parameters:
         AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
-    OfficeCIDR1:
+    WhitelistCIDR1:
         Description: Please enter the first IP address range that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
@@ -61,8 +61,26 @@ Parameters:
         AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
-    OfficeCIDR2:
+    WhitelistCIDR2:
         Description: Please enter the second IP address range that can be used to SSH to EC2 instances
+        Type: String
+        Default: 0.0.0.0/0
+        MinLength: 9
+        MaxLength: 18
+        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+
+    WhitelistCIDR3:
+        Description: Please enter the third IP address range that can be used to SSH to EC2 instances
+        Type: String
+        Default: 0.0.0.0/0
+        MinLength: 9
+        MaxLength: 18
+        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+
+    WhitelistCIDR4:
+        Description: Please enter the fourth IP address range that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -73,11 +91,17 @@ Parameters:
 
 Conditions:
 
-    ValidNotAnythingOfficeCIDR1:
-        !Not [ !Equals [ !Ref OfficeCIDR1, "0.0.0.0/0" ] ]
+    ValidNotAnythingWhitelistCIDR1:
+        !Not [ !Equals [ !Ref WhitelistCIDR1, "0.0.0.0/0" ] ]
 
-    ValidNotAnythingOfficeCIDR2:
-        !Not [ !Equals [ !Ref OfficeCIDR2, "0.0.0.0/0" ] ]
+    ValidNotAnythingWhitelistCIDR2:
+        !Not [ !Equals [ !Ref WhitelistCIDR2, "0.0.0.0/0" ] ]
+
+    ValidNotAnythingWhitelistCIDR3:
+        !Not [ !Equals [ !Ref WhitelistCIDR3, "0.0.0.0/0" ] ]
+
+    ValidNotAnythingWhitelistCIDR4:
+        !Not [ !Equals [ !Ref WhitelistCIDR4, "0.0.0.0/0" ] ]
 
 
 Resources:
@@ -230,20 +254,28 @@ Resources:
               - !Ref PrivateRouteTable
             ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
 
-    OfficeAccessSecurityGroup:
+    WhitelistAccessSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
         Properties:
-            GroupDescription: Enable SSH access via port 22 from an office IP (but never the whole internet)
+            GroupDescription: Enable SSH access via port 22 from an office IP or known applications
             VpcId: !Ref VPC
             SecurityGroupIngress:
                 - IpProtocol: "tcp"
                   FromPort: "22"
                   ToPort: "22"
-                  CidrIp: !If [ ValidNotAnythingOfficeCIDR1, !Ref "OfficeCIDR1", !Ref "AWS::NoValue" ]
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR1, !Ref "WhitelistCIDR1", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
                   FromPort: "22"
                   ToPort: "22"
-                  CidrIp: !If [ ValidNotAnythingOfficeCIDR2, !Ref "OfficeCIDR2", !Ref "AWS::NoValue" ]
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR2, !Ref "WhitelistCIDR2", !Ref "AWS::NoValue" ]
+                - IpProtocol: "tcp"
+                  FromPort: "22"
+                  ToPort: "22"
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR3, !Ref "WhitelistCIDR3", !Ref "AWS::NoValue" ]
+                - IpProtocol: "tcp"
+                  FromPort: "22"
+                  ToPort: "22"
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
             Tags:
                 - Key: Name
                   Value: !Join [ "-", [ !Ref "AWS::StackName", "office" ] ]
@@ -434,11 +466,19 @@ Resources:
                 - IpProtocol: "tcp"
                   FromPort: "5439"
                   ToPort: "5439"
-                  CidrIp: !If [ ValidNotAnythingOfficeCIDR1, !Ref "OfficeCIDR1", !Ref "AWS::NoValue" ]
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR1, !Ref "WhitelistCIDR1", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
                   FromPort: "5439"
                   ToPort: "5439"
-                  CidrIp: !If [ ValidNotAnythingOfficeCIDR2, !Ref "OfficeCIDR2", !Ref "AWS::NoValue" ]
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR2, !Ref "WhitelistCIDR2", !Ref "AWS::NoValue" ]
+                - IpProtocol: "tcp"
+                  FromPort: "5439"
+                  ToPort: "5439"
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR3, !Ref "WhitelistCIDR3", !Ref "AWS::NoValue" ]
+                - IpProtocol: "tcp"
+                  FromPort: "5439"
+                  ToPort: "5439"
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
                 # Heap
                 - IpProtocol: "tcp"
                   FromPort: "5439"
@@ -675,7 +715,7 @@ Outputs:
 
     AdditionalSecurityGroups:
         Description: A list of addtional security groups for EMR setup
-        Value: !Join [ ",", [ !Ref OfficeAccessSecurityGroup, !Ref RedshiftEC2SecurityGroup ] ]
+        Value: !Join [ ",", [ !Ref WhitelistAccessSecurityGroup, !Ref RedshiftEC2SecurityGroup ] ]
         Export:
             Name: !Sub "${AWS::StackName}::additional-sg"
 

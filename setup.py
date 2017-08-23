@@ -3,9 +3,9 @@ from setuptools import find_packages, setup
 
 setup(
     name="redshift_etl",
-    version="1.0.1",
+    version="1.1.0",
     author="Harry's Data Engineering and Contributors",
-    description="ETL code to ferry data from PostgreSQL databases (or S3 files) to Redshift cluster",
+    description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
     license="MIT",
     keywords="redshift postgresql ETL ELT extract transform load",
     url="https://github.com/harrystech/arthur-redshift-etl",
@@ -19,6 +19,10 @@ setup(
         ]
     },
     scripts=[
+        "python/scripts/install_pizza_load_pipeline.sh",
+        "python/scripts/install_rebuild_pipeline.sh",
+        "python/scripts/install_refresh_pipeline.sh",
+        "python/scripts/install_validation_pipeline.sh",
         "python/scripts/launch_ec2_instance.sh",
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",
