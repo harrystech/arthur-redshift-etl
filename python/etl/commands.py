@@ -116,11 +116,11 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                if getattr(args, "use_monitor", False):
+                if getattr(args, "use_monitor"):
                     etl.monitor.set_environment(args.prefix)
 
             dw_config = etl.config.get_dw_config()
-            if hasattr(args, "pattern") and hasattr(args.pattern, "base_schemas"):
+            if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
                 args.pattern.base_schemas = [s.name for s in dw_config.schemas]
 
             # TODO Remove dw_config and let subcommands handle it!
@@ -226,6 +226,7 @@ def build_basic_parser(prog_name, description=None):
     parser.set_defaults(prolix=None)
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
+    parser.set_defaults(use_monitor=False)
     return parser
 
 
@@ -336,7 +337,7 @@ class SubCommand:
         self.description = description
         self.aliases = aliases
 
-    def add_to_parser(self, parent_parser):
+    def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         if self.aliases is not None:
             parser = parent_parser.add_parser(self.name, help=self.help, description=self.description,
                                               aliases=self.aliases)
@@ -408,9 +409,10 @@ class MonitoredSubCommand(SubCommand):
     """
     A subcommand that will also use monitors to update some event table
     """
-    def add_arguments(self, parser):
-        super().add_arguments(parser)
+    def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
+        parser = super().add_to_parser(parent_parser)
         parser.set_defaults(use_monitor=True)
+        return parser
 
 
 class InitializeSetupCommand(SubCommand):

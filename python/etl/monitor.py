@@ -465,7 +465,7 @@ class MemoryStorage(PayloadDispatcher):
         Factory method to create a handler that serves our storage content.
         """
         storage = self
-        http_logger = logging.getLogger("monitor_http")
+        http_logger = logging.getLogger("arthur_http")
 
         class MonitorHTTPHandler(http.server.BaseHTTPRequestHandler):
 
