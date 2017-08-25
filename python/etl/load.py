@@ -678,9 +678,9 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     raise ETLRuntimeError(
                         "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
                 else:
-                    logger.debug("Poller: Sleeping for %s seconds", item)
-                    time.sleep(item)
                     if to_poll.qsize():
+                        logger.debug("Poller: Sleeping for %s seconds", item)
+                        time.sleep(item)
                         to_poll.put(item)
                     continue
 
