@@ -11,7 +11,7 @@ import etl.monitor
 import etl.db
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import SqoopExecutionError
+from etl.errors import TransientSqoopExecutionError
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.relation import RelationDescription
 
@@ -213,7 +213,9 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
             if sqoop.returncode != 0:
-                raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
+                # TODO: Parse Sqoop output and write logic to decide if error is permanent or transient. In the mean
+                # time, we're being optimistic and considering all failures transient, since we limit retry attempts.
+                raise TransientSqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 
 class FakeSqoopExtractor(SqoopExtractor):

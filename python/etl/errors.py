@@ -4,6 +4,19 @@ class ETLError(Exception):
     """
 
 
+class PermanentETLError(ETLError):
+    """
+    Represents all types of errors that are known to be permanent failures due irrecoverable situations within the ETL
+    """
+
+
+class TransientETLError(ETLError):
+    """
+    Represents all types of errors that could potentially resolve themselves due to changes in the outside environment
+    or some kind of intervention, and are thus retryable.
+    """
+
+
 class ETLSystemError(ETLError):
     """
     Blunder in the ETL code -- you'll need to check the ETL code, sorry about that.
@@ -136,6 +149,11 @@ class SqoopExecutionError(DataExtractError):
     pass
 
 
+class TransientSqoopExecutionError(TransientETLError):
+    # TODO: Refactor exception hierarchy to properly tag all transient errors
+    pass
+
+
 class MissingCsvFilesError(DataExtractError):
     pass
 
@@ -195,4 +213,13 @@ class RequiredRelationLoadError(ETLRuntimeError):
 class DataUnloadError(ETLRuntimeError):
     """
     Exception when the unload operation fails
+    """
+
+
+class RetriesExhaustedError(PermanentETLError):
+    """
+    Raised when all retry attempts have been exhausted.
+
+    The causing exception should be passed to this one to complete the chain of failure accountability. For example:
+    >>> raise RetriesExhaustedError from ETLRuntimeError("Boom!")
     """
