@@ -71,5 +71,7 @@
             # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
             "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"]
         }
-    }
+    },
+    # If an extract from an upstream source fails for any reason, retry the extract at most this many times.
+    "extract_retries": 1
 }

@@ -345,6 +345,10 @@
         "required_in_full_load": {
             "description": "DEPRECATED USE 'required_for_success' instead",
             "$ref": "#/definitions/glob_pattern_list"
+        },
+        "extract_retries": {
+            "type": "integer",
+            "minimum": 1
         }
     },
     "required": [ "data_warehouse", "sources", "type_maps" ],
