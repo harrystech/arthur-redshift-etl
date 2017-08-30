@@ -226,6 +226,12 @@ class RetriesExhaustedError(PermanentETLError):
 
 
 def retry(max_attempts: int, callback: callable, logger=None):
+    """
+    Retry a function a maximum number of times and return its results.
+
+    The given callback function is only retried if it throws a TransientETLError. Any other error is considered
+    permanent, and therefore no retry attempt is made.
+    """
     failure_reason = None
     successful_result = None
 

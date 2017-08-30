@@ -347,6 +347,7 @@
             "$ref": "#/definitions/glob_pattern_list"
         },
         "extract_retries": {
+            "description": "If an extract from an upstream source fails due to some transient error, retry the extract at most this many times.",
             "type": "integer",
             "minimum": 1
         }
