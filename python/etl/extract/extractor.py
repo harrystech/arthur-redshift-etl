@@ -14,7 +14,12 @@ import etl.s3
 import etl.db
 from etl.config import get_config_value
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError, TransientETLError, RetriesExhaustedError
+from etl.errors import (
+    DataExtractError,
+    ETLRuntimeError,
+    MissingCsvFilesError,
+    retry
+)
 from etl.names import join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
@@ -72,35 +77,20 @@ class Extractor:
         with Timer() as timer:
             for i, relation in enumerate(relations):
                 try:
-                    retries = get_config_value("extract_retries")
-                    failure_reason = None
-                    for attempt in range(retries + 1):
-                        try:
-                            with etl.monitor.Monitor(relation.identifier,
-                                                     "extract",
-                                                     options=self.options_info(),
-                                                     source=self.source_info(source, relation),
-                                                     destination={'bucket_name': relation.bucket_name,
-                                                                  'object_key': relation.manifest_file_name},
-                                                     index={"current": i + 1, "final":
-                                                            len(relations), "name": source.name},
-                                                     dry_run=self.dry_run,
-                                                     attempt_num=attempt):
+                    def _monitored_table_extract(attempt_num):
+                        with etl.monitor.Monitor(relation.identifier,
+                                                 "extract",
+                                                 options=self.options_info(),
+                                                 source=self.source_info(source, relation),
+                                                 destination={'bucket_name': relation.bucket_name,
+                                                              'object_key': relation.manifest_file_name},
+                                                 index={"current": i + 1, "final":
+                                                        len(relations), "name": source.name},
+                                                 dry_run=self.dry_run,
+                                                 attempt_num=attempt_num):
                                 self.extract_table(source, relation)
-                        except TransientETLError as e:
-                            # Only retry transient errors
-                            failure_reason = e
-                            if retries - attempt:
-                                self.logger.warning("Encountered the following error; retrying %s more times: %s",
-                                                    retries - attempt, str(e))
-                            continue
-                        except:
-                            # We consider all other errors permanent and immediately re-raise without retry
-                            raise
-                        else:
-                            break
-                    else:
-                        raise RetriesExhaustedError from failure_reason
+
+                    retry(get_config_value("extract_retries"), _monitored_table_extract, self.logger)
 
                 except ETLRuntimeError:
                     self.failed_sources.add(source.name)

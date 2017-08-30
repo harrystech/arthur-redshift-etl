@@ -223,3 +223,28 @@ class RetriesExhaustedError(PermanentETLError):
     The causing exception should be passed to this one to complete the chain of failure accountability. For example:
     >>> raise RetriesExhaustedError from ETLRuntimeError("Boom!")
     """
+
+
+def retry(max_attempts: int, callback: callable, logger=None):
+    failure_reason = None
+    successful_result = None
+
+    for attempt in range(max_attempts + 1):
+        try:
+            successful_result = callback(attempt)
+        except TransientETLError as e:
+            # Only retry transient errors
+            failure_reason = e
+            if logger and max_attempts - attempt:
+                logger.warning("Encountered the following error (retrying %s more times): %s",
+                               max_attempts - attempt, str(e))
+            continue
+        except:
+            # We consider all other errors permanent and immediately re-raise without retrying
+            raise
+        else:
+            break
+    else:
+        raise RetriesExhaustedError from failure_reason
+
+    return successful_result
