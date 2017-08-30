@@ -87,7 +87,7 @@ class Extractor:
                                                  index={"current": i + 1, "final":
                                                         len(relations), "name": source.name},
                                                  dry_run=self.dry_run,
-                                                 attempt_num=attempt_num):
+                                                 attempt_num=attempt_num + 1):
                                 self.extract_table(source, relation)
 
                     retry(get_config_value("extract_retries"), _monitored_table_extract, self.logger)
