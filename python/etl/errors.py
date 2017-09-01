@@ -225,7 +225,7 @@ class RetriesExhaustedError(PermanentETLError):
     """
 
 
-def retry(max_attempts: int, callback: callable, logger=None):
+def retry(max_retries: int, callback: callable, logger):
     """
     Retry a function a maximum number of times and return its results.
 
@@ -235,15 +235,15 @@ def retry(max_attempts: int, callback: callable, logger=None):
     failure_reason = None
     successful_result = None
 
-    for attempt in range(max_attempts + 1):
+    for attempt in range(max_retries + 1):
         try:
             successful_result = callback(attempt)
         except TransientETLError as e:
             # Only retry transient errors
             failure_reason = e
-            if logger and max_attempts - attempt:
+            if max_retries - attempt:
                 logger.warning("Encountered the following error (retrying %s more times): %s",
-                               max_attempts - attempt, str(e))
+                               max_retries - attempt, str(e))
             continue
         except:
             # We consider all other errors permanent and immediately re-raise without retrying
