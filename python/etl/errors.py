@@ -9,19 +9,6 @@ class ETLError(Exception):
     """
 
 
-class PermanentETLError(ETLError):
-    """
-    Represents all types of errors that are known to be permanent failures due irrecoverable situations within the ETL
-    """
-
-
-class TransientETLError(ETLError):
-    """
-    Represents all types of errors that could potentially resolve themselves due to changes in the outside environment,
-    etc., and are thus retryable.
-    """
-
-
 class ETLSystemError(ETLError):
     """
     Blunder in the ETL code -- you'll need to check the ETL code, sorry about that.
@@ -43,6 +30,13 @@ class ETLRuntimeError(ETLError):
     Error found at runtime -- you might be able to just try again or need to fix something upstream.
 
     This exception should be raised when the show-stopper lies outside of code or configuration.
+    """
+
+
+class TransientETLError(ETLRuntimeError):
+    """
+    Represents all types of runtime errors that should be retryable due to the cause being something in the external
+    environment that might change over time.
     """
 
 
@@ -140,7 +134,7 @@ class UpstreamValidationError(ETLRuntimeError):
     """
 
 
-class DataExtractError(ETLRuntimeError):
+class DataExtractError(TransientETLError):
     """
     Exception when extracting from an upstream source fails
     """
@@ -151,11 +145,6 @@ class UnknownTableSizeError(DataExtractError):
 
 
 class SqoopExecutionError(DataExtractError):
-    pass
-
-
-class TransientSqoopExecutionError(TransientETLError):
-    # TODO: Refactor exception hierarchy to properly tag all transient errors
     pass
 
 
@@ -221,7 +210,7 @@ class DataUnloadError(ETLRuntimeError):
     """
 
 
-class RetriesExhaustedError(PermanentETLError):
+class RetriesExhaustedError(ETLRuntimeError):
     """
     Raised when all retry attempts have been exhausted.
 
