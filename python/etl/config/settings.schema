@@ -107,6 +107,7 @@
                     "minimum": 0
                 }
             },
+            "required": [ "extract_retries" ],
             "additionalProperties": false
         },
         "data_warehouse": {
@@ -358,6 +359,6 @@
             "$ref": "#/definitions/glob_pattern_list"
         }
     },
-    "required": [ "data_warehouse", "sources", "type_maps" ],
+    "required": [ "arthur_settings", "data_warehouse", "sources", "type_maps" ],
     "additionalProperties": false
 }
