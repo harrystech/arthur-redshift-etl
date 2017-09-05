@@ -98,6 +98,17 @@
     },
     "type": "object",
     "properties": {
+        "arthur_settings": {
+            "type": "object",
+            "properties": {
+                "extract_retries": {
+                    "description": "If an extract from an upstream source fails due to some transient error, retry the extract at most this many times. Zero disables retries",
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "additionalProperties": false
+        },
         "data_warehouse": {
             "type": "object",
             "properties": {
@@ -345,11 +356,6 @@
         "required_in_full_load": {
             "description": "DEPRECATED USE 'required_for_success' instead",
             "$ref": "#/definitions/glob_pattern_list"
-        },
-        "extract_retries": {
-            "description": "If an extract from an upstream source fails due to some transient error, retry the extract at most this many times.",
-            "type": "integer",
-            "minimum": 1
         }
     },
     "required": [ "data_warehouse", "sources", "type_maps" ],
