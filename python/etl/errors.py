@@ -1,3 +1,8 @@
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
+
+
 class ETLError(Exception):
     """
     Parent to all ETL-oriented exceptions which allows to write effective except statements
@@ -12,8 +17,8 @@ class PermanentETLError(ETLError):
 
 class TransientETLError(ETLError):
     """
-    Represents all types of errors that could potentially resolve themselves due to changes in the outside environment
-    or some kind of intervention, and are thus retryable.
+    Represents all types of errors that could potentially resolve themselves due to changes in the outside environment,
+    etc., and are thus retryable.
     """
 
 
@@ -222,10 +227,13 @@ class RetriesExhaustedError(PermanentETLError):
 
     The causing exception should be passed to this one to complete the chain of failure accountability. For example:
     >>> raise RetriesExhaustedError from ETLRuntimeError("Boom!")
+    Traceback (most recent call last):
+        ...
+    etl.errors.RetriesExhaustedError
     """
 
 
-def retry(max_retries: int, callback: callable, logger):
+def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
     """
     Retry a function a maximum number of times and return its results.
 

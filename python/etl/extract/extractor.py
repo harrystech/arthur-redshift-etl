@@ -90,7 +90,8 @@ class Extractor:
                                                  attempt_num=attempt_num + 1):
                                 self.extract_table(source, relation)
 
-                    retry(get_config_value("arthur_settings.extract_retries"), _monitored_table_extract, self.logger)
+                    retries = int(get_config_value("arthur_settings.extract_retries"))  # type: ignore
+                    retry(retries, _monitored_table_extract, self.logger)
 
                 except ETLRuntimeError:
                     self.failed_sources.add(source.name)
