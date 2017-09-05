@@ -76,11 +76,9 @@ def _flatten_hier(prefix, props):
 
 def _build_config_map(settings):
     mapping = OrderedDict()
-    for section in {"object_store", "resources", "etl_events"}.intersection(settings):
+    for section in {"arthur_settings", "object_store", "resources", "etl_events"}.intersection(settings):
         for name, value in _flatten_hier(section, settings[section]):
             mapping[name] = value
-    for top_level_scalar_key in {"extract_retries"}.intersection(settings):
-        mapping[top_level_scalar_key] = settings[top_level_scalar_key]
     return mapping
 
 
