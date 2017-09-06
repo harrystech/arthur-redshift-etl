@@ -132,7 +132,8 @@
             "parent": { "ref": "ArthurCommandParent" },
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix #{myEtlEnvironment}/current #{mySelection} --wlm-query-slots #{myWlmQuerySlots}",
             "dependsOn": [
-                { "ref": "Bootstrap" }
+                { "ref": "Bootstrap" },
+                { "ref": "EmrActivityUpstreamExtract" }
             ]
         },
         {
