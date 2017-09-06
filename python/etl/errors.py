@@ -248,6 +248,6 @@ def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
         else:
             break
     else:
-        raise RetriesExhaustedError from failure_reason
+        raise RetriesExhaustedError("reached max number of retries (={:d})".format(max_retries)) from failure_reason
 
     return successful_result
