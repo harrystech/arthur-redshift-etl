@@ -213,6 +213,8 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
             if sqoop.returncode != 0:
+                # TODO: Be more intelligent about detecting whether certain Sqoop errors are retryable, instead of
+                # assuming they all are.
                 raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 
