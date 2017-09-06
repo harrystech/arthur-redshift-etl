@@ -1,3 +1,8 @@
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
+
+
 class ETLError(Exception):
     """
     Parent to all ETL-oriented exceptions which allows to write effective except statements
@@ -25,6 +30,13 @@ class ETLRuntimeError(ETLError):
     Error found at runtime -- you might be able to just try again or need to fix something upstream.
 
     This exception should be raised when the show-stopper lies outside of code or configuration.
+    """
+
+
+class TransientETLError(ETLRuntimeError):
+    """
+    Represents all types of runtime errors that should be retryable due to the cause being something in the external
+    environment that might change over time.
     """
 
 
@@ -122,7 +134,7 @@ class UpstreamValidationError(ETLRuntimeError):
     """
 
 
-class DataExtractError(ETLRuntimeError):
+class DataExtractError(TransientETLError):
     """
     Exception when extracting from an upstream source fails
     """
@@ -196,3 +208,46 @@ class DataUnloadError(ETLRuntimeError):
     """
     Exception when the unload operation fails
     """
+
+
+class RetriesExhaustedError(ETLRuntimeError):
+    """
+    Raised when all retry attempts have been exhausted.
+
+    The causing exception should be passed to this one to complete the chain of failure accountability. For example:
+    >>> raise RetriesExhaustedError from ETLRuntimeError("Boom!")
+    Traceback (most recent call last):
+        ...
+    etl.errors.RetriesExhaustedError
+    """
+
+
+def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
+    """
+    Retry a function a maximum number of times and return its results.
+
+    The given callback function is only retried if it throws a TransientETLError. Any other error is considered
+    permanent, and therefore no retry attempt is made.
+    """
+    failure_reason = None
+    successful_result = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            successful_result = callback(attempt)
+        except TransientETLError as e:
+            # Only retry transient errors
+            failure_reason = e
+            if max_retries - attempt:
+                logger.warning("Encountered the following error (retrying %s more times): %s",
+                               max_retries - attempt, str(e))
+            continue
+        except:
+            # We consider all other errors permanent and immediately re-raise without retrying
+            raise
+        else:
+            break
+    else:
+        raise RetriesExhaustedError("reached max number of retries (={:d})".format(max_retries)) from failure_reason
+
+    return successful_result

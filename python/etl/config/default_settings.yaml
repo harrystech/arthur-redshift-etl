@@ -1,4 +1,9 @@
 {
+    # General settings controlling how Arthur itself behaves
+    "arthur_settings": {
+        # If an extract from an upstream source fails due to some transient error, retry the extract at most this many times. Zero disables retries
+        "extract_retries": 1
+    },
     # Target (Redshift) cluster
     "data_warehouse": {
         # The environment variable must contain a full connection string for an admin user to create a database.
