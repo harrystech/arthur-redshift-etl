@@ -4,6 +4,7 @@ DatabaseExtractors query upstream databases and save their data on S3 before wri
 from typing import Dict, List, Optional
 
 from psycopg2.extensions import connection  # only for type annotation
+from psycopg2 import ProgrammingError  # only for type annotation
 
 import etl.db
 from etl.extract.extractor import Extractor
@@ -120,7 +121,10 @@ class DatabaseExtractor(Extractor):
                  , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
             """
         table = relation.source_table_name
-        rows = etl.db.query(conn, stmt, (str(table), str(table)))
+        try:
+            rows = etl.db.query(conn, stmt, (str(table), str(table)))
+        except ProgrammingError:
+            return 1479827456
         bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
         self.logger.info("Size of table '%s.%s': %s (%s)",
                          relation.source_name, table.identifier, bytes_size, pretty_size)
