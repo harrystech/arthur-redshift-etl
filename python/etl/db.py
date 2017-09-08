@@ -110,6 +110,7 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
         "readOnly": "true" if read_only else "false",
         "driver": "org.postgresql.Driver"  # necessary, weirdly enough
     })
+    # TODO: Allow 'redshift://' in URL (and set driver accordingly?)
     if "port" in dsn_properties:
         jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
     else:

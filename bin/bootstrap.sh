@@ -57,6 +57,7 @@ cd "$PROJ_TEMP"
 
 # Download code to all nodes, this includes Python code and its requirements.txt
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
+# TODO: copy sqoop-required jars to /usr/lib/sqoop/lib
 aws s3 cp --only-show-errors --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
     --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh

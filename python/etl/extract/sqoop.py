@@ -107,7 +107,7 @@ class SqoopExtractor(DatabaseExtractor):
 
         args = ["import",
                 "--connect", q(jdbc_url),
-                "--driver", q("org.postgresql.Driver"),
+                "--driver", q("org.postgresql.Driver"),  # TODO: use com.amazon.redshift.jdbc41.Driver
                 "--connection-param-file", q(connection_param_file_path),
                 "--username", q(dsn_properties["user"]),
                 "--password-file", '"file://{}"'.format(password_file_path),
