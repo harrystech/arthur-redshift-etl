@@ -990,7 +990,7 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
         logger.info("Trying to fast forward to '%s'", continue_from)
         selected_relations = list(dropwhile(lambda relation: relation.identifier != continue_from, selected_relations))
         if not selected_relations:
-            logger.warning("Found no relations matching relation '%s'", continue_from)
+            logger.warning("Found no relations named '%s'", continue_from)
             return
 
     relations = LoadableRelation.from_descriptions(selected_relations, "upgrade",
