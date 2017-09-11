@@ -45,7 +45,7 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     """
     # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
     # Now they have two problems.
-    dsn_re = re.compile(r"""(?:jdbc:)?(redshift|postgresql|postgres)://  # be nice and accept either connection type
+    dsn_re = re.compile(r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # be nice and accept either connection type
                             (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
                             (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
                             (?P<database>\w+)  # database (and not dbname)
@@ -70,6 +70,12 @@ def unparse_connection(dsn: Dict[str, str]) -> str:
     return "host={host} port={port} dbname={database} user={user} password=***".format(**values)
 
 
+def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
+    dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
+    dsn_values.pop('subprotocol', None)
+    return dsn_values
+
+
 def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
     Open a connection to the database described by dsn_string which looks something like
@@ -78,7 +84,7 @@ def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, aut
     Caveat Emptor: By default, this turns off autocommit on the connection. This means that you
     have to explicitly commit on the connection object or run your SQL within a transaction context!
     """
-    dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
+    dsn_values = _dsn_connection_values(dsn_dict, application_name)
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
     cx = psycopg2.connect(**dsn_values)
     cx.set_session(autocommit=autocommit, readonly=readonly)
@@ -92,7 +98,7 @@ def connection_pool(max_conn, dsn_dict: Dict[str, str], application_name=psycopg
     Create a connection pool (with up to max_conn connections), where all connections will use the
     given connection string.
     """
-    dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
+    dsn_values = _dsn_connection_values(dsn_dict, application_name)
     return psycopg2.pool.ThreadedConnectionPool(1, max_conn, **dsn_values)
 
 
@@ -105,16 +111,19 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     be passed in separately.
     """
     dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
+    if dsn_properties['subprotocol'] == 'redshift':
+        driver = "com.amazon.redshift.jdbc41.Driver"
+    else:
+        driver = "org.postgresql.Driver"
     dsn_properties.update({
         "ApplicationName": __name__,
         "readOnly": "true" if read_only else "false",
-        "driver": "org.postgresql.Driver"  # necessary, weirdly enough
+        "driver": driver
     })
-    # TODO: Allow 'redshift://' in URL (and set driver accordingly?)
     if "port" in dsn_properties:
-        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:{subprotocol}://{host}:{port}/{database}".format(**dsn_properties)
     else:
-        jdbc_url = "jdbc:postgresql://{host}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:{subprotocol}://{host}/{database}".format(**dsn_properties)
     return jdbc_url, dsn_properties
 
 

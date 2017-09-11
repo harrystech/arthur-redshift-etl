@@ -57,7 +57,10 @@ cd "$PROJ_TEMP"
 
 # Download code to all nodes, this includes Python code and its requirements.txt
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
-# TODO: copy sqoop-required jars to /usr/lib/sqoop/lib
+if [[ -d /usr/lib/sqoop/lib ]]; then
+    sudo cp ./jars/Redshift*.jar /usr/lib/sqoop/lib/
+    sudo chmod 644 /usr/lib/sqoop/lib/Redshift*.jar
+fi
 aws s3 cp --only-show-errors --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
     --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh

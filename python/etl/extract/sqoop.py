@@ -15,6 +15,8 @@ from etl.errors import SqoopExecutionError
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.relation import RelationDescription
 
+SQOOP_LIB_DIR = '/usr/lib/sqoop/lib/'
+
 
 class SqoopExtractor(DatabaseExtractor):
     """
@@ -30,11 +32,20 @@ class SqoopExtractor(DatabaseExtractor):
         self.logger = logging.getLogger(__name__)
         self.sqoop_executable = "sqoop"
 
+        self._install_sqoop_drivers()
+
         # During Sqoop extraction we write out files to a temp location
         self._sqoop_options_dir = etl.config.etl_tmp_dir("sqoop")
         if not os.path.isdir(self._sqoop_options_dir) and not self.dry_run:
             self.logger.info("Creating directory '%s' (with mode 750)", self._sqoop_options_dir)
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
+
+    def _install_sqoop_drivers(self, extra_jars_pattern='Redshift*.jar'):
+        extra_jars_dir = etl.config.etl_tmp_dir("jars")
+        cp_args = ['sudo', 'cp', extra_jars_dir + extra_jars_pattern, SQOOP_LIB_DIR]
+        chmod_args = ['sudo', 'chmod', '644', SQOOP_LIB_DIR + extra_jars_pattern]
+        cp = subprocess.Popen(cp_args)
+        chmod = subprocess.Popen(chmod_args)
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """
@@ -107,7 +118,7 @@ class SqoopExtractor(DatabaseExtractor):
 
         args = ["import",
                 "--connect", q(jdbc_url),
-                "--driver", q("org.postgresql.Driver"),  # TODO: use com.amazon.redshift.jdbc41.Driver
+                "--driver", q(dsn_properties["driver"]),
                 "--connection-param-file", q(connection_param_file_path),
                 "--username", q(dsn_properties["user"]),
                 "--password-file", '"file://{}"'.format(password_file_path),
