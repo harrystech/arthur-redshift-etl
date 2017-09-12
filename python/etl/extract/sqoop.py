@@ -15,8 +15,6 @@ from etl.errors import SqoopExecutionError
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.relation import RelationDescription
 
-SQOOP_LIB_DIR = '/usr/lib/sqoop/lib/'
-
 
 class SqoopExtractor(DatabaseExtractor):
     """
@@ -32,27 +30,18 @@ class SqoopExtractor(DatabaseExtractor):
         self.logger = logging.getLogger(__name__)
         self.sqoop_executable = "sqoop"
 
-        self._install_sqoop_drivers()
-
         # During Sqoop extraction we write out files to a temp location
         self._sqoop_options_dir = etl.config.etl_tmp_dir("sqoop")
         if not os.path.isdir(self._sqoop_options_dir) and not self.dry_run:
             self.logger.info("Creating directory '%s' (with mode 750)", self._sqoop_options_dir)
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
 
-    def _install_sqoop_drivers(self, extra_jars_pattern='Redshift*.jar'):
-        extra_jars_dir = etl.config.etl_tmp_dir("jars")
-        cp_args = ['sudo', 'cp', extra_jars_dir + extra_jars_pattern, SQOOP_LIB_DIR]
-        chmod_args = ['sudo', 'chmod', '644', SQOOP_LIB_DIR + extra_jars_pattern]
-        cp = subprocess.Popen(cp_args)
-        chmod = subprocess.Popen(chmod_args)
-
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
         with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
-            table_size = self.fetch_source_table_size(conn, relation)
+            table_size = self.fetch_source_table_size(conn, source.dsn['subprotocol'], relation)
 
         connection_params_file_path = self.write_connection_params()
         password_file_path = self.write_password_file(source.dsn["password"])

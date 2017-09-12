@@ -112,7 +112,7 @@ class DatabaseExtractor(Extractor):
             statement += """ WHERE (("{}" % 10) = 1)""".format(add_sampling_on_column)
         return statement
 
-    def fetch_source_table_size(self, conn: connection, relation: RelationDescription) -> int:
+    def fetch_source_table_size(self, conn: connection, subprotocol: str, relation: RelationDescription) -> int:
         """
         Return size of source table for this relation in bytes
         """
@@ -121,12 +121,12 @@ class DatabaseExtractor(Extractor):
                  , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
             """
         table = relation.source_table_name
-        try:
+        if subprotocol.startswith('postgres'):
             rows = etl.db.query(conn, stmt, (str(table), str(table)))
             bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
             self.logger.info("Size of table '%s.%s': %s (%s)",
                              relation.source_name, table.identifier, bytes_size, pretty_size)
-        except psycopg2.ProgrammingError:
+        else:
             bytes_size, pretty_size = 671088640, '671 Mb'
             self.logger.info("Pessimistic size estimate for pre-Postgres 9 table '%s.%s': %s (%s)",
                              relation.source_name, table.identifier, bytes_size, pretty_size)

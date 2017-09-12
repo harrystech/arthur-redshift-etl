@@ -111,19 +111,15 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     be passed in separately.
     """
     dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
-    if dsn_properties['subprotocol'] == 'redshift':
-        driver = "com.amazon.redshift.jdbc41.Driver"
-    else:
-        driver = "org.postgresql.Driver"
     dsn_properties.update({
         "ApplicationName": __name__,
         "readOnly": "true" if read_only else "false",
-        "driver": driver
+        "driver": "org.postgresql.Driver"
     })
     if "port" in dsn_properties:
-        jdbc_url = "jdbc:{subprotocol}://{host}:{port}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
     else:
-        jdbc_url = "jdbc:{subprotocol}://{host}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:postgresql://{host}/{database}".format(**dsn_properties)
     return jdbc_url, dsn_properties
 
 
