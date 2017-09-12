@@ -3,7 +3,6 @@ DatabaseExtractors query upstream databases and save their data on S3 before wri
 """
 from typing import Dict, List, Optional
 
-import psycopg2
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.db
@@ -128,7 +127,7 @@ class DatabaseExtractor(Extractor):
                              relation.source_name, table.identifier, bytes_size, pretty_size)
         else:
             bytes_size, pretty_size = 671088640, '671 Mb'
-            self.logger.info("Pessimistic size estimate for pre-Postgres 9 table '%s.%s': %s (%s)",
+            self.logger.info("Pessimistic size estimate for non-postgres table '%s.%s': %s (%s)",
                              relation.source_name, table.identifier, bytes_size, pretty_size)
 
         return bytes_size
