@@ -40,8 +40,7 @@ class SqoopExtractor(DatabaseExtractor):
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
-        with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
-            table_size = self.fetch_source_table_size(conn, source.dsn['subprotocol'], relation)
+        table_size = self.fetch_source_table_size(source.dsn, relation)
 
         connection_params_file_path = self.write_connection_params()
         password_file_path = self.write_password_file(source.dsn["password"])
