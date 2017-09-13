@@ -1,6 +1,7 @@
 """
 DatabaseExtractors query upstream databases and save their data on S3 before writing manifests
 """
+from contextlib import closing
 from typing import Dict, List, Optional
 
 from psycopg2.extensions import connection  # only for type annotation
@@ -111,17 +112,28 @@ class DatabaseExtractor(Extractor):
             statement += """ WHERE (("{}" % 10) = 1)""".format(add_sampling_on_column)
         return statement
 
-    def fetch_source_table_size(self, conn: connection, relation: RelationDescription) -> int:
+    def fetch_source_table_size(self, dsn_dict: Dict[str, str], relation: RelationDescription) -> int:
         """
-        Return size of source table for this relation in bytes
+        Return size or estimated size of source table for this relation in bytes.
+
+        For source tables in a postgres database, fetch the actual size from pg_catalog tables.
+        Otherwise, pessimistically estimate a large fixed size.
         """
         stmt = """
             SELECT pg_catalog.pg_table_size(%s) AS "bytes"
                  , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
             """
         table = relation.source_table_name
-        rows = etl.db.query(conn, stmt, (str(table), str(table)))
-        bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
-        self.logger.info("Size of table '%s.%s': %s (%s)",
-                         relation.source_name, table.identifier, bytes_size, pretty_size)
+        subprotocol = dsn_dict['subprotocol']
+        if subprotocol.startswith('postgres'):
+            with closing(etl.db.connection(dsn_dict, readonly=True)) as conn:
+                rows = etl.db.query(conn, stmt, (str(table), str(table)))
+            bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
+            self.logger.info("Size of table '%s.%s': %s (%s)",
+                             relation.source_name, table.identifier, bytes_size, pretty_size)
+        else:
+            bytes_size, pretty_size = 671088640, '671 Mb'
+            self.logger.info("Pessimistic size estimate for non-postgres table '%s.%s': %s (%s)",
+                             relation.source_name, table.identifier, bytes_size, pretty_size)
+
         return bytes_size

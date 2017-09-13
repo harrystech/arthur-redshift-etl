@@ -40,8 +40,7 @@ class SqoopExtractor(DatabaseExtractor):
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
         """
-        with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
-            table_size = self.fetch_source_table_size(conn, relation)
+        table_size = self.fetch_source_table_size(source.dsn, relation)
 
         connection_params_file_path = self.write_connection_params()
         password_file_path = self.write_password_file(source.dsn["password"])
@@ -107,7 +106,7 @@ class SqoopExtractor(DatabaseExtractor):
 
         args = ["import",
                 "--connect", q(jdbc_url),
-                "--driver", q("org.postgresql.Driver"),
+                "--driver", q(dsn_properties["driver"]),
                 "--connection-param-file", q(connection_param_file_path),
                 "--username", q(dsn_properties["user"]),
                 "--password-file", '"file://{}"'.format(password_file_path),

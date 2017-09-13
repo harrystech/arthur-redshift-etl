@@ -78,12 +78,13 @@ class SparkExtractor(DatabaseExtractor):
         """
         partition_key = relation.find_partition_key()
 
-        with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
-            table_size = self.fetch_source_table_size(conn, relation)
-            num_partitions = self.maximize_partitions(table_size)
-            if partition_key is None or num_partitions <= 1:
-                predicates = None
-            else:
+        table_size = self.fetch_source_table_size(source.dsn, relation)
+        num_partitions = self.maximize_partitions(table_size)
+
+        if partition_key is None or num_partitions <= 1:
+            predicates = None
+        else:
+            with closing(etl.db.connection(source.dsn, readonly=True)) as conn:
                 predicates = self.determine_partitioning(conn, relation, partition_key, num_partitions)
 
         if self.use_sampling_with_table(table_size):
