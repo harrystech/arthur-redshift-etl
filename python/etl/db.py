@@ -71,6 +71,12 @@ def unparse_connection(dsn: Dict[str, str]) -> str:
 
 
 def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
+    """
+    Return a dictionary of parameters that can be used to open a db connection.
+
+    This includes popping "subprotocol" from our dictionary of paramters extracted
+    from the connection string, which is not expected by psycopg2.connect().
+    """
     dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
     dsn_values.pop('subprotocol', None)
     return dsn_values
@@ -109,6 +115,9 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     This is necessary since a JDBC URL may not contain all the properties needed
     to successfully connect, e.g. username, password.  These properties must
     be passed in separately.
+
+    Use the postgresql subprotocol and driver regardless of whether the connection
+    string's protocol was postgres or redshift.
     """
     dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
     dsn_properties.update({

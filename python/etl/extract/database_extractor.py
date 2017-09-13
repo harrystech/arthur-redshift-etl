@@ -114,7 +114,10 @@ class DatabaseExtractor(Extractor):
 
     def fetch_source_table_size(self, dsn_dict: Dict[str, str], relation: RelationDescription) -> int:
         """
-        Return size of source table for this relation in bytes
+        Return size or estimated size of source table for this relation in bytes.
+
+        For source tables in a postgres database, fetch the actual size from pg_catalog tables.
+        Otherwise, pessimistically estimate a large fixed size.
         """
         stmt = """
             SELECT pg_catalog.pg_table_size(%s) AS "bytes"
