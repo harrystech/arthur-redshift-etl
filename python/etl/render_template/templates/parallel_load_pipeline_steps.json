@@ -1,0 +1,13 @@
+{
+    "objects":
+        [
+         {
+            "id": "ArthurLoad",
+            "name": "Arthur Load (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment}  --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
+            "dependsOn": { "ref": "Bootstrap" }
+            }
+        ]
+}

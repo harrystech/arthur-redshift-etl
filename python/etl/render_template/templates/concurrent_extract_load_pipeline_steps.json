@@ -1,0 +1,39 @@
+{
+    "objects": [
+        {
+            "id": "ETLCluster",
+            "name": "ETL EMR Cluster",
+            "type": "EmrCluster",
+            "parent": { "ref": "ResourceParent" },
+            "releaseLabel": "${resources.EMR.release_label}",
+            "masterInstanceType": "${resources.EMR.master.instance_type}",
+            "coreInstanceType": "${resources.EMR.core.instance_type}",
+            "coreInstanceCount": "${resources.EMR.core.instance_count}",
+            "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
+            "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
+            "additionalMasterSecurityGroupIds": [ "${resources.VPC.whitelist_security_group}" ],
+            "bootstrapAction": "s3://#{myS3Bucket}/#{myEtlEnvironment}/bin/bootstrap.sh,#{myS3Bucket},#{myEtlEnvironment}",
+            "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
+            "configuration": []
+        },
+        {
+            "id": "EmrActivityUpstreamExtract",
+            "name": "Arthur Extract (EMR Activity)",
+            "type": "EmrActivity",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,#{myEtlEnvironment},--max-partitions,#{myMaxPartitions}",
+            "runsOn": { "ref": "ETLCluster" },
+            "maximumRetries": "0"
+        },
+        {
+            "id": "ArthurLoad",
+            "name": "Arthur Load (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment} --concurrent-extract --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
+            "dependsOn": [
+                { "ref": "Bootstrap" }
+            ]
+        }
+    ],
+    "values": {"myMaxPartitions": "16"}
+}

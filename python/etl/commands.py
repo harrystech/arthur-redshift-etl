@@ -32,6 +32,7 @@ import etl.db
 import etl.pipeline
 import etl.relation
 import etl.render_template
+import etl.render_template.splice
 import etl.selftest
 import etl.sync
 import etl.unload
@@ -904,11 +905,14 @@ class RenderTemplateCommand(SubCommand):
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument("-l", "--list", help="list available templates", action="store_true")
         group.add_argument("template", help="name of template", nargs="?")
+        parser.add_argument("splice_template", help="name of partial template to combine", nargs="?")
         parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
 
     def callback(self, args, config):
         if args.list:
             etl.render_template.list_templates(compact=args.compact)
+        elif args.template and args.splice_template:
+            etl.render_template.splice.splice_pipeline(args.template, args.splice_template)
         elif args.template:
             etl.render_template.render(args.template, compact=args.compact)
 

@@ -51,7 +51,7 @@ def list_templates(compact=False) -> None:
             print("{name:{width}s}: {filename}".format(name=name, filename=filename, width=width))
 
 
-def render(template_name: str, compact=False) -> None:
+def _render_template_string(template_name: str) -> str:
     """
     Replace template ${strings} by configuration values.
     """
@@ -66,19 +66,30 @@ def render(template_name: str, compact=False) -> None:
         config_mapping = etl.config.get_config_map()
         template = DottedNameTemplate(original)
         rendered = template.substitute(config_mapping)
+        return rendered, filename
     except (KeyError, ValueError) as exc:
         raise MissingValueTemplateError("failed to render template in '{}'".format(filename)) from exc
 
-    if filename.endswith((".json", ".yaml", ".yml")):
-        # Always load as YAML in order to support comments.
-        obj = yaml.safe_load(rendered)
-        # But since we don't support anything that couldn't be done in JSON, dump the (prettier) JSON format.
+
+def _print_template(obj, as_json=True, compact=False):
+    if as_json:
         if compact:
             print(simplejson.dumps(obj, separators=(',', ':'), sort_keys=True))
         else:
             print(simplejson.dumps(obj, indent="    ", sort_keys=True))
     else:
-        print(rendered, end='')
+        print(obj, end='')
+
+
+def render(template_name: str, compact=False) -> None:
+    rendered, filename = _render_template_string(template_name)
+    if filename.endswith((".json", ".yaml", ".yml")):
+        # Always load as YAML in order to support comments.
+        obj = yaml.safe_load(rendered)
+        # But since we don't support anything that couldn't be done in JSON, dump the (prettier) JSON format.
+        _print_template(obj, as_json=True, compact=compact)
+    else:
+        _print_template(rendered, as_json=False, compact=compact)
 
 
 def show_value(name: str, default: Optional[str]) -> None:
