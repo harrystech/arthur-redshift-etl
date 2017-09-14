@@ -161,13 +161,13 @@ class LoadableRelation:
         dependent_relation_identifiers = set(r.identifier for r in dependent_relations)
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
-    def mark_failure(self, relations: List["LoadableRelation"]) -> None:
+    def mark_failure(self, relations: List["LoadableRelation"], exc_info=True) -> None:
         """Mark this relation as failed and set dependents (elements from :relations) to skip_copy"""
         self.failed = True
         if self.is_required:
-            logger.error("Failed to build required relation '%s':", self.identifier, exc_info=True)
+            logger.error("Failed to build required relation '%s':", self.identifier, exc_info=exc_info)
         else:
-            logger.warning("Failed to build relation '%s':", self.identifier, exc_info=True)
+            logger.warning("Failed to build relation '%s':", self.identifier, exc_info=exc_info)
         # Skip copy on all dependents
         dependents = self.find_dependents(relations)
         for dep in dependents:
@@ -703,7 +703,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
-                        item.mark_failure(relations)
+                        item.mark_failure(relations, exc_info=False)
 
     uncaught_load_worker_exception = threading.Event()
 
