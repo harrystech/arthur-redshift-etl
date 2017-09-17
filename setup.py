@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="redshift_etl",
-    version="1.2.1",
+    version="1.2.2",
     author="Harry's Data Engineering and Contributors",
     description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
     license="MIT",
