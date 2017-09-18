@@ -17,7 +17,7 @@ easy to find in the AWS Console, which is to say that the `Name` tag is set as m
 ## VPC (vpc.yaml)
 
 Default IP address range
-* IPv4 CIDR: `10.10.0.0/16` (configurable, might need alternate)
+* IPv4 CIDR: `10.10.0.0/16` (configurable, but make sure the subnets are within the VPC's IP range)
 * Network ACL: Allow all traffic
 * DNS resolution: yes
 * DNS hostnames: yes
@@ -39,7 +39,7 @@ that doesn't come in until we run Lambdas to load data into tables in Redshift).
 
 ### Service endpoint
 
-Endpoint to S3 with read access to anything but write access only to some buckets:
+Endpoint to S3 with read access to anything and write access only to some buckets:
 
 Example:
 ```JSON
@@ -48,7 +48,7 @@ Example:
     "Id": "Policy1472827094035",
     "Statement": [
         {
-            "Sid": "S3ReadOnlyEverything",
+            "Sid": "ReadOnlyEverything",
             "Effect": "Allow",
             "Principal": "*",
             "Action": [
@@ -59,19 +59,21 @@ Example:
             "Resource": "*"
         },
         {
-            "Sid": "S3ReadWrite",
+            "Sid": "WriteSelective",
             "Effect": "Allow",
             "Principal": "*",
-            "Action": "s3:*",
+            "Action": [
+                "s3:DeleteObject*",
+                "s3:PutObject*"
+            ],
             "Resource": [
-                "arn:aws:s3:::<object store>/*"
+                "arn:aws:s3:::<object store>/*",
+                "arn:aws:s3:::<data lake>/*"
             ]
         }
     ]
 }
 ```
-
-This could be improved further since we only need write permissions to `data` folders.
 
 (And read-access to other buckets is important, e.g. for starting up EMR.)
 
@@ -79,7 +81,7 @@ This could be improved further since we only need write permissions to `data` fo
 
 #### Public
 
-The data warehouse will be in the "public" subnet.
+The data warehouse and EMR cluster will be in the "public" subnet.
 
 Region: `us-east-1b`
 IPv4 CIDR: `10.10.0.0/22`
@@ -88,9 +90,11 @@ Routing Table:
 * all: internet gateway
 * service endpoint for S3
 
+(The EMR cluster is "public" to make it easy to login from the office and debug if that's ever necessary.)
+
 #### Private
 
-All instances will be running in the "private" subnet.
+Any Lambda instances will be running in the "private" subnet.
 
 Region: `us-east-1b`
 IPv4 CIDR: `10.10.8.0/22`

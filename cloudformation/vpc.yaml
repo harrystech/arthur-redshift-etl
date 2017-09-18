@@ -15,7 +15,11 @@ Parameters:
         Type: "AWS::EC2::KeyPair::KeyName"
 
     ObjectStore:
-        Description: A bucket name where schemas and data will be stored
+        Description: A bucket name where schemas and data will be stored (temporarily)
+        Type: String
+
+    DataLake:
+        Description: A bucket name where data is stored, likely using 'unload' for other applications
         Type: String
 
     VpcCIDR:
@@ -229,7 +233,7 @@ Resources:
             PolicyDocument: {
                 Version: "2012-10-17",
                 Statement: [{
-                    "Sid": "S3ReadOnlyEverything",
+                    "Sid": "ReadOnlyEverything",
                     "Effect": "Allow",
                     "Principal": "*",
                     "Action": [
@@ -240,12 +244,16 @@ Resources:
                     "Resource": "*"
                 },
                 {
-                    "Sid": "S3ReadWriteObjectStore",
+                    "Sid": "WriteSelective",
                     "Effect": "Allow",
                     "Principal": "*",
-                    "Action": "s3:*",
+                    "Action": [
+                        "s3:DeleteObject*",
+                        "s3:PutObject*"
+                    ]
                     "Resource": [
-                        !Join [ "", [ "arn:aws:s3:::", !Ref ObjectStore, "/*" ] ]
+                        !Join [ "", [ "arn:aws:s3:::", !Ref ObjectStore, "/*" ] ],
+                        !Join [ "", [ "arn:aws:s3:::", !Ref DataLake, "/*" ] ]
                     ]
                 }
             ]}
