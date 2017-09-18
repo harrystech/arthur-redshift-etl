@@ -12,7 +12,7 @@ from typing import Dict, List, Set
 import etl.monitor
 import etl.s3
 import etl.db
-from etl.config import get_config_value
+from etl.config import get_config_int
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (
     DataExtractError,
@@ -90,7 +90,7 @@ class Extractor:
                                                  attempt_num=attempt_num + 1):
                                 self.extract_table(source, relation)
 
-                    retries = int(get_config_value("arthur_settings.extract_retries"))  # type: ignore
+                    retries = get_config_int("arthur_settings.extract_retries")
                     retry(retries, _monitored_table_extract, self.logger)
 
                 except ETLRuntimeError:
@@ -167,13 +167,13 @@ class Extractor:
 
         if self.dry_run:
             if not remote_files:
-                self.logger.warning("Dry-run: Found no CSV files")
+                self.logger.warning("Dry-run: Found no CSV files to add to manifest")
             else:
                 self.logger.info("Dry-run: Skipping writing manifest file 's3://%s/%s' for %d CSV file(s)",
                                  relation.bucket_name, relation.manifest_file_name, len(csv_files))
         else:
             if not remote_files:
-                raise MissingCsvFilesError("Found no CSV files")
+                raise MissingCsvFilesError("found no CSV files to add to manifest")
 
             self.logger.info("Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
                              relation.bucket_name, relation.manifest_file_name, len(csv_files))
