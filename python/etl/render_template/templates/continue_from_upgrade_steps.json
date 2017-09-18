@@ -1,0 +1,31 @@
+{
+    "objects": [
+        {
+            "id": "ArthurUpgrade",
+            "name": "Arthur Upgrade (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --with-staging-schemas --continue-from #{continueFromRelation} --prolix --prefix #{myEtlEnvironment}  --wlm-query-slots #{myWlmQuerySlots}",
+            "dependsOn": { "ref": "Bootstrap" }
+        },
+        {
+            "id": "ArthurPromoteSchemas",
+            "name": "Arthur PromoteSchemas (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ promote_schemas --from-position staging --prolix",
+            "dependsOn": { "ref": "ArthurUpgrade" }
+        }
+    ],
+    "parameters": [
+            {
+            "id": "continueFromRelation",
+            "type": "String",
+            "optional": "false",
+            "description": "Relation from which to resume staging upgrade",
+            "watermark": "core.orders",
+            "helpText": "Where did the build being resumed fail?"
+        }
+    ],
+    "values": {"continueFromRelation": "core.orders"}
+}

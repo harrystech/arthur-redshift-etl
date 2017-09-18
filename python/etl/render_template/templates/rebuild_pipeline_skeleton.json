@@ -52,22 +52,6 @@
             "terminateAfter": "8 Hours"
         },
         {
-            "id": "ETLCluster",
-            "name": "ETL EMR Cluster",
-            "type": "EmrCluster",
-            "parent": { "ref": "ResourceParent" },
-            "releaseLabel": "${resources.EMR.release_label}",
-            "masterInstanceType": "${resources.EMR.master.instance_type}",
-            "coreInstanceType": "${resources.EMR.core.instance_type}",
-            "coreInstanceCount": "${resources.EMR.core.instance_count}",
-            "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
-            "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
-            "additionalMasterSecurityGroupIds": [ "${resources.VPC.whitelist_security_group}" ],
-            "bootstrapAction": "s3://#{myS3Bucket}/#{myEtlEnvironment}/bin/bootstrap.sh,#{myS3Bucket},#{myEtlEnvironment}",
-            "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
-            "configuration": []
-        },
-        {
             "id": "ArthurDriverEC2Resource",
             "type": "Ec2Resource",
             "parent": { "ref": "ResourceParent" },
@@ -122,25 +106,15 @@
             "name": "Ping Cronut After Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref":"ShellCommandParent" },
-            "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_BOOTSTRAP",
+            "command": "echo PING_AFTER_BOOTSTRAP",
             "dependsOn": { "ref": "Bootstrap" }
-        },
-        {
-            "id": "ArthurLoad",
-            "name": "Arthur Load (EC2)",
-            "type": "ShellCommandActivity",
-            "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment} --concurrent-extract --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
-            "dependsOn": [
-                { "ref": "Bootstrap" }
-            ]
         },
         {
             "id": "PublishAndBackup",
             "name": "Publish and Backup (EC2)",
             "type": "ShellCommandActivity",
             "parent": {"ref": "ShellCommandParent"},
-            "command": "bash /tmp/redshift_etl/bin/sync_env.sh -y #{myS3Bucket} #{myEtlEnvironment} #{myEtlEnvironment}/current",
+            "command": "echo /tmp/redshift_etl/bin/sync_env.sh -y #{myS3Bucket} #{myEtlEnvironment} #{myEtlEnvironment}/current",
             "dependsOn": { "ref": "ArthurLoad" }
         },
         {
@@ -156,7 +130,7 @@
             "name": "Ping Cronut After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref":"ShellCommandParent" },
-            "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_ETL",
+            "command": "echo PING_AFTER_ETL",
             "dependsOn": [
                 { "ref": "PublishAndBackup" },
                 { "ref": "ArthurUnload" }
@@ -207,7 +181,6 @@
         "myEtlEnvironment": "development",
         "myStartDateTime": "2525-01-01T00:00:00",
         "myOccurrences": "1000",
-        "myMaxPartitions": "16",
         "myMaxConcurrency": "4",
         "myWlmQuerySlots": "3"
     }
