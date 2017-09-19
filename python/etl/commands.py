@@ -292,9 +292,6 @@ def add_standard_arguments(parser, options):
                            action="store_const", const="file", dest="scheme", default="file")
         group.add_argument("-r", "--remote-files", help="use files in S3",
                            action="store_const", const="s3", dest="scheme")
-    if "max-partitions" in options:
-        parser.add_argument("-m", "--max-partitions", metavar="N",
-                            help="set max number of partitions to write to N (default: %(default)s)", default=4)
     if "max-concurrency" in options:
         parser.add_argument("-x", "--max-concurrency", metavar="N",
                             help="EXPERIMENTAL set max number of parallel loads to use to N (default: %(default)s)",
@@ -561,14 +558,17 @@ class ExtractToS3Command(MonitoredSubCommand):
                             help="extract as much data as possible, ignoring errors along the way",
                             default=False, action="store_true")
         parser.add_argument("-m", "--max-partitions", metavar="N", type=int,
-                            help="set max number of partitions to write to N (default: %(default)s)",
+                            help="set max number of partitions to write to N "
+                                 "(overrides 'resources.EMR.max_partitions')",
                             default=8)
         parser.add_argument("--use-sampling",
                             help="use only 10%% of rows in extracted tables that are larger than 1MB",
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        if args.max_partitions < 1:
+        # n.b. the "8" as the max partitions is backwards compatible as the default
+        max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions", 8)
+        if max_partitions < 1:
             raise InvalidArgumentError("Option for max partitions must be >= 1")
         if args.extractor not in ("sqoop", "spark", "manifest-only"):
             raise ETLSystemError("bad extractor value: {}".format(args.extractor))
@@ -588,7 +588,7 @@ class ExtractToS3Command(MonitoredSubCommand):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
                                                        required_relation_selector=config.required_in_full_load_selector)
         etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
-                                             max_partitions=args.max_partitions,
+                                             max_partitions=max_partitions,
                                              use_sampling=args.use_sampling,
                                              keep_going=args.keep_going,
                                              dry_run=args.dry_run)

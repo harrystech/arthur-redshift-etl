@@ -22,9 +22,9 @@ import simplejson as json
 import yaml
 
 import etl.config.dw
-from etl.config.dw import DataWarehouseConfig
-from etl.errors import SchemaInvalidError, SchemaValidationError
 import etl.monitor
+from etl.config.dw import DataWarehouseConfig
+from etl.errors import InvalidArgumentError, SchemaInvalidError, SchemaValidationError
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -47,11 +47,32 @@ def get_dw_config():
 
 
 def get_config_value(name: str, default: Optional[str]=None) -> Optional[str]:
+    """
+    Lookup configuration value in known and flattened settings -- pass in a fully-qualified name
+    """
     assert _mapped_config is not None, "attempted to get config value before reading config map"
     return _mapped_config.get(name, default)
 
 
+def get_config_int(name: str, default: Optional[int]=None) -> int:
+    """
+    Lookup a configuration value that is an integer.
+    It is an error if the value (even when using the default) is None.
+    """
+    if default is None:
+        value = get_config_value(name)
+    else:
+        value = get_config_value(name, str(default))
+    if value is None:
+        raise InvalidArgumentError("missing config for {}".format(name))
+    else:
+        return int(value)
+
+
 def set_config_value(name: str, value: str) -> None:
+    """
+    Set configuration value to given string.
+    """
     if _mapped_config is not None:
         _mapped_config.setdefault(name, value)
 
