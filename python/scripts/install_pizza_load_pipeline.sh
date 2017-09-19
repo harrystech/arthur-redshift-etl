@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 2 || "$1" = "-h" ]]; then
-    echo "Pizza delivery! Right on time or it's free! Runs once, starting now."
-    echo "Expects prefix to already have all necessary manifests for source data."
-    echo "Usage: `basename $0` <environment> <wlm-slots>"
+if [[ $# -lt 2 || $# -gt 3 || "$1" = "-h" ]]; then
+
+    cat <<EOF
+Pizza delivery! Right on time or it's free! Runs once, starting now.
+Expects S3 folder under prefix to already have all necessary manifests for source data.
+
+Usage: `basename $0` <environment> <wlm-slots> [<continue-from>]
+
+The loader will pick up from the "continue-from" relation if specified.
+EOF
     exit 0
+
 fi
 
 set -e -u
@@ -12,6 +19,7 @@ set -e -u
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 WLM_SLOTS="$2"
+CONTINUE_FROM_RELATION="${3:-*}"
 
 START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
 
@@ -59,6 +67,7 @@ aws datapipeline put-pipeline-definition \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
+        mySelection="$CONTINUE_FROM_RELATION" \
         myMaxConcurrency="4" \
         myWlmQuerySlots="$WLM_SLOTS" \
     --pipeline-id "$PIPELINE_ID"

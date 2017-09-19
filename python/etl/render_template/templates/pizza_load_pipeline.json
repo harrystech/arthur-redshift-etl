@@ -94,12 +94,20 @@
             "dependsOn": { "ref": "CopyBootstrap" }
         },
         {
-            "id": "ArthurLoad",
-            "name": "Arthur Load (EC2)",
+            "id": "ArthurUpgrade",
+            "name": "Arthur Upgrade (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment}  --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --with-staging-schemas --continue-from #{mySelection} --prolix --prefix #{myEtlEnvironment} --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
             "dependsOn": { "ref": "Bootstrap" }
+        },
+        {
+            "id": "ArthurPromote",
+            "name": "Arthur Promote (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ promote_schemas --from-position staging --prolix",
+            "dependsOn": { "ref": "ArthurUpgrade" }
         },
         {
             "id": "PublishAndBackup",
@@ -107,7 +115,7 @@
             "type": "ShellCommandActivity",
             "parent": {"ref": "ShellCommandParent"},
             "command": "bash /tmp/redshift_etl/bin/sync_env.sh -y #{myS3Bucket} #{myEtlEnvironment} #{myEtlEnvironment}/current",
-            "dependsOn": { "ref": "ArthurLoad" }
+            "dependsOn": { "ref": "ArthurPromote" }
         },
         {
             "id": "ArthurUnload",
@@ -115,7 +123,7 @@
             "type": "ShellCommandActivity",
             "parent": {"ref": "ArthurCommandParent"},
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ unload --prolix --keep-going --prefix #{myEtlEnvironment}",
-            "dependsOn": {"ref": "ArthurLoad"}
+            "dependsOn": {"ref": "ArthurPromote"}
         },
         {
             "id": "PingCronutAfterEtl",
@@ -158,12 +166,21 @@
             "description": "UTC ISO formatted string giving the datetime to start the pipeline",
             "watermark": "2525-01-01T00:00:00",
             "helpText": "When should the pipeline's daily cadence start?"
-        }
+        },
+        {
+            "id": "mySelection",
+            "type": "String",
+            "optional": "false",
+            "description": "Relation name to continue from (or *) (for ArthurUpgrade)",
+            "watermark": "*",
+            "helpText": "Which table should we continue from?"
+        },
     ],
     "values": {
         "myS3Bucket": "data_lake_bucket",
         "myEtlEnvironment": "development",
         "myStartDateTime": "2525-01-01T00:00:00",
+        "mySelection": "*",
         "myMaxConcurrency": "4",
         "myWlmQuerySlots": "3"
     }
