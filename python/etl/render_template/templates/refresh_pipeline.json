@@ -188,16 +188,16 @@
             "type": "String",
             "optional": "false",
             "description": "Space separated list of arthur pattern globs (for ArthurLoad)",
-            "watermark": "stuff",
-            "helpText": "stuff"
+            "watermark": "*",
+            "helpText": "Which tables should be refreshed?"
         },
         {
             "id": "myCommaSeparatedSelection",
             "type": "String",
             "optional": "false",
             "description": "Comma separated list of arthur pattern globs (for ArthurExtract)",
-            "watermark": "stuff",
-            "helpText": "stuff"
+            "watermark": "*",
+            "helpText": "Which tables should be refreshed?"
         }
     ],
     "values": {

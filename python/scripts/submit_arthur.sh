@@ -4,6 +4,7 @@ set -e -u
 
 # Submit to a local Spark cluster.  (Submitting to an EMR cluster is done using steps.)
 # This will grab all the JAR files in the local jars directory.
+# N.B. Arthur will automatically use this script for extracting with Spark.
 
 # CAVEAT If you make changes here, be sure to re-install the package to make sure changes
 # propagate to the copy of this script in your path.

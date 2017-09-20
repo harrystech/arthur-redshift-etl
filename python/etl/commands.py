@@ -307,7 +307,8 @@ def add_standard_arguments(parser, options):
                             action="store_true")
     if "continue-from" in options:
         parser.add_argument("--continue-from",
-                            help="skip forward in execution until the specified relation, then work forward from it")
+                            help="skip forward in execution until the specified relation, then work forward from it"
+                            " (the special token '*' is allowed to signify continuing from the first relation)")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)

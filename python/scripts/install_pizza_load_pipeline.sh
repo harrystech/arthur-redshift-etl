@@ -1,17 +1,31 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 2 || "$1" = "-h" ]]; then
-    echo "Pizza delivery! Right on time or it's free! Runs once, starting now."
-    echo "Expects prefix to already have all necessary manifests for source data."
-    echo "Usage: `basename $0` <environment> <wlm-slots>"
+if [[ $# -lt 2 || $# -gt 3 || "$1" = "-h" ]]; then
+
+    cat <<EOF
+Pizza delivery! Right on time or it's free! Runs once, starting now.
+Expects S3 folder under prefix to already have all necessary manifests for source data.
+
+Usage: `basename $0` <environment> <wlm-slots> [<continue-from>]
+
+The loader will pick up from the "continue-from" relation if specified.
+EOF
     exit 0
+
 fi
 
 set -e -u
 
+# Verify that there is a local configuration directory
+if [[ ! -d ./config ]]; then
+    echo "Failed to find './config' directory. Make sure you are in the directory with your data warehouse setup."
+    exit 1
+fi
+
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 WLM_SLOTS="$2"
+CONTINUE_FROM_RELATION="${3:-*}"
 
 START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
 
@@ -33,11 +47,10 @@ fi
 AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
 
 PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
-
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" pizza_load_pipeline > "$PIPELINE_DEFINITION_FILE"
-
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" pizza_load_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
     --unique-id pizza-etl-pipeline \
@@ -59,6 +72,7 @@ aws datapipeline put-pipeline-definition \
         myS3Bucket="$PROJ_BUCKET" \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
+        mySelection="$CONTINUE_FROM_RELATION" \
         myMaxConcurrency="4" \
         myWlmQuerySlots="$WLM_SLOTS" \
     --pipeline-id "$PIPELINE_ID"
