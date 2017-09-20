@@ -13,6 +13,12 @@ fi
 
 set -e -u
 
+# Verify that there is a local configuration directory
+if [[ ! -d ./config ]]; then
+    echo "Failed to find './config' directory. Make sure you are in the directory with your data warehouse setup."
+    exit 1
+fi
+
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="${1:-$DEFAULT_PREFIX}"
 
@@ -45,9 +51,9 @@ fi
 AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
 
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" validation_pipeline > "$PIPELINE_DEFINITION_FILE"
-
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" validation_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
     --unique-id validation_pipeline \

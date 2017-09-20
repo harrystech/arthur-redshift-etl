@@ -13,7 +13,6 @@ import sys
 import unittest
 from typing import Optional
 
-import mypy.api
 
 # Skip etl.commands to avoid circular dependency
 import etl.config
@@ -75,6 +74,9 @@ def run_type_checker() -> None:
     print("Running type checker...")
     if not os.path.isdir("python"):
         raise etl.errors.ETLRuntimeError("Cannot find source directory: 'python'")
+
+    # We wait with this import so that commands can be invoked in an environment where mypy is not installed.
+    import mypy.api
     normal_report, error_report, exit_status = mypy.api.run(["python",  # Should match setup.py's package_dir
                                                              "--strict-optional",
                                                              "--ignore-missing-imports"])

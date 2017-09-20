@@ -270,7 +270,12 @@
                     "properties": {
                         "release_label": { "type": "string" },
                         "master": { "$ref": "#/definitions/cluster_group" },
-                        "core": { "$ref": "#/definitions/cluster_group" }
+                        "core": { "$ref": "#/definitions/cluster_group" },
+                        "max_partitions": {
+                            "description": "Maximum number of partitions during extract, limits num_partitions for each table",
+                            "type": "integer",
+                            "minimum": 1
+                        }
                     },
                     "required": [ "release_label", "master", "core" ],
                     "additionalProperties": false

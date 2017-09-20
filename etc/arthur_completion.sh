@@ -18,7 +18,7 @@ _arthur_completion()
                   create_schemas promote_schemas
                   show_downstream_dependents show_dependents show_upstream_dependencies
                   render_template show_value show_vars show_pipelines
-                  selftest self-test
+                  selftest
                   --submit --config"
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;
@@ -32,7 +32,7 @@ _arthur_completion()
         "auto_design"|"bootstrap_transformations")
             COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
             ;;
-        "selftest"|"self-test")
+        "selftest")
             COMPREPLY=( $(compgen -W "all doctest type-check" -- "$cur") )
             ;;
         *)

@@ -373,7 +373,7 @@ Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doc
 run_tests.py
 
 # And in case you have a config file handy
-arthur.py self-test
+arthur.py selftest
 ```
 
 Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
@@ -396,7 +396,8 @@ If you find yourself using a one-off EC2 instance more often than an EMR cluster
 
 ### Using `develop` of `setup.py`
 
-Re-install the ETL code after pulling a new version. (Especially changes in scripts may not get picked up until you do.)
+When you pull a new version of Arthur, you should re-install the ETL code.
+This is especially important to pick up changes in the scripts!
 ```shell
 pip3 install -r requirements.txt
 python3 setup.py develop

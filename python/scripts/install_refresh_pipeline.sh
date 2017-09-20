@@ -9,6 +9,12 @@ fi
 
 set -e -u
 
+# Verify that there is a local configuration directory
+if [[ ! -d ./config ]]; then
+    echo "Failed to find './config' directory. Make sure you are in the directory with your data warehouse setup."
+    exit 1
+fi
+
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
@@ -39,11 +45,10 @@ fi
 AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
 
 PIPELINE_NAME="ETL Refresh Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
-
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" refresh_pipeline > "$PIPELINE_DEFINITION_FILE"
-
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" refresh_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
     --unique-id refresh-etl-pipeline \
