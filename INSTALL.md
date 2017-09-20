@@ -68,7 +68,7 @@ The most prominent packages are:
 * [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
 * [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
 * [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
-And in development:
+And in development (see `requirements-dev.txt`):
 * [mypy](http://mypy-lang.org/) for static type checking
 
 For running the ETL remotely in EC2, the `bin/bootstrap.sh` script will take care of the creation
@@ -125,6 +125,7 @@ workon .
 **Updating the environment (under either scenario)**
 ```
 pip3 install --requirement ./requirements.txt
+pip3 install --requirement ./requirements-dev.txt
 python3 setup.py develop
 
 # Make sure to check the path below

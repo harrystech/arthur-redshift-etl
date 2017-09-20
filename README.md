@@ -402,3 +402,4 @@ This is especially important to pick up changes in the scripts!
 pip3 install -r requirements.txt
 python3 setup.py develop
 ```
+For additional information about maintaining the virtual environment, see the [INSTALL.md](INSTALL.md) file.
