@@ -28,7 +28,7 @@ def _find_templates() -> Dict[str, str]:
     Find all templates and return a map from short name to full name
     """
     lookup = OrderedDict()  # type: Dict[str, str]
-    templates = pkg_resources.resource_listdir(__name__, "templates")
+    templates = pkg_resources.resource_listdir("etl", "templates")
     for filename in sorted(templates):
         name = os.path.splitext(filename)[0]
         lookup[name] = os.path.join("templates", filename)
