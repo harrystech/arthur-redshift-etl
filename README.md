@@ -373,7 +373,7 @@ Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doc
 run_tests.py
 
 # And in case you have a config file handy
-arthur.py self-test
+arthur.py selftest
 ```
 
 Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.

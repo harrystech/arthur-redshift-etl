@@ -979,10 +979,9 @@ class EventsQueryCommand(SubCommand):
 class SelfTestCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("self-test",
+        super().__init__("selftest",
                          "run code tests of ETL",
-                         "Run self-test of the ETL.",
-                         aliases=["selftest"])
+                         "Run self test of the ETL.")
 
     def add_arguments(self, parser):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.

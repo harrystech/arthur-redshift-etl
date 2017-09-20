@@ -68,6 +68,7 @@ The most prominent packages are:
 * [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
 * [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
 * [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
+And in development:
 * [mypy](http://mypy-lang.org/) for static type checking
 
 For running the ETL remotely in EC2, the `bin/bootstrap.sh` script will take care of the creation
@@ -82,6 +83,7 @@ mkdir venv
 virtualenv --python=python3 venv
 source venv/bin/activate
 pip3 install --requirement ./requirements.txt --disable-pip-version-check
+pip3 install --requirement ./requirements-dev.txt --disable-pip-version-check
 python3 setup.py develop
 ```
 
