@@ -9,21 +9,16 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 Parameters:
 
-    KeyName:
-        Description: Name of an existing EC2 KeyPair to enable SSH access to the instances (use dw-{env}-keypair)
-        ConstraintDescription: must be the name of an existing EC2 KeyPair
-        Type: "AWS::EC2::KeyPair::KeyName"
-
     ObjectStore:
-        Description: A bucket name where schemas and data will be stored (temporarily)
+        Description: (required) A bucket name where schemas and data will be stored (temporarily)
         Type: String
 
     DataLake:
-        Description: A bucket name where data is stored, likely using 'unload' for other applications
+        Description: (required) A bucket name where data is stored, likely using 'unload' for other applications
         Type: String
 
     VpcCIDR:
-        Description: Please enter the IP range (CIDR notation) for this VPC
+        Description: (optional) IP range in CIDR notation for this VPC
         Type: String
         Default: 10.10.0.0/16
         MinLength: 9
@@ -32,14 +27,14 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     PrimaryAvailabilityZone:
-        Description: Please enter the availability zone for the subnets
+        Description: (optional) Availability zone for the subnets
         Type: String
         Default: us-east-1d
         # Choices are limited by the possible locations for the Redshift cluster.
         AllowedValues: ["us-east-1a", "us-east-1c", "us-east-1d"]
 
     PublicSubnetCIDR:
-        Description: Please enter the IP range (CIDR notation) for the public subnet
+        Description: (optional) IP range in CIDR notation for the public subnet
         Type: String
         Default: 10.10.0.0/22
         MinLength: 9
@@ -48,7 +43,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     PrivateSubnetCIDR:
-        Description: Please enter the IP range (CIDR notation) for the private subnet
+        Description: (optional) IP range in CIDR notation for the private subnet
         Type: String
         Default: 10.10.8.0/22
         MinLength: 9
@@ -57,7 +52,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR1:
-        Description: Please enter the first IP address range that can be used to SSH to EC2 instances
+        Description: (suggested) First IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -66,7 +61,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR2:
-        Description: Please enter the second IP address range that can be used to SSH to EC2 instances
+        Description: (suggested) Second IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -75,7 +70,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR3:
-        Description: Please enter the third IP address range that can be used to SSH to EC2 instances
+        Description: (suggested) Third IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -84,7 +79,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR4:
-        Description: Please enter the fourth IP address range that can be used to SSH to EC2 instances
+        Description: (suggested) Fourth IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -226,7 +221,7 @@ Resources:
             RouteTableId: !Ref PrivateRouteTable
             SubnetId: !Ref PrivateSubnet
 
-    VPCEndpoint:
+    VPCEndpointForS3:
         Type: "AWS::EC2::VPCEndpoint"
         Properties:
             VpcId: !Ref VPC
@@ -250,7 +245,7 @@ Resources:
                     "Action": [
                         "s3:DeleteObject*",
                         "s3:PutObject*"
-                    ]
+                    ],
                     "Resource": [
                         !Join [ "", [ "arn:aws:s3:::", !Ref ObjectStore, "/*" ] ],
                         !Join [ "", [ "arn:aws:s3:::", !Ref DataLake, "/*" ] ]
@@ -688,6 +683,7 @@ Resources:
                           - "s3:Get*"
                           - "s3:List*"
                         Resource: !Join [ "", [ "arn:aws:s3:::", !Ref ObjectStore, "/*" ] ]
+
 
 Outputs:
 

@@ -1,20 +1,21 @@
 # Overview
 
-This directory contains the descriptions and tools to use AWS CloudFormation
-to setup a VPC (with subnets, security groups, etc.) and Redshift cluster (with
-parameter groups etc.) to run the ETL.
+This directory contains the descriptions and tools to use AWS CloudFormation to setup
+a VPC (with subnets, security groups, etc.)
+and Redshift cluster (with parameter groups etc.) to run the ETL.
 
 # Prerequisites
 
 A key pair has to be created beforehand.
+The name of the keypair must be `dw-{ENV}-keypair` where the `ENV` is the environment that you choose for the stacks, such as `prod` or `dev`.
 
 # Resources
 
-Note: All resources created will have a tag of `user:project` with value `data-warehouse` to easily
-build a Resource Group and to track costs in Billing. Also, names will start with `dw-` to make them
-easy to find in the AWS Console, which is to say that the `Name` tag is set as much as possible.
+Note:
+All resources created will have a tag of `user:project` with value `data-warehouse` to easily build a Resource Group and to track costs in Billing.
+Also, names will start with `dw-` to make them easy to find in the AWS Console, which is to say that the `Name` tag is set as much as possible.
 
-## VPC (vpc.yaml)
+## Data Warehouse VPC (`dw_vpc.yaml`)
 
 Default IP address range
 * IPv4 CIDR: `10.10.0.0/16` (configurable, but make sure the subnets are within the VPC's IP range)
@@ -128,6 +129,8 @@ groups are used by EMR and will be automatically updated when clusters are runni
 
 * Name prefix: `dw-sg-office`
 * Access using SSH from whitelisted IP address ranges
+* Note that parameters for whitelisting are ignored if the IP range is set to `0.0.0.0/0` so as to avoid
+a "from anywhere" access
 
 #### Access to data warehouse
 
@@ -135,8 +138,8 @@ This references all the prior security groups
 
 * Name prefix: `dw-sg-redshift-public`
 * Access to Redshift (5439) from:
-    * IP addresses from Looker, see list at https://docs.looker.com/setup-and-management/enabling-secure-db
-    * IP addresses from Heap, see https://docs.heapanalytics.com/docs/heap-sql-connection-requirements
+    * IP addresses from Looker, see list at [Enabling secure DB](https://docs.looker.com/setup-and-management/enabling-secure-db)
+    * IP addresses from Heap, see [SQL connection requirements](https://docs.heapanalytics.com/docs/heap-sql-connection-requirements)
     * Security group for "managed master"
     * Security group for "lambda (Tallboy)"
     * Security group for EC2 instances
@@ -148,11 +151,11 @@ This references all the prior security groups
 * Instance role for EMR cluster
 * Instance profile for EMR cluster nodes
 
-## Redshift (cluster.yaml)
+## Data Warehouse Redshift cluster (`dw_cluster.yaml`)
 
 ### Subnet group
 
-Use the public subnet setup for the VPC
+Use the public subnet setup for the VPC.
 
 ### Parameter group
 
@@ -170,24 +173,28 @@ Uses all defaults except:
 
 The commands below assume that your role has the necessary privileges for CloudFormation.
 
-## Creating the VPC using CloudFormation
+## Creating and updating the VPC using CloudFormation
 
 ### Creating the stack
 
 ```bash
-cloudformation/create_dw_vpc.sh dev your-object-store-dev
+cloudformation/create_dw_vpc.sh dev ObjectStore=your-object-store-dev DataLake=data-lake
 ```
 
 If you want to specify a specific IP address:
 ```bash
-cloudformation/create_dw_vpc.sh dev your-object-store-dev ParameterKey=WhitelistCIDR1,ParameterValue=192.168.1.1/32
+cloudformation/create_dw_vpc.sh dev ObjectStore=your-object-store-dev DataLake=data-lake WhitelistCIDR1=192.168.1.1/32
 ```
 
 ### Updating the stack
 
+Examples for updating the stack:
+
 ```bash
-cloudformation/update_dw_vpc.sh dev your-object-store-dev
+cloudformation/update_dw_vpc.sh dev ObjectStore=UsePreviousValue DataLake=UsePreviousValue
 ```
+
+Be careful here if you specified one of the optional parameters: you have to specify it here again!
 
 ### Deleting the stack
 
@@ -195,27 +202,42 @@ cloudformation/update_dw_vpc.sh dev your-object-store-dev
 cloudformation/delete_dw_vpc.sh dev
 ```
 
-## Creating the Redshift Cluster using CloudFormation
+## Creating and updating the Redshift Cluster using CloudFormation
 
 The cluster expects the stack for the VPC to export its values.
+If you are curious, you should check them:
 ```bash
 aws cloudformation list-exports
 ```
 
-### Create, update, delete
+### Create, update, and delete
 
-Commands are similar to setting up the VPC:
+Commands are similar to setting up the VPC but expect now the VPC stack as parameter.
+Remember that the name of the stack is `dw-vpc-{ENV}` and the full name, not just `{ENV}`
+is expected in the `VpcStackName` parameter.
 ```bash
-cloudformation/create_dw_cluster.sh dev your-object-store-dev
-cloudformation/update_dw_cluster.sh dev your-object-store-dev
+cloudformation/create_dw_cluster.sh dev VpcStackName=dw-vpc-dev MasterUsername=admin MasterUserPassword=secure-pwd
+
+cloudformation/update_dw_cluster.sh dev VpcStackName=UsePreviousValue \
+    MasterUsername=UsePreviousValue MasterUserPassword=UsePreviousValue \
+    NumberOfNodes=3
+
 cloudformation/delete_dw_cluster.sh dev
+```
+
+### Adding enhanced VPC routing
+
+Since this cannot be specified (at the moment) as part of CloudFormation, run this manually:
+```bash
+aws redshift modify-cluster --enhanced-vpc-routing --cluster-identifier "<your cluster identifier>"
 ```
 
 ## Publicizing the new cluster
 
-Run the update script to create resource records in DNS to point to the new cluster
+Run the update script to create resource records in DNS to point to the new cluster.
+You will need the `cluster-identifier` from the list of exported values from the cluster stack.
 ```bash
-cloudformation/update_dns.py cluster-identifier hosted-zone-name hostname
+cloudformation/update_dns.py "<cluster-identifier>" "<hosted-zone-name>" hostname
 ```
 
 # Future improvements

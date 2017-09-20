@@ -1,1 +1,1 @@
-create_dw_cluster.sh
+do_cloudformation.sh

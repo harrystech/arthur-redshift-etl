@@ -7,22 +7,21 @@ AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
 
     VpcStackName:
-        Description: Name of cloudformation stack with VPC
+        Description: (required) Name of cloudformation stack with VPC
         Type: String
 
     MasterUsername:
-        Description: User name for the primary user
+        Description: (required) User name for the primary user
         Type: String
-        Default: admin
         AllowedPattern: "([a-z])([a-z]|[0-9])*"
 
     MasterUserPassword:
-        Description: Password for the primary user (with lowercase, uppercase, numbers etc.)
+        Description: (required) Password for the primary user (with lowercase, uppercase, numbers etc.)
         Type: String
         NoEcho: true
 
     NodeType:
-        Description: The type of node to be provisioned
+        Description: (optional) The type of node to be provisioned
         Type: String
         Default: dc1.large
         AllowedValues:
@@ -32,12 +31,12 @@ Parameters:
             - ds2.8xlarge
 
     NumberOfNodes:
-        Description: The number of compute nodes in the cluster
+        Description: (optional) The number of compute nodes in the cluster
         Type: Number
         Default: 2
 
     SnapshotIdentifier:
-        Description: The identifier of an existing snapshot (leave empty to skip)
+        Description: (optional) The identifier of an existing snapshot (leave empty to skip)
         Type: String
         Default: ""
 
@@ -105,6 +104,8 @@ Resources:
                 !If [ "IsSingleNodeCluster", !Ref "AWS::NoValue", !Ref NumberOfNodes ]
             PubliclyAccessible:
                 true
+            PreferredMaintenanceWindow:
+                "mon:14:10-mon:14:40"
             VpcSecurityGroupIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
             SnapshotIdentifier:
@@ -123,11 +124,5 @@ Outputs:
     RedshiftClusterName:
         Description: Name of Redshift cluster
         Value: !Ref RedshiftCluster
-
-    RedshiftClusterSubnetGroup:
-        Description: A reference to the created subnet group
-        Value: !Ref RedshiftClusterSubnetGroup
-
-    RedshiftClusterParameterGroup:
-        Description: A reference to the created parameter group
-        Value: !Ref RedshiftClusterParameterGroup
+        Export:
+            Name: !Sub "${AWS::StackName}::cluster-id"
