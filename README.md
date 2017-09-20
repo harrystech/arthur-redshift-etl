@@ -396,7 +396,8 @@ If you find yourself using a one-off EC2 instance more often than an EMR cluster
 
 ### Using `develop` of `setup.py`
 
-Re-install the ETL code after pulling a new version. (Especially changes in scripts may not get picked up until you do.)
+When you pull a new version of Arthur, you should re-install the ETL code.
+This is especially important to pick up changes in the scripts!
 ```shell
 pip3 install -r requirements.txt
 python3 setup.py develop

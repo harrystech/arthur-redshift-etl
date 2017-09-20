@@ -98,7 +98,7 @@
             "name": "Arthur Upgrade (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --with-staging-schemas --continue-from #{mySelection} --prolix --prefix #{myEtlEnvironment} --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --with-staging-schemas --continue-from '#{mySelection}' --prolix --prefix #{myEtlEnvironment} --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
             "dependsOn": { "ref": "Bootstrap" }
         },
         {
