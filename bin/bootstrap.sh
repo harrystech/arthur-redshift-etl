@@ -43,13 +43,16 @@ log () {
 log "Starting \"$0 $BUCKET_NAME $ENVIRONMENT\""
 set -x
 
-# Set creation mask to: u=rwx,g=rx,o=
-umask 0027
-
 # Install dependencies for Psycopg2, Arthur, and AWS shell commands we may run via datapipeline
 if [[ "$RUNNING_LOCAL" = "no" ]]; then
-    sudo yum install -y postgresql94-devel python34 python34-pip python34-virtualenv aws-cli gcc libyaml-devel tmux
+    sudo yum install -y postgresql95-devel python35 python35-pip python35-devel aws-cli gcc libyaml-devel tmux
 fi
+
+# Install virtualenv using pip since the python35-virtualenv packages are out of date.
+sudo pip-3.5 install --upgrade --disable-pip-version-check virtualenv
+
+# Set creation mask to: u=rwx,g=rx,o=
+umask 0027
 
 # Send all files to temp directory
 test -d "$PROJ_TEMP" || mkdir -p "$PROJ_TEMP"
@@ -76,19 +79,11 @@ if [[ "$RUNNING_LOCAL" = "no" ]]; then
     fi
 fi
 
-# Create virtual env for ETL
-test -d venv || mkdir venv
-for VIRTUALENV in "virtualenv-3.4" "virtualenv"; do
-    if hash $VIRTUALENV 2> /dev/null; then
-        break
-    fi
-done
-
-# Make sure these steps match the description in the README!
-$VIRTUALENV --python=python3 venv
-# venv/bin/pip install pip --upgrade --disable-pip-version-check
+# Create virtual env for ETL -- Make sure these steps match the description in the INSTALL.md!
+virtualenv --python=python3 venv
 source venv/bin/activate
-pip3 install --requirement ./jars/requirements.txt --disable-pip-version-check
+pip3 install --upgrade pip --disable-pip-version-check
+pip3 install --requirement ./jars/requirements.txt
 
 # This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
 # so that the sort command can split correctly on '.' with the -t option.
@@ -98,7 +93,7 @@ LATEST_TAR_FILE=`ls -1 ./jars/redshift_etl*tar.gz |
     sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |
     sed 's,redshift_etl\.,redshift_etl-,' |
     head -1`
-pip3 install --upgrade "$LATEST_TAR_FILE" --disable-pip-version-check
+pip3 install --upgrade "$LATEST_TAR_FILE"
 
 set +x
 log "Finished \"$0 $BUCKET_NAME $ENVIRONMENT\""

@@ -82,8 +82,8 @@ of the virtual environment.
 mkdir venv
 virtualenv --python=python3 venv
 source venv/bin/activate
-pip3 install --requirement ./requirements.txt --disable-pip-version-check
-pip3 install --requirement ./requirements-dev.txt --disable-pip-version-check
+pip3 install --requirement ./requirements.txt
+pip3 install --requirement ./requirements-dev.txt
 python3 setup.py develop
 ```
 
