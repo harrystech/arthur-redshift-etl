@@ -68,8 +68,11 @@ The most prominent packages are:
 * [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
 * [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
 * [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
-And in development (see `requirements-dev.txt`):
+And in development:
 * [mypy](http://mypy-lang.org/) for static type checking
+
+(The packages listed in `requirements-dev.txt` should be loaded into development environments
+but are skipped in bootstrapped installations, see [bootstrap.sh](./bin/bootstrap.sh).)
 
 For running the ETL remotely in EC2, the `bin/bootstrap.sh` script will take care of the creation
 of the virtual environment.

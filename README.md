@@ -399,7 +399,14 @@ If you find yourself using a one-off EC2 instance more often than an EMR cluster
 When you pull a new version of Arthur, you should re-install the ETL code.
 This is especially important to pick up changes in the scripts!
 ```shell
-pip3 install -r requirements.txt
 python3 setup.py develop
 ```
+
+If you also change packages make sure to install those using `pip3`, e.g.
+```
+pip3 install -r requirements.txt
+# maybe for mypy
+pip3 install -r requirements-dev.txt
+```
+
 For additional information about maintaining the virtual environment, see the [INSTALL.md](INSTALL.md) file.
