@@ -6,8 +6,17 @@ and Redshift cluster (with parameter groups etc.) to run the ETL.
 
 # Prerequisites
 
+## Key pairs
+
 A key pair has to be created beforehand.
 The name of the keypair must be `dw-{ENV}-keypair` where the `ENV` is the environment that you choose for the stacks, such as `prod` or `dev`.
+
+## S3 buckets
+
+There are two different bucket that we expect to get used.
+Both buckets must be setup before you can start running the ETL and are not part of the CloudFormation setup.
+* The `object-store` is used for temporary data around schemas, data files and configuration.
+* The `data-lake` maybe used to load static data from or to unload cluster data into.
 
 # Resources
 
@@ -178,12 +187,12 @@ The commands below assume that your role has the necessary privileges for CloudF
 ### Creating the stack
 
 ```bash
-cloudformation/create_dw_vpc.sh dev ObjectStore=your-object-store-dev DataLake=data-lake
+cloudformation/create_dw_vpc.sh dev ObjectStore=your-object-store DataLake=data-lake
 ```
 
 If you want to specify a specific IP address:
 ```bash
-cloudformation/create_dw_vpc.sh dev ObjectStore=your-object-store-dev DataLake=data-lake WhitelistCIDR1=192.168.1.1/32
+cloudformation/create_dw_vpc.sh dev ObjectStore=your-object-store DataLake=data-lake WhitelistCIDR1=192.168.1.1/32
 ```
 
 ### Updating the stack
@@ -201,6 +210,10 @@ Be careful here if you specified one of the optional parameters: you have to spe
 ```bash
 cloudformation/delete_dw_vpc.sh dev
 ```
+
+Note that you have to manually dis-associate the deleted VPC from a private hosted zone
+if you've previously used `update_dns.py` to store the public and private IP addresses
+in hosted zones.
 
 ## Creating and updating the Redshift Cluster using CloudFormation
 
@@ -240,8 +253,33 @@ You will need the `cluster-identifier` from the list of exported values from the
 cloudformation/update_dns.py "<cluster-identifier>" "<hosted-zone-name>" hostname
 ```
 
+# Next steps
+
+## Creating default roles
+
+Until we move the roles and profiles for EMR and EC2 into the settings files, some default
+roles have to be created using the CLI:
+```
+aws datapipeline create-default-roles
+aws emr create-default-roles
+```
+
+## Setting up the cluster with a database and users
+
+Since the cluster was just brought up using CloudFormation,
+it is missing users and a "database" to use for the ETL.
+
+Make sure that passwords exist in your `~.pgpass` file,
+write a `config/credentials.sh` file,
+then run
+```
+arthur.py initialize --force --with-user-creation
+```
+
 # Future improvements
 
 * Add CloudFormation configuration for SNS topics used in data pipeline
-* Create a role to have permission to run cloudformation (bootstrap role)
+* Create a role to have permission to run CloudFormation (bootstrap role)
 * Use notifications during CloudFormation ("ETL News")
+* Automatically associate the VPC with the private hosted zone
+* Grant access to DynamoDB table to Redshift copy role

@@ -12,7 +12,7 @@ set -e -u
 # === Command line args ===
 
 show_usage_and_exit() {
-    echo "Usage: $0 [<environment>]"
+    echo "Usage: `basename $0` [<environment>]"
     echo "The environment defaults to \"$DEFAULT_PREFIX\"."
     exit ${1-0}
 }

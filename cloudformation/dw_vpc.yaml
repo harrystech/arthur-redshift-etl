@@ -52,7 +52,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR1:
-        Description: (suggested) First IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) First IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -61,7 +61,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR2:
-        Description: (suggested) Second IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) Second IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -70,7 +70,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR3:
-        Description: (suggested) Third IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) Third IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -79,7 +79,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR4:
-        Description: (suggested) Fourth IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) Fourth IP range in CIDR notation that can be used to SSH to EC2 instances
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -114,22 +114,6 @@ Resources:
             Tags:
                 - Key: Name
                   Value: !Ref "AWS::StackName"
-
-    DHCPOptions:
-        Type: "AWS::EC2::DHCPOptions"
-        Properties:
-            DomainName: "ec2.internal"
-            DomainNameServers:
-                - "AmazonProvidedDNS"
-            Tags:
-                - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "dhcpoptions" ] ]
-
-    VPCDHCPOptionsAssociation:
-        Type: "AWS::EC2::VPCDHCPOptionsAssociation"
-        Properties:
-            DhcpOptionsId: !Ref DHCPOptions
-            VpcId: !Ref VPC
 
     InternetGateway:
         Type: "AWS::EC2::InternetGateway"
@@ -177,6 +161,9 @@ Resources:
         Properties:
             AllocationId: !GetAtt NatGatewayEIP.AllocationId
             SubnetId: !Ref PublicSubnet
+#            Tags:
+#                - Key: Name
+#                  Value: !Join [ "-", [ !Ref "AWS::StackName", "nat" ] ]
 
     PublicRouteTable:
         Type: AWS::EC2::RouteTable
@@ -257,7 +244,7 @@ Resources:
               - !Ref PrivateRouteTable
             ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
 
-    WhitelistAccessSecurityGroup:
+    WhitelistSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
         Properties:
             GroupDescription: Enable SSH access via port 22 from an office IP or known applications
@@ -439,13 +426,22 @@ Resources:
             SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
 
-    RedshiftEC2SecurityGroupIngressFromEMR:
+    RedshiftEC2SecurityGroupIngressFromMaster:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
             FromPort: "22"
             ToPort: "22"
             SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
+            GroupId: !Ref RedshiftEC2SecurityGroup
+
+    RedshiftEC2SecurityGroupIngressFromCore:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: "22"
+            ToPort: "22"
+            SourceSecurityGroupId: !Ref ManagedCoreSecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
 
     RedshiftPublicSecurityGroup:
@@ -512,7 +508,7 @@ Resources:
                 - Key: Name
                   Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-public" ] ]
 
-    EmrRole:
+    EmrServiceRole:
         Type: "AWS::IAM::Role"
         Properties:
             AssumeRolePolicyDocument:
@@ -688,7 +684,7 @@ Resources:
 Outputs:
 
     VpcId:
-        Description: A reference to the created VPC
+        Description: (VPC.id) A reference to the created VPC
         Value: !Ref VPC
         Export:
             Name: !Sub "${AWS::StackName}::vpc-id"
@@ -700,7 +696,7 @@ Outputs:
             Name: !Sub "${AWS::StackName}::vpc-az"
 
     PublicSubnet:
-        Description: A reference to the public subnet
+        Description: (VPC.public_subnet) A reference to the public subnet
         Value: !Ref PublicSubnet
         Export:
             Name: !Sub "${AWS::StackName}::public-subnet-id"
@@ -711,17 +707,33 @@ Outputs:
         Export:
             Name: !Sub "${AWS::StackName}::private-subnet-id"
 
-    ManagedMasterSecurityGroup:
-        Description: A reference to the managed master security group for EMR setup
-        Value: !Ref ManagedMasterSecurityGroup
-        Export:
-            Name: !Sub "${AWS::StackName}::managed-master-sg"
+    WhitelistSecurityGroup:
+        Description: (VPC.whitelist_security_group) A reference to the security group allowing access from whitelisted IP ranges
+        Value: !Ref WhitelistSecurityGroup
 
-    AdditionalSecurityGroups:
-        Description: A list of addtional security groups for EMR setup
-        Value: !Join [ ",", [ !Ref WhitelistAccessSecurityGroup, !Ref RedshiftEC2SecurityGroup ] ]
-        Export:
-            Name: !Sub "${AWS::StackName}::additional-sg"
+    ManagedMasterSecurityGroup:
+        Description: (EMR.master.managed_security_group) A reference to the managed master security group for EMR setup
+        Value: !Ref ManagedMasterSecurityGroup
+
+    ManagedCoreSecurityGroup:
+        Description: (EMR.core.managed_security_group) A reference to the managed core security group for EMR setup
+        Value: !Ref ManagedCoreSecurityGroup
+
+    EMRServiceRole:
+        Description: (EMR.service_role) A reference to the IAM role that allows EMR management
+        Value: !Ref EmrServiceRole
+
+    EMRInstanceProfile:
+        Description: (EMR.ec2_instance_profile) A reference to the IAM profile for EMR instances
+        Value: !Ref EmrEc2InstanceProfile
+
+    PublicEC2SecurityGroups:
+        Description: (EC2.public_security_group) A reference to the security group for EC2 instances
+        Value: !Ref RedshiftEC2SecurityGroup
+
+    EC2InstanceProfile:
+        Description: (EC2.iam_instance_profile) A reference to the IAM profile for EC2 instances
+        Value: !Ref EmrEc2InstanceProfile
 
     RedshiftPublicSecurityGroup:
         Description: A reference to the "public" security group used for Redshift clusters
@@ -729,8 +741,14 @@ Outputs:
         Export:
             Name: !Sub "${AWS::StackName}::redshift-public-sg"
 
+    ObjectStore:
+        Description: (object_store.s3.bucket_name) Name of the bucket for the object store
+        Value: !Ref ObjectStore
+        Export:
+            Name: !Sub "${AWS::StackName}::object-store"
+
     RedshiftCopyCole:
-        Description: ARN for the role created for Redshift to read from the object store
+        Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
         Value: !GetAtt RedshiftCopyCole.Arn
         Export:
             Name: !Sub "${AWS::StackName}::redshift-iam-role"
