@@ -404,9 +404,7 @@ python3 setup.py develop
 
 If you also change packages make sure to install those using `pip3`, e.g.
 ```
-pip3 install -r requirements.txt
-# maybe for mypy
-pip3 install -r requirements-dev.txt
+pip3 install --upgrade --requirement requirements-dev.txt
 ```
 
 For additional information about maintaining the virtual environment, see the [INSTALL.md](INSTALL.md) file.
