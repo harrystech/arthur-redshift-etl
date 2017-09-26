@@ -7,7 +7,8 @@ for post-processing, searches, graphs, etc.
 
 ### Amazon Elasticsearch Service Dommains
 
-You have to have an Amazon ES domain running. Add the endpoint to `config.py`, see the documentation there.
+You have to have an Amazon ES domain running.
+Add the endpoint to `config.py`, see the documentation there.
 
 For more information about Elasticsearch in AWS, see [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
 

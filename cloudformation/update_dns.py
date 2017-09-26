@@ -30,11 +30,20 @@ def get_hosted_zones(hosted_zone_name):
     return [dict(zip(names, zone_values)) for zone_values in values]
 
 
+def get_vpc_id(cluster_identifier):
+    """Return dict with 'VpcId'"""
+    client = boto3.client("redshift")
+    response = client.describe_clusters(ClusterIdentifier=cluster_identifier)
+    value = jmespath.search("""Clusters[0].VpcId""", response)
+    return value
+
+
 def update_dns_records(cluster_identifier, hosted_zone_name, hostname):
     """
     Add A records for hostname in private and public hosted zones to point to the Redshift cluster.
     """
     leader_node = get_redshift_leader_info(cluster_identifier)
+    vpc_id = get_vpc_id(cluster_identifier)
     zones = get_hosted_zones(hosted_zone_name)
     fqdn = '.'.join((hostname, hosted_zone_name))
 
@@ -44,6 +53,8 @@ def update_dns_records(cluster_identifier, hosted_zone_name, hostname):
         hosted_zone_id = hosted_zone["HostedZoneId"]
         if hosted_zone["PrivateZone"]:
             ip_address = leader_node["PrivateIPAddress"]
+            print("If you haven't done so already, make sure that the VPC {} is associated with this hosted zone: {}"
+                  .format(vpc_id, hosted_zone_id))
         else:
             ip_address = leader_node["PublicIPAddress"]
         print("Updating {} with A record for {} to {}".format(hosted_zone_id, fqdn, ip_address))
