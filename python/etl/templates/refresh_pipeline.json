@@ -98,7 +98,7 @@
             "id": "EmrActivityUpstreamExtract",
             "name": "Arthur Extract (EMR Activity)",
             "type": "EmrActivity",
-            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,#{myEtlEnvironment}/current,#{myCommaSeparatedSelection},--max-partitions,#{myMaxPartitions}",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,#{myEtlEnvironment}/current,#{myCommaSeparatedSelection}",
             "runsOn": { "ref": "ETLCluster" },
             "maximumRetries": "0"
         },
@@ -130,7 +130,7 @@
             "name": "Arthur Update (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix #{myEtlEnvironment}/current #{mySelection} --wlm-query-slots #{myWlmQuerySlots}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix #{myEtlEnvironment}/current #{mySelection}",
             "dependsOn": [
                 { "ref": "Bootstrap" },
                 { "ref": "EmrActivityUpstreamExtract" }
@@ -206,8 +206,6 @@
         "myStartDateTime": "2525-01-01T00:00:00",
         "myOccurrences": "1000",
         "mySelection": "",
-        "myCommaSeparatedSelection": "",
-        "myMaxPartitions": "16",
-        "myWlmQuerySlots": "3"
+        "myCommaSeparatedSelection": ""
     }
 }

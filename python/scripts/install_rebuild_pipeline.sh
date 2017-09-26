@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> <wlm-slots>"
+if [[ $# -ne 3 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences>"
     echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     exit 0
 fi
@@ -19,7 +19,6 @@ PROJ_ENVIRONMENT="$1"
 
 START_DATE_TIME="$2"
 OCCURRENCES="$3"
-WLM_SLOTS="$4"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -65,9 +64,6 @@ aws datapipeline put-pipeline-definition \
         myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
-        myMaxPartitions="16" \
-        myMaxConcurrency="4" \
-        myWlmQuerySlots="$WLM_SLOTS" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"

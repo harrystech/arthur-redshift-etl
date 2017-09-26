@@ -15,7 +15,7 @@ setup(
         "etl": [
             "assets/*",
             "config/*",
-            "render_template/templates/*"
+            "templates/*"
         ]
     },
     scripts=[
