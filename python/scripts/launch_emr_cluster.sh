@@ -109,14 +109,16 @@ aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
 set +x +v
 say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
 
+KEYPAIR=$( arthur.py show_value resources.key_name )
+
 cat <<EOF
 # If you want to proxy into the cluster to enjoy port forwarding, use:
 
-  aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file "<location of your key file>"
+  aws emr socks --cluster-id "$CLUSTER_ID" --key-pair-file ~/.ssh/$KEYPAIR.pem
 
 # If you need to login into the master node, use:
 
-  aws emr ssh --cluster-id "$CLUSTER_ID" --key-pair-file "<location of your key file>"
+  aws emr ssh --cluster-id "$CLUSTER_ID" --key-pair-file ~/.ssh/$KEYPAIR.pem
 
 # If you want to submit steps, use (and remember to always pass in the prefix):
 

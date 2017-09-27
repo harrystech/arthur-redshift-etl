@@ -214,7 +214,8 @@ Resources:
             VpcId: !Ref VPC
             PolicyDocument: {
                 Version: "2012-10-17",
-                Statement: [{
+                Statement: [
+                  {
                     "Sid": "ReadOnlyEverything",
                     "Effect": "Allow",
                     "Principal": "*",
@@ -224,8 +225,8 @@ Resources:
                         "s3:List*"
                     ],
                     "Resource": "*"
-                },
-                {
+                  },
+                  {
                     "Sid": "WriteSelective",
                     "Effect": "Allow",
                     "Principal": "*",
@@ -234,11 +235,12 @@ Resources:
                         "s3:PutObject*"
                     ],
                     "Resource": [
-                        !Join [ "", [ "arn:aws:s3:::", !Ref ObjectStore, "/*" ] ],
-                        !Join [ "", [ "arn:aws:s3:::", !Ref DataLake, "/*" ] ]
+                        !Sub "arn:aws:s3:::${ObjectStore}/*" ,
+                        !Sub "arn:aws:s3:::${DataLake}/*"
                     ]
-                }
-            ]}
+                  }
+                ]
+            }
             RouteTableIds:
               - !Ref PublicRouteTable
               - !Ref PrivateRouteTable
@@ -674,11 +676,32 @@ Resources:
                     Version: "2012-10-17"
                     Statement:
                       -
+                        Sid: "ReadAccess"
                         Effect: "Allow"
                         Action:
-                          - "s3:Get*"
-                          - "s3:List*"
-                        Resource: !Join [ "", [ "arn:aws:s3:::", !Ref ObjectStore, "/*" ] ]
+                          - "s3:GetBucket*"
+                          - "s3:ListBucket*"
+                        Resource:
+                          - !Sub "arn:aws:s3:::${ObjectStore}"
+                          - !Sub "arn:aws:s3:::${DataLake}"
+                      -
+                        Sid: "WriteAccess"
+                        Effect: "Allow"
+                        Action:
+                          - "s3:DeleteObject*"
+                          - "s3:GetObject*"
+                          - "s3:ListObject*"
+                          - "s3:PutObject*"
+                        Resource:
+                          - !Sub "arn:aws:s3:::${ObjectStore}/*"
+                          - !Sub "arn:aws:s3:::${DataLake}/*"
+                      -
+                        Sid: "EventAccess"
+                        Effect: "Allow"
+                        Action:
+                          - "dynamodb:Describe*"
+                          - "dynamodb:Scan"
+                        Resource: "arn:aws:dynamodb:*:*:table/redshift-etl-events_*"
 
 
 Outputs:
