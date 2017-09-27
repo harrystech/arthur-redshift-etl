@@ -1,2 +1,2 @@
-mypy-lang~=0.4.6
-mypy~=0.501
+mypy>=0.521
+-rrequirements.txt

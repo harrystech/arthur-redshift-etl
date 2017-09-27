@@ -1,5 +1,44 @@
 This file describes the steps necessary to run ETLs using this codebase.
 
+# Just the facts...
+
+Here's a set of commands to run to start working on and with the ETL.
+The paragraphs below simply add more explanations and variations.
+The only pre-requisite here is that you have `homebrew` installed for your (macOS) laptop.
+
+```
+# Setup repo
+git clone git@github.com:harrystech/arthur-redshift-etl.git
+cd arthur-redshift-etl
+
+# Setup tools -- initial
+brew install awscli
+brew install jq
+
+# Setup tools -- later
+brew upgrade awscli
+brew install jq
+
+# Setup python3 with virtualenv
+brew install python3
+pip3 install virtualenv
+pip3 install pip --upgrade --disable-pip-version-check
+
+# Setup virtualenv (with wrapper)
+export WORKON_HOME=~/Envs
+export VIRTUALENVWRAPPER_PYTHON=/usr/local/bin/python3
+source /usr/local/bin/virtualenvwrapper.sh
+
+mkvirtualenv --python=python3 arthur-redshift-etl
+workon .
+pip3 install --requirement ./requirements-dev.txt
+python3 setup.py develop
+```
+
+The next step is to setup your AWS credentials, organized in profiles probably.
+But if you're brave enough to skip the explanations and just run the above commands,
+you (hopefully?) know what this entails.
+
 # Getting ready to run ETLs
 
 What all you need in order to use this ETL tool depends on where you'd like run it and whether you anticipate
@@ -28,6 +67,7 @@ to set up AWS credentials.
 ```shell
 aws configure
 ```
+
 * If you have to work with multiple access keys, check out the support of profiles in the CLI.
 * It is important to setup a **default region** since the start scripts do not specify one.
 * Leave the `output` alone or set it to `json`.
@@ -71,11 +111,9 @@ The most prominent packages are:
 And in development:
 * [mypy](http://mypy-lang.org/) for static type checking
 
-(The packages listed in `requirements-dev.txt` should be loaded into development environments
-but are skipped in bootstrapped installations, see [bootstrap.sh](./bin/bootstrap.sh).)
-
-For running the ETL remotely in EC2, the `bin/bootstrap.sh` script will take care of the creation
-of the virtual environment.
+The packages listed in `requirements-dev.txt` should be loaded into development environments
+and include the others. While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
+you should always use `requirements-dev.txt` for local development.
 
 #### Using vanilla virtualenv
 
@@ -85,7 +123,6 @@ of the virtual environment.
 mkdir venv
 virtualenv --python=python3 venv
 source venv/bin/activate
-pip3 install --requirement ./requirements.txt
 pip3 install --requirement ./requirements-dev.txt
 python3 setup.py develop
 ```
@@ -127,7 +164,6 @@ workon .
 
 **Updating the environment (under either scenario)**
 ```
-pip3 install --requirement ./requirements.txt
 pip3 install --requirement ./requirements-dev.txt
 python3 setup.py develop
 
