@@ -26,6 +26,7 @@ setup(
         "python/scripts/launch_ec2_instance.sh",
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",
+        "python/scripts/sns_subscribe.sh",
         "python/scripts/submit_arthur.sh"
     ],
     entry_points={
