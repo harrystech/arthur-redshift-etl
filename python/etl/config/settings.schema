@@ -247,6 +247,7 @@
                     "properties": {
                         "id": { "type": "string" },
                         "public_subnet": { "type": "string" },
+                        "private_subnet": { "type": "string" },
                         "whitelist_security_group": { "type": "string" },
                         "region": { "type": "string" },
                         "account": { "type": "string" }

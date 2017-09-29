@@ -93,7 +93,7 @@ Example:
 
 The data warehouse and EMR cluster will be in the "public" subnet.
 
-Region: `us-east-1b`
+Region: `us-east-1`
 IPv4 CIDR: `10.10.0.0/22`
 Routing Table:
 * local: `10.10.0.0/16`
@@ -106,7 +106,7 @@ Routing Table:
 
 Any Lambda instances will be running in the "private" subnet.
 
-Region: `us-east-1b`
+Region: `us-east-1`
 IPv4 CIDR: `10.10.8.0/22`
 Routing Table:
 * local: `10.10.0.0/16`
