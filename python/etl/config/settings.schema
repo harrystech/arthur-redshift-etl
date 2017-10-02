@@ -271,6 +271,8 @@
                         "release_label": { "type": "string" },
                         "master": { "$ref": "#/definitions/cluster_group" },
                         "core": { "$ref": "#/definitions/cluster_group" },
+                        "service_role": { "type": "string" },
+                        "ec2_instance_profile": { "type": "string" },
                         "max_partitions": {
                             "description": "Maximum number of partitions during extract, limits num_partitions for each table",
                             "type": "integer",

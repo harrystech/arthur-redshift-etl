@@ -293,14 +293,13 @@ def add_standard_arguments(parser, options):
         group.add_argument("-r", "--remote-files", help="use files in S3",
                            action="store_const", const="s3", dest="scheme")
     if "max-concurrency" in options:
-        parser.add_argument("-x", "--max-concurrency", metavar="N",
-                            help="EXPERIMENTAL set max number of parallel loads to use to N (default: %(default)s)",
-                            type=int, default=1)
+        parser.add_argument("-x", "--max-concurrency", metavar="N", type=int,
+                            help="set max number of parallel loads to N "
+                                 "(overrides 'resources.RedshiftCluster.max_concurrency')")
     if "wlm-query-slots" in options:
-        parser.add_argument("-w", "--wlm-query-slots", metavar="N",
+        parser.add_argument("-w", "--wlm-query-slots", metavar="N", type=int,
                             help="set the number of Redshift WLM query slots used for transformations"
-                                 " (default: %(default)s)",
-                            type=int, default=1)
+                                 "(overrides 'resources.RedshiftCluster.wlm_query_slots')")
     if "skip-copy" in options:
         parser.add_argument("-y", "--skip-copy",
                             help="skip the COPY and INSERT commands (leaves tables empty, for debugging)",
@@ -560,15 +559,13 @@ class ExtractToS3Command(MonitoredSubCommand):
                             default=False, action="store_true")
         parser.add_argument("-m", "--max-partitions", metavar="N", type=int,
                             help="set max number of partitions to write to N "
-                                 "(overrides 'resources.EMR.max_partitions')",
-                            default=8)
+                                 "(overrides 'resources.EMR.max_partitions')")
         parser.add_argument("--use-sampling",
                             help="use only 10%% of rows in extracted tables that are larger than 1MB",
                             default=False, action="store_true")
 
     def callback(self, args, config):
-        # n.b. the "8" as the max partitions is backwards compatible as the default
-        max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions", 8)
+        max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions", 16)
         if max_partitions < 1:
             raise InvalidArgumentError("Option for max partitions must be >= 1")
         if args.extractor not in ("sqoop", "spark", "manifest-only"):
@@ -625,9 +622,13 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
+        max_concurrency = (args.max_concurrency or
+                           etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
+        wlm_query_slots = (args.wlm_query_slots or
+                           etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
         etl.load.load_data_warehouse(relations, args.pattern,
-                                     max_concurrency=args.max_concurrency,
-                                     wlm_query_slots=args.wlm_query_slots,
+                                     max_concurrency=max_concurrency,
+                                     wlm_query_slots=wlm_query_slots,
                                      concurrent_extract=args.concurrent_extract,
                                      skip_copy=args.skip_copy,
                                      use_staging=args.use_staging_schemas,
@@ -660,9 +661,13 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
+        max_concurrency = (args.max_concurrency or
+                           etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
+        wlm_query_slots = (args.wlm_query_slots or
+                           etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
         etl.load.upgrade_data_warehouse(relations, args.pattern,
-                                        max_concurrency=args.max_concurrency,
-                                        wlm_query_slots=args.wlm_query_slots,
+                                        max_concurrency=max_concurrency,
+                                        wlm_query_slots=wlm_query_slots,
                                         only_selected=args.only_selected,
                                         continue_from=args.continue_from,
                                         use_staging=args.use_staging_schemas,
@@ -688,8 +693,10 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        wlm_query_slots = (args.wlm_query_slots or
+                           etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
         etl.load.update_data_warehouse(relations, args.pattern,
-                                       wlm_query_slots=args.wlm_query_slots,
+                                       wlm_query_slots=wlm_query_slots,
                                        only_selected=args.only_selected, run_vacuum=args.vacuum,
                                        dry_run=args.dry_run)
 

@@ -14,11 +14,11 @@
         },
         {
             "id": "ETLSchedule",
-            "name": "Run once on demand",
+            "name": "Run every day close to midnight (America/NewYork)",
             "type": "Schedule",
             "period": "1 days",
             "startDateTime": "#{myStartDateTime}",
-            "occurrences": "1"
+            "occurrences": "#{myOccurrences}"
         },
         {
             "id": "SNSParent",
@@ -49,7 +49,23 @@
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
-            "terminateAfter": "6 Hours"
+            "terminateAfter": "8 Hours"
+        },
+        {
+            "id": "ETLCluster",
+            "name": "ETL EMR Cluster",
+            "type": "EmrCluster",
+            "parent": { "ref": "ResourceParent" },
+            "releaseLabel": "${resources.EMR.release_label}",
+            "masterInstanceType": "${resources.EMR.master.instance_type}",
+            "coreInstanceType": "${resources.EMR.core.instance_type}",
+            "coreInstanceCount": "${resources.EMR.core.instance_count}",
+            "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
+            "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
+            "additionalMasterSecurityGroupIds": [ "${resources.VPC.whitelist_security_group}" ],
+            "bootstrapAction": "s3://#{myS3Bucket}/#{myEtlEnvironment}/bin/bootstrap.sh,#{myS3Bucket},#{myEtlEnvironment}",
+            "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
+            "configuration": []
         },
         {
             "id": "ArthurDriverEC2Resource",
@@ -79,6 +95,14 @@
             "maximumRetries": "0"
         },
         {
+            "id": "EmrActivityUpstreamExtract",
+            "name": "Arthur Extract (EMR Activity)",
+            "type": "EmrActivity",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,#{myEtlEnvironment}",
+            "runsOn": { "ref": "ETLCluster" },
+            "maximumRetries": "0"
+        },
+        {
             "id": "CopyBootstrap",
             "name": "Copy Bootstrap (EC2)",
             "type": "ShellCommandActivity",
@@ -94,20 +118,22 @@
             "dependsOn": { "ref": "CopyBootstrap" }
         },
         {
-            "id": "ArthurUpgrade",
-            "name": "Arthur Upgrade (EC2)",
+            "id": "PingCronutAfterBootstrap",
+            "name": "Ping Cronut After Bootstrap (EC2)",
             "type": "ShellCommandActivity",
-            "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --with-staging-schemas --continue-from '#{mySelection}' --prolix --prefix #{myEtlEnvironment} --max-concurrency #{myMaxConcurrency} --wlm-query-slots #{myWlmQuerySlots}",
+            "parent": { "ref":"ShellCommandParent" },
+            "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_BOOTSTRAP",
             "dependsOn": { "ref": "Bootstrap" }
         },
         {
-            "id": "ArthurPromote",
-            "name": "Arthur Promote (EC2)",
+            "id": "ArthurLoad",
+            "name": "Arthur Load (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ promote_schemas --from-position staging --prolix",
-            "dependsOn": { "ref": "ArthurUpgrade" }
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment} --concurrent-extract",
+            "dependsOn": [
+                { "ref": "Bootstrap" }
+            ]
         },
         {
             "id": "PublishAndBackup",
@@ -115,7 +141,7 @@
             "type": "ShellCommandActivity",
             "parent": {"ref": "ShellCommandParent"},
             "command": "bash /tmp/redshift_etl/bin/sync_env.sh -y #{myS3Bucket} #{myEtlEnvironment} #{myEtlEnvironment}/current",
-            "dependsOn": { "ref": "ArthurPromote" }
+            "dependsOn": { "ref": "ArthurLoad" }
         },
         {
             "id": "ArthurUnload",
@@ -123,7 +149,7 @@
             "type": "ShellCommandActivity",
             "parent": {"ref": "ArthurCommandParent"},
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ unload --prolix --keep-going --prefix #{myEtlEnvironment}",
-            "dependsOn": {"ref": "ArthurPromote"}
+            "dependsOn": {"ref": "ArthurLoad"}
         },
         {
             "id": "PingCronutAfterEtl",
@@ -168,20 +194,18 @@
             "helpText": "When should the pipeline's daily cadence start?"
         },
         {
-            "id": "mySelection",
+            "id": "myOccurrences",
             "type": "String",
             "optional": "false",
-            "description": "Relation name to continue from (or *) (for ArthurUpgrade)",
-            "watermark": "*",
-            "helpText": "Which table should we continue from?"
-        },
+            "description": "Number of occurrences for this pipeline",
+            "watermark": "1000",
+            "helpText": "How often should the pipeline schedule be repeated?"
+        }
     ],
     "values": {
         "myS3Bucket": "data_lake_bucket",
         "myEtlEnvironment": "development",
         "myStartDateTime": "2525-01-01T00:00:00",
-        "mySelection": "*",
-        "myMaxConcurrency": "4",
-        "myWlmQuerySlots": "3"
+        "myOccurrences": "1000"
     }
 }

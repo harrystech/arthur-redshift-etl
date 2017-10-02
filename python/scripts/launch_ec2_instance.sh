@@ -9,7 +9,7 @@ set -e -u
 # === Command line args ===
 
 show_usage_and_exit() {
-    echo "Usage: $0 [<environment>]"
+    echo "Usage: `basename $0` [<environment>]"
     echo "The environment defaults to \"$DEFAULT_PREFIX\"."
     exit ${1-0}
 }
@@ -84,13 +84,12 @@ PUBLIC_DNS_NAME=`aws ec2 describe-instances --instance-ids "$INSTANCE_ID" |
     jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'`
 
 set +x +v
+
+KEYPAIR=$( arthur.py show_value resources.key_name )
+
 cat <<EOF
 # Give the machine a few more seconds to bootstrap before you try logging in with:
 
-    ssh -i '<location of your key file>' -l ec2-user $PUBLIC_DNS_NAME
-
-# Or if you setup 'User' and 'IdentityFile' for 'Host ec2-*.amazonaws.com' in your ~/.ssh/config:
-
-    ssh $PUBLIC_DNS_NAME
+    ssh -i ~/.ssh/$KEYPAIR.pem -l ec2-user $PUBLIC_DNS_NAME
 
 EOF

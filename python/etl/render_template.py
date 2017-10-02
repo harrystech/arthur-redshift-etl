@@ -28,7 +28,7 @@ def _find_templates() -> Dict[str, str]:
     Find all templates and return a map from short name to full name
     """
     lookup = OrderedDict()  # type: Dict[str, str]
-    templates = pkg_resources.resource_listdir(__name__, "templates")
+    templates = pkg_resources.resource_listdir("etl", "templates")
     for filename in sorted(templates):
         name = os.path.splitext(filename)[0]
         lookup[name] = os.path.join("templates", filename)
@@ -60,7 +60,7 @@ def render(template_name: str, compact=False) -> None:
         raise InvalidArgumentError("template name not found: '{}'".format(template_name))
     filename = resource_name[template_name]
     logger.info("Rendering template '%s' from file '%s'", template_name, filename)
-    original = pkg_resources.resource_string(__name__, filename).decode()
+    original = pkg_resources.resource_string("etl", filename).decode()
 
     try:
         config_mapping = etl.config.get_config_map()
