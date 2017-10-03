@@ -59,4 +59,7 @@ for TOPIC in "$STATUS_NAME" "$PAGE_NAME" "$VALIDATION_NAME"; do
     aws sns subscribe --topic-arn "$TOPIC_ARN" --protocol email --notification-endpoint "$NOTIFICATION_ENDPOINT"
 done
 
-aws sns list-topics | jq --raw-output '.Topics[].TopicArn' | grep 'redshift-etl-[^_]*_tom'
+set +x
+echo
+echo "List of subscriptions related to $PROJ_ENVIRONMENT"
+aws sns list-topics | jq --raw-output '.Topics[].TopicArn' | grep "redshift-etl-[^_]*_$PROJ_ENVIRONMENT"
