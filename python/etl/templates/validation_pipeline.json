@@ -22,7 +22,7 @@
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:us-east-1:${resources.VPC.account}:etl-validation-#{myEtlEnvironment}"
+            "topicArn": "arn:aws:sns:us-east-1:${resources.VPC.account}:redshift-etl-validation_#{myEtlEnvironment}"
         },
         {
             "id": "SuccessNotification",
