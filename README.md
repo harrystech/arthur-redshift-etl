@@ -366,18 +366,6 @@ Also, [q](https://github.com/zestyping/q) comes in handy for debugging:
 pip3 install q
 ```
 
-### Running unit tests and type checker
-
-Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
-```shell
-run_tests.py
-
-# And in case you have a config file handy
-arthur.py selftest
-```
-
-Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
-
 ### EMR login / EC2 login
 
 You can use the `.ssh/config` file to pick the correct user (`hadoop`) for the cluster and to automatically
@@ -394,17 +382,4 @@ If you find yourself using a one-off EC2 instance more often than an EMR cluster
   User ec2-user
 ```
 
-### Using `develop` of `setup.py`
-
-When you pull a new version of Arthur, you should re-install the ETL code.
-This is especially important to pick up changes in the scripts!
-```shell
-python3 setup.py develop
-```
-
-If you also change packages make sure to install those using `pip3`, e.g.
-```
-pip3 install --upgrade --requirement requirements-dev.txt
-```
-
-For additional information about maintaining the virtual environment, see the [INSTALL.md](INSTALL.md) file.
+For information about maintaining the virtual environment, see the [INSTALL.md](INSTALL.md) file.

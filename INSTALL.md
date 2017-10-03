@@ -2,6 +2,8 @@ This file describes the steps necessary to run ETLs using this codebase.
 
 # Just the facts...
 
+## ... for installing the ETL code
+
 Here's a set of commands to run to start working on and with the ETL.
 The paragraphs below simply add more explanations and variations.
 The only pre-requisite here is that you have `homebrew` installed for your (macOS) laptop.
@@ -38,6 +40,20 @@ python3 setup.py develop
 The next step is to setup your AWS credentials, organized in profiles probably.
 But if you're brave enough to skip the explanations and just run the above commands,
 you (hopefully?) know what this entails.
+
+## ... for updating the ETL code
+
+After you pull a new version of Arthur, you should re-install the ETL code.
+This is especially important to pick up changes in the scripts!
+```shell
+# Make sure the virtual environment is active, then
+python3 setup.py develop
+```
+
+If packages changed, make sure to install those using `pip3`, e.g.
+```
+pip3 install --upgrade --requirement requirements-dev.txt
+```
 
 # Getting ready to run ETLs
 
@@ -233,3 +249,15 @@ cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
 /usr/local/Cellar/apache-spark/2.1.1/libexec/python/lib/py4j-0.10.4-src.zip
 EOF
 ```
+
+## Running unit tests and type checker
+
+Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
+```shell
+run_tests.py
+
+# And in case you have a config file handy
+arthur.py selftest
+```
+
+Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
