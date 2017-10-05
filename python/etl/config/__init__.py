@@ -97,7 +97,7 @@ def _flatten_hier(prefix, props):
 
 def _build_config_map(settings):
     mapping = OrderedDict()
-    for section in {"arthur_settings", "object_store", "resources", "etl_events"}.intersection(settings):
+    for section in {"arthur_settings", "object_store", "data_lake", "resources", "etl_events"}.intersection(settings):
         for name, value in _flatten_hier(section, settings[section]):
             mapping[name] = value
     return mapping
@@ -227,15 +227,6 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     validate_with_schema(settings, "settings.schema")
 
-    # TODO Clean up this backwards-compatible code
-    settings.setdefault("object_store", {})
-    s3_bucket_name = settings.get("data_lake", {}).get("s3", {}).get("bucket_name")
-    if s3_bucket_name is not None:
-        settings["object_store"].setdefault("s3", {"bucket_name": s3_bucket_name})
-    iam_role = settings.get("data_lake", {}).get("iam_role")
-    if iam_role is not None:
-        settings["object_store"].setdefault("iam_role", iam_role)
-
     global _mapped_config
     _mapped_config = _build_config_map(settings)
 
@@ -278,8 +269,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
         filename = os.path.basename(fullname)
         if filename.startswith("credentials") and filename.endswith(".sh"):
             continue
-        # TODO Once we have route53 setup, drop support of .hosts file
-        if filename.endswith((".yaml", ".yml", ".sh", ".hosts")):
+        if filename.endswith((".yaml", ".yml", ".sh")):
             if filename not in settings_found:
                 settings_found.add(filename)
             else:

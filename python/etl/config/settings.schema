@@ -36,6 +36,11 @@
             "uniqueItems": true,
             "minItems": 1
         },
+        "bucket_template" : {
+            "description": "'Templates' used in static sources to configure their bucket",
+            "type": "string",
+            "pattern": "^(([a-zA-Z0-9_$-]+)|(\\${[.\\w]+}))+$"
+        },
         "path_template" : {
             "description": "'Templates' used in static sources to configure their effective prefix",
             "type": "string",
@@ -60,7 +65,7 @@
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
                 "description": { "type": "string" },
-                "s3_bucket": { "$ref": "#/definitions/identifier" },
+                "s3_bucket": { "$ref": "#/definitions/bucket_template" },
                 "s3_path_template": { "$ref": "#/definitions/path_template" },
                 "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
                 "include_tables": { "$ref": "#/definitions/glob_pattern_list" },
@@ -122,21 +127,6 @@
                     "uniqueItems": true
                 },
                 "iam_role": { "$ref": "#/definitions/aws_arn" },
-                "schemas": {
-                    "description": "DEPRECATED use 'transformations' instead",
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": { "$ref": "#/definitions/identifier" },
-                            "description": { "type": "string" },
-                            "groups": { "$ref": "#/definitions/identifier_list" }
-                        },
-                        "required": [ "name" ],
-                        "additionalProperties": false
-                    },
-                    "uniqueItems": true
-                },
                 "transformations": {
                     "description": "List of schemas with transformations",
                     "type": "array",
@@ -195,17 +185,8 @@
             "required": [ "as_is_att_type", "cast_needed_att_type" ],
             "additionalProperties": false
         },
-        "s3": {
-            "description": "DEPRECATED use setting in object_store",
-            "type": "object",
-            "properties": {
-                "bucket_name": { "$ref": "#/definitions/identifier" }
-            },
-            "required": [ "bucket_name" ],
-            "additionalProperties": false
-        },
         "data_lake": {
-            "description": "DEPRECATED use setting in object_store",
+            "description": "Location and attributes for shared storage, e.g. for unloads",
             "type": "object",
             "properties": {
                 "s3": {
@@ -215,10 +196,9 @@
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false
-                },
-                "iam_role": { "$ref": "#/definitions/aws_arn" }
+                }
             },
-            "required": [ "s3", "iam_role" ],
+            "required": [ "s3" ],
             "additionalProperties": false
         },
         "object_store": {
