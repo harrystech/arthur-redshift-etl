@@ -413,7 +413,7 @@ class MemoryStorage(PayloadDispatcher):
 
     The output should pass validator at https://validator.w3.org/#validate_by_input+with_options
     """
-    SERVER_ADDRESS = ('localhost', 8086)
+    SERVER_ADDRESS = ('', 8086)
 
     def __init__(self):
         self.queue = queue.Queue()
