@@ -17,7 +17,7 @@
 
         },
         # Schemas that are filled out based on CTAS or views and have no direct upstream source
-        "schemas": []
+        "transformations": []
     },
     # Logging of the ETL into events tables
     "etl_events": {

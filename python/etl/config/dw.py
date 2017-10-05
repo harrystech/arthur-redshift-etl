@@ -10,6 +10,7 @@ from typing import Dict
 import etl.config.env
 import etl.names
 import etl.db
+import etl.render_template
 from etl.errors import InvalidEnvironmentError
 
 
@@ -65,12 +66,19 @@ class DataWarehouseSchema:
             self._dsn_env_var = etl_access
         self.has_dsn = self._dsn_env_var is not None
 
-        self.s3_bucket = schema_info.get("s3_bucket")
+        self.raw_s3_bucket = schema_info.get("s3_bucket")  # Raw because it may be a template string
         self.s3_path_template = schema_info.get("s3_path_template")
         self.s3_unload_path_template = schema_info.get("s3_unload_path_template")
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
+
+    @property
+    def s3_bucket(self):
+        """
+        Renders S3 Bucket name (if it references Arthur configuration, for instance, the data lake)
+        """
+        return etl.render_template.render_from_config(self.raw_s3_bucket, context="s3_bucket of schema '{}'".format(self.name))
 
     @property
     def dsn(self):
