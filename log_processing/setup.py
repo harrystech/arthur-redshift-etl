@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="etl_log_processing",
-    version="0.1.0",
+    version="1.0.0",
     author="Harry's Data Engineering and Contributors",
     license="MIT",
     url="https://github.com/harrystech/arthur-redshift-etl",

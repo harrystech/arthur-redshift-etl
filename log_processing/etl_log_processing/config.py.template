@@ -6,4 +6,5 @@ from . import ClusterConfig
 
 
 class MyConfig(ClusterConfig):
+    region = "[your region]"
     endpoint = "[your domain endpoint].[your region].es.example.com"
