@@ -24,6 +24,11 @@ And if something appears amiss, check out the [issues page](https://github.com/h
 
 See the separate [INSTALL.md](./INSTALL.md) file.
 
+# Documentation
+
+See also our [wiki pages](https://github.com/harrystech/arthur-redshift-etl/wiki).
+And here's a [presentation about Arthur](https://www.youtube.com/watch?v=iVL-lNEKOm4), given at the Startup booth during the AWS Summit in New York.
+
 
 # Configuring the ETL (and upstream sources)
 
