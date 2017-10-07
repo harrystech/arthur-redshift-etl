@@ -48,12 +48,7 @@ CLUSTER_REGION=$( arthur.py show_value resources.VPC.region )
 
 CLUSTER_LOGS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, `date +'%Y-%m-%d %H:%M'`)"
-if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-  ENV_NAME="production"
-else
-  ENV_NAME="development"
-fi
-AWS_TAGS="user:project=data-warehouse user:env=$ENV_NAME"
+AWS_TAGS="user:project=data-warehouse user:sub-project=ETL"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -75,6 +70,7 @@ BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT"
 # ===  Start cluster ===
 
 CLUSTER_ID_FILE="/tmp/cluster_id_${USER}$$.json"
+trap "rm -f \"$CLUSTER_ID_FILE\"" EXIT
 
 aws emr create-cluster \
         --name "$CLUSTER_NAME" \

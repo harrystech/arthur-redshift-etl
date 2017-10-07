@@ -93,12 +93,12 @@ Example:
 
 The data warehouse and EMR cluster will be in the "public" subnet.
 
-Region: `us-east-1`
-IPv4 CIDR: `10.10.0.0/22`
-Routing Table:
-* local: `10.10.0.0/16`
-* all: internet gateway
-* service endpoint for S3
+* Region: `us-east-1`
+* IPv4 CIDR: `10.10.0.0/22`
+* Routing Table:
+    * local: `10.10.0.0/16`
+    * all: internet gateway
+    * service endpoint for S3
 
 (The EMR cluster is "public" to make it easy to login from the office and debug if that's ever necessary.)
 
@@ -106,12 +106,12 @@ Routing Table:
 
 Any Lambda instances will be running in the "private" subnet.
 
-Region: `us-east-1`
-IPv4 CIDR: `10.10.8.0/22`
-Routing Table:
-* local: `10.10.0.0/16`
-* all: NAT
-* service endpoint for S3
+* Region: `us-east-1` (should always match public subnet)
+* IPv4 CIDR: `10.10.8.0/22`
+* Routing Table:
+    * local: `10.10.0.0/16`
+    * all: NAT
+    * service endpoint for S3
 
 ### Security groups
 

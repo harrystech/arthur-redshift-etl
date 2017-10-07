@@ -47,6 +47,7 @@ VALIDATION_NAME="redshift-etl-validation_$PROJ_ENVIRONMENT"
 # ===  Create topic and subscription ===
 
 TOPIC_ARN_FILE="/tmp/topic_arn_${USER}$$.json"
+trap "rm -f \"$TOPIC_ARN_FILE\"" EXIT
 
 for TOPIC in "$STATUS_NAME" "$PAGE_NAME" "$VALIDATION_NAME"; do
     aws sns create-topic --name "$TOPIC" | tee "$TOPIC_ARN_FILE"

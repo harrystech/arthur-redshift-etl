@@ -2,22 +2,28 @@
 
 if [[ $# -ne 3 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <environment> <startdatetime> <occurrences>"
-    echo "      Start time should take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Start time should be 'now' or take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
     exit 0
 fi
 
 set -e -u
 
 # Verify that there is a local configuration directory
-if [[ ! -d ./config ]]; then
-    echo "Failed to find './config' directory. Make sure you are in the directory with your data warehouse setup."
+DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
+if [[ ! -d "$DEFAULT_CONFIG" ]]; then
+    echo "Failed to find \'$DEFAULT_CONFIG\' directory."
+    echo "Make sure you are in the directory with your data warehouse setup or have DATA_WAREHOUSE_CONFIG set."
     exit 1
 fi
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 
-START_DATE_TIME="$2"
+if [[ "$2" == "now" ]]; then
+    START_DATE_TIME="`date -u +'%Y-%m-%dT%H:%M:%S'`"
+else
+    START_DATE_TIME="$2"
+fi
 OCCURRENCES="$3"
 
 # Verify that this bucket/environment pair is set up on s3
@@ -29,22 +35,18 @@ fi
 
 set -x
 
-if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-  ENV_NAME="production"
-else
-  ENV_NAME="development"
-fi
-# Note: key/value are lower-case keywords here.
-AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
+# Note: "key" and "value" are lower-case keywords here.
+AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=ETL"
 
 PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
-    --unique-id rebuild-etl-pipeline \
+    --unique-id dw-etl-rebuild-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
@@ -60,8 +62,6 @@ fi
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
-        myS3Bucket="$PROJ_BUCKET" \
-        myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
     --pipeline-id "$PIPELINE_ID"

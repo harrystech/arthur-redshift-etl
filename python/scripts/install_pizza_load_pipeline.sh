@@ -17,8 +17,10 @@ fi
 set -e -u
 
 # Verify that there is a local configuration directory
-if [[ ! -d ./config ]]; then
-    echo "Failed to find './config' directory. Make sure you are in the directory with your data warehouse setup."
+DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
+if [[ ! -d "$DEFAULT_CONFIG" ]]; then
+    echo "Failed to find \'$DEFAULT_CONFIG\' directory."
+    echo "Make sure you are in the directory with your data warehouse setup or have DATA_WAREHOUSE_CONFIG set."
     exit 1
 fi
 
@@ -37,22 +39,18 @@ fi
 
 set -x
 
-if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-  ENV_NAME="production"
-else
-  ENV_NAME="development"
-fi
-# Note: key/value are lower-case keywords here.
-AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
+# Note: "key" and "value" are lower-case keywords here.
+AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=ETL"
 
 PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" pizza_load_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
-    --unique-id pizza-etl-pipeline \
+    --unique-id dw-etl-pizza-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
@@ -68,8 +66,6 @@ fi
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
-        myS3Bucket="$PROJ_BUCKET" \
-        myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         mySelection="$CONTINUE_FROM_RELATION" \
     --pipeline-id "$PIPELINE_ID"
