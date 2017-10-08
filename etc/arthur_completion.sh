@@ -15,7 +15,7 @@ _arthur_completion()
                   design auto_design bootstrap_sources bootstrap_transformations
                   sync validate explain ls
                   extract load upgrade update unload
-                  create_schemas promote_schemas
+                  create_schemas promote_schemas terminate_backends
                   show_downstream_dependents show_dependents show_upstream_dependencies
                   render_template show_value show_vars show_pipelines
                   selftest
