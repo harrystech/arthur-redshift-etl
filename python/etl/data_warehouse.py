@@ -315,7 +315,9 @@ def terminate_sessions_with_transaction_locks(cx, dry_run=False):
     stmt = """
         SELECT DISTINCT pid AS proc_pid
           FROM pg_catalog.svv_transactions AS st
-         WHERE txn_owner <> current_user AND st.relation IS NOT NULL
+          JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
+          JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
+         WHERE txn_owner <> current_user
          ORDER BY proc_pid
         """
     pids = etl.db.query(cx, stmt)
