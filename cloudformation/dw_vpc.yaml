@@ -1,8 +1,9 @@
 Description: >
-    This stack contains a VPC for the Redshift data warehouse and its ETL.
-    We use one public and one private subnet, an Internet Gateway, a service
-    Endpoint (for S3), a NAT Gateway and lots of security groups.
-    This VPC should then be referenced when building clusters using the outputs.
+    Create the VPC for the Redshift data warehouse and its ETL.
+
+#    We use one public and one private subnet, an Internet Gateway, a service
+#    Endpoint (for S3 and DynamoDB), a NAT Gateway and lots of security groups.
+#    This VPC should then be referenced when building clusters to use its exported outputs.
 
 AWSTemplateFormatVersion: '2010-09-09'
 
@@ -141,9 +142,6 @@ Resources:
         Properties:
             AllocationId: !GetAtt NatGatewayEIP.AllocationId
             SubnetId: !Ref PublicSubnet
-#            Tags:
-#                - Key: Name
-#                  Value: !Join [ "-", [ !Ref "AWS::StackName", "nat" ] ]
 
     PublicRouteTable:
         Type: AWS::EC2::RouteTable
@@ -195,36 +193,82 @@ Resources:
             PolicyDocument: {
                 Version: "2012-10-17",
                 Statement: [
-                  {
-                    "Sid": "ReadOnlyEverything",
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": [
-                        "s3:Describe*",
-                        "s3:Get*",
-                        "s3:List*"
-                    ],
-                    "Resource": "*"
-                  },
-                  {
-                    "Sid": "WriteSelective",
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": [
-                        "s3:DeleteObject*",
-                        "s3:PutObject*"
-                    ],
-                    "Resource": [
-                        !Sub "arn:aws:s3:::${ObjectStore}/*" ,
-                        !Sub "arn:aws:s3:::${DataLake}/*"
-                    ]
+                    {
+                        "Sid": "ReadOnlyEverything",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "s3:Describe*",
+                            "s3:Get*",
+                            "s3:List*"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                        "Sid": "WriteSelective",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "s3:DeleteObject*",
+                            "s3:PutObject*"
+                        ],
+                        "Resource": [
+                            !Sub "arn:aws:s3:::${ObjectStore}/*" ,
+                            !Sub "arn:aws:s3:::${DataLake}/*"
+                        ]
+                    }
+                ]
+            }
+            RouteTableIds:
+                - !Ref PublicRouteTable
+                - !Ref PrivateRouteTable
+            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
+
+    VPCEndpointForDynamoDB:
+        Type: "AWS::EC2::VPCEndpoint"
+        Properties:
+            VpcId: !Ref VPC
+            PolicyDocument: {
+                Version: "2012-10-17",
+                Statement: [
+                    {
+                        "Sid": "ReadOnlyAllTables",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "dynamodb:BatchGetItem",
+                            "dynamodb:Describe*",
+                            "dynamodb:Get*",
+                            "dynamodb:List*",
+                            "dynamodb:Query",
+                            "dynamodb:Scan"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                        "Sid": "WriteEventsTables",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "dynamodb:BatchWriteItem",
+                            "dynamodb:CreateTable",
+                            "dynamodb:DeleteItem",
+                            "dynamodb:DeleteTable",
+                            "dynamodb:PutItem",
+                            "dynamodb:UpdateItem",
+                            "dynamodb:UpdateTable",
+                            "dynamodb:UpdateTimeToLive",
+                            "dynamodb:TagResource",
+                            "dynamodb:UntagResource"
+                        ],
+                        "Resource": !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/redshift-etl-events_*"
                   }
                 ]
             }
             RouteTableIds:
-              - !Ref PublicRouteTable
-              - !Ref PrivateRouteTable
-            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
+                - !Ref PublicRouteTable
+                - !Ref PrivateRouteTable
+            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "dynamodb" ] ]
 
     WhitelistSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -403,8 +447,8 @@ Resources:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
-            FromPort: "22"
-            ToPort: "22"
+            FromPort: 22
+            ToPort: 22
             SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
 
@@ -412,8 +456,8 @@ Resources:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
-            FromPort: "22"
-            ToPort: "22"
+            FromPort: 22
+            ToPort: 22
             SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
 
@@ -421,10 +465,37 @@ Resources:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
-            FromPort: "22"
-            ToPort: "22"
+            FromPort: 22
+            ToPort: 22
             SourceSecurityGroupId: !Ref ManagedCoreSecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
+
+    RedshiftEC2SecurityGroupHttpIngressFromItself:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: 8086
+            ToPort: 8086
+            SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
+            GroupId: !Ref RedshiftEC2SecurityGroup
+
+    RedshiftEC2SecurityGroupIngressHttpFromMaster:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: 8086
+            ToPort: 8086
+            SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
+            GroupId: !Ref RedshiftEC2SecurityGroup
+
+    ManagedMasterSecurityGroupIngressHttpFromEC2:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: 8086
+            ToPort: 8086
+            SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
+            GroupId: !Ref ManagedMasterSecurityGroup
 
     RedshiftPublicSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -433,58 +504,58 @@ Resources:
             VpcId: !Ref VPC
             SecurityGroupIngress:
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   SourceSecurityGroupId: !Ref RedshiftLambdaSecurityGroup
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR1, !Ref "WhitelistCIDR1", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR2, !Ref "WhitelistCIDR2", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR3, !Ref "WhitelistCIDR3", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
                 # Heap
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 52.20.48.42/32
                 # Looker
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 54.208.10.167/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 54.209.116.191/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 52.1.5.228/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 52.1.157.156/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 54.83.113.5/32
             Tags:
                 - Key: Name
@@ -496,87 +567,82 @@ Resources:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
-                  -
-                    Effect: "Allow"
+                  - Effect: "Allow"
                     Principal:
-                      Service:
-                        - "elasticmapreduce.amazonaws.com"
-                    Action:
-                      - "sts:AssumeRole"
+                        Service: "elasticmapreduce.amazonaws.com"
+                    Action: "sts:AssumeRole"
             Path: "/services/"
             Policies:
-              -
-                PolicyName: "emr_default_policy"
-                PolicyDocument:
-                    Version: "2012-10-17"
-                    Statement:
-                      -
-                        Effect: "Allow"
-                        Action:
-                          - "ec2:AuthorizeSecurityGroupEgress"
-                          - "ec2:AuthorizeSecurityGroupIngress"
-                          - "ec2:CancelSpotInstanceRequests"
-                          - "ec2:CreateNetworkInterface"
-                          - "ec2:CreateSecurityGroup"
-                          - "ec2:CreateTags"
-                          - "ec2:DeleteNetworkInterface"
-                          - "ec2:DeleteSecurityGroup"
-                          - "ec2:DeleteTags"
-                          - "ec2:DescribeAvailabilityZones"
-                          - "ec2:DescribeAccountAttributes"
-                          - "ec2:DescribeDhcpOptions"
-                          - "ec2:DescribeImages"
-                          - "ec2:DescribeInstanceStatus"
-                          - "ec2:DescribeInstances"
-                          - "ec2:DescribeKeyPairs"
-                          - "ec2:DescribeNetworkAcls"
-                          - "ec2:DescribeNetworkInterfaces"
-                          - "ec2:DescribePrefixLists"
-                          - "ec2:DescribeRouteTables"
-                          - "ec2:DescribeSecurityGroups"
-                          - "ec2:DescribeSpotInstanceRequests"
-                          - "ec2:DescribeSpotPriceHistory"
-                          - "ec2:DescribeSubnets"
-                          - "ec2:DescribeTags"
-                          - "ec2:DescribeVpcAttribute"
-                          - "ec2:DescribeVpcEndpoints"
-                          - "ec2:DescribeVpcEndpointServices"
-                          - "ec2:DescribeVpcs"
-                          - "ec2:DetachNetworkInterface"
-                          - "ec2:ModifyImageAttribute"
-                          - "ec2:ModifyInstanceAttribute"
-                          - "ec2:RequestSpotInstances"
-                          - "ec2:RevokeSecurityGroupEgress"
-                          - "ec2:RunInstances"
-                          - "ec2:TerminateInstances"
-                          - "ec2:DeleteVolume"
-                          - "ec2:DescribeVolumeStatus"
-                          - "ec2:DescribeVolumes"
-                          - "ec2:DetachVolume"
-                          - "iam:GetRole"
-                          - "iam:GetRolePolicy"
-                          - "iam:ListInstanceProfiles"
-                          - "iam:ListRolePolicies"
-                          - "iam:PassRole"
-                          - "s3:CreateBucket"
-                          - "s3:Get*"
-                          - "s3:List*"
-                          - "sdb:BatchPutAttributes"
-                          - "sdb:Select"
-                          - "sqs:CreateQueue"
-                          - "sqs:Delete*"
-                          - "sqs:GetQueue*"
-                          - "sqs:PurgeQueue"
-                          - "sqs:ReceiveMessage"
-                          - "cloudwatch:PutMetricAlarm"
-                          - "cloudwatch:DescribeAlarms"
-                          - "cloudwatch:DeleteAlarms"
-                          - "application-autoscaling:RegisterScalableTarget"
-                          - "application-autoscaling:DeregisterScalableTarget"
-                          - "application-autoscaling:PutScalingPolicy"
-                          - "application-autoscaling:DeleteScalingPolicy"
-                          - "application-autoscaling:Describe*"
-                        Resource: "*"
+                - PolicyName: "emr_default_policy"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action:
+                                - "ec2:AuthorizeSecurityGroupEgress"
+                                - "ec2:AuthorizeSecurityGroupIngress"
+                                - "ec2:CancelSpotInstanceRequests"
+                                - "ec2:CreateNetworkInterface"
+                                - "ec2:CreateSecurityGroup"
+                                - "ec2:CreateTags"
+                                - "ec2:DeleteNetworkInterface"
+                                - "ec2:DeleteSecurityGroup"
+                                - "ec2:DeleteTags"
+                                - "ec2:DescribeAvailabilityZones"
+                                - "ec2:DescribeAccountAttributes"
+                                - "ec2:DescribeDhcpOptions"
+                                - "ec2:DescribeImages"
+                                - "ec2:DescribeInstanceStatus"
+                                - "ec2:DescribeInstances"
+                                - "ec2:DescribeKeyPairs"
+                                - "ec2:DescribeNetworkAcls"
+                                - "ec2:DescribeNetworkInterfaces"
+                                - "ec2:DescribePrefixLists"
+                                - "ec2:DescribeRouteTables"
+                                - "ec2:DescribeSecurityGroups"
+                                - "ec2:DescribeSpotInstanceRequests"
+                                - "ec2:DescribeSpotPriceHistory"
+                                - "ec2:DescribeSubnets"
+                                - "ec2:DescribeTags"
+                                - "ec2:DescribeVpcAttribute"
+                                - "ec2:DescribeVpcEndpoints"
+                                - "ec2:DescribeVpcEndpointServices"
+                                - "ec2:DescribeVpcs"
+                                - "ec2:DetachNetworkInterface"
+                                - "ec2:ModifyImageAttribute"
+                                - "ec2:ModifyInstanceAttribute"
+                                - "ec2:RequestSpotInstances"
+                                - "ec2:RevokeSecurityGroupEgress"
+                                - "ec2:RunInstances"
+                                - "ec2:TerminateInstances"
+                                - "ec2:DeleteVolume"
+                                - "ec2:DescribeVolumeStatus"
+                                - "ec2:DescribeVolumes"
+                                - "ec2:DetachVolume"
+                                - "iam:GetRole"
+                                - "iam:GetRolePolicy"
+                                - "iam:ListInstanceProfiles"
+                                - "iam:ListRolePolicies"
+                                - "iam:PassRole"
+                                - "s3:CreateBucket"
+                                - "s3:Get*"
+                                - "s3:List*"
+                                - "sdb:BatchPutAttributes"
+                                - "sdb:Select"
+                                - "sqs:CreateQueue"
+                                - "sqs:Delete*"
+                                - "sqs:GetQueue*"
+                                - "sqs:PurgeQueue"
+                                - "sqs:ReceiveMessage"
+                                - "cloudwatch:PutMetricAlarm"
+                                - "cloudwatch:DescribeAlarms"
+                                - "cloudwatch:DeleteAlarms"
+                                - "application-autoscaling:RegisterScalableTarget"
+                                - "application-autoscaling:DeregisterScalableTarget"
+                                - "application-autoscaling:PutScalingPolicy"
+                                - "application-autoscaling:DeleteScalingPolicy"
+                                - "application-autoscaling:Describe*"
+                            Resource: "*"
 
     Ec2Role:
         Type: "AWS::IAM::Role"
@@ -585,46 +651,41 @@ Resources:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
-                  -
-                    Effect: "Allow"
-                    Principal:
-                      Service:
-                        - "ec2.amazonaws.com"
-                    Action:
-                      - "sts:AssumeRole"
+                    - Effect: "Allow"
+                      Principal:
+                          Service: "ec2.amazonaws.com"
+                      Action: "sts:AssumeRole"
             Path: "/services/"
             Policies:
-              -
-                PolicyName: "ec2_default_policy"
-                PolicyDocument:
-                    Version: "2012-10-17"
-                    Statement:
-                      -
-                        Effect: "Allow"
-                        Action:
-                          - "cloudwatch:*"
-                          - "dynamodb:*"
-                          - "ec2:Describe*"
-                          - "elasticmapreduce:Describe*"
-                          - "elasticmapreduce:ListBootstrapActions"
-                          - "elasticmapreduce:ListClusters"
-                          - "elasticmapreduce:ListInstanceGroups"
-                          - "elasticmapreduce:ListInstances"
-                          - "elasticmapreduce:ListSteps"
-                          - "kinesis:CreateStream"
-                          - "kinesis:DeleteStream"
-                          - "kinesis:DescribeStream"
-                          - "kinesis:GetRecords"
-                          - "kinesis:GetShardIterator"
-                          - "kinesis:MergeShards"
-                          - "kinesis:PutRecord"
-                          - "kinesis:SplitShard"
-                          - "rds:Describe*"
-                          - "s3:*"
-                          - "sdb:*"
-                          - "sns:*"
-                          - "sqs:*"
-                        Resource: "*"
+                - PolicyName: "ec2_default_policy"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action:
+                                - "cloudwatch:*"
+                                - "dynamodb:*"
+                                - "ec2:Describe*"
+                                - "elasticmapreduce:Describe*"
+                                - "elasticmapreduce:ListBootstrapActions"
+                                - "elasticmapreduce:ListClusters"
+                                - "elasticmapreduce:ListInstanceGroups"
+                                - "elasticmapreduce:ListInstances"
+                                - "elasticmapreduce:ListSteps"
+                                - "kinesis:CreateStream"
+                                - "kinesis:DeleteStream"
+                                - "kinesis:DescribeStream"
+                                - "kinesis:GetRecords"
+                                - "kinesis:GetShardIterator"
+                                - "kinesis:MergeShards"
+                                - "kinesis:PutRecord"
+                                - "kinesis:SplitShard"
+                                - "rds:Describe*"
+                                - "s3:*"
+                                - "sdb:*"
+                                - "sns:*"
+                                - "sqs:*"
+                            Resource: "*"
 
     EmrEc2InstanceProfile:
         Type: "AWS::IAM::InstanceProfile"
@@ -632,7 +693,7 @@ Resources:
             InstanceProfileName: !Sub "${AWS::StackName}-emr-ec2-role"
             Path: "/services/"
             Roles:
-              - !Ref Ec2Role
+                - !Ref Ec2Role
 
     RedshiftCopyCole:
         Type: "AWS::IAM::Role"
@@ -640,51 +701,39 @@ Resources:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
-                  -
-                    Effect: "Allow"
-                    Principal:
-                      Service:
-                        - "redshift.amazonaws.com"
-                    Action:
-                      - "sts:AssumeRole"
+                    - Effect: "Allow"
+                      Principal:
+                          Service: "redshift.amazonaws.com"
+                      Action: "sts:AssumeRole"
             # Must use the standard Path because Redshift does not support something other than '/'
             Path: "/"
             Policies:
-              -
-                PolicyName: "redshift_read_access"
-                PolicyDocument:
-                    Version: "2012-10-17"
-                    Statement:
-                      -
-                        Sid: "ReadAccessBuckets"
-                        Effect: "Allow"
-                        Action:
-                          - "s3:ListBucket*"
-                        Resource:
-                          - !Sub "arn:aws:s3:::*"
-                      -
-                        Sid: "ReadAccessObjects"
-                        Effect: "Allow"
-                        Action:
-                          - "s3:GetObject"
-                        Resource:
-                          - !Sub "arn:aws:s3:::*/*"
-                      -
-                        Sid: "WriteAccess"
-                        Effect: "Allow"
-                        Action:
-                          - "s3:DeleteObject"
-                          - "s3:PutObject"
-                        Resource:
-                          - !Sub "arn:aws:s3:::${ObjectStore}/*"
-                          - !Sub "arn:aws:s3:::${DataLake}/*"
-                      -
-                        Sid: "EventAccess"
-                        Effect: "Allow"
-                        Action:
-                          - "dynamodb:Describe*"
-                          - "dynamodb:Scan"
-                        Resource: "arn:aws:dynamodb:*:*:table/redshift-etl-events_*"
+                - PolicyName: "redshift_access"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Sid: "ReadAccessBuckets"
+                            Effect: "Allow"
+                            Action: "s3:ListBucket*"
+                            Resource: "arn:aws:s3:::*"
+                          - Sid: "ReadAccessObjects"
+                            Effect: "Allow"
+                            Action: "s3:GetObject"
+                            Resource: "arn:aws:s3:::*/*"
+                          - Sid: "WriteAccess"
+                            Effect: "Allow"
+                            Action:
+                                - "s3:DeleteObject"
+                                - "s3:PutObject"
+                            Resource:
+                                - !Sub "arn:aws:s3:::${ObjectStore}/*"
+                                - !Sub "arn:aws:s3:::${DataLake}/*"
+                          - Sid: "EventAccess"
+                            Effect: "Allow"
+                            Action:
+                                - "dynamodb:Describe*"
+                                - "dynamodb:Scan"
+                            Resource: "arn:aws:dynamodb:*:*:table/redshift-etl-events_*"
 
 
 Outputs:
