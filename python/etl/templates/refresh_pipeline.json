@@ -62,7 +62,10 @@
             "coreInstanceCount": "${resources.EMR.core.instance_count}",
             "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
             "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
-            "additionalMasterSecurityGroupIds": [ "${resources.VPC.whitelist_security_group}" ],
+            "additionalMasterSecurityGroupIds": [
+                "${resources.EC2.public_security_group}",
+                "${resources.VPC.whitelist_security_group}"
+            ],
             "bootstrapAction": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/current/bin/bootstrap.sh,${object_store.s3.bucket_name},${object_store.s3.prefix}/current",
             "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
             "configuration": []
