@@ -50,7 +50,6 @@ from itertools import chain, dropwhile
 from typing import Any, Dict, List, Optional, Set
 
 
-import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -112,6 +111,7 @@ class LoadableRelation:
         Compared to RelationDescription, we have the additional complexity of dealing with
         the position (staging or not) of a table.
 
+        >>> import etl.file_sets
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
@@ -658,7 +658,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         Check DynamoDB for successful extracts
         Get items from the queue 'to_poll'
         When the item
-            - is an identifer: poll DynamoDB
+            - is an identifier: poll DynamoDB
             - is an int: sleep that many seconds
         """
         while True:

@@ -53,7 +53,7 @@ Examples:
 # built-in examples
 log_search ERROR examples
 # local files
-log_search FD1B9A50D12C41C3 arthur.log*
+log_search FD1B9A50D12C41C3 ../arthur.log*
 # remote files (specified by prefix)
 log_search 'finished successfully' s3://example-bucket/logs/
 ```
@@ -67,7 +67,7 @@ Example:
 # built-in examples
 log_upload examples
 # local files
-log_upload arthur.log
+log_upload ../arthur.log
 # remote files (specified by prefix)
 log_upload s3://example/logs/df-pipeline-id
 ```
@@ -80,14 +80,21 @@ add the log records to an ES domain.
 
 ### Create lambda and configure trigger
 
-Set a trigger to have an S3 `PUT` call the Lambda function
+#### Create the deployment package
 
-
-### Upload code using deployment package
-
-Create the deployment package:
 ```
 ./create_deployment.sh venv
 ```
+
+#### Create or update the Lambda function
+
+* Upload zip file just created.
+* Set handler to `etl_log_processing.upload.lambda_handler`
+* Set tags for `user:project` to `data-warehouse`
+
+#### Trigger
+
+Set a trigger to have an S3 `PUT` call the Lambda function ("object created")
+
 
 See https://aws.amazon.com/blogs/security/how-to-control-access-to-your-amazon-elasticsearch-service-domain/

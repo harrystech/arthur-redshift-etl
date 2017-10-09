@@ -12,6 +12,7 @@ import io
 import gzip
 import urllib.parse
 import sys
+import time
 
 import boto3
 import elasticsearch
@@ -112,18 +113,23 @@ def _connect_to_es(http_auth):
 
 
 def _create_index(client):
-    print("Creating index {} ({})".format(config.MyConfig.index, config.MyConfig.doc_type), file=sys.stderr)
-    client.indices.create(index=config.MyConfig.index, body=parser.LogParser.index(), ignore=400)
-    body = dict(mappings={})
-    body["mappings"][config.MyConfig.doc_type] = parser.LogParser.index()
-    client.indices.create(index=config.MyConfig.index, body=body, ignore=400)
+    index = time.strftime(config.MyConfig.index_template, time.gmtime())
+    doc_type = config.MyConfig.doc_type
+    print("Creating index '{}' ({})".format(index, doc_type), file=sys.stderr)
+    client.indices.create(index=index, body=parser.LogParser.index(), ignore=400)
+    body = {
+        "mappings": {
+            doc_type: parser.LogParser.index()
+        }
+    }
+    client.indices.create(index=index, body=body, ignore=400)
+    return index
 
 
-def _build_actions_from(records):
-    index = config.MyConfig.index
+def _build_actions_from(index, records):
     doc_type = config.MyConfig.doc_type
     for record in records:
-        if record["source"] == "examples":
+        if record["log_name"] == "examples":
             print("Example record ... _id={sha1} timestamp={timestamp}".format(**record))
         yield {
             "_op_type": "index",
@@ -134,16 +140,20 @@ def _build_actions_from(records):
         }
 
 
-def _bulk_index(client, records):
+def _bulk_index(client, index, records):
     print("Indexing new records", file=sys.stderr)
-    ok, errors = elasticsearch.helpers.bulk(client, _build_actions_from(records))
-    print("Uploaded successfully: {:d}".format(ok), file=sys.stderr)
-    print("Errors: {}".format(errors), file=sys.stderr)
+    ok, errors = elasticsearch.helpers.bulk(client, _build_actions_from(index, records))
+    if ok:
+        print("Indexed successfully: {:d}".format(ok), file=sys.stderr)
+    else:
+        print("No new records were indexed", file=sys.stderr)
+    if errors:
+        print("Errors: {}".format(errors), file=sys.stderr)
 
 
 def index_records(es, records_generator):
-    _create_index(es)
-    _bulk_index(es, records_generator)
+    index = _create_index(es)
+    _bulk_index(es, index, records_generator)
 
 
 def lambda_handler(event, context):
@@ -153,6 +163,9 @@ def lambda_handler(event, context):
     full_name = "s3://{}/{}".format(bucket_name, object_key)
     print("Event: eventSource={}, eventName={}, bucket_name={}, object_key={}".format(
         event_data['eventSource'], event_data['eventName'], bucket_name, object_key))
+    if "/logs/" not in object_key:
+        print("Path does not contain '/logs/' ... skipping this file")
+        return
 
     processed = _load_records_using(load_remote_content, full_name)
     es = _connect_to_es(aws_auth())
