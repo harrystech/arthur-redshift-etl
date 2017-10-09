@@ -21,19 +21,14 @@ import time
 import traceback
 import urllib.parse
 import uuid
+from calendar import timegm
 from collections import Counter, OrderedDict
 from contextlib import closing
 from copy import deepcopy
+from datetime import datetime, timedelta
 from decimal import Decimal
+from http import HTTPStatus
 from typing import List, Optional
-try:
-    from http import HTTPStatus  # type: ignore
-except ImportError:
-    # Compatibility for Python 3.4
-    class HTTPStatus:  # type: ignore
-        OK = 200
-        MOVED_PERMANENTLY = 301
-        NOT_FOUND = 404
 
 import boto3
 import botocore.exceptions
@@ -566,9 +561,27 @@ def set_environment(environment):
         MonitorPayload.dispatchers.append(rel)
 
 
-def query_for(target_list, etl_id=None):
-    logger.info("Querying for: etl_id=%s target=%s", etl_id, target_list)
-    # Left for the reader as an exercise.
+def query_for(target_list, environment):
+    logger.warning("This is a bit experimental (good day) and temperamental (bad day)")
+    table_name = etl.config.get_config_value("etl_events.dynamodb.table_prefix") + '_' + environment
+    ddb = DynamoDBStorage(table_name,
+                          etl.config.get_config_value("etl_events.dynamodb.capacity"),
+                          etl.config.get_config_value("etl_events.dynamodb.region"))
+    table = ddb._get_table()
+
+    recent_cutoff = datetime.utcnow() - timedelta(days=5)
+    cutoff_epoch = timegm(recent_cutoff.utctimetuple())
+    for relation in target_list._patterns:
+        res = table.query(
+            ConsistentRead=True,
+            KeyConditionExpression="target = :table and #ts > :dt",
+            FilterExpression="event <> :event",
+            ExpressionAttributeNames={"#ts": "timestamp"},
+            ExpressionAttributeValues={":dt": cutoff_epoch, ":table": relation.identifier, ":event": STEP_START}
+        )
+        print("Count: {:d} (Scanned count: {:d})".format(res['Count'], res['ScannedCount']))
+        for item in res['Items']:
+            print(json.dumps(item, sort_keys=True, cls=FancyJsonEncoder))
 
 
 def test_run():

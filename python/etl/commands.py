@@ -977,11 +977,10 @@ class EventsQueryCommand(SubCommand):
                          "Query the table of events written during an ETL.")
 
     def add_arguments(self, parser):
-        parser.add_argument("--etl-id", help="pick ETL id to look for")
-        parser.add_argument("pattern", help="limit what to show", nargs='?')
+        add_standard_arguments(parser, ["pattern", "prefix"])
 
     def callback(self, args, config):
-        etl.monitor.query_for(args.pattern, args.etl_id)
+        etl.monitor.query_for(args.pattern, args.prefix)
 
 
 class SelfTestCommand(SubCommand):
