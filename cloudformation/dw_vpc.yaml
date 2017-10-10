@@ -123,7 +123,7 @@ Resources:
         Type: "AWS::EC2::Subnet"
         Properties:
             VpcId: !Ref VPC
-            AvailabilityZone: us-east-1b
+            AvailabilityZone: !Ref PrimaryAvailabilityZone
             CidrBlock: !Sub "10.${VpcNetworkSelection}.8.0/22"
             MapPublicIpOnLaunch: false
             Tags:
@@ -141,9 +141,6 @@ Resources:
         Properties:
             AllocationId: !GetAtt NatGatewayEIP.AllocationId
             SubnetId: !Ref PublicSubnet
-#            Tags:
-#                - Key: Name
-#                  Value: !Join [ "-", [ !Ref "AWS::StackName", "nat" ] ]
 
     PublicRouteTable:
         Type: AWS::EC2::RouteTable
@@ -695,6 +692,10 @@ Outputs:
         Export:
             Name: !Sub "${AWS::StackName}::vpc-id"
 
+    VpcRegion:
+        Description: (VPC.region) Name of the region
+        Value: !Ref "AWS::Region"
+
     DefaultAvailabilityZone:
         Description: A reference to the primary availability zone (used as default elsewhere)
         Value: !Ref PrimaryAvailabilityZone
@@ -752,6 +753,12 @@ Outputs:
         Value: !Ref ObjectStore
         Export:
             Name: !Sub "${AWS::StackName}::object-store"
+
+    DataLake:
+        Description: (data_lake.s3.bucket_name) Name of the bucket for the data lake
+        Value: !Ref DataLake
+        Export:
+            Name: !Sub "${AWS::StackName}::data-lake"
 
     RedshiftCopyCole:
         Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
