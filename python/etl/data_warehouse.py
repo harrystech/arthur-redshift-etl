@@ -290,10 +290,10 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
 
 def list_transactions(cx):
     stmt = """
-        SELECT pid AS proc_pid, txn_owner, txn_start, pn.nspname || '.' || pc.relname AS table_name
+        SELECT pid AS proc_pid, txn_owner, txn_start, COALESCE(pn.nspname || '.' || pc.relname, 'Unknown') AS table_name
           FROM pg_catalog.svv_transactions AS st
-          JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
-          JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
+          LEFT JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
+          LEFT JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
          WHERE txn_owner <> current_user
          ORDER BY pid, txn_owner, txn_start, table_name
         """
@@ -315,8 +315,6 @@ def terminate_sessions_with_transaction_locks(cx, dry_run=False):
     stmt = """
         SELECT DISTINCT pid AS proc_pid
           FROM pg_catalog.svv_transactions AS st
-          JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
-          JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
          WHERE txn_owner <> current_user
          ORDER BY proc_pid
         """
