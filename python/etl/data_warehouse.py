@@ -15,10 +15,13 @@ create_user: Create new user.  Optionally add a personal schema in the database.
 
 Oddly enough, it is possible to skip the "create user" step but that comes in
 handy when you want to update the user's search path.
+
+This module also contains "user management" in terms of disconnecting their sessions.
 """
 
 import logging
 from contextlib import closing
+from itertools import groupby
 from typing import List
 
 import psycopg2
@@ -283,3 +286,51 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
             else:
                 logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
                 etl.db.alter_search_path(conn, user.name, search_path)
+
+
+def list_transactions(cx):
+    stmt = """
+        SELECT pid AS proc_pid, txn_owner, txn_start, COALESCE(pn.nspname || '.' || pc.relname, 'Unknown') AS table_name
+          FROM pg_catalog.svv_transactions AS st
+          LEFT JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
+          LEFT JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
+         WHERE txn_owner <> current_user
+         ORDER BY pid, txn_owner, txn_start, table_name
+        """
+    tx_locks = etl.db.query(cx, stmt)
+    tx_info = []
+    for (proc_pid, txn_owner, txn_start), rows in groupby(tx_locks, lambda row: row[:3]):
+        table_names = ', '.join(row["table_name"] for row in rows)
+        logger.info("Transaction: pid = %d owner = %s start = %s tables = %s",
+                    proc_pid, txn_owner, txn_start, table_names)
+        tx_info.append((proc_pid, txn_owner, txn_start, table_names))
+
+    print("List of sessions that have locks on tables inside transactions:")
+    print("proc_pid", "txn_owner", "txn_start", "list of table names", sep=', ')
+    for proc_pid, txn_owner, txn_start, table_names in tx_info:
+        print(proc_pid, txn_owner, txn_start, table_names, sep=', ')
+
+
+def terminate_sessions_with_transaction_locks(cx, dry_run=False):
+    stmt = """
+        SELECT DISTINCT pid AS proc_pid
+          FROM pg_catalog.svv_transactions AS st
+         WHERE txn_owner <> current_user
+         ORDER BY proc_pid
+        """
+    pids = etl.db.query(cx, stmt)
+    for (pid,) in pids:
+        msg = "Terminate backend for session {:d} with transaction locks".format(pid)
+        term = "SELECT PG_TERMINATE_BACKEND({:d})".format(pid)
+        etl.db.run(cx, msg, term, dry_run=dry_run)
+
+
+def terminate_backends(dry_run=False):
+    """
+    Terminate backends that currently hold locks on tables.
+    """
+    dsn_admin = etl.config.get_dw_config().dsn_admin
+    with closing(etl.db.connection(dsn_admin, autocommit=True)) as conn:
+        etl.db.execute(conn, "SET query_group TO 'superuser'")
+        list_transactions(conn)
+        terminate_sessions_with_transaction_locks(conn, dry_run=dry_run)

@@ -257,9 +257,10 @@ def build_full_parser(prog_name):
             # ETL commands to extract, load (or update), or transform
             ExtractToS3Command, LoadDataWarehouseCommand, UpgradeDataWarehouseCommand, UpdateDataWarehouseCommand,
             UnloadDataToS3Command,
-            # Helper commands
+            # Helper commands (database, filesystem)
             CreateSchemasCommand, PromoteSchemasCommand,
-            ListFilesCommand, PingCommand,
+            PingCommand, TerminateBackendsCommand,
+            ListFilesCommand,
             ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
             # Environment commands
             RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
@@ -860,6 +861,22 @@ class PingCommand(SubCommand):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
         with etl.db.log_error():
             etl.db.ping(dsn)
+
+
+class TerminateBackendsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("terminate_backends",
+                         "terminate backends holding table locks",
+                         "Terminate backends (processes) that hold table locks and might interfere with the ETL. "
+                         "This is always run as the admin user.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+
+    def callback(self, args, config):
+        with etl.db.log_error():
+            etl.data_warehouse.terminate_backends(dry_run=args.dry_run)
 
 
 class ShowDownstreamDependentsCommand(SubCommand):
