@@ -1,5 +1,5 @@
 Description: >
-    This stack contains a Redshift cluster with its subnet group and parameter group.
+    Create a Redshift cluster with its subnet group and parameter group.
 
 AWSTemplateFormatVersion: '2010-09-09'
 
@@ -57,7 +57,7 @@ Resources:
         Properties:
             Description: "Must cross-reference public subnet id from VPC stack"
             SubnetIds:
-              - Fn::ImportValue: !Sub "${VpcStackName}::public-subnet-id"
+                - Fn::ImportValue: !Sub "${VpcStackName}::public-subnet-id"
 
     RedshiftClusterParameterGroup:
         Type: "AWS::Redshift::ClusterParameterGroup"
@@ -65,8 +65,8 @@ Resources:
             Description: "Require SSL for connections"
             ParameterGroupFamily: "redshift-1.0"
             Parameters:
-              - ParameterName: "require_ssl"
-                ParameterValue: "true"
+                - ParameterName: "require_ssl"
+                  ParameterValue: "true"
 
     RedshiftEIP:
         Type: "AWS::EC2::EIP"
