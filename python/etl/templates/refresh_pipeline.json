@@ -101,7 +101,7 @@
             "id": "EmrActivityUpstreamExtract",
             "name": "Arthur Extract (EMR Activity)",
             "type": "EmrActivity",
-            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,${object_store.s3.prefix}/current,#{myCommaSeparatedSelection}",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--kep-going,--prolix,--prefix,${object_store.s3.prefix}/current,#{myCommaSeparatedSelection}",
             "runsOn": { "ref": "ETLCluster" },
             "maximumRetries": "0"
         },
