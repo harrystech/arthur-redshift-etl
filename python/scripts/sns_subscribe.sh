@@ -40,10 +40,10 @@ set -x
 
 # === Configuration ===
 
-SNS_PREFIX=${PROJ_ENVIRONMENT//\//_}
-STATUS_NAME="redshift-etl-status_$SNS_PREFIX"
-PAGE_NAME="redshift-etl-page_$SNS_PREFIX"
-VALIDATION_NAME="redshift-etl-validation_$SNS_PREFIX"
+SNS_SUFFIX=${PROJ_ENVIRONMENT//\//_}
+STATUS_NAME="redshift-etl-status_$SNS_SUFFIX"
+PAGE_NAME="redshift-etl-page_$SNS_SUFFIX"
+VALIDATION_NAME="redshift-etl-validation_$SNS_SUFFIX"
 
 # ===  Create topic and subscription ===
 

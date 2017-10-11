@@ -22,7 +22,7 @@
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:redshift-etl-status_${object_store.sns_prefix}"
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:redshift-etl-status_${resources.SNS.sns_suffix}"
         },
         {
             "id": "SuccessNotification",
@@ -41,7 +41,7 @@
         {
             "id": "PagerNotification",
             "type": "SnsAlarm",
-            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:redshift-etl-page_${object_store.s3.prefix}",
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:redshift-etl-page_${resources.SNS.sns_suffix}",
             "subject": "ETL Rebuild Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
