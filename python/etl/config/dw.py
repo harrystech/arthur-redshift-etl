@@ -78,7 +78,8 @@ class DataWarehouseSchema:
         """
         Renders S3 Bucket name (if it references Arthur configuration, for instance, the data lake)
         """
-        return etl.render_template.render_from_config(self.raw_s3_bucket, context="s3_bucket of schema '{}'".format(self.name))
+        return etl.render_template.render_from_config(self.raw_s3_bucket,
+                                                      context="s3_bucket of schema '{}'".format(self.name))
 
     @property
     def dsn(self):
@@ -144,7 +145,9 @@ class DataWarehouseConfig:
         # Mapping SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset
-        self.required_in_full_load_selector = etl.names.TableSelector(settings.get("required_in_full_load", []))
+        # TODO remove deprecated "required_in_full_load"
+        required_patterns = settings.get("required_in_full_load", dw_settings.get("required_for_success", []))
+        self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)
 
     def _check_access_to_cluster(self):
         """
