@@ -116,6 +116,7 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
+                etl.config.set_config_value("object_store.sns_prefix", args.prefix.replace('/', '_'))
                 if getattr(args, "use_monitor"):
                     etl.monitor.set_environment(args.prefix)
 
