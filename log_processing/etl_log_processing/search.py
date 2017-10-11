@@ -16,11 +16,11 @@ from etl_log_processing import upload
 
 def print_message(record):
     """Example callback function which simply only prints the timestamp and the message of the log record."""
-    print("{timestamp} {etl_id} {severity} {message}".format(**record))
+    print("{timestamp} {etl_id} {log_level} {message}".format(**record))
 
 
 def filter_record(query, record):
-    for key in ("etl_id", "severity", "message"):
+    for key in ("etl_id", "log_level", "message"):
         if query in record[key]:
             return True
     return False

@@ -22,7 +22,7 @@ LOG_LINE_REGEX = """
                  # Look for ETL id, e.g. CD58E5D3C73E4D45
                  (?P<etl_id>[0-9A-Z]{16})\s
                  # Look for log level, e.g. INFO
-                 (?P<severity>[A-Z]+)\s
+                 (?P<log_level>[A-Z]+)\s
                  # Look for logger, e.g. etl.config
                  (?P<logger>[.\w]+)\s
                  # Look for thread name, e.g. (MainThread)
@@ -66,7 +66,7 @@ INDEX_TYPES = {
         "minute": {"type": "integer"},
         "second": {"type": "integer"},
         "millisecond": {"type": "integer"},
-        "severity": {"type": "keyword"},
+        "log_level": {"type": "keyword"},
         "logger": {"type": "string", "analyzer": "simple"},
         "threadname": {"type": "string", "index": "not_analyzed"},
         "filename": {"type": "string", "index": "not_analyzed"},
@@ -198,7 +198,7 @@ class LogParser:
 
     def calculate_hash(self, record):
         sha1 = self.sha1_hash.copy()
-        for key in ("timestamp", "etl_id", "severity", "logger", "threadname", "filename", "linenumber", "message"):
+        for key in ("timestamp", "etl_id", "log_level", "logger", "threadname", "filename", "linenumber", "message"):
             sha1.update(str(record[key]).encode())
         return sha1.hexdigest()
 
