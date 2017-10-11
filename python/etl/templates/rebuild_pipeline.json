@@ -129,12 +129,20 @@
             "dependsOn": { "ref": "Bootstrap" }
         },
         {
+            "id": "ArthurTerminateBackends",
+            "name": "Arthur Terminate Backends (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ terminate_backends --prolix --dry-run",
+            "dependsOn": { "ref": "Bootstrap" }
+        },
+        {
             "id": "ArthurLoad",
             "name": "Arthur Load (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix} --concurrent-extract",
-            "dependsOn": { "ref": "Bootstrap" }
+            "dependsOn": { "ref": "ArthurTerminateBackends" }
         },
         {
             "id": "PublishAndBackup",

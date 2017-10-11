@@ -297,18 +297,22 @@ def list_transactions(cx):
          WHERE txn_owner <> current_user
          ORDER BY pid, txn_owner, txn_start, table_name
         """
-    tx_locks = etl.db.query(cx, stmt)
+    tx_open = etl.db.query(cx, stmt)
+    logger.info("Found %d backend(s) with open transactions", len(tx_open))
     tx_info = []
-    for (proc_pid, txn_owner, txn_start), rows in groupby(tx_locks, lambda row: row[:3]):
+    for (proc_pid, txn_owner, txn_start), rows in groupby(tx_open, lambda row: row[:3]):
         table_names = ', '.join(row["table_name"] for row in rows)
         logger.info("Transaction: pid = %d owner = %s start = %s tables = %s",
                     proc_pid, txn_owner, txn_start, table_names)
         tx_info.append((proc_pid, txn_owner, txn_start, table_names))
 
-    print("List of sessions that have locks on tables inside transactions:")
-    print("proc_pid", "txn_owner", "txn_start", "list of table names", sep=', ')
-    for proc_pid, txn_owner, txn_start, table_names in tx_info:
-        print(proc_pid, txn_owner, txn_start, table_names, sep=', ')
+    if tx_info:
+        print("List of sessions that have open transactions:")
+        print("proc_pid", "txn_owner", "txn_start", "list of table names", sep=', ')
+        for proc_pid, txn_owner, txn_start, table_names in tx_info:
+            print(proc_pid, txn_owner, txn_start, table_names, sep=', ')
+    else:
+        print("Found no sessions that have open transactions")
 
 
 def terminate_sessions_with_transaction_locks(cx, dry_run=False):
@@ -319,6 +323,7 @@ def terminate_sessions_with_transaction_locks(cx, dry_run=False):
          ORDER BY proc_pid
         """
     pids = etl.db.query(cx, stmt)
+    logger.info("Found %d backend(s) with open transactions", len(pids))
     for (pid,) in pids:
         msg = "Terminate backend for session {:d} with transaction locks".format(pid)
         term = "SELECT PG_TERMINATE_BACKEND({:d})".format(pid)
