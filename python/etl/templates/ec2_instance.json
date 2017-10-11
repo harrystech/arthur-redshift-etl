@@ -14,5 +14,24 @@
         "${resources.EC2.public_security_group}",
         "${resources.VPC.whitelist_security_group}"
     ],
-    "SubnetId": "${resources.VPC.public_subnet}"
+    "SubnetId": "${resources.VPC.public_subnet}",
+    "TagSpecifications": [
+        {
+            "ResourceType": "instance",
+            "Tags": [
+                {
+                    "Key": "Name",
+                    "Value": "redshift_etl (running bootstrap...)"
+                },
+                {
+                    "Key": "user:project",
+                    "Value": "data-warehouse"
+                },
+                {
+                    "Key": "user:sub-project",
+                    "Value": "ETL"
+                }
+            ]
+        }
+    ]
 }

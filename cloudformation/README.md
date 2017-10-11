@@ -1,27 +1,31 @@
 # Overview
 
 This directory contains the descriptions and tools to use AWS CloudFormation to setup
-a VPC (with subnets, security groups, etc.)
-and Redshift cluster (with parameter groups etc.) to run the ETL.
+a VPC (with subnets, security groups, etc.),
+Redshift clusters (with parameter groups etc.) to run the ETL,
+a role that has permissions to run or schedule ETLs.
 
 # Prerequisites
 
 ## Key pairs
 
 A key pair has to be created beforehand.
-The name of the keypair must be `dw-{ENV}-keypair` where the `ENV` is the environment that you choose for the stacks, such as `prod` or `dev`.
+The name of the keypair must be `dw-{ENV}-keypair` where the `ENV` is the environment that you choose for the stacks,
+such as `prod` or `dev`.
 
 ## S3 buckets
 
-There are two different bucket that we expect to get used.
+There are two different buckets that we expect to get used.
 Both buckets must be setup before you can start running the ETL and are not part of the CloudFormation setup.
-* The `object-store` is used for temporary data around schemas, data files and configuration.
-* The `data-lake` maybe used to load static data from or to unload cluster data into.
+* The *object store* is used for temporary data around schemas, data files and configuration.
+* The *data lake* maybe used to load static data from or to unload cluster data into.
 
 # Resources
 
 Note:
-All resources created will have a tag of `user:project` with value `data-warehouse` to easily build a Resource Group and to track costs in Billing.
+All resources created will have a tag of `user:project` with value `data-warehouse` to easily build a
+Resource Group
+and to track costs in Billing.
 Also, names will start with `dw-` to make them easy to find in the AWS Console, which is to say that the `Name` tag is set as much as possible.
 
 ## Data Warehouse VPC (`dw_vpc.yaml`)
@@ -282,4 +286,3 @@ arthur.py initialize --force --with-user-creation
 * Create a role to have permission to run CloudFormation (bootstrap role)
 * Use notifications during CloudFormation ("ETL News")
 * Automatically associate the VPC with the private hosted zone
-* Grant access to DynamoDB table to Redshift copy role

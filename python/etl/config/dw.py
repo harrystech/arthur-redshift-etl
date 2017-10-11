@@ -114,6 +114,7 @@ class DataWarehouseConfig:
     """
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
+        schema_settings = settings["sources"] + dw_settings.get("transformations", [])
 
         # Environment variables with DSN
         self._admin_access = dw_settings["admin_access"]
@@ -132,7 +133,7 @@ class DataWarehouseConfig:
             DataWarehouseSchema(
                 dict(info, owner=schema_owner_map.get(info['name'], root.name)),
                 self._etl_access)
-            for info in settings["sources"] + dw_settings.get("transformations", dw_settings.get("schemas", []))
+            for info in schema_settings
         ]
         self._schema_lookup = {schema.name: schema for schema in self.schemas}
 
@@ -142,12 +143,12 @@ class DataWarehouseConfig:
         # Groups are in sorted order after the root group
         self.groups = [root.group] + sorted(other_groups)
         [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+        # Relation glob patterns indicating unacceptable load failures; matches everything if unset
+        required_patterns = dw_settings.get("required_for_success", [])
+        self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)
+
         # Mapping SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
-        # Relation glob patterns indicating unacceptable load failures; matches everything if unset
-        # TODO remove deprecated "required_in_full_load"
-        required_patterns = settings.get("required_in_full_load", dw_settings.get("required_for_success", []))
-        self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)
 
     def _check_access_to_cluster(self):
         """

@@ -922,7 +922,7 @@ class RenderTemplateCommand(SubCommand):
     def __init__(self):
         super().__init__("render_template",
                          "render selected template by filling in configuration settings",
-                         "Print template after replacing placeholders (like '${resources.VPC.id}') with values"
+                         "Print template after replacing placeholders (like '${resources.VPC.region}') with values"
                          " from the settings files")
 
     def add_arguments(self, parser):

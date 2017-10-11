@@ -48,7 +48,6 @@ CLUSTER_REGION=$( arthur.py show_value resources.VPC.region )
 
 CLUSTER_LOGS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/logs/"
 CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, `date +'%Y-%m-%d %H:%M'`)"
-AWS_TAGS="user:project=data-warehouse user:sub-project=ETL"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -66,6 +65,8 @@ INSTANCE_GROUPS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" -
 APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact application_env )
 EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_attributes )
 BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact bootstrap_actions )
+EMR_SERVICE_ROLE=$( arthur.py show_value resources.DataPipeline.role )
+AWS_TAGS="user:project=data-warehouse user:sub-project=ETL"
 
 # ===  Start cluster ===
 
@@ -81,8 +82,8 @@ aws emr create-cluster \
         --enable-debugging \
         --region "$CLUSTER_REGION" \
         --instance-groups "$INSTANCE_GROUPS_JSON" \
-        --use-default-roles \
         --configurations "$APPLICATION_ENV_JSON" \
+        --service-role "$EMR_SERVICE_ROLE" \
         --ec2-attributes "$EC2_ATTRIBUTES_JSON" \
         --bootstrap-actions "$BOOTSTRAP_ACTIONS_JSON" \
         --no-auto-terminate --termination-protected \

@@ -6,8 +6,8 @@
             "schedule": { "ref": "ETLSchedule" },
             "scheduleType": "cron",
             "failureAndRerunMode": "CASCADE",
-            "resourceRole": "DataPipelineDefaultResourceRole",
-            "role": "DataPipelineDefaultRole",
+            "resourceRole": "${resources.EC2.iam_instance_profile}",
+            "role": "${resources.DataPipeline.role}",
             "pipelineLogUri": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/logs/",
             "region": "${resources.VPC.region}",
             "maximumRetries": "2"
