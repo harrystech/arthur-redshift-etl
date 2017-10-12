@@ -262,7 +262,7 @@ Resources:
                             "dynamodb:TagResource",
                             "dynamodb:UntagResource"
                         ],
-                        "Resource": !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/redshift-etl-events_*"
+                        "Resource": !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/dw-etl-events_*"
                   }
                 ]
             }
@@ -753,7 +753,7 @@ Resources:
                             Action:
                                 - "dynamodb:Describe*"
                                 - "dynamodb:Scan"
-                            Resource: "arn:aws:dynamodb:*:*:table/redshift-etl-events_*"
+                            Resource: "arn:aws:dynamodb:*:*:table/dw-etl-events_*"
 
 
 Outputs:

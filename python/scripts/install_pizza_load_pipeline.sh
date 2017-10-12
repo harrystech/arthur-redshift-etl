@@ -40,7 +40,7 @@ fi
 set -x
 
 # Note: "key" and "value" are lower-case keywords here.
-AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=ETL"
+AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
 PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"

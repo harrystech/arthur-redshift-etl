@@ -46,7 +46,7 @@ else
   PIPELINE_NAME="Validation Pipeline ($USER:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 fi
 # Note: "key" and "value" are lower-case keywords here.
-AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=ETL"
+AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"

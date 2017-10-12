@@ -29,7 +29,7 @@
                 },
                 {
                     "Key": "user:sub-project",
-                    "Value": "ETL"
+                    "Value": "dw-etl"
                 }
             ]
         }

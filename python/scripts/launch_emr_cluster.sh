@@ -66,7 +66,7 @@ APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" -
 EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_attributes )
 BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact bootstrap_actions )
 EMR_SERVICE_ROLE=$( arthur.py show_value resources.DataPipeline.role )
-AWS_TAGS="user:project=data-warehouse user:sub-project=ETL"
+AWS_TAGS="user:project=data-warehouse user:sub-project=dw-etl"
 
 # ===  Start cluster ===
 

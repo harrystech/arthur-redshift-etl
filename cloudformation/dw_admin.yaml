@@ -44,7 +44,6 @@ Resources:
                         Action:
                             - "cloudwatch:DescribeAlarms"
                             - "datapipeline:*"
-                            - "dynamodb:*"
                             - "ec2:AuthorizeSecurityGroup*"
                             - "ec2:CreateNetworkInterface"
                             - "ec2:CreateTags"
@@ -70,8 +69,8 @@ Resources:
                             - "s3:Delete*"
                             - "s3:Put*"
                         Resource:
-                            - !Join [ ':', [ 'arn:aws:s3:::', "Fn::ImportValue": !Sub "${VpcStackName}::object-store" ] ]
-                            - !Join [ ':', [ 'arn:aws:s3:::', "Fn::ImportValue": !Sub "${VpcStackName}::data-lake" ] ]
+                            - !Join [ '', [ 'arn:aws:s3:::', "Fn::ImportValue": !Sub "${VpcStackName}::object-store", "/*" ] ]
+                            - !Join [ '', [ 'arn:aws:s3:::', "Fn::ImportValue": !Sub "${VpcStackName}::data-lake", "/*" ] ]
                       - Sid: "ModifyOnlyOursInSNS"
                         Effect: "Allow"
                         Action:
@@ -81,8 +80,13 @@ Resources:
                             - "sns:Set*"
                             - "sns:Subscribe"
                             - "sns:Unsubscribe"
-                        Resource: "arn:aws:sns:::redshift-etl-*"
-                      - Sid: "ModifyOnlyOurs"
+                        Resource: "arn:aws:sns:*:*:dw-etl-*"
+                      - Sid: "ModifyOnlyOursInDynamoDB"
+                        Effect: "Allow"
+                        Action:
+                            - "dynamodb:*"
+                        Resource: "arn:aws:dynamodb:*:*:table/dw-etl-*"
+                      - Sid: "ModifyOnlyOursWIP"
                         Effect: "Allow"
                         Action:
                             - "cloudwatch:DeleteAlarms"

@@ -106,12 +106,12 @@ if [[ "$RUNNING_LOCAL" = "no" ]]; then
 
     if [[ -n "$INSTANCE_ID" ]]; then
         if [[ -n "$JOB_FLOW_ID" ]]; then
-            aws ec2 create-tags --resources "$INSTANCE_ID" --region "$REGION" \
-                --tags Key=Name,Value="$PROJ_NAME ($BUCKET_NAME\, $ENVIRONMENT\, $JOB_FLOW_ID)"
+            INSTANCE_NAME="$PROJ_NAME ($BUCKET_NAME\, $ENVIRONMENT\, $JOB_FLOW_ID)"
         else
-            aws ec2 create-tags --resources "$INSTANCE_ID" --region "$REGION" \
-                --tags Key=Name,Value="$PROJ_NAME ($BUCKET_NAME\, $ENVIRONMENT)"
+            INSTANCE_NAME="$PROJ_NAME ($BUCKET_NAME\, $ENVIRONMENT)"
         fi
+        aws ec2 create-tags --resources "$INSTANCE_ID" --region "$REGION" --tags Key=Name,Value="$INSTANCE_NAME"
+        aws ec2 create-tags --resources "$INSTANCE_ID" --region "$REGION" --tags Key=user:name,Value="$INSTANCE_NAME"
     fi
 fi
 
