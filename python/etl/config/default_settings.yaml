@@ -23,7 +23,7 @@
     "etl_events": {
         # Send ETL events to DynamoDB table
         "dynamodb": {
-            "table_prefix": "redshift-etl-events",
+            "table_prefix": "dw-etl-events",
             "capacity": 3,
             "region": "us-east-1"
         # },

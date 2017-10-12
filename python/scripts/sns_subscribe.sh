@@ -40,10 +40,10 @@ set -x
 
 # === Configuration ===
 
-SNS_SUFFIX=${PROJ_ENVIRONMENT//\//_}
-STATUS_NAME="redshift-etl-status_$SNS_SUFFIX"
-PAGE_NAME="redshift-etl-page_$SNS_SUFFIX"
-VALIDATION_NAME="redshift-etl-validation_$SNS_SUFFIX"
+SNS_SUFFIX=$( arthur.py show_value safe_environment --prefix $PROJ_ENVIRONMENT )
+STATUS_NAME="dw-etl-status_$SNS_SUFFIX"
+PAGE_NAME="dw-etl-page_$SNS_SUFFIX"
+VALIDATION_NAME="dw-etl-validation_$SNS_SUFFIX"
 
 # ===  Create topic and subscription ===
 
@@ -64,4 +64,4 @@ done
 set +x
 echo
 echo "List of subscriptions related to $PROJ_ENVIRONMENT"
-aws sns list-topics | jq --raw-output '.Topics[].TopicArn' | grep "redshift-etl-[^_]*_$PROJ_ENVIRONMENT"
+aws sns list-topics | jq --raw-output '.Topics[].TopicArn' | grep "dw-etl-[^_]*_$PROJ_ENVIRONMENT"

@@ -274,8 +274,7 @@ class DynamoDBStorage(PayloadDispatcher):
     """
 
     def __init__(self, table_name, capacity, region_name):
-        # We need to make sure here that the table name is valid for DynamoDb.
-        self.table_name = '-'.join(re.findall('[a-zA-Z0-9_.-]+', table_name))
+        self.table_name = table_name
         self.initial_capacity = capacity
         self.region_name = region_name
         # Avoid default sessions and have one table reference per thread
@@ -549,7 +548,8 @@ def set_environment(environment):
     MonitorPayload.dispatchers.append(memory)
 
     if etl.config.get_config_value("etl_events.dynamodb.table_prefix") is not None:
-        table_name = etl.config.get_config_value("etl_events.dynamodb.table_prefix") + '_' + environment
+        table_name = '_'.join((etl.config.get_config_value("etl_events.dynamodb.table_prefix"),
+                               etl.config.get_config_value("safe_environment")))
         ddb = DynamoDBStorage(table_name,
                               etl.config.get_config_value("etl_events.dynamodb.capacity"),
                               etl.config.get_config_value("etl_events.dynamodb.region"))
@@ -561,9 +561,10 @@ def set_environment(environment):
         MonitorPayload.dispatchers.append(rel)
 
 
-def query_for(target_list, environment):
+def query_for(target_list):
     logger.warning("This is a bit experimental (good day) and temperamental (bad day)")
-    table_name = etl.config.get_config_value("etl_events.dynamodb.table_prefix") + '_' + environment
+    table_name = '_'.join((etl.config.get_config_value("etl_events.dynamodb.table_prefix"),
+                           etl.config.get_config_value("safe_environment")))
     ddb = DynamoDBStorage(table_name,
                           etl.config.get_config_value("etl_events.dynamodb.capacity"),
                           etl.config.get_config_value("etl_events.dynamodb.region"))

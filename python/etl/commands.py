@@ -116,7 +116,7 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                etl.config.set_config_value("resources.SNS.sns_suffix", args.prefix.replace('/', '_'))
+                etl.config.set_safe_config_value("safe_environment", args.prefix)
                 if getattr(args, "use_monitor"):
                     etl.monitor.set_environment(args.prefix)
 
@@ -998,7 +998,7 @@ class EventsQueryCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "prefix"])
 
     def callback(self, args, config):
-        etl.monitor.query_for(args.pattern, args.prefix)
+        etl.monitor.query_for(args.pattern)
 
 
 class SelfTestCommand(SubCommand):
