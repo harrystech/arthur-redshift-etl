@@ -125,7 +125,7 @@ Resources:
         Properties:
             VpcId: !Ref VPC
             AvailabilityZone: !Ref PrimaryAvailabilityZone
-            CidrBlock: !Sub "10.${VpcNetworkSelection}.8.0/22"
+            CidrBlock: !Sub "10.${VpcNetworkSelection}.24.0/22"
             MapPublicIpOnLaunch: false
             Tags:
                 - Key: Name
@@ -142,6 +142,7 @@ Resources:
         Properties:
             AllocationId: !GetAtt NatGatewayEIP.AllocationId
             SubnetId: !Ref PublicSubnet
+        # Cannot be tagged during creation: http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html
 
     PublicRouteTable:
         Type: AWS::EC2::RouteTable
@@ -261,7 +262,7 @@ Resources:
                             "dynamodb:TagResource",
                             "dynamodb:UntagResource"
                         ],
-                        "Resource": !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/redshift-etl-events_*"
+                        "Resource": !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/dw-etl-events_*"
                   }
                 ]
             }
@@ -518,6 +519,10 @@ Resources:
                 - IpProtocol: "tcp"
                   FromPort: 5439
                   ToPort: 5439
+                  SourceSecurityGroupId: !Ref ManagedCoreSecurityGroup
+                - IpProtocol: "tcp"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR1, !Ref "WhitelistCIDR1", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
                   FromPort: 5439
@@ -561,7 +566,9 @@ Resources:
                 - Key: Name
                   Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-public" ] ]
 
-    EmrServiceRole:
+    # This starts from the default EMR role and from the default Data Pipeline role
+    # (For testing with EMR clusters outside a data pipeline, the EMR service must also be able to assume this role.)
+    DataPipelineRole:
         Type: "AWS::IAM::Role"
         Properties:
             AssumeRolePolicyDocument:
@@ -569,16 +576,33 @@ Resources:
                 Statement:
                   - Effect: "Allow"
                     Principal:
-                        Service: "elasticmapreduce.amazonaws.com"
+                        Service:
+                            - "elasticmapreduce.amazonaws.com"
+                            - "datapipeline.amazonaws.com"
                     Action: "sts:AssumeRole"
-            Path: "/services/"
+            # Must use the standard Path because ElasticMapReduce does not support something other than '/'
+            Path: "/"
             Policies:
-                - PolicyName: "emr_default_policy"
+                - PolicyName: "service_role_default_policy"
                   PolicyDocument:
                       Version: "2012-10-17"
                       Statement:
                           - Effect: "Allow"
                             Action:
+                                - "application-autoscaling:DeleteScalingPolicy"
+                                - "application-autoscaling:DeregisterScalableTarget"
+                                - "application-autoscaling:Describe*"
+                                - "application-autoscaling:PutScalingPolicy"
+                                - "application-autoscaling:RegisterScalableTarget"
+                                - "cloudwatch:*"
+                                - "datapipeline:DescribeObjects"
+                                - "datapipeline:EvaluateExpression"
+                                - "dynamodb:BatchGetItem"
+                                - "dynamodb:DescribeTable"
+                                - "dynamodb:GetItem"
+                                - "dynamodb:Query"
+                                - "dynamodb:Scan"
+                                - "dynamodb:UpdateTable"
                                 - "ec2:AuthorizeSecurityGroupEgress"
                                 - "ec2:AuthorizeSecurityGroupIngress"
                                 - "ec2:CancelSpotInstanceRequests"
@@ -588,66 +612,56 @@ Resources:
                                 - "ec2:DeleteNetworkInterface"
                                 - "ec2:DeleteSecurityGroup"
                                 - "ec2:DeleteTags"
-                                - "ec2:DescribeAvailabilityZones"
-                                - "ec2:DescribeAccountAttributes"
-                                - "ec2:DescribeDhcpOptions"
-                                - "ec2:DescribeImages"
-                                - "ec2:DescribeInstanceStatus"
-                                - "ec2:DescribeInstances"
-                                - "ec2:DescribeKeyPairs"
-                                - "ec2:DescribeNetworkAcls"
-                                - "ec2:DescribeNetworkInterfaces"
-                                - "ec2:DescribePrefixLists"
-                                - "ec2:DescribeRouteTables"
-                                - "ec2:DescribeSecurityGroups"
-                                - "ec2:DescribeSpotInstanceRequests"
-                                - "ec2:DescribeSpotPriceHistory"
-                                - "ec2:DescribeSubnets"
-                                - "ec2:DescribeTags"
-                                - "ec2:DescribeVpcAttribute"
-                                - "ec2:DescribeVpcEndpoints"
-                                - "ec2:DescribeVpcEndpointServices"
-                                - "ec2:DescribeVpcs"
+                                - "ec2:DeleteVolume"
+                                - "ec2:Describe*"
                                 - "ec2:DetachNetworkInterface"
+                                - "ec2:DetachVolume"
                                 - "ec2:ModifyImageAttribute"
                                 - "ec2:ModifyInstanceAttribute"
                                 - "ec2:RequestSpotInstances"
                                 - "ec2:RevokeSecurityGroupEgress"
                                 - "ec2:RunInstances"
+                                - "ec2:StartInstances"
+                                - "ec2:StopInstances"
                                 - "ec2:TerminateInstances"
-                                - "ec2:DeleteVolume"
-                                - "ec2:DescribeVolumeStatus"
-                                - "ec2:DescribeVolumes"
-                                - "ec2:DetachVolume"
+                                - "elasticmapreduce:*"
+                                - "iam:GetInstanceProfile"
                                 - "iam:GetRole"
                                 - "iam:GetRolePolicy"
+                                - "iam:ListAttachedRolePolicies"
                                 - "iam:ListInstanceProfiles"
                                 - "iam:ListRolePolicies"
                                 - "iam:PassRole"
+                                - "rds:DescribeDBInstances"
+                                - "rds:DescribeDBSecurityGroups"
+                                - "redshift:DescribeClusters"
+                                - "redshift:DescribeClusterSecurityGroups"
                                 - "s3:CreateBucket"
+                                - "s3:DeleteObject"
                                 - "s3:Get*"
                                 - "s3:List*"
+                                - "s3:Put*"
                                 - "sdb:BatchPutAttributes"
                                 - "sdb:Select"
+                                - "sdb:Select*"
+                                - "sns:GetTopicAttributes"
+                                - "sns:ListTopics"
+                                - "sns:Publish"
+                                - "sns:Subscribe"
+                                - "sns:Unsubscribe"
                                 - "sqs:CreateQueue"
                                 - "sqs:Delete*"
                                 - "sqs:GetQueue*"
                                 - "sqs:PurgeQueue"
                                 - "sqs:ReceiveMessage"
-                                - "cloudwatch:PutMetricAlarm"
-                                - "cloudwatch:DescribeAlarms"
-                                - "cloudwatch:DeleteAlarms"
-                                - "application-autoscaling:RegisterScalableTarget"
-                                - "application-autoscaling:DeregisterScalableTarget"
-                                - "application-autoscaling:PutScalingPolicy"
-                                - "application-autoscaling:DeleteScalingPolicy"
-                                - "application-autoscaling:Describe*"
                             Resource: "*"
 
+    # This starts from the default EMR instance profile role plus the Data Pipeline default resource role.
+    # (NB We need allow ec2:CreateTags here so that bootstrap can update the tags of the instance.)
     Ec2Role:
         Type: "AWS::IAM::Role"
         Properties:
-            RoleName: !Sub "${AWS::StackName}-emr-ec2-role"
+            RoleName: !Sub "${AWS::StackName}-ec2-role"
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
@@ -655,23 +669,27 @@ Resources:
                       Principal:
                           Service: "ec2.amazonaws.com"
                       Action: "sts:AssumeRole"
-            Path: "/services/"
+            Path: "/"
             Policies:
-                - PolicyName: "ec2_default_policy"
+                - PolicyName: "resource_role_default_policy"
                   PolicyDocument:
                       Version: "2012-10-17"
                       Statement:
                           - Effect: "Allow"
                             Action:
                                 - "cloudwatch:*"
+                                - "datapipeline:*"
                                 - "dynamodb:*"
+                                - "ec2:CreateTags"
                                 - "ec2:Describe*"
+                                - "elasticmapreduce:AddJobFlowSteps"
                                 - "elasticmapreduce:Describe*"
                                 - "elasticmapreduce:ListBootstrapActions"
                                 - "elasticmapreduce:ListClusters"
-                                - "elasticmapreduce:ListInstanceGroups"
+                                - "elasticmapreduce:ListInstance*"
                                 - "elasticmapreduce:ListInstances"
                                 - "elasticmapreduce:ListSteps"
+                                - "elasticmapreduce:ModifyInstanceGroups"
                                 - "kinesis:CreateStream"
                                 - "kinesis:DeleteStream"
                                 - "kinesis:DescribeStream"
@@ -681,17 +699,19 @@ Resources:
                                 - "kinesis:PutRecord"
                                 - "kinesis:SplitShard"
                                 - "rds:Describe*"
+                                - "redshift:DescribeClusters"
+                                - "redshift:DescribeClusterSecurityGroups"
                                 - "s3:*"
                                 - "sdb:*"
                                 - "sns:*"
                                 - "sqs:*"
                             Resource: "*"
 
-    EmrEc2InstanceProfile:
+    Ec2InstanceProfile:
         Type: "AWS::IAM::InstanceProfile"
         Properties:
-            InstanceProfileName: !Sub "${AWS::StackName}-emr-ec2-role"
-            Path: "/services/"
+            InstanceProfileName: !Sub "${AWS::StackName}-ec2-instance-profile"
+            Path: "/"
             Roles:
                 - !Ref Ec2Role
 
@@ -733,13 +753,13 @@ Resources:
                             Action:
                                 - "dynamodb:Describe*"
                                 - "dynamodb:Scan"
-                            Resource: "arn:aws:dynamodb:*:*:table/redshift-etl-events_*"
+                            Resource: "arn:aws:dynamodb:*:*:table/dw-etl-events_*"
 
 
 Outputs:
 
     VpcId:
-        Description: (VPC.id) A reference to the created VPC
+        Description: A reference to the created VPC
         Value: !Ref VPC
         Export:
             Name: !Sub "${AWS::StackName}::vpc-id"
@@ -778,27 +798,23 @@ Outputs:
         Description: (EMR.core.managed_security_group) A reference to the managed core security group for EMR setup
         Value: !Ref ManagedCoreSecurityGroup
 
-    EMRServiceRole:
-        Description: (EMR.service_role) A reference to the IAM role that allows EMR management
-        Value: !Ref EmrServiceRole
-
-    EMRInstanceProfile:
-        Description: (EMR.ec2_instance_profile) A reference to the IAM profile for EMR instances
-        Value: !Ref EmrEc2InstanceProfile
-
     PublicEC2SecurityGroups:
         Description: (EC2.public_security_group) A reference to the security group for EC2 instances
         Value: !Ref RedshiftEC2SecurityGroup
-
-    EC2InstanceProfile:
-        Description: (EC2.iam_instance_profile) A reference to the IAM profile for EC2 instances
-        Value: !Ref EmrEc2InstanceProfile
 
     RedshiftPublicSecurityGroup:
         Description: A reference to the "public" security group used for Redshift clusters
         Value: !Ref RedshiftPublicSecurityGroup
         Export:
             Name: !Sub "${AWS::StackName}::redshift-public-sg"
+
+    DataPipelineRole:
+        Description: (DataPipeline.role) A reference to the IAM role for Data Pipeline (or EMR) management
+        Value: !Ref DataPipelineRole
+
+    EC2InstanceProfile:
+        Description: (EC2.iam_instance_profile) A reference to the IAM profile for EC2 instances
+        Value: !Ref Ec2InstanceProfile
 
     ObjectStore:
         Description: (object_store.s3.bucket_name) Name of the bucket for the object store

@@ -837,10 +837,12 @@ class ListFilesCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
                             action="store_true")
+        parser.add_argument("-t", "--sort-by-time", help="sort files by timestamp (and list in single column)",
+                            action="store_true")
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
-        etl.file_sets.list_files(file_sets, long_format=args.long_format)
+        etl.file_sets.list_files(file_sets, long_format=args.long_format, sort_by_time=args.sort_by_time)
 
 
 class PingCommand(SubCommand):
@@ -920,7 +922,7 @@ class RenderTemplateCommand(SubCommand):
     def __init__(self):
         super().__init__("render_template",
                          "render selected template by filling in configuration settings",
-                         "Print template after replacing placeholders (like '${resources.VPC.id}') with values"
+                         "Print template after replacing placeholders (like '${resources.VPC.region}') with values"
                          " from the settings files")
 
     def add_arguments(self, parser):

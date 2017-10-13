@@ -126,7 +126,6 @@
                     "items": { "$ref": "#/definitions/user_info" },
                     "uniqueItems": true
                 },
-                "iam_role": { "$ref": "#/definitions/aws_arn" },
                 "transformations": {
                     "description": "List of schemas with transformations",
                     "type": "array",
@@ -196,9 +195,10 @@
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false
-                }
+                },
+                "iam_role": { "$ref": "#/definitions/aws_arn" }
             },
-            "required": [ "s3" ],
+            "required": [ "s3", "iam_role" ],
             "additionalProperties": false
         },
         "object_store": {
@@ -225,14 +225,13 @@
                 "VPC": {
                     "type": "object",
                     "properties": {
-                        "id": { "type": "string" },
                         "public_subnet": { "type": "string" },
                         "private_subnet": { "type": "string" },
                         "whitelist_security_group": { "type": "string" },
                         "region": { "type": "string" },
                         "account": { "type": "string" }
                     },
-                    "required": [ "account", "public_subnet", "whitelist_security_group", "region" ],
+                    "required": [ "public_subnet", "whitelist_security_group", "region", "account" ],
                     "additionalProperties": false
                 },
                 "EC2": {
@@ -252,8 +251,6 @@
                         "release_label": { "type": "string" },
                         "master": { "$ref": "#/definitions/cluster_group" },
                         "core": { "$ref": "#/definitions/cluster_group" },
-                        "service_role": { "type": "string" },
-                        "ec2_instance_profile": { "type": "string" },
                         "max_partitions": {
                             "description": "Maximum number of partitions during extract, limits num_partitions for each table",
                             "type": "integer",
@@ -263,24 +260,12 @@
                     "required": [ "release_label", "master", "core" ],
                     "additionalProperties": false
                 },
-                "SNS": {
+                "DataPipeline": {
                     "type": "object",
                     "properties": {
-                        "success": {
-                            "type": "object",
-                            "properties": {
-                                "topicArn": { "$ref": "#/definitions/aws_arn" }
-                            },
-                            "additionalProperties": false
-                        },
-                        "failure": {
-                            "type": "object",
-                            "properties": {
-                                "topicArn": { "$ref": "#/definitions/aws_arn" }
-                            },
-                            "additionalProperties": false
-                        }
+                        "role": { "type": "string" }
                     },
+                    "required": [ "role" ],
                     "additionalProperties": false
                 },
                 "RedshiftCluster": {
@@ -298,7 +283,7 @@
                     "additionalProperties": false
                 }
             },
-            "required": [ "key_name", "VPC", "EC2", "EMR" ],
+            "required": [ "key_name", "VPC", "EC2", "EMR", "DataPipeline" ],
             "additionalProperties": false
         },
         "pipelines": {
@@ -341,12 +326,8 @@
                 }
             },
             "additionalProperties": false
-        },
-        "required_in_full_load": {
-            "description": "DEPRECATED USE 'required_for_success' instead",
-            "$ref": "#/definitions/glob_pattern_list"
         }
     },
-    "required": [ "arthur_settings", "data_warehouse", "sources", "type_maps" ],
+    "required": [ "arthur_settings", "data_warehouse", "sources", "type_maps", "object_store", "resources", "etl_events" ],
     "additionalProperties": false
 }

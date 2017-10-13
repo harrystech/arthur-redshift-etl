@@ -23,14 +23,10 @@
     "etl_events": {
         # Send ETL events to DynamoDB table
         "dynamodb": {
-            "table_prefix": "redshift-etl-events",
+            "table_prefix": "dw-etl-events",
             "capacity": 3,
+            # FIXME this should use the region in the settings of the VPC
             "region": "us-east-1"
-        # },
-        # # Send ETL events to an RDS instance / PostgreSQL host
-        # "postgresql": {
-        #     "table_prefix": "redshift_etl_events",
-        #     "write_access": "REDSHIFT_ETL_EVENTS_URI"
         }
     },
     # Type information from source (PostgreSQL) to target (Redshift)

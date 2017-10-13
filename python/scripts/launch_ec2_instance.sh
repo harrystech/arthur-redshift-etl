@@ -40,7 +40,6 @@ PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_
 # === Derived configuration ===
 
 INSTANCE_NAME="Arthur (env=$PROJ_ENVIRONMENT\, user=$USER\, `date '+%s'`)"
-AWS_TAGS="Key=user:project,Value=data-warehouse Key=user:sub-project,Value=ETL Key=Name,Value=$INSTANCE_NAME"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -74,7 +73,6 @@ fi
 
 aws ec2 wait instance-exists --instance-ids "$INSTANCE_ID"
 aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
-aws ec2 create-tags --resources "$INSTANCE_ID" --tags "$AWS_TAGS"
 
 PUBLIC_DNS_NAME=`aws ec2 describe-instances --instance-ids "$INSTANCE_ID" |
     jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'`

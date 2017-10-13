@@ -6,8 +6,8 @@
             "schedule": { "ref": "ETLSchedule" },
             "scheduleType": "cron",
             "failureAndRerunMode": "CASCADE",
-            "resourceRole": "DataPipelineDefaultResourceRole",
-            "role": "DataPipelineDefaultRole",
+            "resourceRole": "${resources.EC2.iam_instance_profile}",
+            "role": "${resources.DataPipeline.role}",
             "pipelineLogUri": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/logs/",
             "region": "${resources.VPC.region}",
             "maximumRetries": "2"
@@ -101,7 +101,7 @@
             "id": "EmrActivityUpstreamExtract",
             "name": "Arthur Extract (EMR Activity)",
             "type": "EmrActivity",
-            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,${object_store.s3.prefix}",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--keep-going,--prolix,--prefix,${object_store.s3.prefix}",
             "runsOn": { "ref": "ETLCluster" },
             "maximumRetries": "0"
         },
