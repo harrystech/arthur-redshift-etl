@@ -1,0 +1,49 @@
+{
+    "object_store": {
+        "iam_role": "copy from the outputs of the VPC",
+        "s3": {
+            "bucket_name": "copy from the outputs of the VPC"
+        }
+    },
+    "data_lake": {
+        "iam_role": "copy from the outputs of the VPC",
+        "s3": {
+            "bucket_name": "copy from the outputs of the VPC"
+        }
+    },
+    "resources": {
+        "key_name": "copy from the outputs of the VPC",
+        "VPC": {
+            "public_subnet": "copy from the outputs of the VPC",
+            "whitelist_security_group": "copy from the outputs of the VPC",
+            "region": "copy from the outputs of the VPC",
+            "account": "copy from the outputs of the VPC"
+        },
+        "EC2": {
+            "iam_instance_profile": "copy from the outputs of the VPC",
+            "instance_type": "t2.small",
+            "image_id": "ami-a4c7edb2",
+            "public_security_group": "copy from the outputs of the VPC"
+        },
+        "EMR": {
+            "release_label": "emr-5.3.0",
+            "master": {
+                "instance_type": "m4.2xlarge",
+                "instance_count": 1,
+                "managed_security_group": "copy from the outputs of the VPC"
+                },
+            "core": {
+                "instance_type": "m4.4xlarge",
+                "instance_count": 4,
+                "managed_security_group": "copy from the outputs of the VPC"
+            }
+        },
+        "DataPipeline": {
+            "role": "copy from the outputs of the VPC"
+        },
+        "RedshiftCluster": {
+            "max_concurrency": 2,
+            "wlm_query_slots": 4
+        }
+    }
+}
