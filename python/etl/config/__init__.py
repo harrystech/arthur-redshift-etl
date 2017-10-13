@@ -11,6 +11,7 @@ import logging
 import logging.config
 import os
 import os.path
+import re
 import sys
 from collections import OrderedDict
 from functools import lru_cache
@@ -75,6 +76,13 @@ def set_config_value(name: str, value: str) -> None:
     """
     if _mapped_config is not None:
         _mapped_config.setdefault(name, value)
+
+
+def set_safe_config_value(name: str, value: str) -> None:
+    """
+    Replace "unsafe" characters with '-' and set configuration value.
+    """
+    set_config_value(name, '-'.join(re.findall('[a-zA-Z0-9_.-]+', value)))
 
 
 def get_config_map() -> Dict[str, str]:
