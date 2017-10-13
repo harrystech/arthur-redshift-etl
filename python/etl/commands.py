@@ -260,7 +260,7 @@ def build_full_parser(prog_name):
             UnloadDataToS3Command,
             # Helper commands (database, filesystem)
             CreateSchemasCommand, PromoteSchemasCommand,
-            PingCommand, TerminateBackendsCommand,
+            PingCommand, TerminateSessionsCommand,
             ListFilesCommand,
             ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
             # Environment commands
@@ -466,11 +466,11 @@ class CreateUserCommand(SubCommand):
 class BootstrapSourcesCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("design",
+        super().__init__("bootstrap_sources",
                          "bootstrap schema information from sources",
                          "Download schema information from upstream sources and compare against current table designs."
                          " If there is no current design file, then create one as a starting point.",
-                         aliases=["bootstrap_sources"])
+                         aliases=["design"])
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
@@ -484,11 +484,11 @@ class BootstrapSourcesCommand(SubCommand):
 class BootstrapTransformationsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("auto_design",
+        super().__init__("bootstrap_transformations",
                          "bootstrap schema information from transformations",
                          "Download schema information as if transformation had been run in data warehouse."
                          " If there is no local design file, then create one as a starting point.",
-                         aliases=["bootstrap_transformations"])
+                         aliases=["auto-design"])
 
     def add_arguments(self, parser):
         parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",
@@ -682,7 +682,8 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
     def __init__(self):
         super().__init__("update",
                          "update data in the data warehouse from files in S3",
-                         "Load data into data warehouse from files in S3 and then update all dependent CTAS relations.")
+                         "Load data into data warehouse from files in S3 and then update all dependent CTAS relations"
+                         " (within a transaction).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "wlm-query-slots", "dry-run"])
@@ -708,7 +709,7 @@ class UnloadDataToS3Command(MonitoredSubCommand):
     def __init__(self):
         super().__init__("unload",
                          "unload data from data warehouse to files in S3",
-                         "Unload data from data warehouse into files in S3 (along with files of column names).")
+                         "Unload data from data warehouse into CSV files in S3 (along with files of column names).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
@@ -866,12 +867,12 @@ class PingCommand(SubCommand):
             etl.db.ping(dsn)
 
 
-class TerminateBackendsCommand(SubCommand):
+class TerminateSessionsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("terminate_backends",
-                         "terminate backends holding table locks",
-                         "Terminate backends (processes) that hold table locks and might interfere with the ETL. "
+        super().__init__("terminate_sessions",
+                         "terminate sessions holding table locks",
+                         "Terminate sessions that hold table locks and might interfere with the ETL. "
                          "This is always run as the admin user.")
 
     def add_arguments(self, parser):
@@ -879,7 +880,7 @@ class TerminateBackendsCommand(SubCommand):
 
     def callback(self, args, config):
         with etl.db.log_error():
-            etl.data_warehouse.terminate_backends(dry_run=args.dry_run)
+            etl.data_warehouse.terminate_sessions(dry_run=args.dry_run)
 
 
 class ShowDownstreamDependentsCommand(SubCommand):
@@ -964,7 +965,8 @@ class ShowVarsCommand(SubCommand):
         super().__init__("show_vars",
                          "show variables available for template files",
                          "Print list of variables and their values based on the configuration files."
-                         " These variables can be used with ${name} substitutions in templates.")
+                         " These variables can be used with ${name} substitutions in templates.",
+                         aliases=["settings"])
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
