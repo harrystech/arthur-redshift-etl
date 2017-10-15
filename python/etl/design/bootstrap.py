@@ -398,7 +398,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
                     save_table_design(source_dir, source_table_name, target_table_name, table_design, dry_run=dry_run)
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
-        logger.critical("Error while processing source '%s'", source.name)
+        logger.error("Error while processing source '%s'", source.name)
         raise
 
     existent = frozenset(name.identifier for name in source_files)

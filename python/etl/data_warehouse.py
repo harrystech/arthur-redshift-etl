@@ -183,7 +183,7 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
     try:
         database_name = config.dsn_etl['database']
     except (KeyError, ValueError):
-        logger.critical("Could not identify database initialization target: ETL connection string not set")
+        logger.error("Could not identify database initialization target: ETL connection string not set")
         raise
 
     if database_name.startswith('validation'):

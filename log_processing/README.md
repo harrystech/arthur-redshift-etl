@@ -1,11 +1,11 @@
 # Overview
 
-The goal of these tools is to make the logs from ETLs available in Elasticsearch
+The goal of these tools is to make the logs from ETLs available via Elasticsearch
 for post-processing, searches, graphs, etc.
 
 ## Setup and Requirements
 
-### Amazon Elasticsearch Service Dommains
+### Amazon Elasticsearch Service Domains
 
 You have to have an Amazon ES domain running.
 Add the endpoint to `config.py`, see the documentation there.
