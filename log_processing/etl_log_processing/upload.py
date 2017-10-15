@@ -1,5 +1,5 @@
 """
-Uploader and Lambda handler -- send log records to Elasticsearch.
+Uploader and Lambda handler -- send log records to Elasticsearch service.
 
 From the command line, pick local files or files in S3, parse their content, and send
 log records to ES domain.
@@ -19,8 +19,9 @@ import elasticsearch
 import elasticsearch.helpers
 import requests_aws4auth
 
-from etl_log_processing import config
-from etl_log_processing import parser
+# from etl_log_processing import config
+# from etl_log_processing import parser
+from . import config, parser
 
 
 def load_records(sources):
@@ -116,10 +117,12 @@ def _create_index(client):
     index = time.strftime(config.MyConfig.index_template, time.gmtime())
     doc_type = config.MyConfig.doc_type
     print("Creating index '{}' ({})".format(index, doc_type), file=sys.stderr)
-    client.indices.create(index=index, body=parser.LogParser.index(), ignore=400)
     body = {
         "mappings": {
             doc_type: parser.LogParser.index()
+        },
+        "settings": {
+            "index.mapper.dynamic": False
         }
     }
     client.indices.create(index=index, body=body, ignore=400)
@@ -129,14 +132,14 @@ def _create_index(client):
 def _build_actions_from(index, records):
     doc_type = config.MyConfig.doc_type
     for record in records:
-        if record["log_name"] == "examples":
-            print("Example record ... _id={sha1} timestamp={timestamp}".format(**record))
+        if record["logfile"] == "examples":
+            print("Example record ... _id={0.id_} timestamp={0[timestamp]}".format(record))
         yield {
             "_op_type": "index",
             "_index": index,
             "_type": doc_type,
-            "_id": record["sha1"],
-            "_source": record
+            "_id": record.id_,
+            "_source": record.data
         }
 
 
@@ -149,6 +152,7 @@ def _bulk_index(client, index, records):
         print("No new records were indexed", file=sys.stderr)
     if errors:
         print("Errors: {}".format(errors), file=sys.stderr)
+    return ok, errors
 
 
 def index_records(es, records_generator):
@@ -168,24 +172,26 @@ def lambda_handler(event, context):
         return
 
     processed = _load_records_using(load_remote_content, full_name)
+    print("Time remaining (ms) after processing:", context.get_remaining_time_in_millis())
+
     es = _connect_to_es(aws_auth())
-    print("Time remaining (ms):", context.get_remaining_time_in_millis())
-
     index_records(es, processed)
-    print("Time remaining (ms):", context.get_remaining_time_in_millis())
+    print("Time remaining (ms) after indexing:", context.get_remaining_time_in_millis())
 
 
-def main():
+def main(use_auth=True):
     if len(sys.argv) < 2:
         print("Usage: {} LOGFILE [LOGFILE ...]".format(sys.argv[0]))
         exit(1)
     processed = load_records(sys.argv[1:])
-    # If you have enabled your IP address to have access, skip the authentication:
-    es = _connect_to_es(None)
-    # If you have only specific users (and roles) permitted:
-    # es = _connect_to_es(aws_auth())
+    if use_auth:
+        # If you have only specific users (and roles) permitted:
+        es = _connect_to_es(aws_auth())
+    else:
+        # If you have enabled your IP address to have access, skip the authentication:
+        es = _connect_to_es(None)
     index_records(es, processed)
 
 
 if __name__ == "__main__":
-    main()
+    main(use_auth=False)
