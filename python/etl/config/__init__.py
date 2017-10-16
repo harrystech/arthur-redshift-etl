@@ -81,6 +81,11 @@ def set_config_value(name: str, value: str) -> None:
 def set_safe_config_value(name: str, value: str) -> None:
     """
     Replace "unsafe" characters with '-' and set configuration value.
+
+    >>> etl.config._mapped_config = {}
+    >>> set_safe_config_value("test_value", "something/unsafe")
+    >>> get_config_value("test_value")
+    'something-unsafe'
     """
     set_config_value(name, '-'.join(re.findall('[a-zA-Z0-9_.-]+', value)))
 

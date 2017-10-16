@@ -40,7 +40,7 @@ set -x
 
 # === Configuration ===
 
-ENV_PREFIX=$( arthur.py show_value safe_environment --prefix "$PROJ_ENVIRONMENT" )
+ENV_PREFIX=$( arthur.py show_value resource_prefix --prefix "$PROJ_ENVIRONMENT" )
 STATUS_NAME="$ENV_PREFIX-status"
 PAGE_NAME="$ENV_PREFIX-page"
 VALIDATION_NAME="$ENV_PREFIX-validation"

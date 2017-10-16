@@ -508,7 +508,7 @@ def start_monitors(environment):
     MonitorPayload.dispatchers.append(memory)
 
     if etl.config.get_config_value("etl_events.enabled"):
-        table_name = "{}-{}".format(etl.config.get_config_value("safe_environment"), "events")
+        table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
         ddb = DynamoDBStorage(table_name,
                               etl.config.get_config_value("etl_events.read_capacity"),
                               etl.config.get_config_value("etl_events.write_capacity"),
@@ -521,7 +521,7 @@ def start_monitors(environment):
 def query_for(target_list):
     logger.warning("This is a bit experimental (good day) and temperamental (bad day)")
     # TODO refactor with start_monitors
-    table_name = "{}-{}".format(etl.config.get_config_value("safe_environment"), "events")
+    table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
     ddb = DynamoDBStorage(table_name,
                           etl.config.get_config_value("etl_events.read_capacity"),
                           etl.config.get_config_value("etl_events.write_capacity"),

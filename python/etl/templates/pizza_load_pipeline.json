@@ -22,7 +22,7 @@
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${safe_environment}-status"
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-status"
         },
         {
             "id": "SuccessNotification",
@@ -41,7 +41,7 @@
         {
             "id": "PagerNotification",
             "type": "SnsAlarm",
-            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${safe_environment}-page",
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-page",
             "subject": "ETL Rebuild Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
