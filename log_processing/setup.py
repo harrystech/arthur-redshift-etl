@@ -10,9 +10,10 @@ setup(
     packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "show_log_examples= etl_log_processing.parser:main",
-            "search_log = etl_log_processing.search:main",
-            "upload_log = etl_log_processing.upload:main"
+            "show_log_examples= etl_log_processing.parse:main",
+            "search_log = etl_log_processing.compile:main",
+            "upload_log = etl_log_processing.upload:main",
+            "config_log = etl_log_processing.config:main"
         ]
     }
 )

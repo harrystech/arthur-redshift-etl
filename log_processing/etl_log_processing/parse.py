@@ -13,13 +13,13 @@ import json
 import re
 import textwrap
 
-INDEX_TYPES = {
+_INDEX_FIELDS = {
     "properties": {
         "application": {"type": "keyword"},
         "environment": {"type": "keyword"},
         "logfile": {
             "type": "keyword",
-            "include_in_all": False
+            "include_in_all": False  # too many double matches after pulling out the interesting values from the name
         },
         "data_pipeline": {
             "properties": {
@@ -35,7 +35,7 @@ INDEX_TYPES = {
                 "step_id": {"type": "keyword"}
             }
         },
-        "timestamp": {"type": "date", "format": "strict_date_optional_time"},
+        "timestamp": {"type": "date", "format": "strict_date_optional_time"},  # optional millis, actually
         "datetime": {
             "properties": {
                 "epoch_time": {"type": "long"},  # "format": "epoch_second"
@@ -97,26 +97,26 @@ INDEX_TYPES = {
 }
 
 # Basic Regex to split up Arthur log lines
-LOG_LINE_REGEX = """
-                 # Start at beginning of a line
-                 ^
-                 # Look for date, e.g. 2017-06-09
-                 (?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s
-                 # Look for time (with optional milliseconds), e.g. 06:16:19,350
-                 (?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:,(?P<millisecond>\d{3}))?\s
-                 # Look for ETL id, e.g. CD58E5D3C73E4D45
-                 (?P<etl_id>[0-9A-Z]{16})\s
-                 # Look for log level, e.g. INFO
-                 (?P<log_level>[A-Z]+)\s
-                 # Look for logger, e.g. etl.config
-                 (?P<logger>\w[.\w]+)\s
-                 # Look for thread name, e.g. (MainThread)
-                 \((?P<thread_name>[^)]+)\)\s
-                 # Look for file name and line number, e.g. [__init__.py:90]
-                 \[(?P<filename>[^:]+):(?P<line_number>\d+)\]\s
-                 # Now grab the rest as message
-                 (?P<message>.*)$
-                 """
+_LOG_LINE_REGEX = """
+    # Start at beginning of a line
+    ^
+    # Look for date, e.g. 2017-06-09
+    (?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s
+    # Look for time (with optional milliseconds), e.g. 06:16:19,350
+    (?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:,(?P<millisecond>\d{3}))?\s
+    # Look for ETL id, e.g. CD58E5D3C73E4D45
+    (?P<etl_id>[0-9A-Z]{16})\s
+    # Look for log level, e.g. INFO
+    (?P<log_level>[A-Z]+)\s
+    # Look for logger, e.g. etl.config
+    (?P<logger>\w[.\w]+)\s
+    # Look for thread name, e.g. (MainThread)
+    \((?P<thread_name>[^)]+)\)\s
+    # Look for file name and line number, e.g. [__init__.py:90]
+    \[(?P<filename>[^:]+):(?P<line_number>\d+)\]\s
+    # Now grab the rest as message
+    (?P<message>.*)$
+    """
 
 
 class LogRecord(collections.UserDict):
@@ -211,11 +211,9 @@ class LogRecord(collections.UserDict):
 
 class LogParser:
 
-    _log_line_re = re.compile(LOG_LINE_REGEX, re.VERBOSE | re.MULTILINE)
-
     @staticmethod
-    def index():
-        return copy.deepcopy(INDEX_TYPES)
+    def index_fields():
+        return copy.deepcopy(_INDEX_FIELDS)
 
     def __init__(self, logfile):
         logfile = str(logfile)
@@ -233,6 +231,7 @@ class LogParser:
             self.shared_info["data_pipeline"] = data_pipeline
         if emr_cluster:
             self.shared_info["emr_cluster"] = emr_cluster
+        self._log_line_re = re.compile(_LOG_LINE_REGEX, re.VERBOSE | re.MULTILINE)
 
     def extract_data_pipeline_information(self):
         """
@@ -281,7 +280,7 @@ class LogParser:
         Split the log lines into records.
         """
         record = None
-        for match in LogParser._log_line_re.finditer(lines):
+        for match in self._log_line_re.finditer(lines):
             if record:
                 # Append interceding lines to latest message
                 if record.end_pos < match.start() - 1:

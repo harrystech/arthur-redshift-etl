@@ -1,17 +1,22 @@
 # Overview
 
-The goal of these tools is to make the logs from ETLs available via Elasticsearch
-for post-processing, searches, graphs, etc.
+The goal of the log processing is to make the logs from Arthur ETLs
+available in Kibana (via Elasticsearch) in order to have dashboards
+for some key metrics of the ETL, like
+    * Top N sources that take the most time to extract
+    * Top N relations that take the most time to load
+    * Number of warnings or errors
 
 ## Setup and Requirements
 
 ### Amazon Elasticsearch Service Domains
 
-You have to have an Amazon ES domain running.
-Add the endpoint to `config.py`, see the documentation there.
-
+You have to have an Elasticsearch sercie running.
 For more information about Elasticsearch in AWS, see [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
+See the cloudformation directory for an example setup.
 
+You will have to use the configure option to store the endpoint address in the
+parameter store.
 
 ### Lambda Permissions
 
@@ -26,7 +31,7 @@ The role must have these permissions:
 TODO Create role automatically, `temp-log-parser`, add to config
 
 
-### Python virtual environment
+## Installation
 
 This code uses Python 3. See the [toplevel README](../README.md) for installation instructions.
 
@@ -36,40 +41,70 @@ virtual environment setup:
 ./install_packages.sh venv
 ```
 
-After this, you should be able to run the self-test of the parser:
+It is not necessary to activate the virtual environment to run the scripts shown below.
+
+## Testing
+
+The individual steps (parsing, compiling, uploading) can be tested locally.
+
+### Parsing example log lines
+
+You should be able to run the self-test of the parser:
 ```shell
 show_log_examples
 ```
 
-It is not necessary to activate the virtual environment to run the scripts shown below.
-
-## Searching files locally
+### Searching files locally
 
 In order to test the basic functionality or as a quick check across a number of log files,
-you can "search" files which will search against the ETL ID and message of every log record.
+you can "search" files which will search against the ETL ID, log level and message of every log record.
 
 Examples:
 ```shell
 # built-in examples
-log_search ERROR examples
+search_log ERROR examples
 # local files
-log_search FD1B9A50D12C41C3 ../arthur.log*
+search_log FD1B9A50D12C41C3 ../arthur.log*
 # remote files (specified by prefix)
-log_search 'finished successfully' s3://example-bucket/logs/
+search_log 'finished successfully' s3://example-bucket/logs/
 ```
 
-## Uploading log records from files manually
+### Configure endpoints
+
+XXX todo
+
+Need to pass in the "environment type" which comes from the VPC, like `dev`.
+Sets endpoint for env and also for bucket (so that lambda can use it).
+
+```shell
+config_log set_endpoint dev "your endpoint:443"
+config_log get_endpoint dev
+```
+
+### Uploading log records from files manually
 
 To leverage your Elasticsearch service domain, have the log records indexed.
+
+Need to pass in the "environment type" which comes from the VPC, like `dev`.
 
 Example:
 ```shell
 # built-in examples
-log_upload examples
+upload_log dev examples
 # local files
-log_upload ../arthur.log
+upload_log dev ../arthur.log
 # remote files (specified by prefix)
-log_upload s3://example/logs/df-pipeline-id
+upload_log dev s3://example/logs/df-pipeline-id
+```
+
+### Deleting older indices
+
+XXX todo
+Should be called at least once a week.
+
+```shell
+config_log list_indices dev
+config_log delete_old_indices dev
 ```
 
 ## Automatic upload from S3
