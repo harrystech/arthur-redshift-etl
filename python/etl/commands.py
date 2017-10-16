@@ -490,7 +490,7 @@ class BootstrapTransformationsCommand(SubCommand):
                          "bootstrap schema information from transformations",
                          "Download schema information as if transformation had been run in data warehouse."
                          " If there is no local design file, then create one as a starting point.",
-                         aliases=["auto-design"])
+                         aliases=["auto_design"])
 
     def add_arguments(self, parser):
         parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",

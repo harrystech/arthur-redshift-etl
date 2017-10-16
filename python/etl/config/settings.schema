@@ -98,7 +98,7 @@
         "aws_arn": {
             "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
             "type": "string",
-            "pattern": "^arn:aws[^:]*:[^:]+:[^:]*:[0-9a-f]+:"
+            "pattern": "^arn:aws[^:]*:[^:]*:[^:]*:[0-9a-f]+:"
         }
     },
     "type": "object",
@@ -124,7 +124,8 @@
                 "users": {
                     "type": "array",
                     "items": { "$ref": "#/definitions/user_info" },
-                    "uniqueItems": true
+                    "uniqueItems": true,
+                    "minItems": 1
                 },
                 "transformations": {
                     "description": "List of schemas with transformations",
@@ -149,7 +150,7 @@
                     ]
                 }
             },
-            "required": [ "admin_access", "etl_access", "owner" ],
+            "required": [ "admin_access", "etl_access", "owner", "users" ],
             "additionalProperties": false
         },
         "sources": {
@@ -314,6 +315,6 @@
             "additionalProperties": false
         }
     },
-    "required": [ "arthur_settings", "data_warehouse", "sources", "type_maps", "object_store", "resources", "etl_events" ],
+    "required": [ "arthur_settings", "data_warehouse", "type_maps", "object_store", "resources", "etl_events" ],
     "additionalProperties": false
 }
