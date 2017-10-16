@@ -99,6 +99,15 @@ Resources:
                             - "ec2:RevokeSecurityGroupEgress"
                             - "ec2:TerminateInstances"
                         Resource: "*"
+                      - Sid: "ModifyParameters"
+                        Effect: "Allow"
+                        Action:
+                            - "ssm:AddTagsToResource"
+                            - "ssm:DeleteParameter"
+                            - "ssm:DescribeParameters"
+                            - "ssm:GetParameter*"
+                            - "ssm:PutParameter"
+                        Resource: "arn:aws:ssm:*:*:parameter/DW-ETL/*"
 
 
 
