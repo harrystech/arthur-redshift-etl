@@ -63,6 +63,9 @@ class S3Uploader:
             error_code = exc.response['Error']['Code']
             self.logger.error("Error code %s for object 's3://%s/%s'", error_code, self.bucket_name, object_key)
             raise
+        except Exception:
+            self.logger.error("Unknown error occurred during upload", exc_info=True)
+            raise
 
     def __call__(self, filename: str, object_key: str) -> None:
         self._call(filename, object_key)

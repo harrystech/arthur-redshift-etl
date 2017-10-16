@@ -20,7 +20,7 @@ from typing import List
 import etl.config
 import etl.file_sets
 import etl.s3
-from etl.errors import MissingQueryError
+from etl.errors import MissingQueryError, ETLRuntimeError
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -76,8 +76,8 @@ def sync_with_s3(relations: List[RelationDescription], bucket_name: str, prefix:
             if exception is not None:
                 logger.error("Failed to upload file: %s", exception)
                 errors += 1
-    if errors:
-        logger.critical("There were %d error(s) during upload", errors)
     if not dry_run:
         logger.info("Uploaded %d of %d file(s) to 's3://%s/%s (%s)",
                     len(files) - errors, len(files), bucket_name, prefix, timer)
+    if errors:
+        raise ETLRuntimeError("There were {:d} error(s) during upload".format(errors))
