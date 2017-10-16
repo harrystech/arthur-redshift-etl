@@ -249,6 +249,16 @@ def format_result(dict_rows) -> str:
     return '\n'.join([', '.join(c) for c in content])
 
 
+def print_result(header, dict_rows) -> None:
+    """
+    Print query result
+    """
+    print(header)
+    if dict_rows:
+        print(format_result(dict_rows))
+    print("({:d} rows)".format(len(dict_rows)))
+
+
 def explain(cx, stmt, args=()):
     """
     Return explain plan for the query as a list of steps.

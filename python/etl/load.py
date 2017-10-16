@@ -946,7 +946,8 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
-        etl.data_warehouse.list_transactions(conn)
+        tx_info = etl.data_warehouse.list_open_transactions(conn)
+        etl.db.print_result("List of sessions that have open transactions:", tx_info)
 
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
