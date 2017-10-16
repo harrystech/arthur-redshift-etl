@@ -288,52 +288,44 @@ def create_new_user(config, new_user, group=None, add_user_schema=False, skip_us
                 etl.db.alter_search_path(conn, user.name, search_path)
 
 
-def list_transactions(cx) -> List[int]:
+def list_open_transactions(cx):
     """
-    Print information about sessions and tables that they have a lock on.
-    Return PIDs of the backends for each session.
-
-    This skips sessions of the user that is owning the connection.
+    Return information about sessions (identified by the PIDs of the backends)
+    that have locks open and are for the same database as the current sessions.
+    (Also, sessions of the current user are skipped so that we don't bouncer ourselves.)
     """
     stmt = """
-        SELECT DISTINCT
-               pid AS proc_pid
+        SELECT proc_pid
              , txn_db
              , txn_owner
              , txn_start
-             , COALESCE(pn.nspname || '.' || pc.relname, 'Unknown') AS table_name
-          FROM pg_catalog.svv_transactions AS st
-          LEFT JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
-          LEFT JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
-         WHERE txn_owner <> current_user
-           AND txn_db = current_database()
-         ORDER BY proc_pid, txn_owner, txn_start, table_name
+             , LISTAGG(table_name, ', ') WITHIN GROUP (ORDER BY table_name) AS tables
+          FROM (
+            SELECT DISTINCT
+                   pid AS proc_pid
+                 , txn_db
+                 , txn_owner
+                 , txn_start
+                 , COALESCE(pn.nspname || '.' || pc.relname, 'Unknown') AS table_name
+              FROM pg_catalog.svv_transactions AS st
+              LEFT JOIN pg_catalog.pg_class AS pc ON st.relation = pc.oid
+              LEFT JOIN pg_catalog.pg_namespace AS pn ON pc.relnamespace = pn.oid
+             WHERE txn_owner <> current_user
+               AND txn_db = current_database()
+               ) t
+         GROUP BY proc_pid, txn_db, txn_owner, txn_start
+         ORDER BY proc_pid, txn_db, txn_owner, txn_start, tables
         """
-    tx_open = etl.db.query(cx, stmt)
-    logger.info("Found %d session(s) with open transactions", len(tx_open))
-    if tx_open:
-        logger.debug("Transactions:\n%s", etl.db.format_result(tx_open))
-    tx_info = []
-    # "Pivot" last column into list of table names
-    for (proc_pid, txn_db, txn_owner, txn_start), rows in groupby(tx_open, lambda row: row[:-1]):
-        table_names = ', '.join(row["table_name"] for row in rows)
-        tx_info.append((proc_pid, txn_db, txn_owner, txn_start, table_names))
-    if tx_info:
-        print("List of sessions that have open transactions:")
-        print("proc_pid", "db", "txn_owner", "txn_start", "list of table names", sep=', ')
-        for proc_pid, txn_db, txn_owner, txn_start, table_names in tx_info:
-            print(proc_pid, txn_db, txn_owner, txn_start, table_names, sep=', ')
-    else:
-        print("Found no sessions that have open transactions")
-
-    return sorted({info[0] for info in tx_info})
+    return etl.db.query(cx, stmt)
 
 
 def terminate_sessions_with_transaction_locks(cx, dry_run=False) -> None:
     """
     Call Redshift's PG_TERMINATE_BACKEND to kick out users with queries that might interfere with the ETL
     """
-    pids = list_transactions(cx)
+    tx_info = list_open_transactions(cx)
+    etl.db.print_result("List of sessions that have open transactions:", tx_info)
+    pids = sorted({row["proc_pid"] for row in tx_info})
     logger.debug("List of %d session PID(s): %s", len(pids), pids)
     for pid in pids:
         msg = "Terminate session with backend {:d} holding transaction locks".format(pid)
