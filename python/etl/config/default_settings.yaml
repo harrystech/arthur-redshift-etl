@@ -21,13 +21,9 @@
     },
     # Logging of the ETL into events tables
     "etl_events": {
-        # Send ETL events to DynamoDB table
-        "dynamodb": {
-            "table_prefix": "dw-etl-events",
-            "capacity": 3,
-            # FIXME this should use the region in the settings of the VPC
-            "region": "us-east-1"
-        }
+        "enabled": True,  # required to be enabled for concurrent extract/load
+        "read_capacity": 3,
+        "write_capacity": 3
     },
     # Type information from source (PostgreSQL) to target (Redshift)
     "type_maps": {

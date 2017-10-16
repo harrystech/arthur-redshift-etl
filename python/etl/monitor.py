@@ -13,7 +13,6 @@ import logging
 import os
 import queue
 import random
-import re
 import socketserver
 import sys
 import threading
@@ -23,7 +22,6 @@ import urllib.parse
 import uuid
 from calendar import timegm
 from collections import Counter, OrderedDict
-from contextlib import closing
 from copy import deepcopy
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -273,9 +271,10 @@ class DynamoDBStorage(PayloadDispatcher):
     Note the table is created if it doesn't already exist when class is instantiated.
     """
 
-    def __init__(self, table_name, capacity, region_name):
+    def __init__(self, table_name, read_capacity, write_capacity, region_name):
         self.table_name = table_name
-        self.initial_capacity = capacity
+        self.initial_read_capacity = read_capacity
+        self.initial_write_capacity = write_capacity
         self.region_name = region_name
         # Avoid default sessions and have one table reference per thread
         self._thread_local_table = threading.local()
@@ -309,8 +308,8 @@ class DynamoDBStorage(PayloadDispatcher):
                     {'AttributeName': 'target', 'AttributeType': 'S'},
                     {'AttributeName': 'timestamp', 'AttributeType': 'N'}
                 ],
-                ProvisionedThroughput={'ReadCapacityUnits': self.initial_capacity,
-                                       'WriteCapacityUnits': self.initial_capacity}
+                ProvisionedThroughput={'ReadCapacityUnits': self.initial_read_capacity,
+                                       'WriteCapacityUnits': self.initial_write_capacity}
             )
             status = table.table_status
         if status != "ACTIVE":
@@ -350,45 +349,6 @@ class DynamoDBStorage(PayloadDispatcher):
                 self.store(payload, _retry=False)
             else:
                 raise
-
-
-class RelationalStorage(PayloadDispatcher):
-    """
-    Store ETL events in a PostgreSQL table.
-
-    Note the table is created if it doesn't already exist when class is instantiated.
-    """
-
-    def __init__(self, table_name, write_access):
-        self.table_name = table_name
-        write_value = etl.config.env.get(write_access)
-        self.dsn = etl.db.parse_connection_string(write_value)
-        logger.info("Creating table '%s' (unless it already exists)", table_name)
-        with closing(etl.db.connection(self.dsn)) as conn:
-            etl.db.execute(conn, """
-                CREATE TABLE IF NOT EXISTS "{0.table_name}" (
-                    environment CHARACTER VARYING(255),
-                    etl_id      CHARACTER VARYING(255) NOT NULL,
-                    target      CHARACTER VARYING(255) NOT NULL,
-                    step        CHARACTER VARYING(255) NOT NULL,
-                    monitor_id  CHARACTER VARYING(16) NOT NULL,
-                    event       CHARACTER VARYING(255) NOT NULL,
-                    "timestamp" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-                    payload     JSONB NOT NULL
-                )""".format(self))
-            conn.commit()
-
-    def store(self, payload):
-        data = {key: payload[key] for key in ["environment", "etl_id", "target", "step", "monitor_id", "event"]}
-        data["timestamp"] = payload["timestamp"].isoformat(' ')
-        data["payload"] = json.dumps(payload, sort_keys=True, cls=FancyJsonEncoder)
-
-        with closing(etl.db.connection(self.dsn, autocommit=True)) as conn:
-            with conn.cursor() as cursor:
-                quoted_column_names = ", ".join('"{}"'.format(column) for column in data)
-                column_values = tuple(data.values())
-                cursor.execute('INSERT INTO "{0.table_name}" ({1}) VALUES %s'.format(self, quoted_column_names),
-                               (column_values,))
 
 
 class _ThreadingSimpleServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -542,32 +502,30 @@ class InsertTraceKey(logging.Filter):
         return True
 
 
-def set_environment(environment):
+def start_monitors(environment):
     Monitor.environment = environment
     memory = MemoryStorage()
     MonitorPayload.dispatchers.append(memory)
 
-    if etl.config.get_config_value("etl_events.dynamodb.table_prefix") is not None:
-        table_name = '_'.join((etl.config.get_config_value("etl_events.dynamodb.table_prefix"),
-                               etl.config.get_config_value("safe_environment")))
+    if etl.config.get_config_value("etl_events.enabled"):
+        table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
         ddb = DynamoDBStorage(table_name,
-                              etl.config.get_config_value("etl_events.dynamodb.capacity"),
-                              etl.config.get_config_value("etl_events.dynamodb.region"))
+                              etl.config.get_config_value("etl_events.read_capacity"),
+                              etl.config.get_config_value("etl_events.write_capacity"),
+                              etl.config.get_config_value("resources.VPC.region"))
         MonitorPayload.dispatchers.append(ddb)
-    if etl.config.get_config_value("etl_events.postgresql.table_prefix") is not None:
-        table_name = etl.config.get_config_value("etl_events.postgresql.table_prefix") + '_' + environment
-        rel = RelationalStorage(table_name,
-                                etl.config.get_config_value("etl_events.postgresql.write_access"))
-        MonitorPayload.dispatchers.append(rel)
+    else:
+        logger.warning("Writing events to a DynamoDB table is disabled in settings.")
 
 
 def query_for(target_list):
     logger.warning("This is a bit experimental (good day) and temperamental (bad day)")
-    table_name = '_'.join((etl.config.get_config_value("etl_events.dynamodb.table_prefix"),
-                           etl.config.get_config_value("safe_environment")))
+    # TODO refactor with start_monitors
+    table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
     ddb = DynamoDBStorage(table_name,
-                          etl.config.get_config_value("etl_events.dynamodb.capacity"),
-                          etl.config.get_config_value("etl_events.dynamodb.region"))
+                          etl.config.get_config_value("etl_events.read_capacity"),
+                          etl.config.get_config_value("etl_events.write_capacity"),
+                          etl.config.get_config_value("resources.VPC.region"))
     table = ddb._get_table()
 
     recent_cutoff = datetime.utcnow() - timedelta(days=5)

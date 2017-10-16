@@ -22,7 +22,7 @@
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:dw-etl-validation_${safe_environment}"
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-validation"
         },
         {
             "id": "SuccessNotification",
