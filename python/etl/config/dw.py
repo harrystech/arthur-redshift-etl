@@ -11,7 +11,7 @@ import etl.config.env
 import etl.names
 import etl.db
 import etl.render_template
-from etl.errors import InvalidEnvironmentError
+from etl.errors import ETLConfigError, InvalidEnvironmentError
 
 
 class DataWarehouseUser:
@@ -114,7 +114,7 @@ class DataWarehouseConfig:
     """
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
-        schema_settings = settings["sources"] + dw_settings.get("transformations", [])
+        schema_settings = settings.get("sources", []) + dw_settings.get("transformations", [])
 
         # Environment variables with DSN
         self._admin_access = dw_settings["admin_access"]
@@ -142,7 +142,10 @@ class DataWarehouseConfig:
 
         # Groups are in sorted order after the root group
         self.groups = [root.group] + sorted(other_groups)
-        [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+        try:
+            [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+        except ValueError:
+            raise ETLConfigError("Failed to find group of default user")
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset
         required_patterns = dw_settings.get("required_for_success", [])
         self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)

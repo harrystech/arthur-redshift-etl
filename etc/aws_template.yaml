@@ -1,0 +1,53 @@
+# This is an example file to set all the AWS-related variables needed for Arthur to run.
+# To test this example, have Arthur run against this file:
+#     DATA_WAREHOUSE_CONFIG="./etc" arthur.py settings
+{
+    "object_store": {
+        "iam_role": "arn:aws:iam:REGION:11111111:ROLE",  # copy from the outputs of the VPC
+        "s3": {
+            "bucket_name": "some-bucket"  # copy from the outputs of the VPC
+        }
+    },
+    "data_lake": {
+        "iam_role": "arn:aws:iam:REGION:11111111:ROLE",  # copy from the outputs of the VPC
+        "s3": {
+            "bucket_name": "some-bucket"  # copy from the outputs of the VPC
+        }
+    },
+    "resources": {
+        "key_name": "dw-{env_type}-keypair.pem",  # copy from the outputs of the VPC
+        "VPC": {
+            "region": "copy from the outputs of the VPC",
+            "account": "copy from the outputs of the VPC",
+            "name": "env_type",  # argument to VPC creation, like 'dev' or 'prod'
+            "public_subnet": "copy from the outputs of the VPC",
+            "whitelist_security_group": "copy from the outputs of the VPC"
+        },
+        "EC2": {
+            "iam_instance_profile": "copy from the outputs of the VPC",
+            "instance_type": "t2.small",
+            "image_id": "ami-a4c7edb2",
+            "public_security_group": "copy from the outputs of the VPC"
+        },
+        "EMR": {
+            "release_label": "emr-5.3.0",
+            "master": {
+                "instance_type": "m4.2xlarge",
+                "instance_count": 1,
+                "managed_security_group": "copy from the outputs of the VPC"
+                },
+            "core": {
+                "instance_type": "m4.4xlarge",
+                "instance_count": 4,
+                "managed_security_group": "copy from the outputs of the VPC"
+            }
+        },
+        "DataPipeline": {
+            "role": "arn:aws:iam:REGION:11111111:ROLE"  # copy from the outputs of the VPC
+        },
+        "RedshiftCluster": {
+            "max_concurrency": 2,  # make sure this suits the hardware allocation
+            "wlm_query_slots": 4  # make sure this works with the rest of the WLM settings
+        }
+    }
+}

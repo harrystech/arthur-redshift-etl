@@ -16,8 +16,13 @@
             "group": "etl_rw"
 
         },
-        # Schemas that are filled out based on CTAS or views and have no direct upstream source
-        "transformations": []
+        "users": [
+            {
+                # Default group specified as group of pseudo-user "default"
+                "name": "default",
+                "group": "analyst_ro"
+            }
+        ]
     },
     # Logging of the ETL into events tables
     "etl_events": {
