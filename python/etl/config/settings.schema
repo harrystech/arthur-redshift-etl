@@ -225,13 +225,14 @@
                 "VPC": {
                     "type": "object",
                     "properties": {
+                        "region": { "type": "string" },
+                        "account": { "type": "string" },
+                        "name": { "type": "string" },
                         "public_subnet": { "type": "string" },
                         "private_subnet": { "type": "string" },
-                        "whitelist_security_group": { "type": "string" },
-                        "region": { "type": "string" },
-                        "account": { "type": "string" }
+                        "whitelist_security_group": { "type": "string" }
                     },
-                    "required": [ "public_subnet", "whitelist_security_group", "region", "account" ],
+                    "required": [ "region", "account", "name", "public_subnet", "whitelist_security_group" ],
                     "additionalProperties": false
                 },
                 "EC2": {
@@ -305,26 +306,11 @@
         "etl_events": {
             "type": "object",
             "properties": {
-                "dynamodb": {
-                    "type": "object",
-                    "properties": {
-                        "table_prefix": { "type": "string" },
-                        "capacity": { "type": "integer" },
-                        "region": { "type": "string" }
-                    },
-                    "required": [ "table_prefix", "capacity", "region" ],
-                    "additionalProperties": false
-                },
-                "postgresql": {
-                    "type": "object",
-                    "properties": {
-                        "table_prefix": { "type": "string" },
-                        "write_access": { "type": "string" }
-                    },
-                    "required": [ "table_prefix", "write_access" ],
-                    "additionalProperties": false
-                }
+                "enabled": { "type": "boolean" },
+                "read_capacity": { "type": "integer" },
+                "write_capacity": { "type": "integer" }
             },
+            "required": [ "enabled", "read_capacity", "write_capacity" ],
             "additionalProperties": false
         }
     },

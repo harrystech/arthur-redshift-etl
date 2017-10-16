@@ -40,10 +40,10 @@ set -x
 
 # === Configuration ===
 
-SNS_SUFFIX=$( arthur.py show_value safe_environment --prefix $PROJ_ENVIRONMENT )
-STATUS_NAME="dw-etl-status_$SNS_SUFFIX"
-PAGE_NAME="dw-etl-page_$SNS_SUFFIX"
-VALIDATION_NAME="dw-etl-validation_$SNS_SUFFIX"
+ENV_PREFIX=$( arthur.py show_value safe_environment --prefix "$PROJ_ENVIRONMENT" )
+STATUS_NAME="$ENV_PREFIX-status"
+PAGE_NAME="$ENV_PREFIX-page"
+VALIDATION_NAME="$ENV_PREFIX-validation"
 
 # ===  Create topic and subscription ===
 
@@ -63,5 +63,5 @@ done
 
 set +x
 echo
-echo "List of subscriptions related to $PROJ_ENVIRONMENT"
-aws sns list-topics | jq --raw-output '.Topics[].TopicArn' | grep "dw-etl-[^_]*_$PROJ_ENVIRONMENT"
+echo "List of subscriptions related to $PROJ_ENVIRONMENT:"
+aws sns list-topics | jq --raw-output '.Topics[].TopicArn' | grep "$ENV_PREFIX"

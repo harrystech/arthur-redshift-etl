@@ -116,9 +116,11 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                etl.config.set_safe_config_value("safe_environment", args.prefix)
+                # Create name used as prefix for resources, like DynamoDB tables or SNS topics
+                base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
+                etl.config.set_safe_config_value("safe_environment", "{}-{}".format(base_env, args.prefix))
                 if getattr(args, "use_monitor"):
-                    etl.monitor.set_environment(args.prefix)
+                    etl.monitor.start_monitors(args.prefix)
 
             dw_config = etl.config.get_dw_config()
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
