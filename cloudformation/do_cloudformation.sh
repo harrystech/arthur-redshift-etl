@@ -77,7 +77,7 @@ case "$DW_VERB" in
         --parameters $STACK_PARAMETERS \
         --tags \
             "Key=user:project,Value=data-warehouse" \
-            "Key=user:env,Value=$ENV_NAME"
+            "Key=user:stack-env-name,Value=$ENV_NAME"
     ;;
 
   update)
@@ -89,7 +89,7 @@ case "$DW_VERB" in
         --parameters $STACK_PARAMETERS \
         --tags \
             "Key=user:project,Value=data-warehouse" \
-            "Key=user:env,Value=$ENV_NAME"
+            "Key=user:stack-env-name,Value=$ENV_NAME"
     ;;
 
   delete)
