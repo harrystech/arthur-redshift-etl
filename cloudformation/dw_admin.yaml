@@ -43,7 +43,10 @@ Resources:
                         Effect: "Allow"
                         Action:
                             - "cloudwatch:DescribeAlarms"
-                            - "datapipeline:*"
+                            - "datapipeline:Describe*"
+                            - "datapipeline:Get*"
+                            - "datapipeline:List*"
+                            - "datapipeline:Query*"
                             - "ec2:AuthorizeSecurityGroup*"
                             - "ec2:CreateNetworkInterface"
                             - "ec2:CreateTags"
@@ -83,9 +86,25 @@ Resources:
                         Resource: "arn:aws:sns:*:*:dw-etl-*"
                       - Sid: "ModifyOnlyOursInDynamoDB"
                         Effect: "Allow"
-                        Action:
-                            - "dynamodb:*"
+                        Action: "dynamodb:*"
                         Resource: "arn:aws:dynamodb:*:*:table/dw-etl-*"
+                      - Sid: "ModifyOnlyOursInDataPipeline"
+                        Effect: "Allow"
+                        Action: "datapipeline:*"
+                        Resource: "*"
+                        # Could we use this condition based on our tag for more (or all) stuff?
+                        Condition:
+                            StringEquals:
+                                "datapipeline:Tag/user:project": "data-warehouse"
+                      - Sid: "ModifyParameters"
+                        Effect: "Allow"
+                        Action:
+                            - "ssm:AddTagsToResource"
+                            - "ssm:DeleteParameter"
+                            - "ssm:DescribeParameters"
+                            - "ssm:GetParameter*"
+                            - "ssm:PutParameter"
+                        Resource: "arn:aws:ssm:*:*:parameter/DW-ETL/*"
                       - Sid: "ModifyOnlyOursWIP"
                         Effect: "Allow"
                         Action:
@@ -99,15 +118,6 @@ Resources:
                             - "ec2:RevokeSecurityGroupEgress"
                             - "ec2:TerminateInstances"
                         Resource: "*"
-                      - Sid: "ModifyParameters"
-                        Effect: "Allow"
-                        Action:
-                            - "ssm:AddTagsToResource"
-                            - "ssm:DeleteParameter"
-                            - "ssm:DescribeParameters"
-                            - "ssm:GetParameter*"
-                            - "ssm:PutParameter"
-                        Resource: "arn:aws:ssm:*:*:parameter/DW-ETL/*"
 
 
 

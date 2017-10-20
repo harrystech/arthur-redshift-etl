@@ -101,7 +101,7 @@ Resources:
         Properties:
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "igw" ] ]
+                  Value: !Sub "${AWS::StackName}-igw"
 
     InternetGatewayAttachment:
         Type: "AWS::EC2::VPCGatewayAttachment"
@@ -118,7 +118,7 @@ Resources:
             MapPublicIpOnLaunch: true
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "public", !Ref 'AWS::Region' ] ]
+                  Value: !Sub "${AWS::StackName}-public-${AWS::Region}"
 
     PrivateSubnet:
         Type: "AWS::EC2::Subnet"
@@ -129,7 +129,7 @@ Resources:
             MapPublicIpOnLaunch: false
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "private", !Ref 'AWS::Region' ] ]
+                  Value: !Sub "${AWS::StackName}-private-${AWS::Region}"
 
     NatGatewayEIP:
         Type: "AWS::EC2::EIP"
@@ -150,7 +150,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "route", "public" ] ]
+                  Value: !Sub "${AWS::StackName}-route-public"
 
     DefaultPublicRoute:
         Type: AWS::EC2::Route
@@ -172,7 +172,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "route", "private" ] ]
+                  Value: !Sub "${AWS::StackName}-route-private"
 
     DefaultPrivateRoute:
         Type: AWS::EC2::Route
@@ -295,7 +295,7 @@ Resources:
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "office" ] ]
+                  Value: !Sub "${AWS::StackName}-office"
 
     RedshiftLambdaSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -304,7 +304,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-lambda" ] ]
+                  Value: !Sub "${AWS::StackName}-redshift-lambda"
 
     RedshiftEC2SecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -313,7 +313,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-ec2" ] ]
+                  Value: !Sub "${AWS::StackName}-redshift-ec2"
 
     ManagedMasterSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -322,7 +322,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "managed-master" ] ]
+                  Value: !Sub "${AWS::StackName}-managed-master"
 
     ManagedCoreSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -331,7 +331,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "managed-core" ] ]
+                  Value: !Sub "${AWS::StackName}-managed-core"
 
     # Although EMR can update the security groups to add these ingress rules, the resulting cyclic
     # redundancy would prevent us from later deleting the stack. So we setup the rules explicitly.
@@ -564,7 +564,7 @@ Resources:
                   CidrIp: 54.83.113.5/32
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-public" ] ]
+                  Value: !Sub "${AWS::StackName}-redshift-public"
 
     # This starts from the default EMR role and from the default Data Pipeline role
     # (For testing with EMR clusters outside a data pipeline, the EMR service must also be able to assume this role.)

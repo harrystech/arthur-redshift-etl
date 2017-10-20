@@ -23,10 +23,12 @@ Parameters:
     NodeType:
         Description: (optional) The type of node to be provisioned
         Type: String
-        Default: dc1.large
+        Default: dc2.large
         AllowedValues:
             - dc1.large
             - dc1.8xlarge
+            - dc2.large
+            - dc2.8xlarge
             - ds2.xlarge
             - ds2.8xlarge
 
@@ -55,18 +57,27 @@ Resources:
     RedshiftClusterSubnetGroup:
         Type: "AWS::Redshift::ClusterSubnetGroup"
         Properties:
-            Description: "Must cross-reference public subnet id from VPC stack"
+            Description: "Cross-reference public subnet ID from VPC stack"
             SubnetIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::public-subnet-id"
+            Tags:
+                - Key: user:sub-project
+                  Value: redshift-cluster
 
     RedshiftClusterParameterGroup:
         Type: "AWS::Redshift::ClusterParameterGroup"
         Properties:
-            Description: "Require SSL for connections"
+            Description: "Parameter group for Redshift cluster"
             ParameterGroupFamily: "redshift-1.0"
             Parameters:
                 - ParameterName: "require_ssl"
                   ParameterValue: "true"
+                - ParameterName: "enable_user_activity_logging"
+                  ParameterValue: "true"
+                # Other parameters, like statement timeout and WLM config are set using CLI.
+            Tags:
+                - Key: user:sub-project
+                  Value: redshift-cluster
 
     RedshiftEIP:
         Type: "AWS::EC2::EIP"
@@ -110,6 +121,9 @@ Resources:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
             SnapshotIdentifier:
                 !If [ "HasSnapshotIdentifier", !Ref "SnapshotIdentifier", !Ref "AWS::NoValue" ]
+            Tags:
+                - Key: user:sub-project
+                  Value: redshift-cluster
 
     # Note that an option to set enhanced VPC routing is missing in cloudformation, so this must be done using the CLI
     # aws redshift modify-cluster --cluster-identifier dw-cluster-dev-redshiftcluster-[your ident] --enhanced-vpc-routing
@@ -118,11 +132,15 @@ Resources:
 Outputs:
 
     RedshiftClusterEndpoint:
-        Description: Cluster endpoint
-        Value: !Sub "${RedshiftCluster.Endpoint.Address}:${RedshiftCluster.Endpoint.Port}"
+        Description: PSQL-friendly connection string
+        Value: !Sub "postgres://${MasterUsername}@${RedshiftCluster.Endpoint.Address}:${RedshiftCluster.Endpoint.Port}/dev?sslmode=require"
 
     RedshiftClusterName:
-        Description: Name of Redshift cluster
+        Description: Used as value for '--cluster-identifier' in AWS CLI
         Value: !Ref RedshiftCluster
         Export:
             Name: !Sub "${AWS::StackName}::cluster-id"
+
+    RedshiftParamterGroupName:
+        Description: Used as value for '--parameter-group-name' in AWS CLI
+        Value: !Ref RedshiftClusterParameterGroup
