@@ -562,6 +562,7 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
                 load_ctas_directly(conn, relation, dry_run=dry_run)
         else:
             copy_data(conn, relation, dry_run=dry_run)
+        # TODO Check whether we can skip analyze during refreshes
         analyze(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise UpdateTableError(exc) from exc
@@ -589,6 +590,8 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             pass
         elif relation.skip_copy:
             logger.info("Skipping loading data into {:x}".format(relation))
+        elif relation.failed:
+            logger.info("Bypassing already failed relation {:x}".format(relation))
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
@@ -640,6 +643,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     any relation from the full set of relations that depends on a source relation that failed
     to load.
     """
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+        return
+
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
 
@@ -699,11 +707,12 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     if extract_payload['event'] == etl.monitor.STEP_FINISH:
                         logger.info("Poller: Recently completed extract found for '%s', marking as ready.",
                                     item.identifier)
-                        to_load.put(item)
                     elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
                         item.mark_failure(relations, exc_info=False)
+                    # We'll create the relation on success and failure (but skip copy on failure)
+                    to_load.put(item)
 
     uncaught_load_worker_exception = threading.Event()
 
@@ -728,11 +737,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                              item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
                 raise
-
-    source_relations = [relation for relation in relations if not relation.is_transformation]
-    if not source_relations:
-        logger.info("None of the relations are in source schemas")
-        return
 
     to_poll = queue.Queue()  # type: ignore
     to_load = queue.Queue()  # type: ignore
