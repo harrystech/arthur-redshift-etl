@@ -4,6 +4,7 @@ Access to shared settings and managing indices
 
 import sys
 import time
+import datetime
 
 import boto3
 import elasticsearch
@@ -15,18 +16,17 @@ from etl_log_processing import parse
 LOG_INDEX_PATTERN = "dw-etl-logs-*"
 LOG_DOC_TYPE = "arthur-redshift-etl-log"
 
-# Index for our meta information about processing those log records
-# TODO ...
-
-# Then replace '*' with '%Y-%W'
-
 ES_ENDPOINT_BY_ENV_TYPE = "/DW-ETL/ES-By-Env-Type/{env_type}"
 ES_ENDPOINT_BY_BUCKET = "/DW-ETL/ES-By-Bucket/{bucket_name}"
 
 
-def current_log_index():
-    # TODO index should be based on time of record, not current time!
-    return time.strftime(LOG_INDEX_PATTERN.replace("-*", "-%Y-%W"), time.gmtime())
+def log_index(date=None):
+    # Smallest supported granularity is a day
+    if date is None:
+        instant = datetime.date.today()
+    else:
+        instant = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+    return instant.strftime(LOG_INDEX_PATTERN.replace("-*", "-%Y-%W"))
 
 
 def set_es_endpoint(env_type, bucket_name, endpoint):
@@ -65,7 +65,6 @@ def get_es_endpoint(env_type=None, bucket_name=None):
     response = client.get_parameter(Name=name, WithDecryption=False)
     es_endpoint = response["Parameter"]["Value"]
     host, port = es_endpoint.rsplit(':', 1)
-    print("Found ES domain at '{}:{}'".format(host, port))
     return host, int(port)
 
 
@@ -137,6 +136,7 @@ def main():
 
     set_es_endpoint(env_type, bucket_name, endpoint)
     host, port = get_es_endpoint(env_type=env_type)
+    print("Found ES domain at '{}:{}'".format(host, port))
 
     es = connect_to_es(host, port, use_auth=False)
     put_index_template(es)

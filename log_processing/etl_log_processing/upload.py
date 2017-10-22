@@ -9,6 +9,7 @@ parse that file and send it to ES domain.
 """
 
 import hashlib
+import itertools
 import sys
 import urllib.parse
 
@@ -52,16 +53,17 @@ def _build_meta_doc(context, environment, path, timestamp):
 
 
 def index_records(es, records_generator):
-    index = config.current_log_index()
-    print("Indexing records ({})".format(index))
-    ok, errors = elasticsearch.helpers.bulk(es, _build_actions_from(index, records_generator))
-    if ok:
-        print("Indexed successfully: {:d}".format(ok))
-    else:
-        print("No new records were indexed")
-    if errors:
-        print("Errors: {}".format(errors))
-    return ok, errors
+    n_ok, n_errors = 0, 0
+    for date, records in itertools.groupby(records_generator, key=lambda rec: rec["datetime"]["date"]):
+        index = config.log_index(date)
+        print("Indexing records ({})".format(index))
+        ok, errors = elasticsearch.helpers.bulk(es, _build_actions_from(index, records))
+        n_ok += ok
+        if errors:
+            print("Errors: {}".format(errors))
+            n_errors += len(errors)
+    print("Indexed successfully: {:d}, unsuccessfully: {:d}".format(n_ok, n_errors))
+    return n_ok, n_errors
 
 
 def lambda_handler(event, context):
@@ -80,15 +82,14 @@ def lambda_handler(event, context):
 
     file_uri = "s3://{}/{}".format(bucket_name, object_key)
     try:
-        processed = list(compile.load_remote_records(file_uri))
+        processed = compile.load_remote_records(file_uri)
         print("Time remaining (ms) after processing:", context.get_remaining_time_in_millis())
     except botocore.exceptions.ClientError as exc:
         error_code = exc.response['Error']['Code']
         print("Error code {} for object '{}'".format(error_code, file_uri))
         return
-    # TODO Raise exception when no records are found so that we don't have to materialize the list
-    if not processed:
-        print("No log records found in '{}'".format(file_uri))
+    except ValueError as exc:
+        print("Failed to find records in '{}': {}".format(file_uri, exc))
         return
 
     host, port = config.get_es_endpoint(bucket_name=bucket_name)
@@ -98,11 +99,10 @@ def lambda_handler(event, context):
 
     doc = _build_meta_doc(context, environment, path, event_data['eventTime'])
     doc["message"] = "Index result for '{}': ok = {}, errors = {}".format(file_uri, ok, errors)
-    # TODO Log every invocation?
     sha1_hash = hashlib.sha1()
     sha1_hash.update(file_uri.encode())
     id_ = sha1_hash.hexdigest()
-    res = es.index(index=config.current_log_index(), doc_type=config.LOG_DOC_TYPE, id=id_, body=doc)
+    res = es.index(index=config.log_index(), doc_type=config.LOG_DOC_TYPE, id=id_, body=doc)
     print("Sent meta information: ", res)
 
 

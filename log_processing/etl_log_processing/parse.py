@@ -39,6 +39,7 @@ _INDEX_FIELDS = {
         "datetime": {
             "properties": {
                 "epoch_time": {"type": "long"},  # "format": "epoch_millis"
+                "date": {"type": "date", "format": "strict_date"},   # used to select index
                 "year": {"type": "integer"},
                 "month": {"type": "integer"},
                 "day": {"type": "integer"},
@@ -156,6 +157,7 @@ class LogRecord(collections.UserDict):
             "timestamp": timestamp.isoformat(),  # Drops milliseconds if value is 0.
             "datetime": {
                 "epoch_time": calendar.timegm(timestamp.timetuple()) * 1000 + timestamp.microsecond // 1000,
+                "date": timestamp.date().isoformat(),
                 "year": timestamp.year,
                 "month": timestamp.month,
                 "day": timestamp.day,
@@ -277,6 +279,8 @@ class LogParser:
     def split_log_lines(self, lines):
         """
         Split the log lines into records.
+
+        An exception is raised if no records are found at all.
         """
         record = None
         for match in self._log_line_re.finditer(lines):
@@ -297,6 +301,9 @@ class LogParser:
                 record.message += trailing_lines
                 record.end_pos += len(trailing_lines)
             yield record
+
+        if record is None:
+            raise ValueError("found no records")
 
 
 def create_example_records():
