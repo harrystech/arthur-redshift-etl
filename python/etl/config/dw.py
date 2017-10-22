@@ -65,21 +65,37 @@ class DataWarehouseSchema:
         else:
             self._dsn_env_var = etl_access
         self.has_dsn = self._dsn_env_var is not None
-
-        self.raw_s3_bucket = schema_info.get("s3_bucket")  # Raw because it may be a template string
-        self.s3_path_template = schema_info.get("s3_path_template")
-        self.s3_unload_path_template = schema_info.get("s3_unload_path_template")
+        # The S3 bucket, path template and unload path template must be rendered since they may be template strings.
+        self._s3_bucket_template = schema_info.get("s3_bucket")
+        self._s3_path_template = schema_info.get("s3_path_template")
+        self._s3_unload_path_template = schema_info.get("s3_unload_path_template")
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
 
     @property
-    def s3_bucket(self):
+    def s3_bucket(self) -> str:
         """
         Renders S3 Bucket name (if it references Arthur configuration, for instance, the data lake)
         """
-        return etl.render_template.render_from_config(self.raw_s3_bucket,
+        return etl.render_template.render_from_config(self._s3_bucket_template,
                                                       context="s3_bucket of schema '{}'".format(self.name))
+
+    @property
+    def s3_path_prefix(self) -> str:
+        """
+        Render S3 path prefix in particular wrt. prefix (environment) and dates.
+        """
+        return etl.render_template.render_from_config(
+            self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name))
+
+    @property
+    def s3_unload_path_prefix(self) -> str:
+        """
+        Render S3 unload path prefix in particular wrt. prefix (environment) and dates.
+        """
+        return etl.render_template.render_from_config(
+            self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name))
 
     @property
     def dsn(self):
