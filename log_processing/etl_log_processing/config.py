@@ -13,7 +13,7 @@ from etl_log_processing import parse
 
 # Index for our log records
 LOG_INDEX_PATTERN = "dw-etl-logs-*"
-LOG_TYPE = "arthur-redshift-etl-log"
+LOG_DOC_TYPE = "arthur-redshift-etl-log"
 
 # Index for our meta information about processing those log records
 # TODO ...
@@ -113,10 +113,10 @@ def put_index_template(client):
             "index.mapper.dynamic": False
         },
         "mappings": {
-            LOG_TYPE: parse.LogParser.index_fields()
+            LOG_DOC_TYPE: parse.LogParser.index_fields()
         }
     }
-    print("Updating index template '{}' (doc_type={}, version={})".format(template_id, LOG_TYPE, version))
+    print("Updating index template '{}' (doc_type={}, version={})".format(template_id, LOG_DOC_TYPE, version))
     client.indices.put_template(template_id, body)
 
 
