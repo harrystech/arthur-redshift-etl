@@ -58,6 +58,7 @@ for TOPIC in "$STATUS_NAME" "$PAGE_NAME" "$VALIDATION_NAME"; do
         echo "Failed to find topic arn in output. Check your settings, including VPN etc."
         exit 1
     fi
+    aws sns set-topic-attributes --topic-arn "$TOPIC_ARN" --attribute-name DisplayName --attribute-value "ETL News"
     aws sns subscribe --topic-arn "$TOPIC_ARN" --protocol email --notification-endpoint "$NOTIFICATION_ENDPOINT"
 done
 
