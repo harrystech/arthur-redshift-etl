@@ -37,6 +37,13 @@ Parameters:
         Type: Number
         Default: 2
 
+    QueryConcurrency:
+        Description: (optional) The maximum number of concurrent queries (part of WLM configuration)
+        Type: Number
+        Default: 5
+        MinValue: 2
+        MaxValue: 50
+
     SnapshotIdentifier:
         Description: (optional) The identifier of an existing snapshot (leave empty to skip)
         Type: String
@@ -74,7 +81,10 @@ Resources:
                   ParameterValue: "true"
                 - ParameterName: "enable_user_activity_logging"
                   ParameterValue: "true"
-                # Other parameters, like statement timeout and WLM config are set using CLI.
+                - ParameterName: "statement_timeout"
+                  ParameterValue: 7200000
+                - ParameterName: "wlm_json_configuration"
+                  ParameterValue: !Sub "[{ \"query_concurrency\": ${QueryConcurrency} }]"
             Tags:
                 - Key: user:sub-project
                   Value: redshift-cluster
@@ -126,7 +136,7 @@ Resources:
                   Value: redshift-cluster
 
     # Note that an option to set enhanced VPC routing is missing in cloudformation, so this must be done using the CLI
-    # aws redshift modify-cluster --cluster-identifier dw-cluster-dev-redshiftcluster-[your ident] --enhanced-vpc-routing
+    # aws redshift modify-cluster --cluster-identifier "[cluster identifier]" --enhanced-vpc-routing
 
 
 Outputs:

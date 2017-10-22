@@ -13,10 +13,14 @@ Parameters:
     ObjectStore:
         Description: (required) A bucket name where schemas and data will be stored (temporarily)
         Type: String
+        MinLength: 3
+        MaxLength: 63
 
     DataLake:
         Description: (required) A bucket name where data is stored, likely using 'unload' for other applications
         Type: String
+        MinLength: 3
+        MaxLength: 63
 
     VpcNetworkSelection:
         Description: (required) Second octect of the IP range (final IP range is 10.(selection).0.0/16),
