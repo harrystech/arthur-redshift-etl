@@ -2,6 +2,7 @@
 Access to shared settings and managing indices
 """
 
+import argparse
 import sys
 import time
 import datetime
@@ -24,6 +25,8 @@ def log_index(date=None):
     # Smallest supported granularity is a day
     if date is None:
         instant = datetime.date.today()
+    elif isinstance(date, datetime.date):
+        instant = date
     else:
         instant = datetime.datetime.strptime(date, "%Y-%m-%d").date()
     return instant.strftime(LOG_INDEX_PATTERN.replace("-*", "-%Y-%W"))
@@ -109,7 +112,9 @@ def put_index_template(client):
         "template": LOG_INDEX_PATTERN,
         "version": version,
         "settings": {
-            "index.mapper.dynamic": False
+            "index.mapper.dynamic": False,
+            "number_of_shards": 2,
+            "number_of_replicas": 1
         },
         "mappings": {
             LOG_DOC_TYPE: parse.LogParser.index_fields()
@@ -119,30 +124,84 @@ def put_index_template(client):
     client.indices.put_template(template_id, body)
 
 
-def get_indices(client):
+def get_current_indices(client):
     print("Looking for indices matching {}".format(LOG_INDEX_PATTERN))
     response = client.indices.get(index=LOG_INDEX_PATTERN, allow_no_indices=True)
-    for index in sorted(response):
-        print(response[index]['settings']['index'])
+    names = [response[index]["settings"]["index"]["provided_name"] for index in response]
+    return sorted(names)
+
+
+def get_active_indices():
+    today = datetime.datetime.utcnow()
+    names = [log_index(today - datetime.timedelta(days=days)) for days in range(0, 380)]
+    return sorted(names)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="Configure log processing")
+    subparsers = parser.add_subparsers()
+    # Retrieve current configuration
+    get_config_parser = subparsers.add_parser("get_config", help="get configuration values")
+    get_config_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
+    get_config_parser.set_defaults(func=sub_get_config)
+    # Set new configuration
+    set_config_parser = subparsers.add_parser("set_config", help="set configuration values")
+    set_config_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
+    set_config_parser.add_argument("bucket_name", help="name of S3 bucket with log files")
+    set_config_parser.add_argument("endpoint", help="endpoint for Elasticsearch service (host:port)")
+    set_config_parser.set_defaults(func=sub_set_config)
+    # Upload (new) index template
+    put_index_template_parser = subparsers.add_parser("put_index_template", help="upload (new) index template")
+    put_index_template_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
+    put_index_template_parser.set_defaults(func=sub_put_index_template)
+    # Get list of current indices matching our pattern
+    get_indices_parser = subparsers.add_parser("get_indices", help="get current indices")
+    get_indices_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
+    get_indices_parser.set_defaults(func=sub_get_indices)
+    # Delete indices for records older than a year
+    delete_stale_indices_parser = subparsers.add_parser("delete_stale_indices", help="delete older indices")
+    delete_stale_indices_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
+    delete_stale_indices_parser.set_defaults(func=sub_delete_stale_indices)
+    return parser
+
+
+def sub_get_config(args):
+    host, port = get_es_endpoint(env_type=args.env_type)
+    print("Found ES domain at '{}:{}'".format(host, port))
+
+
+def sub_set_config(args):
+    set_es_endpoint(args.env_type, args.bucket_name, args.endpoint)
+
+
+def sub_put_index_template(args):
+    host, port = get_es_endpoint(env_type=args.env_type)
+    es = connect_to_es(host, port, use_auth=False)
+    put_index_template(es)
+
+
+def sub_get_indices(args):
+    host, port = get_es_endpoint(env_type=args.env_type)
+    es = connect_to_es(host, port, use_auth=False)
+    current_names = get_current_indices(es)
+    active_names = frozenset(get_active_indices())
+    for name in current_names:
+        if name in active_names:
+            print("   ", name)
+        else:
+            print("** ", name)
+    if frozenset(current_names).difference(active_names):
+        print("Indices marked '**' should be deleted")
+
+
+def sub_delete_stale_indices(args):
+    raise NotImplementedError("left to the reader as an exercise")
 
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: {} env_type bucket_name endpoint")
-        exit(1)
-    prg_name, env_type, bucket_name, endpoint = sys.argv
-
-    # TODO Split these out into subcommands!
-
-    set_es_endpoint(env_type, bucket_name, endpoint)
-    host, port = get_es_endpoint(env_type=env_type)
-    print("Found ES domain at '{}:{}'".format(host, port))
-
-    es = connect_to_es(host, port, use_auth=False)
-    put_index_template(es)
-    get_indices(es)
-
-    # TODO Delete old indices
+    parser = build_parser()
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":

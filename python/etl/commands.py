@@ -126,7 +126,7 @@ def run_arg_as_command(my_name="arthur.py"):
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
                 args.pattern.base_schemas = [s.name for s in dw_config.schemas]
 
-            # TODO Remove dw_config and let subcommands handle it!
+            # TODO Remove dw_config and let sub-commands handle it!
             args.func(args, dw_config)
 
 
@@ -408,7 +408,7 @@ class SubCommand:
 
 class MonitoredSubCommand(SubCommand):
     """
-    A subcommand that will also use monitors to update some event table
+    A sub-command that will also use monitors to update some event table
     """
     def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         parser = super().add_to_parser(parent_parser)

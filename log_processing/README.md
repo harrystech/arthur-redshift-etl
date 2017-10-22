@@ -76,9 +76,8 @@ search_log 'finished successfully' s3://example-bucket/logs/example/StdError.gzi
 Need to pass in the "environment type" which comes from the VPC, like `dev`.
 Sets endpoint for env and also for bucket (so that lambda can use it).
 
-TODO -- currently there is only set (which also gets)
 ```shell
-config_log set_endpoint dev "your endpoint:443"
+config_log set_endpoint dev "your bucket" "your endpoint:443"
 config_log get_endpoint dev
 ```
 
@@ -101,10 +100,8 @@ upload_log dev s3://example/logs/df-pipeline-id/component/instance/attempt/StdEr
 
 ### Deleting older indices
 
-XXX TODO
-Should be called at least once a week.
-
 ```shell
+config_log put_index_template dev
 config_log list_indices dev
 config_log delete_old_indices dev
 ```
