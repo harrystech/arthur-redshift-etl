@@ -133,7 +133,7 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     """
     config = load_json('logging.json')
     if full_format:
-        config["formatters"]["console"]["format"] = config["formatters"]["file"]["format"]
+        config["formatters"]["console"] = dict(config["formatters"]["file"])
         config["handlers"]["console"]["level"] = logging.DEBUG
     elif log_level:
         config["handlers"]["console"]["level"] = log_level

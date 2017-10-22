@@ -38,7 +38,7 @@ _INDEX_FIELDS = {
         "timestamp": {"type": "date", "format": "strict_date_optional_time"},  # optional millis, actually
         "datetime": {
             "properties": {
-                "epoch_time": {"type": "long"},  # "format": "epoch_second"
+                "epoch_time": {"type": "long"},  # "format": "epoch_millis"
                 "year": {"type": "integer"},
                 "month": {"type": "integer"},
                 "day": {"type": "integer"},
@@ -98,12 +98,8 @@ _INDEX_FIELDS = {
 
 # Basic Regex to split up Arthur log lines
 _LOG_LINE_REGEX = """
-    # Start at beginning of a line
-    ^
-    # Look for date, e.g. 2017-06-09
-    (?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s
-    # Look for time (with optional milliseconds), e.g. 06:16:19,350
-    (?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:,(?P<millisecond>\d{3}))?\s
+    # Look for timestamp from beginning of line, e.g. 2017-06-09 06:16:19,350 (where msecs are optional)
+    ^(?P<timestamp>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:,(?P<milliseconds>\d{3}))?)\s
     # Look for ETL id, e.g. CD58E5D3C73E4D45
     (?P<etl_id>[0-9A-Z]{16})\s
     # Look for log level, e.g. INFO
@@ -123,6 +119,10 @@ class LogRecord(collections.UserDict):
     """
     Single "document" matching a log line.  Use .data for the dictionary, .id_ for a suitable _id.
     """
+
+    def __init__(self, d):
+        super().__init__(d)
+        self.__counter = collections.Counter()
 
     @property
     def id_(self):
@@ -146,23 +146,22 @@ class LogRecord(collections.UserDict):
         Copy values from regular expression match into appropriate positions.
         """
         values = match.groupdict()
-        values["millisecond"] = values["millisecond"] or "0"
-        for key in ("year", "month", "day", "hour", "minute", "second", "millisecond"):
-            values[key] = int(values[key])
-        timestamp = datetime.datetime(values["year"], values["month"], values["day"],
-                                      values["hour"], values["minute"], values["second"],
-                                      values["millisecond"] * 1000,
-                                      tzinfo=datetime.timezone.utc)
+        ts = values["timestamp"]
+        if values["milliseconds"] is None:
+            # Create pseudo-milliseconds so that log lines stay in order of logfile in Elasticsearch index.
+            self.__counter[ts] += 1
+            ts += ",{:03d}".format(self.__counter[ts])
+        timestamp = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S,%f").replace(tzinfo=datetime.timezone.utc)
         self.update({
             "timestamp": timestamp.isoformat(),  # Drops milliseconds if value is 0.
             "datetime": {
-                "epoch_time": calendar.timegm(timestamp.timetuple()) * 1000 + values["millisecond"],
-                "year": values["year"],
-                "month": values["month"],
-                "day": values["day"],
-                "hour": values["hour"],
-                "minute": values["minute"],
-                "second": values["second"]
+                "epoch_time": calendar.timegm(timestamp.timetuple()) * 1000 + timestamp.microsecond // 1000,
+                "year": timestamp.year,
+                "month": timestamp.month,
+                "day": timestamp.day,
+                "hour": timestamp.hour,
+                "minute": timestamp.minute,
+                "second": timestamp.second
             },
             "etl_id": values["etl_id"],
             "log_level": values["log_level"],
