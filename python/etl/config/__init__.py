@@ -7,6 +7,7 @@ We use "config" files to refer to all files that may reside in the "config" dire
 This module provides global access to settings.  Always treat them nicely and read-only.
 """
 
+import datetime
 import logging
 import logging.config
 import os
@@ -50,9 +51,11 @@ def get_dw_config():
 def get_config_value(name: str, default: Optional[str]=None) -> Optional[str]:
     """
     Lookup configuration value in known and flattened settings -- pass in a fully-qualified name
+
+    Note the side effect here: once accessed, the settings remember the default if it wasn't set before.
     """
     assert _mapped_config is not None, "attempted to get config value before reading config map"
-    return _mapped_config.get(name, default)
+    return _mapped_config.setdefault(name, default)
 
 
 def get_config_int(name: str, default: Optional[int]=None) -> int:
@@ -74,8 +77,8 @@ def set_config_value(name: str, value: str) -> None:
     """
     Set configuration value to given string.
     """
-    if _mapped_config is not None:
-        _mapped_config.setdefault(name, value)
+    assert _mapped_config is not None, "attempted to set config value before reading config map"
+    _mapped_config[name] = value
 
 
 def set_safe_config_value(name: str, value: str) -> None:
@@ -94,15 +97,16 @@ def get_config_map() -> Dict[str, str]:
     if _mapped_config is None:
         return {}
     else:
+        # Since the mapped config is flattened, we don't worry about a deep copy here.
         return dict(_mapped_config)
 
 
-def _flatten_hier(prefix, props):
+def _flatten_hierarchy(prefix, props):
     assert isinstance(props, dict), "oops, this should only be called with dicts, got {}".format(type(props))
     for key in sorted(props):
         full_key = "{}.{}".format(prefix, key)
         if isinstance(props[key], dict):
-            for sub_key, sub_prop in _flatten_hier(full_key, props[key]):
+            for sub_key, sub_prop in _flatten_hierarchy(full_key, props[key]):
                 yield sub_key, sub_prop
         else:
             yield full_key, props[key]
@@ -110,8 +114,9 @@ def _flatten_hier(prefix, props):
 
 def _build_config_map(settings):
     mapping = OrderedDict()
-    for section in {"arthur_settings", "object_store", "data_lake", "resources", "etl_events"}.intersection(settings):
-        for name, value in _flatten_hier(section, settings[section]):
+    # Load everything that is not explicitly handled by the data warehouse configuration
+    for section in frozenset(settings).difference({"data_warehouse", "sources", "type_maps"}):
+        for name, value in _flatten_hierarchy(section, settings[section]):
             mapping[name] = value
     return mapping
 
@@ -239,6 +244,12 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
         raise RuntimeError("Failed to find enough configuration files (need at least default and local config)")
 
     validate_with_schema(settings, "settings.schema")
+
+    # If 'today' and 'yesterday' are not set already, pick the actual values of "today" and "yesterday" (wrt UTC).
+    today = datetime.datetime.utcnow().date()
+    date_settings = settings.setdefault("date", {})
+    date_settings.setdefault("today", today.strftime("%Y/%m/%d"))  # Render date to look like part of a path
+    date_settings.setdefault("yesterday", (today - datetime.timedelta(days=1)).strftime("%Y/%m/%d"))
 
     global _mapped_config
     _mapped_config = _build_config_map(settings)

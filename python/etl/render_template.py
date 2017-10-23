@@ -54,6 +54,12 @@ def list_templates(compact=False) -> None:
 def render_from_config(template_string, context=None):
     try:
         config_mapping = etl.config.get_config_map()
+        # FIXME Remove code that serves backwards-compatibility once new settings files have been deployed
+        config_mapping.update({
+            "prefix": config_mapping["object_store.s3.prefix"],
+            "today": config_mapping["date.today"],
+            "yesterday": config_mapping["date.yesterday"]
+        })
         template = DottedNameTemplate(template_string)
         return template.substitute(config_mapping)
     except (KeyError, ValueError) as exc:

@@ -5,7 +5,6 @@ from typing import Dict, List
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
 from etl.relation import RelationDescription
-from etl.thyme import Thyme
 
 
 class StaticExtractor(Extractor):
@@ -23,8 +22,7 @@ class StaticExtractor(Extractor):
 
     @staticmethod
     def _current_location(source: DataWarehouseSchema, relation: RelationDescription):
-        rendered_template = Thyme.render_template(source.s3_path_template, {"prefix": relation.prefix})
-        return os.path.join(rendered_template, relation.csv_path_name)
+        return os.path.join(source.s3_path_prefix, relation.csv_path_name)
 
     @staticmethod
     def source_info(source: DataWarehouseSchema, relation: RelationDescription):

@@ -29,7 +29,6 @@ import etl.s3
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
 from etl.relation import RelationDescription
-from etl.thyme import Thyme
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -89,12 +88,12 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
 
 
 def unload_relation(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema,
-                    prefix: str, index: dict, allow_overwrite=False, dry_run=False) -> None:
+                    index: dict, allow_overwrite=False, dry_run=False) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
     # TODO Move the "{}-{}" logic into the TableFileSet
-    rendered_prefix = Thyme.render_template(schema.s3_unload_path_template, {"prefix": prefix})
+    rendered_prefix = schema.s3_unload_path_prefix
     schema_table_name = "{0.schema}-{0.table}".format(relation.target_table_name)
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
@@ -117,7 +116,7 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
             write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
-def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescription], prefix: str,
+def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescription],
                  allow_overwrite: bool, keep_going: bool, dry_run: bool) -> None:
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
@@ -144,7 +143,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
                 index = {"current": i+1, "final": len(relation_target_tuples)}
-                unload_relation(conn, relation, unload_schema, prefix, index,
+                unload_relation(conn, relation, unload_schema, index,
                                 allow_overwrite=allow_overwrite, dry_run=dry_run)
             except Exception as exc:
                 if keep_going:

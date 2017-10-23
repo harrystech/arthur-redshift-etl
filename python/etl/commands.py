@@ -116,6 +116,7 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
+                etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
                 # Create name used as prefix for resources, like DynamoDB tables or SNS topics
                 base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
                 etl.config.set_safe_config_value("resource_prefix", "{}-{}".format(base_env, args.prefix))
@@ -724,7 +725,7 @@ class UnloadDataToS3Command(MonitoredSubCommand):
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
-        etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
+        etl.unload.unload_to_s3(config, descriptions, allow_overwrite=args.force,
                                 keep_going=args.keep_going, dry_run=args.dry_run)
 
 

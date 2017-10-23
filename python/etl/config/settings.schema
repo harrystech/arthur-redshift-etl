@@ -44,7 +44,7 @@
         "path_template" : {
             "description": "'Templates' used in static sources to configure their effective prefix",
             "type": "string",
-            "pattern": "^[(\\w+/)|(\\${\\w+})]+$"
+            "pattern": "^(([a-zA-Z0-9_$-]+/?)|(\\${[.\\w]+})/?)+$"
         },
         "upstream_database": {
             "type": "object",
@@ -312,6 +312,14 @@
                 "write_capacity": { "type": "integer" }
             },
             "required": [ "enabled", "read_capacity", "write_capacity" ],
+            "additionalProperties": false
+        },
+        "date": {
+            "type": "object",
+            "properties": {
+                "today": { "type": "string" },
+                "yesterday": { "type": "string" }
+            },
             "additionalProperties": false
         }
     },

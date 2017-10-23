@@ -34,7 +34,6 @@ import etl.relation
 import etl.render_template
 import etl.s3
 import etl.sync
-import etl.thyme
 import etl.timer
 import etl.unload
 import etl.validate
