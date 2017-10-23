@@ -1,4 +1,4 @@
-Description: >
+Description: |
     Create the VPC for the Redshift data warehouse and its ETL.
 
 #    We use one public and one private subnet, an Internet Gateway, a service

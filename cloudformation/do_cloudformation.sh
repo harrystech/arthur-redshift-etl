@@ -6,30 +6,21 @@
 set -e -u
 
 SCRIPT=`basename $0 .sh`
-DW_VERB="${SCRIPT%%_*}"
-DW_OBJECT="${SCRIPT#*_}"
-DW_BASE_NAME="${DW_OBJECT//_/-}"
 
 if [[ "$SCRIPT" = "do_cloudformation" ]]; then
-    echo "You should be using one of the create, update, or delete scripts instead!"
-    exit 1
+    if [[ $# -lt 3 || "$1" = "-h" ]]; then
+        echo "Usage: `basename $0` 'verb' 'object' 'env' [...]"
+        exit 1
+    fi
+    DW_VERB="$1"
+    DW_OBJECT="$2"
+    shift 2
+else
+    # Action encoded in filename
+    DW_VERB="${SCRIPT%%_*}"
+    DW_OBJECT="${SCRIPT#*_}"
 fi
-
-BINDIR=`dirname $0`
-TEMPLATE_FILE="$BINDIR/$DW_OBJECT.yaml"
-case "$TEMPLATE_FILE" in
-    /*)
-      TEMPLATE_URI="file://$TEMPLATE_FILE"
-      ;;
-    *)
-      TEMPLATE_URI="file://./$TEMPLATE_FILE"
-      ;;
-esac
-
-if [[ ! -r "$TEMPLATE_FILE" ]]; then
-    echo "Cannot read $TEMPLATE_FILE -- you lost $DW_OBJECT.yaml?"
-    exit 1
-fi
+DW_BASE_NAME="${DW_OBJECT//_/-}"
 
 if [[ $# -lt 1 || "$1" = "-h" ]]; then
     cat <<EOF
@@ -40,6 +31,26 @@ All parameters will be passed to AWS CLI after transformation to "ParameterKey=K
 EOF
     exit 0
 fi
+
+BINDIR=`dirname $0`
+TEMPLATE_FILE="$DW_OBJECT.yaml"
+if [[ ! -r "$TEMPLATE_FILE" ]]; then
+    TEMPLATE_FILE="$BINDIR/$DW_OBJECT.yaml"
+    if [[ ! -r "$TEMPLATE_FILE" ]]; then
+        echo "Cannot find '$DW_OBJECT.yaml' in current directory or '$BINDIR' -- you lost it?"
+        exit 1
+    fi
+fi
+
+case "$TEMPLATE_FILE" in
+    /*)
+      TEMPLATE_URI="file://$TEMPLATE_FILE"
+      ;;
+    *)
+      TEMPLATE_URI="file://./$TEMPLATE_FILE"
+      ;;
+esac
+echo "Using CloudFormation file $TEMPLATE_URI"
 
 ENV_NAME="$1"
 STACK_NAME="${DW_BASE_NAME}-${ENV_NAME}"

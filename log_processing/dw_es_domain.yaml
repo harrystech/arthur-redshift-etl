@@ -1,0 +1,223 @@
+Description: |
+    Create Amazon Elasticsearch Service domain for log processing
+
+Parameters:
+
+    DomainName:
+        Description: (required) A name for the Amazon ES domain
+        Type: String
+
+    CodeS3Bucket:
+        Description: (required) S3 bucket name with deployment ZIP file
+        Type: String
+
+    CodeS3Key:
+        Description: (required) S3 object key with deployment ZIP file
+        Type: String
+
+    NodeStorageSize:
+        Description: (required) Size of the EBS volume, in GB, assigned to each node in the cluster
+        Type: Number
+        MinValue: 10
+        # For MaxValue, see http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/aes-limits.html
+
+    InstanceType:
+        Description: (optional) Elasticsearch node instance type for all nodes in the cluster
+        Type: String
+        Default: m4.large.elasticsearch
+        AllowedValues:
+            - t2.small.elasticsearch
+            - t2.medium.elasticsearch
+            - m4.large.elasticsearch
+            - m4.xlarge.elasticsearch
+            - m4.2xlarge.elasticsearch
+            - m4.4xlarge.elasticsearch
+            - c4.large.elasticsearch
+            - c4.xlarge.elasticsearch
+            - c4.2xlarge.elasticsearch
+            - c4.4xlarge.elasticsearch
+            - c4.8xlarge.elasticsearch
+            - r3.large.elasticsearch
+            - r3.xlarge.elasticsearch
+            - r3.2xlarge.elasticsearch
+            - r3.4xlarge.elasticsearch
+            - r3.8xlarge.elasticsearch
+            - r4.large.elasticsearch
+            - r4.xlarge.elasticsearch
+            - r4.2xlarge.elasticsearch
+            - r4.4xlarge.elasticsearch
+            - r4.8xlarge.elasticsearch
+            - i2.xlarge.elasticsearch
+            - i2.2xlarge.elasticsearch
+        Default: m4.large.elasticsearch
+
+    NodeCount:
+        Description: (optional) Number of nodes the cluster should contain
+        Type: Number
+        Default: 2
+        MinValue: 1
+
+    WhitelistCIDR1:
+        Description: (recommended) First IP range in CIDR notation that can access ES and Kibana
+        Type: String
+        Default: 0.0.0.0/0
+        MinLength: 9
+        MaxLength: 18
+        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+
+    WhitelistCIDR2:
+        Description: (recommended) Second IP range in CIDR notation that can access ES and Kibana
+        Type: String
+        Default: 0.0.0.0/0
+        MinLength: 9
+        MaxLength: 18
+        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+
+    WhitelistCIDR3:
+        Description: (recommended) Third IP range in CIDR notation that can access ES and Kibana
+        Type: String
+        Default: 0.0.0.0/0
+        MinLength: 9
+        MaxLength: 18
+        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+
+
+Conditions:
+
+    ValidNotAnythingWhitelistCIDR1:
+        !Not [ !Equals [ !Ref WhitelistCIDR1, "0.0.0.0/0" ] ]
+
+    ValidNotAnythingWhitelistCIDR2:
+        !Not [ !Equals [ !Ref WhitelistCIDR2, "0.0.0.0/0" ] ]
+
+    ValidNotAnythingWhitelistCIDR3:
+        !Not [ !Equals [ !Ref WhitelistCIDR3, "0.0.0.0/0" ] ]
+
+
+Resources:
+
+    LogParsingLambdaRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: "Allow"
+                      Principal:
+                          Service: "lambda.amazonaws.com"
+                      Action: "sts:AssumeRole"
+            Path: "/"
+            ManagedPolicyArns:
+                - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            Policies:
+                - PolicyName: "lambda_read_access"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action: "s3:GetObject"
+                            Resource: "arn:aws:s3:::*/*"
+                          - Effect: "Allow"
+                            Action: "ssm:GetParameter*"
+                            Resource: "arn:aws:ssm:*:*:parameter/DW-ETL/*"
+
+    LogParsingLambdaFunction:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: Parse ETL log files and index them in ES
+            Code:
+                S3Bucket: !Ref CodeS3Bucket
+                S3Key: !Ref CodeS3Key
+            Handler: etl_log_processing.upload.lambda_handler
+            Runtime: python3.6
+            MemorySize: 128
+            Timeout: 60
+            Role: !GetAtt LogParsingLambdaRole.Arn
+            Tags:
+                - Key: Name
+                  Value: !Sub "${DomainName}-lambda"
+                - Key: user:sub-project
+                  Value: es-cluster
+
+    LogParsingLambdaInvocation:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !Ref LogParsingLambdaFunction
+            Principal: "s3.amazonaws.com"
+            SourceAccount: !Ref "AWS::AccountId"
+            # FIXME Should be list of object store buckets
+            SourceArn: !Sub "arn:aws:s3:::${CodeS3Bucket}"
+
+    # S3BucketNotification:
+    #     Type: AWS::S3::Bucket
+    #     Properties:
+    #         # FIXME Should be list of object store buckets
+    #         BucketName: !Ref CodeS3Bucket
+    #         NotificationConfiguration:
+    #             LambdaConfigurations:
+    #                 - Function: !GetAtt LogParsingLambdaFunction.Arn
+    #                   Event: "s3:ObjectCreated:*"
+
+    # TODO: Create parameter to store endpoint, create alarm around errors in Lambda function
+
+    ElasticsearchDomain:
+        Type: "AWS::Elasticsearch::Domain"
+        Properties:
+            DomainName: !Ref DomainName
+            ElasticsearchVersion: "5.5"
+            ElasticsearchClusterConfig:
+                DedicatedMasterEnabled: false
+                InstanceCount: !Ref NodeCount
+                InstanceType: !Ref InstanceType
+                ZoneAwarenessEnabled: false
+            EBSOptions:
+                EBSEnabled: true
+                Iops: 0
+                VolumeSize: !Ref NodeStorageSize
+                VolumeType: "gp2"
+            SnapshotOptions:
+                AutomatedSnapshotStartHour: 22
+            AccessPolicies:
+                Version: "2012-10-17"
+                Statement:
+                    # Note that the lambda function MUST come before the IP restriction
+                    - Effect: "Allow"
+                      Action: "es:ESHttp*"
+                      Principal:
+                          AWS: !GetAtt LogParsingLambdaRole.Arn
+                      Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${DomainName}/*"
+                    - Effect: Allow
+                      Action: "es:ESHttp*"
+                      Principal:
+                          AWS: "*"
+                      Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${DomainName}/*"
+                      Condition:
+                          IpAddress:
+                              aws:SourceIp:
+                                  - !If [ ValidNotAnythingWhitelistCIDR1, !Ref "WhitelistCIDR1", !Ref "AWS::NoValue" ]
+                                  - !If [ ValidNotAnythingWhitelistCIDR2, !Ref "WhitelistCIDR2", !Ref "AWS::NoValue" ]
+                                  - !If [ ValidNotAnythingWhitelistCIDR3, !Ref "WhitelistCIDR3", !Ref "AWS::NoValue" ]
+            AdvancedOptions:
+                rest.action.multi.allow_explicit_index: true
+            Tags:
+                - Key: user:sub-project
+                  Value: es-cluster
+
+
+Outputs:
+
+    ESEndpoint:
+        Description: Endpoint for Elasticsearch clients
+        Value: !Sub "${ElasticsearchDomain.DomainEndpoint}:443"
+
+    LambdaFunction:
+        Description: Function that processes and indexes log files
+        Value: !GetAtt LogParsingLambdaRole.Arn
+
+    LambdaCode:
+        Description: Location of installed code
+        Value: !Sub "s3://${CodeS3Bucket}/${CodeS3Key}"

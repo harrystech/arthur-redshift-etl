@@ -92,7 +92,7 @@ def main():
     query = str(sys.argv[1])
     processed = load_records(sys.argv[2:])
     matched = filter(partial(filter_record, query), processed)
-    for record in sorted(matched, key=lambda r: r["datetime"]["epoch_time"]):
+    for record in sorted(matched, key=lambda r: r["datetime"]["epoch_millis"]):
         print_message(record)
 
 

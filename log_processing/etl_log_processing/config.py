@@ -117,7 +117,7 @@ def put_index_template(client):
             "number_of_replicas": 1
         },
         "mappings": {
-            LOG_DOC_TYPE: parse.LogParser.index_fields()
+            LOG_DOC_TYPE: parse.LogRecord.index_fields()
         }
     }
     print("Updating index template '{}' (doc_type={}, version={})".format(template_id, LOG_DOC_TYPE, version))
@@ -142,15 +142,15 @@ def build_parser():
     parser.set_defaults(func=None)
     subparsers = parser.add_subparsers()
     # Retrieve current configuration
-    get_config_parser = subparsers.add_parser("get_config", help="get configuration values")
+    get_config_parser = subparsers.add_parser("get_endpoint", help="get endpoint by env type")
     get_config_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
-    get_config_parser.set_defaults(func=sub_get_config)
+    get_config_parser.set_defaults(func=sub_get_endpoint)
     # Set new configuration
-    set_config_parser = subparsers.add_parser("set_config", help="set configuration values")
+    set_config_parser = subparsers.add_parser("set_endpoint", help="set endpoint for env type and bucket")
     set_config_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
     set_config_parser.add_argument("bucket_name", help="name of S3 bucket with log files")
     set_config_parser.add_argument("endpoint", help="endpoint for Elasticsearch service (host:port)")
-    set_config_parser.set_defaults(func=sub_set_config)
+    set_config_parser.set_defaults(func=sub_set_endpoint)
     # Upload (new) index template
     put_index_template_parser = subparsers.add_parser("put_index_template", help="upload (new) index template")
     put_index_template_parser.add_argument("env_type", help="environment type (like 'dev' or 'prod')")
@@ -166,12 +166,12 @@ def build_parser():
     return parser
 
 
-def sub_get_config(args):
+def sub_get_endpoint(args):
     host, port = get_es_endpoint(env_type=args.env_type)
     print("Found ES domain at '{}:{}'".format(host, port))
 
 
-def sub_set_config(args):
+def sub_set_endpoint(args):
     set_es_endpoint(args.env_type, args.bucket_name, args.endpoint)
 
 

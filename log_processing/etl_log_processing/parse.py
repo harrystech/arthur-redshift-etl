@@ -13,114 +13,105 @@ import json
 import re
 import textwrap
 
-_INDEX_FIELDS = {
-    "properties": {
-        "application": {"type": "keyword"},
-        "environment": {"type": "keyword"},
-        "logfile": {
-            "type": "keyword",
-            "include_in_all": False  # too many double matches after pulling out the interesting values from the name
-        },
-        "data_pipeline": {
-            "properties": {
-                "id": {"type": "keyword"},
-                "component": {"type": "keyword"},
-                "instance": {"type": "keyword"},
-                "attempt": {"type": "keyword"}
-            }
-        },
-        "emr_cluster": {
-            "properties": {
-                "id": {"type": "keyword"},
-                "step_id": {"type": "keyword"}
-            }
-        },
-        "timestamp": {"type": "date", "format": "strict_date_optional_time"},  # optional millis, actually
-        "datetime": {
-            "properties": {
-                "epoch_millis": {"type": "long"},
-                "date": {"type": "date", "format": "strict_date"},   # used to select index during upload
-                "year": {"type": "integer"},
-                "month": {"type": "integer"},
-                "day": {"type": "integer"},
-                "hour": {"type": "integer"},
-                "minute": {"type": "integer"},
-                "second": {"type": "integer"}
-            },
-        },
-        "etl_id": {"type": "keyword"},
-        "log_level": {"type": "keyword"},
-        "logger": {
-            "type": "text",
-            "analyzer": "simple",
-            "fields": {
-                "name": {
-                    "type": "keyword"
-                }
-            }
-        },
-        "thread_name": {"type": "keyword"},
-        "source_code": {
-            "properties": {
-                "filename": {"type": "string"},
-                "line_number": {"type": "integer"},
-            }
-        },
-        "message": {
-            "type": "text",
-            "analyzer": "standard",
-            "fields": {
-                "raw": {
-                    "type": "keyword"
-                },
-                "english": {
-                    "type": "text",
-                    "analyzer": "english"
-                }
-            }
-        },
-        "monitor": {
-            "properties": {
-                "id": {"type": "keyword"},
-                "step": {"type": "keyword"},
-                "event": {"type": "keyword"},
-                "target": {"type": "keyword"},
-                "elapsed": {"type": "float"}
-            }
-        },
-        "parser": {
-            "properties": {
-                "start_pos": {"type": "long"},
-                "end_pos": {"type": "long"},
-                "chars": {"type": "long"}
-            },
-        }
-    }
-}
 
-# Basic Regex to split up Arthur log lines
-_LOG_LINE_REGEX = """
-    # Look for timestamp from beginning of line, e.g. 2017-06-09 06:16:19,350 (where msecs are optional)
-    ^(?P<timestamp>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:,(?P<milliseconds>\d{3}))?)\s
-    # Look for ETL id, e.g. CD58E5D3C73E4D45
-    (?P<etl_id>[0-9A-Z]{16})\s
-    # Look for log level, e.g. INFO
-    (?P<log_level>[A-Z]+)\s
-    # Look for logger, e.g. etl.config
-    (?P<logger>\w[.\w]+)\s
-    # Look for thread name, e.g. (MainThread)
-    \((?P<thread_name>[^)]+)\)\s
-    # Look for file name and line number, e.g. [__init__.py:90]
-    \[(?P<filename>[^:]+):(?P<line_number>\d+)\]\s
-    # Now grab the rest as message
-    (?P<message>.*)$
-    """
+class NoRecordsFoundError(Exception):
+    pass
 
 
 class LogRecord(collections.UserDict):
     """
     Single "document" matching a log line.  Use .data for the dictionary, .id_ for a suitable _id.
     """
+
+    _INDEX_FIELDS = {
+        "properties": {
+            "application": {"type": "keyword"},
+            "environment": {"type": "keyword"},
+            "logfile": {
+                "type": "keyword",
+                "include_in_all": False
+                # too many double matches after pulling out the interesting values from the name
+            },
+            "data_pipeline": {
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "component": {"type": "keyword"},
+                    "instance": {"type": "keyword"},
+                    "attempt": {"type": "keyword"}
+                }
+            },
+            "emr_cluster": {
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "step_id": {"type": "keyword"}
+                }
+            },
+            "timestamp": {"type": "date", "format": "strict_date_optional_time"},  # optional millis, actually
+            "datetime": {
+                "properties": {
+                    "epoch_millis": {"type": "long"},
+                    "date": {"type": "date", "format": "strict_date"},  # used to select index during upload
+                    "year": {"type": "integer"},
+                    "month": {"type": "integer"},
+                    "day": {"type": "integer"},
+                    "hour": {"type": "integer"},
+                    "minute": {"type": "integer"},
+                    "second": {"type": "integer"}
+                },
+            },
+            "etl_id": {"type": "keyword"},
+            "log_level": {"type": "keyword"},
+            "logger": {
+                "type": "text",
+                "analyzer": "simple",
+                "fields": {
+                    "name": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "thread_name": {"type": "keyword"},
+            "source_code": {
+                "properties": {
+                    "filename": {"type": "string"},
+                    "line_number": {"type": "integer"},
+                }
+            },
+            "message": {
+                "type": "text",
+                "analyzer": "standard",
+                "fields": {
+                    "raw": {
+                        "type": "keyword"
+                    },
+                    "english": {
+                        "type": "text",
+                        "analyzer": "english"
+                    }
+                }
+            },
+            "monitor": {
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "step": {"type": "keyword"},
+                    "event": {"type": "keyword"},
+                    "target": {"type": "keyword"},
+                    "elapsed": {"type": "float"}
+                }
+            },
+            "parser": {
+                "properties": {
+                    "start_pos": {"type": "long"},
+                    "end_pos": {"type": "long"},
+                    "chars": {"type": "long"}
+                },
+            }
+        }
+    }
+
+    @staticmethod
+    def index_fields():
+        return copy.deepcopy(LogRecord._INDEX_FIELDS)
 
     def __init__(self, d):
         super().__init__(d)
@@ -213,9 +204,23 @@ class LogRecord(collections.UserDict):
 
 class LogParser:
 
-    @staticmethod
-    def index_fields():
-        return copy.deepcopy(_INDEX_FIELDS)
+    # Basic Regex to split up Arthur log lines
+    _LOG_LINE_REGEX = """
+        # Look for timestamp from beginning of line, e.g. 2017-06-09 06:16:19,350 (where msecs are optional)
+        ^(?P<timestamp>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:,(?P<milliseconds>\d{3}))?)\s
+        # Look for ETL id, e.g. CD58E5D3C73E4D45
+        (?P<etl_id>[0-9A-Z]{16})\s
+        # Look for log level, e.g. INFO
+        (?P<log_level>[A-Z]+)\s
+        # Look for logger, e.g. etl.config
+        (?P<logger>\w[.\w]+)\s
+        # Look for thread name, e.g. (MainThread)
+        \((?P<thread_name>[^)]+)\)\s
+        # Look for file name and line number, e.g. [__init__.py:90]
+        \[(?P<filename>[^:]+):(?P<line_number>\d+)\]\s
+        # Now grab the rest as message
+        (?P<message>.*)$
+        """
 
     def __init__(self, logfile):
         logfile = str(logfile)
@@ -233,7 +238,7 @@ class LogParser:
             self.shared_info["data_pipeline"] = data_pipeline
         if emr_cluster:
             self.shared_info["emr_cluster"] = emr_cluster
-        self._log_line_re = re.compile(_LOG_LINE_REGEX, re.VERBOSE | re.MULTILINE)
+        self._log_line_re = re.compile(LogParser._LOG_LINE_REGEX, re.VERBOSE | re.MULTILINE)
 
     def extract_data_pipeline_information(self):
         """
@@ -304,7 +309,7 @@ class LogParser:
             yield record
 
         if record is None:
-            raise ValueError("found no records")
+            raise NoRecordsFoundError("found no records")
 
 
 def create_example_records():
@@ -328,6 +333,7 @@ def create_example_records():
 def main():
     for record in create_example_records():
         print(record)
+
 
 if __name__ == "__main__":
     main()

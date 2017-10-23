@@ -24,11 +24,12 @@ if [[ ! -d "$VENV_NAME" || ! -f "$VENV_NAME/bin/activate" ]]; then
 fi
 
 set +e +x
+deactivate || echo "failed to deactivate previous virtual env (OK)"
 echo source "$VENV_NAME/bin/activate"
 source "$VENV_NAME/bin/activate"
 
 set -e -x
-ZIP_FILE="$PWD/lambda-$VENV_NAME.zip"
+ZIP_FILE="$PWD/log_processing_`date +%Y%m%d%H%M`.zip"
 test -f "$ZIP_FILE" && \rm "$ZIP_FILE"
 
 (
@@ -46,4 +47,4 @@ zip -qru "$ZIP_FILE" etl_log_processing/*.py
 
 set +x
 echo
-echo "Created $ZIP_FILE"
+echo "Created '$ZIP_FILE'"

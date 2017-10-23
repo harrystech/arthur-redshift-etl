@@ -8,55 +8,113 @@ for some key metrics of the ETL, like
     * Number of warnings or errors
 and to just more quickly get to the error message from validation pipelines.
 
-## Setup and Requirements
+# Requirements
 
-### Amazon Elasticsearch Service Domains
+## Amazon Elasticsearch Service Domains
 
-You have to have an Elasticsearch sercie running.
+You have to have an Elasticsearch service running.
 For more information about Elasticsearch in AWS, see [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
-See the cloudformation directory for an example setup.
 
 The `config_log` utility is used to store the endpoint address in the parameter store.
 
 See https://aws.amazon.com/blogs/security/how-to-control-access-to-your-amazon-elasticsearch-service-domain/
 
-### Lambda Permissions
+# Installation
 
-To use the lambda function to automatically upload to ES any log files that show up in S3,
-you will have to create a new role to use with the lambda.
-
-The role must have these permissions:
-* `AWSLambdaBasicExecutionRole`
-* Read permissions for your S3 bucket
-* Write permissions for your ES domain
-
-TODO Create role automatically, `temp-log-parser`, add to config
-
-
-## Installation
+## Lambda
 
 This code uses Python 3. See the [toplevel INSTALL](../INSTALL.md) for general installation instructions.
 
 In order to run this code locally or to upload it as a lambda function, you have to have a
 virtual environment setup:
 ```shell
-./install_packages.sh venv
+./update_env.sh venv
 ```
 
-It is not necessary to activate the virtual environment to run the scripts shown below.
+To deploy the lambda function, create a package
+```shell
+./create_deployment.sh venv
+```
 
-## Testing
+You need to upload the latest package to S3 in order to use it in the CloudFormation step:
+```
+aws s3 cp log_processing_*.zip s3://<your code bucket>/lambda/
+```
+
+## CloudFormation
+
+You can use the included [`dw_es_domain.yaml`](log_processing/dw_es_domain.yaml) file
+to bring up a ES domain along with a Lambda function to load log files.
+
+```
+../cloudformation/do_cloudformation.sh create dw_es_domain dev DomainName=dw-es-dev \
+    CodeS3Bucket="<your code bucket>" CodeS3Key="<your latest zip file>" \
+    NodeStorageSize=20 WhitelistCIDR1=192.168.1.1/32
+```
+Replace the IP address with your actual office IP address.
+
+If you need to update the stack, modify this line appropriately:
+```
+../cloudformation/do_cloudformation.sh update dw_es_domain dev DomainName=UsePreviousValue \
+    CodeS3Bucket=UsePreviousValue CodeS3Key=UsePreviousValue \
+    NodeStorageSize=UsePreviousValue WhitelistCIDR1=UsePreviousValue
+```
+Remember that once you have set an optional parameter, you have to at least pass in that parameter
+with `=UserPreviousValue` or it reverts to its default.
+
+## Configuration
+
+### S3 lambda notification
+
+Since the bucket for log files is not part of the CloudFormation template, we have to manually add the trigger:
+```
+aws s3api put-bucket-notification-configuration --bucket "<your bucket>" --notification-configuration \
+  '{"LambdaFunctionConfigurations":[{ "LambdaFunctionArn":"<your function arn>","Events":["s3:ObjectCreated:*"]}]}'
+```
+
+**Note** If you use S3 notifications on this bucket for something else, you must add them since the
+notification configuration will be replaced.
+
+### ES Endpoint
+
+Need to pass in the "environment type" which comes from the VPC, like `dev`.
+Sets endpoint for env and also for bucket (so that lambda can use it).
+(The endpoint used here is an output of the CloudFormation stack.)
+
+```shell
+config_log set_endpoint dev "your bucket" "your endpoint:443"
+config_log get_endpoint dev
+```
+
+### Index template
+
+You need to upload the index template:
+
+```shell
+config_log put_index_template dev
+```
+
+In Kibana, add `dw-etl-logs-*`
+
+## Deleting older indices
+
+```shell
+config_log list_indices dev
+config_log delete_old_indices dev
+```
+
+# Testing
 
 The individual steps (parsing, compiling, uploading) can be tested locally.
 
-### Parsing example log lines
+## Parsing example log lines
 
 You should be able to run the self-test of the parser:
 ```shell
 show_log_examples
 ```
 
-### Searching files locally
+## Searching files locally
 
 In order to test the basic functionality or as a quick check across a number of log files,
 you can "search" files which will search against the ETL ID, log level and message of every log record.
@@ -71,21 +129,9 @@ search_log FD1B9A50D12C41C3 ../arthur.log*
 search_log 'finished successfully' s3://example-bucket/logs/example/StdError.gzip
 ```
 
-### Configure endpoints
+## Uploading log records from files manually
 
-Need to pass in the "environment type" which comes from the VPC, like `dev`.
-Sets endpoint for env and also for bucket (so that lambda can use it).
-
-```shell
-config_log set_endpoint dev "your bucket" "your endpoint:443"
-config_log get_endpoint dev
-```
-
-### Uploading log records from files manually
-
-To leverage your Elasticsearch service domain, have the log records indexed.
-
-Need to pass in the "environment type" which comes from the VPC, like `dev`,
+You need to pass in the "environment type" which comes from the VPC, like `dev`,
 so that the endpoint address can be looked up in the parameter store.
 
 Example:
@@ -97,37 +143,3 @@ upload_log dev ../arthur.log
 # remote files
 upload_log dev s3://example/logs/df-pipeline-id/component/instance/attempt/StdError.gzip
 ```
-
-### Deleting older indices
-
-```shell
-config_log put_index_template dev
-config_log list_indices dev
-config_log delete_old_indices dev
-```
-
-## Automatic upload from S3
-
-When the ETL is scheduled through the data pipeline, log files are automatically uploaded to S3.
-We take advantage of this to trigger Lambda functions that parse the new log files and
-add the log records to an ES domain.
-
-### Create lambda and configure trigger
-
-#### Create the deployment package
-
-```
-./create_deployment.sh venv
-```
-
-#### Create or update the Lambda function
-
-* Upload zip file just created.
-* Set handler to `etl_log_processing.upload.lambda_handler`
-* Set tags for `user:project` to `data-warehouse`
-
-#### Trigger
-
-Set a trigger to have an S3 `PUT` call the Lambda function ("object created")
-
-
