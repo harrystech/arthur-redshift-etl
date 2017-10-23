@@ -26,9 +26,8 @@ def load_records(sources):
                 yield record
         else:
             if source.startswith("s3://"):
-                for full_name in list_files(source):
-                    for record in _load_records_using(load_remote_content, full_name):
-                        yield record
+                for record in load_remote_records(source):
+                    yield record
             else:
                 for record in _load_records_using(load_local_content, source):
                     yield record
@@ -57,15 +56,11 @@ def load_local_content(filename):
     return lines
 
 
-def _split_uri_for_s3(uri):
+def load_remote_content(uri):
     split_result = urllib.parse.urlsplit(uri)
     if split_result.scheme != "s3":
         raise ValueError("scheme {} not supported".format(split_result.scheme))
-    return split_result.netloc, split_result.path.lstrip('/')
-
-
-def load_remote_content(uri):
-    bucket_name, object_key = _split_uri_for_s3(uri)
+    bucket_name, object_key = split_result.netloc, split_result.path.lstrip('/')
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(bucket_name)
     obj = bucket.Object(object_key)
@@ -76,14 +71,6 @@ def load_remote_content(uri):
     else:
         lines = response.read().decode()
     return lines
-
-
-def list_files(uri):
-    bucket_name, prefix = _split_uri_for_s3(uri)
-    s3 = boto3.resource("s3")
-    bucket = s3.Bucket(bucket_name)
-    for summary in bucket.objects.filter(Prefix=prefix):
-        yield "s3://{}/{}".format(summary.bucket_name, summary.key)
 
 
 def print_message(record):

@@ -1,11 +1,12 @@
 # Overview
 
 The goal of the log processing is to make the logs from Arthur ETLs
-available in Kibana (via Elasticsearch) in order to have dashboards
+available in Kibana (via an Elasticsearch Service) in order to have dashboards
 for some key metrics of the ETL, like
     * Top N sources that take the most time to extract
     * Top N relations that take the most time to load
     * Number of warnings or errors
+and to just more quickly get to the error message from validation pipelines.
 
 ## Setup and Requirements
 
@@ -15,12 +16,13 @@ You have to have an Elasticsearch sercie running.
 For more information about Elasticsearch in AWS, see [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
 See the cloudformation directory for an example setup.
 
-You will have to use the configure option to store the endpoint address in the
-parameter store.
+The `config_log` utility is used to store the endpoint address in the parameter store.
+
+See https://aws.amazon.com/blogs/security/how-to-control-access-to-your-amazon-elasticsearch-service-domain/
 
 ### Lambda Permissions
 
-To use the lambda function to automatically upload to ES any log files to show up in S3,
+To use the lambda function to automatically upload to ES any log files that show up in S3,
 you will have to create a new role to use with the lambda.
 
 The role must have these permissions:
@@ -33,7 +35,7 @@ TODO Create role automatically, `temp-log-parser`, add to config
 
 ## Installation
 
-This code uses Python 3. See the [toplevel README](../README.md) for installation instructions.
+This code uses Python 3. See the [toplevel INSTALL](../INSTALL.md) for general installation instructions.
 
 In order to run this code locally or to upload it as a lambda function, you have to have a
 virtual environment setup:
@@ -65,19 +67,17 @@ Examples:
 search_log ERROR examples
 # local files
 search_log FD1B9A50D12C41C3 ../arthur.log*
-# remote files (specified by prefix)
-search_log 'finished successfully' s3://example-bucket/logs/
+# remote files
+search_log 'finished successfully' s3://example-bucket/logs/example/StdError.gzip
 ```
 
 ### Configure endpoints
-
-XXX todo
 
 Need to pass in the "environment type" which comes from the VPC, like `dev`.
 Sets endpoint for env and also for bucket (so that lambda can use it).
 
 ```shell
-config_log set_endpoint dev "your endpoint:443"
+config_log set_endpoint dev "your bucket" "your endpoint:443"
 config_log get_endpoint dev
 ```
 
@@ -85,7 +85,8 @@ config_log get_endpoint dev
 
 To leverage your Elasticsearch service domain, have the log records indexed.
 
-Need to pass in the "environment type" which comes from the VPC, like `dev`.
+Need to pass in the "environment type" which comes from the VPC, like `dev`,
+so that the endpoint address can be looked up in the parameter store.
 
 Example:
 ```shell
@@ -93,16 +94,14 @@ Example:
 upload_log dev examples
 # local files
 upload_log dev ../arthur.log
-# remote files (specified by prefix)
-upload_log dev s3://example/logs/df-pipeline-id
+# remote files
+upload_log dev s3://example/logs/df-pipeline-id/component/instance/attempt/StdError.gzip
 ```
 
 ### Deleting older indices
 
-XXX todo
-Should be called at least once a week.
-
 ```shell
+config_log put_index_template dev
 config_log list_indices dev
 config_log delete_old_indices dev
 ```
@@ -132,4 +131,3 @@ add the log records to an ES domain.
 Set a trigger to have an S3 `PUT` call the Lambda function ("object created")
 
 
-See https://aws.amazon.com/blogs/security/how-to-control-access-to-your-amazon-elasticsearch-service-domain/

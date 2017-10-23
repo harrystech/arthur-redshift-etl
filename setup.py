@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 setup(
     name="redshift_etl",
     version="1.5.0",
-    author="Harry's Data Engineering and Contributors",
+    author="Harry's Data Engineering and Analytics Engineering",
     description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
     license="MIT",
     keywords="redshift postgresql ETL ELT extract transform load",
