@@ -98,6 +98,7 @@ if [[ "$RUNNING_LOCAL" = "no" ]]; then
     TMP_DOCUMENT="$PROJ_TEMP/document"
     trap "rm -f '$TMP_DOCUMENT'" EXIT
     curl --silent --show-error http://169.254.169.254/latest/dynamic/instance-identity/document | tee "$TMP_DOCUMENT"
+    echo
     INSTANCE_ID=`jq -r ".instanceId" "$TMP_DOCUMENT"`
     REGION=`jq -r ".region" "$TMP_DOCUMENT"`
     JOB_FLOW_ID=$( aws ec2 describe-tags --region "$REGION" \
