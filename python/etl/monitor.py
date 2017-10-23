@@ -26,6 +26,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
+from operator import itemgetter
 from typing import List, Optional
 
 import boto3
@@ -47,7 +48,7 @@ logger.addHandler(logging.NullHandler())
 STEP_START = "start"
 STEP_FINISH = "finish"
 STEP_FAIL = "fail"
-STEP_EVENTS = [STEP_START, STEP_FINISH, STEP_FAIL]
+_DUMMY_TARGET = "#.dummy"
 
 
 def trace_key():
@@ -117,7 +118,7 @@ class Monitor(metaclass=MetaMonitor):
         step: command that is running, like 'dump', or 'load'
 
     The payloads will have at least the properties of the Monitor instance and:
-        event: one of STEP_EVENTS ('start', 'finish', 'fail')
+        event: one of ('start', 'finish', 'fail')
         timestamp: UTC timestamp
 
     In case of errors, they are added as an array 'errors'.  It is also possible to send
@@ -214,6 +215,11 @@ class Monitor(metaclass=MetaMonitor):
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
 
+    @classmethod
+    def marker_payload(cls, step: str):
+        monitor = cls(_DUMMY_TARGET, step)
+        return MonitorPayload(monitor, STEP_FINISH, utc_now(), elapsed=0, extra={"is_marker": True})
+
 
 class MonitorPayload:
     """
@@ -273,6 +279,14 @@ class DynamoDBStorage(PayloadDispatcher):
     Note the table is created if it doesn't already exist when class is instantiated.
     """
 
+    @staticmethod
+    def factory() -> "DynamoDBStorage":
+        table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
+        return DynamoDBStorage(table_name,
+                               etl.config.get_config_value("etl_events.read_capacity"),
+                               etl.config.get_config_value("etl_events.write_capacity"),
+                               etl.config.get_config_value("resources.VPC.region"))
+
     def __init__(self, table_name, read_capacity, write_capacity, region_name):
         self.table_name = table_name
         self.initial_read_capacity = read_capacity
@@ -281,7 +295,7 @@ class DynamoDBStorage(PayloadDispatcher):
         # Avoid default sessions and have one table reference per thread
         self._thread_local_table = threading.local()
 
-    def _get_table(self):
+    def get_table(self, create_if_not_exists=True):
         """
         Fetch table or create it (within a new session)
         """
@@ -298,6 +312,8 @@ class DynamoDBStorage(PayloadDispatcher):
             # Nullify assignment and start over
             table = None
             status = None
+        if not (status == "ACTIVE" or create_if_not_exists):
+            raise ETLRuntimeError("DynamoDB table '%s' does not exist or is not active" % self.table_name)
         if table is None:
             logger.info("Creating DynamoDB table: '%s'", self.table_name)
             table = dynamodb.create_table(
@@ -331,7 +347,7 @@ class DynamoDBStorage(PayloadDispatcher):
         try:
             table = getattr(self._thread_local_table, 'table', None)
             if not table:
-                table = self._get_table()
+                table = self.get_table()
                 setattr(self._thread_local_table, 'table', table)
             item = dict(payload)
             # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
@@ -343,7 +359,7 @@ class DynamoDBStorage(PayloadDispatcher):
         except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
-                logger.exception("Trying to store payload a second time after this mishap:")
+                logger.warning("Trying to store payload a second time after this mishap:", exc_info=True)
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
                 time.sleep(delay)
@@ -384,9 +400,10 @@ class MemoryStorage(PayloadDispatcher):
         try:
             while True:
                 payload = self.queue.get_nowait()
-                # Overwrite earlier events by later ones
-                key = payload["target"], payload["step"]
-                self.events[key] = payload
+                if not payload.get("extra", {}).get("is_marker", False):
+                    # Overwrite earlier events by later ones
+                    key = payload["target"], payload["step"]
+                    self.events[key] = payload
         except queue.Empty:
             pass
 
@@ -512,39 +529,91 @@ def start_monitors(environment):
     MonitorPayload.dispatchers.append(memory)
 
     if etl.config.get_config_value("etl_events.enabled"):
-        table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
-        ddb = DynamoDBStorage(table_name,
-                              etl.config.get_config_value("etl_events.read_capacity"),
-                              etl.config.get_config_value("etl_events.write_capacity"),
-                              etl.config.get_config_value("resources.VPC.region"))
+        ddb = DynamoDBStorage.factory()
         MonitorPayload.dispatchers.append(ddb)
     else:
         logger.warning("Writing events to a DynamoDB table is disabled in settings.")
 
 
-def query_for(target_list):
-    logger.warning("This is a bit experimental (good day) and temperamental (bad day)")
-    # TODO refactor with start_monitors
-    table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
-    ddb = DynamoDBStorage(table_name,
-                          etl.config.get_config_value("etl_events.read_capacity"),
-                          etl.config.get_config_value("etl_events.write_capacity"),
-                          etl.config.get_config_value("resources.VPC.region"))
-    table = ddb._get_table()
+def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
+    start_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago)
+    epoch_seconds = timegm(start_time.utctimetuple())
+    ddb = DynamoDBStorage.factory()
+    table = ddb.get_table(create_if_not_exists=False)
+    keys = ["etl_id", "step", "timestamp"]
+    response = table.query(
+        ConsistentRead=True,
+        ExpressionAttributeNames={
+            "#timestamp": "timestamp"  # "timestamp" is a reserved word. You're welcome.
+        },
+        ExpressionAttributeValues={
+            ":marker": _DUMMY_TARGET,
+            ":epoch_seconds": epoch_seconds,
+            ":event": STEP_START
+        },
+        KeyConditionExpression="target = :marker and #timestamp > :epoch_seconds",
+        FilterExpression="event <> :event",
+        ProjectionExpression="etl_id, step, #timestamp",  # matches keys with substitution of keywords
+        ReturnConsumedCapacity="TOTAL"
+    )
+    if 'LastEvaluatedKey' in response:
+        logger.warning("This is is a partial result! Last evaluated key: '%s'", response['LastEvaluatedKey'])
 
-    recent_cutoff = datetime.utcnow() - timedelta(days=5)
-    cutoff_epoch = timegm(recent_cutoff.utctimetuple())
-    for relation in target_list._patterns:
-        res = table.query(
-            ConsistentRead=True,
-            KeyConditionExpression="target = :table and #ts > :dt",
-            FilterExpression="event <> :event",
-            ExpressionAttributeNames={"#ts": "timestamp"},
-            ExpressionAttributeValues={":dt": cutoff_epoch, ":table": relation.identifier, ":event": STEP_START}
-        )
-        print("Count: {:d} (Scanned count: {:d})".format(res['Count'], res['ScannedCount']))
-        for item in res['Items']:
-            print(json.dumps(item, sort_keys=True, cls=FancyJsonEncoder))
+    logger.info("Query result: count = %d, scanned count = %d, consumed capacity = %f",
+                response['Count'], response['ScannedCount'], response['ConsumedCapacity']['CapacityUnits'])
+    rows = [
+        [
+            # Make timestamp readable by turning epoch seconds into a date.
+            item[key] if key != "timestamp" else datetime.utcfromtimestamp(item[key]).isoformat()
+            for key in keys
+        ]
+        for item in response['Items']
+    ]
+    rows.sort(key=itemgetter(keys.index("timestamp")))
+    print(etl.text.format_lines(rows, header_row=keys))
+
+
+def scan_etl_events(etl_id) -> None:
+    ddb = DynamoDBStorage.factory()
+    table = ddb.get_table(create_if_not_exists=False)
+    keys = ["target", "step", "event", "timestamp", "elapsed"]
+
+    # The paginator operates on the client not resource. So open a client and start iterating.
+    client = boto3.client('dynamodb')
+    paginator = client.get_paginator('scan')
+    response_iterator = paginator.paginate(
+        TableName=table.name,
+        ConsistentRead=False,
+        ExpressionAttributeNames={
+            "#timestamp": "timestamp"
+        },
+        ExpressionAttributeValues={
+            ":etl_id": {"S": etl_id},
+            ":marker": {"S": _DUMMY_TARGET},
+            ":event": {"S": STEP_START}
+        },
+        FilterExpression="etl_id = :etl_id and target <> :marker and event <> :event",
+        ProjectionExpression="target, step, event, #timestamp, elapsed",
+        ReturnConsumedCapacity="TOTAL",
+        PaginationConfig={
+            "PageSize": 100  # arbitrary guess
+        }
+    )
+    consumed_capacity = .0
+    scanned_count = 0
+    rows = []
+    for response in response_iterator:
+        consumed_capacity += response['ConsumedCapacity']['CapacityUnits']
+        scanned_count += response['ScannedCount']
+        rows.extend([
+            [
+                item[key].get('S', item[key].get('N')) for key in keys
+            ]
+            for item in response['Items']
+        ])
+    logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
+    rows.sort(key=itemgetter(keys.index("timestamp")))
+    print(etl.text.format_lines(rows, header_row=keys))
 
 
 def test_run():

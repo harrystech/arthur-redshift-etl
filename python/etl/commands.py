@@ -271,7 +271,7 @@ def build_full_parser(prog_name):
             ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
             # Environment commands
             RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
-            EventsQueryCommand,
+            QueryEventsCommand,
             # Development commands
             SelfTestCommand]:
         cmd = klass()
@@ -614,6 +614,7 @@ class ExtractToS3Command(MonitoredSubCommand):
 
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
                                                        required_relation_selector=config.required_in_full_load_selector)
+        etl.monitor.Monitor.marker_payload("extract").emit(dry_run=args.dry_run)
         etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
                                              max_partitions=max_partitions,
                                              use_sampling=args.use_sampling,
@@ -651,6 +652,7 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
+        etl.monitor.Monitor.marker_payload("load").emit(dry_run=args.dry_run)
         max_concurrency = (args.max_concurrency or
                            etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
         wlm_query_slots = (args.wlm_query_slots or
@@ -690,6 +692,7 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
+        etl.monitor.Monitor.marker_payload("upgrade").emit(dry_run=args.dry_run)
         max_concurrency = (args.max_concurrency or
                            etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
         wlm_query_slots = (args.wlm_query_slots or
@@ -723,6 +726,7 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        etl.monitor.Monitor.marker_payload("update").emit(dry_run=args.dry_run)
         wlm_query_slots = (args.wlm_query_slots or
                            etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
         etl.load.update_data_warehouse(relations, args.pattern,
@@ -749,6 +753,7 @@ class UnloadDataToS3Command(MonitoredSubCommand):
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
+        etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
         etl.unload.unload_to_s3(config, descriptions, allow_overwrite=args.force,
                                 keep_going=args.keep_going, dry_run=args.dry_run)
 
@@ -1020,18 +1025,24 @@ class ShowPipelinesCommand(SubCommand):
         etl.pipeline.show_pipelines(args.selection)
 
 
-class EventsQueryCommand(SubCommand):
+class QueryEventsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("query",
-                         "query the events table for the ETL",
-                         "Query the table of events written during an ETL.")
+        super().__init__("query_events",
+                         "query the tables for ETL events",
+                         "Query the table of events written during an ETL."
+                         " When an ETL is specified, then it is used as a filter."
+                         " Otherwise ETLs from the last day are listed.")
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix"])
+        add_standard_arguments(parser, ["prefix"])
+        parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
     def callback(self, args, config):
-        etl.monitor.query_for(args.pattern)
+        if args.etl_id is None:
+            etl.monitor.query_for_etl_ids(days_ago=1)
+        else:
+            etl.monitor.scan_etl_events(args.etl_id)
 
 
 class SelfTestCommand(SubCommand):

@@ -1,2 +1,4 @@
-mypy>=0.521
 -rrequirements.txt
+mypy>=0.521
+# q>=2.6
+# ipython>=6.2

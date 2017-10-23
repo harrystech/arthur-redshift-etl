@@ -208,9 +208,9 @@ class LoadableRelation:
         Build a list of "loadable" relations
         """
         dsn_etl = etl.config.get_dw_config().dsn_etl
-        dbname = dsn_etl["database"]
-        base_index = {"name": dbname, "current": 0, "final": len(relations)}
-        base_destination = {"name": dbname}
+        database = dsn_etl["database"]
+        base_index = {"name": database, "current": 0, "final": len(relations)}
+        base_destination = {"name": database}
 
         loadable = []
         for i, relation in enumerate(relations):
@@ -659,7 +659,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
 
     for dispatcher in etl.monitor.MonitorPayload.dispatchers:
         if isinstance(dispatcher, etl.monitor.DynamoDBStorage):
-            table = dispatcher._get_table()  # Note, not thread-safe, so we can only have one poller
+            table = dispatcher.get_table()  # Note, not thread-safe, so we can only have one poller
 
     def poll_worker():
         """

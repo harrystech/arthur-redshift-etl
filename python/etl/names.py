@@ -202,7 +202,7 @@ class TableName:
         Order two table names, case-insensitive. (Used by sort.)
 
         >>> ta = TableName("Iowa", "Cedar Rapids")
-        >>> tb = TableName("Iowa", "Desmoines")
+        >>> tb = TableName("Iowa", "Davenport")
         >>> ta < tb
         True
         """
@@ -295,7 +295,7 @@ class TempTableName(TableName):
         >>> str(temp)
         '"#public$speakeasy"'
 
-        >>> too_long = "public." + "abcd" * 32
+        >>> too_long = "public." + "long" * 32
         >>> tt = TempTableName.for_table(TableName.from_identifier(too_long))
         >>> len(tt.identifier)
         127

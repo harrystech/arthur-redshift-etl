@@ -18,6 +18,7 @@ _arthur_completion()
                   create_schemas promote_schemas terminate_sessions
                   show_downstream_dependents show_dependents show_upstream_dependencies
                   render_template show_value show_vars settings show_pipelines
+                  query_events
                   selftest
                   --submit --config"
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
