@@ -24,6 +24,7 @@ import psycopg2.extras
 import psycopg2.pool
 import pgpasslib
 
+from etl.errors import ETLRuntimeError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -370,7 +371,7 @@ def _get_encrypted_password(cx, user):
     password = pgpasslib.getpass(**dsn_user)
     if password is None:
         logger.warning("Missing line in .pgpass file: '%(host)s:%(port)s:%(dbname)s:%(user)s:<password>'", dsn_user)
-        raise RuntimeError("password missing from PGPASSFILE for '{}'".format(user))
+        raise ETLRuntimeError("password missing from PGPASSFILE for '{}'".format(user))
     md5 = hashlib.md5()
     md5.update((password + user).encode())
     return "md5" + md5.hexdigest()
@@ -394,8 +395,13 @@ def alter_search_path(cx, user, schemas):
     execute(cx, """ALTER USER "{}" SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
 
 
-def set_search_path(cx, schemas):
-    execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
+def user_exists(cx, user) -> bool:
+    rows = query(cx, """
+        SELECT usename
+          FROM pg_catalog.pg_user
+         WHERE usename = %s
+        """, (user,))
+    return len(rows) > 0
 
 
 # ---- SCHEMAS ----
