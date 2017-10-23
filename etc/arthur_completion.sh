@@ -11,7 +11,7 @@ _arthur_completion()
 
     case "$prev" in
         "arthur.py")
-            opts="initialize create_user ping
+            opts="initialize create_user update_user ping
                   bootstrap_sources design bootstrap_transformations auto_design
                   sync validate explain ls
                   extract load upgrade update unload

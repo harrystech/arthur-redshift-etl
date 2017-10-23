@@ -254,7 +254,7 @@ def build_full_parser(prog_name):
                                        dest='sub_command')
     for klass in [
             # Commands to deal with data warehouse as admin:
-            InitializeSetupCommand, CreateUserCommand,
+            InitializeSetupCommand, CreateUserCommand, UpdateUserCommand,
             # Commands to help with table designs and uploading them
             BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
             SyncWithS3Command,
@@ -445,10 +445,11 @@ class CreateUserCommand(SubCommand):
     def __init__(self):
         super().__init__("create_user",
                          "add new user",
-                         "Add new user and set group membership, optionally add a personal schema."
+                         "Add new user and set group membership, optionally create a personal schema."
                          " Note that you have to set a password for the user in your .pgpass file"
                          " before invoking this command. The password must be valid in Redshift,"
-                         " so must contain upper case and lower case characters as well as numbers.")
+                         " so must contain upper case and lower case characters as well as numbers."
+                         " It is ok to re-initialize a user defined in a settings file.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
@@ -456,14 +457,34 @@ class CreateUserCommand(SubCommand):
         parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
                             action="store_true")
-        parser.add_argument("-r", "--skip-user-creation",
-                            help="skip new user; only change search path of existing user", action="store_true")
 
     def callback(self, args, config):
         with etl.db.log_error():
-            etl.data_warehouse.create_new_user(config, args.username,
-                                               group=args.group, add_user_schema=args.add_user_schema,
-                                               skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
+            etl.data_warehouse.create_new_user(args.username, group=args.group, add_user_schema=args.add_user_schema,
+                                               dry_run=args.dry_run)
+
+
+class UpdateUserCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("update_user",
+                         "update user's group, password, and path",
+                         "Update existing user with group membership, password, and search path."
+                         " Note that you have to have set a password for the user in your .pgpass file"
+                         " before invoking this command. The password must be valid in Redshift,"
+                         " so must contain upper case and lower case characters as well as numbers.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument("username", help="name of existing user")
+        parser.add_argument("-g", "--group", help="add user to specified group")
+        parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
+                            action="store_true")
+
+    def callback(self, args, config):
+        with etl.db.log_error():
+            etl.data_warehouse.update_user(args.username, group=args.group, add_user_schema=args.add_user_schema,
+                                           dry_run=args.dry_run)
 
 
 class BootstrapSourcesCommand(SubCommand):
