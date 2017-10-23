@@ -9,6 +9,7 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
+import hashlib
 import inspect
 import logging
 import os
@@ -353,21 +354,44 @@ def create_group(cx, group):
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
 
-def create_user(cx, user, group):
+def group_exists(cx, group) -> bool:
+    rows = query(cx, """
+        SELECT groname
+          FROM pg_catalog.pg_group
+         WHERE groname = %s
+        """, (group,))
+    return len(rows) > 0
+
+
+def _get_encrypted_password(cx, user):
     dsn_complete = dict(kv.split('=') for kv in cx.dsn.split(" "))
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
-    password = pgpasslib.getpass(user=user, **dsn_partial)
+    dsn_user = dict(dsn_partial, user=user)
+    password = pgpasslib.getpass(**dsn_user)
     if password is None:
-        raise RuntimeError("Password missing from PGPASSFILE for {}".format(user))
-    execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
+        logger.warning("Missing line in .pgpass file: '%(host)s:%(port)s:%(dbname)s:%(user)s:<password>'", dsn_user)
+        raise RuntimeError("password missing from PGPASSFILE for '{}'".format(user))
+    md5 = hashlib.md5()
+    md5.update((password + user).encode())
+    return "md5" + md5.hexdigest()
+
+
+def create_user(cx, user, group):
+    password = _get_encrypted_password(cx, user)
+    execute(cx, """CREATE USER "{}" IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
+
+
+def alter_password(cx, user):
+    password = _get_encrypted_password(cx, user)
+    execute(cx, """ALTER USER "{}" PASSWORD %s""".format(user), (password,))
 
 
 def alter_group_add_user(cx, group, user):
-    execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
+    execute(cx, """ALTER GROUP "{}" ADD USER "{}" """.format(group, user))
 
 
 def alter_search_path(cx, user, schemas):
-    execute(cx, """ALTER USER {} SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
+    execute(cx, """ALTER USER "{}" SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
 
 
 def set_search_path(cx, schemas):
