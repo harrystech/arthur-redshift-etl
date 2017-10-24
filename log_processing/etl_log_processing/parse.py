@@ -38,8 +38,8 @@ _INDEX_FIELDS = {
         "timestamp": {"type": "date", "format": "strict_date_optional_time"},  # optional millis, actually
         "datetime": {
             "properties": {
-                "epoch_time": {"type": "long"},  # "format": "epoch_millis"
-                "date": {"type": "date", "format": "strict_date"},   # used to select index
+                "epoch_millis": {"type": "long"},
+                "date": {"type": "date", "format": "strict_date"},   # used to select index during upload
                 "year": {"type": "integer"},
                 "month": {"type": "integer"},
                 "day": {"type": "integer"},
@@ -82,8 +82,8 @@ _INDEX_FIELDS = {
         "monitor": {
             "properties": {
                 "id": {"type": "keyword"},
-                "event": {"type": "keyword"},
                 "step": {"type": "keyword"},
+                "event": {"type": "keyword"},
                 "target": {"type": "keyword"},
                 "elapsed": {"type": "float"}
             }
@@ -92,6 +92,7 @@ _INDEX_FIELDS = {
             "properties": {
                 "start_pos": {"type": "long"},
                 "end_pos": {"type": "long"},
+                "chars": {"type": "long"}
             },
         }
     }
@@ -156,7 +157,7 @@ class LogRecord(collections.UserDict):
         self.update({
             "timestamp": timestamp.isoformat(),  # Drops milliseconds if value is 0.
             "datetime": {
-                "epoch_time": calendar.timegm(timestamp.timetuple()) * 1000 + timestamp.microsecond // 1000,
+                "epoch_millis": calendar.timegm(timestamp.timetuple()) * 1000 + timestamp.microsecond // 1000,
                 "date": timestamp.date().isoformat(),
                 "year": timestamp.year,
                 "month": timestamp.month,
@@ -199,7 +200,6 @@ class LogRecord(collections.UserDict):
     @message.setter
     def message(self, value):
         self["message"] = value
-        self["parser"]["bytes"] = len(value.encode("utf-8", errors="ignore"))
 
     @property
     def end_pos(self):
@@ -208,6 +208,7 @@ class LogRecord(collections.UserDict):
     @end_pos.setter
     def end_pos(self, value):
         self["parser"]["end_pos"] = value
+        self["parser"]["chars"] = value - self["parser"]["start_pos"]
 
 
 class LogParser:
@@ -278,7 +279,7 @@ class LogParser:
 
     def split_log_lines(self, lines):
         """
-        Split the log lines into records.
+        Split the log lines (passed as single string) into records.
 
         An exception is raised if no records are found at all.
         """

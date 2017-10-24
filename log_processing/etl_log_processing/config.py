@@ -29,7 +29,7 @@ def log_index(date=None):
         instant = date
     else:
         instant = datetime.datetime.strptime(date, "%Y-%m-%d").date()
-    return instant.strftime(LOG_INDEX_PATTERN.replace("-*", "-%Y-%W"))
+    return instant.strftime(LOG_INDEX_PATTERN.replace("-*", "-%Y-%m-%d"))
 
 
 def set_es_endpoint(env_type, bucket_name, endpoint):
@@ -139,6 +139,7 @@ def get_active_indices():
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Configure log processing")
+    parser.set_defaults(func=None)
     subparsers = parser.add_subparsers()
     # Retrieve current configuration
     get_config_parser = subparsers.add_parser("get_config", help="get configuration values")
@@ -201,7 +202,10 @@ def sub_delete_stale_indices(args):
 def main():
     parser = build_parser()
     args = parser.parse_args()
-    args.func(args)
+    if not args.func:
+        parser.print_usage()
+    else:
+        args.func(args)
 
 
 if __name__ == "__main__":
