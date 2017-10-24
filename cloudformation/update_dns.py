@@ -17,7 +17,11 @@ def get_redshift_leader_info(cluster_identifier):
     """Return dict with 'PrivateIPAddress' and 'PublicIPAddress' for the leader node"""
     client = boto3.client("redshift")
     response = client.describe_clusters(ClusterIdentifier=cluster_identifier)
+    # First try to find the leader in multi-node clusters:
     values = jmespath.search("""Clusters[0].ClusterNodes[?NodeRole == 'LEADER'] | [0]""", response)
+    if values is None:
+        # Then try to find the single, shared node:
+        values = jmespath.search("""Clusters[0].ClusterNodes[?NodeRole == 'SHARED'] | [0]""", response)
     return values
 
 
@@ -53,8 +57,10 @@ def update_dns_records(cluster_identifier, hosted_zone_name, hostname):
         hosted_zone_id = hosted_zone["HostedZoneId"]
         if hosted_zone["PrivateZone"]:
             ip_address = leader_node["PrivateIPAddress"]
+            print("\n=====\n")
             print("If you haven't done so already, make sure that the VPC {} is associated with this hosted zone: {}"
                   .format(vpc_id, hosted_zone_id))
+            print("\n=====\n")
         else:
             ip_address = leader_node["PublicIPAddress"]
         print("Updating {} with A record for {} to {}".format(hosted_zone_id, fqdn, ip_address))

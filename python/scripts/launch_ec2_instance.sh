@@ -40,12 +40,6 @@ PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_
 # === Derived configuration ===
 
 INSTANCE_NAME="Arthur (env=$PROJ_ENVIRONMENT\, user=$USER\, `date '+%s'`)"
-if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-  ENV_NAME="production"
-else
-  ENV_NAME="development"
-fi
-AWS_TAGS="Key=user:project,Value=data-warehouse Key=user:env,Value=$ENV_NAME"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -65,6 +59,7 @@ USER_DATA_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compa
 # ===  Start instance ===
 
 INSTANCE_ID_FILE="/tmp/instance_id_${USER}$$.json"
+trap "rm -f \"$INSTANCE_ID_FILE\"" EXIT
 
 aws ec2 run-instances --cli-input-json "$CLI_INPUT_JSON" --user-data "$USER_DATA_JSON" | tee "$INSTANCE_ID_FILE"
 
@@ -78,7 +73,6 @@ fi
 
 aws ec2 wait instance-exists --instance-ids "$INSTANCE_ID"
 aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
-aws ec2 create-tags --resources "$INSTANCE_ID" --tags "Key=Name,Value=$INSTANCE_NAME" "$AWS_TAGS"
 
 PUBLIC_DNS_NAME=`aws ec2 describe-instances --instance-ids "$INSTANCE_ID" |
     jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'`

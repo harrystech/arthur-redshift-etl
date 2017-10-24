@@ -9,6 +9,7 @@ For a description of the connection string, take inspiration from:
 https://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING
 """
 
+import hashlib
 import inspect
 import logging
 import os
@@ -23,6 +24,7 @@ import psycopg2.extras
 import psycopg2.pool
 import pgpasslib
 
+from etl.errors import ETLRuntimeError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -249,6 +251,16 @@ def format_result(dict_rows) -> str:
     return '\n'.join([', '.join(c) for c in content])
 
 
+def print_result(header, dict_rows) -> None:
+    """
+    Print query result
+    """
+    print(header)
+    if dict_rows:
+        print(format_result(dict_rows))
+    print("({:d} rows)".format(len(dict_rows)))
+
+
 def explain(cx, stmt, args=()):
     """
     Return explain plan for the query as a list of steps.
@@ -343,37 +355,53 @@ def create_group(cx, group):
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
 
-def create_user(cx, user, group):
+def group_exists(cx, group) -> bool:
+    rows = query(cx, """
+        SELECT groname
+          FROM pg_catalog.pg_group
+         WHERE groname = %s
+        """, (group,))
+    return len(rows) > 0
+
+
+def _get_encrypted_password(cx, user):
     dsn_complete = dict(kv.split('=') for kv in cx.dsn.split(" "))
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
-    password = pgpasslib.getpass(user=user, **dsn_partial)
+    dsn_user = dict(dsn_partial, user=user)
+    password = pgpasslib.getpass(**dsn_user)
     if password is None:
-        raise RuntimeError("Password missing from PGPASSFILE for {}".format(user))
-    execute(cx, """CREATE USER {} IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
+        logger.warning("Missing line in .pgpass file: '%(host)s:%(port)s:%(dbname)s:%(user)s:<password>'", dsn_user)
+        raise ETLRuntimeError("password missing from PGPASSFILE for '{}'".format(user))
+    md5 = hashlib.md5()
+    md5.update((password + user).encode())
+    return "md5" + md5.hexdigest()
+
+
+def create_user(cx, user, group):
+    password = _get_encrypted_password(cx, user)
+    execute(cx, """CREATE USER "{}" IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
+
+
+def alter_password(cx, user):
+    password = _get_encrypted_password(cx, user)
+    execute(cx, """ALTER USER "{}" PASSWORD %s""".format(user), (password,))
 
 
 def alter_group_add_user(cx, group, user):
-    execute(cx, """ALTER GROUP {} ADD USER "{}" """.format(group, user))
+    execute(cx, """ALTER GROUP "{}" ADD USER "{}" """.format(group, user))
 
 
 def alter_search_path(cx, user, schemas):
-    execute(cx, """ALTER USER {} SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
+    execute(cx, """ALTER USER "{}" SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
 
 
-def set_search_path(cx, schemas):
-    execute(cx, """SET SEARCH_PATH = {}""".format(', '.join(schemas)))
-
-
-def list_connections(cx):
-    return query(cx, """SELECT datname, procpid, usesysid, usename
-                          FROM pg_catalog.pg_stat_activity""")
-
-
-def list_transactions(cx):
-    return query(cx, """SELECT t.*
-                             , c.relname
-                          FROM pg_catalog.svv_transactions t
-                          JOIN pg_catalog.pg_class c ON t.relation = c.OID""")
+def user_exists(cx, user) -> bool:
+    rows = query(cx, """
+        SELECT usename
+          FROM pg_catalog.pg_user
+         WHERE usename = %s
+        """, (user,))
+    return len(rows) > 0
 
 
 # ---- SCHEMAS ----

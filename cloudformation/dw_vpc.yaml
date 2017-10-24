@@ -1,8 +1,9 @@
 Description: >
-    This stack contains a VPC for the Redshift data warehouse and its ETL.
-    We use one public and one private subnet, an Internet Gateway, a service
-    Endpoint (for S3), a NAT Gateway and lots of security groups.
-    This VPC should then be referenced when building clusters using the outputs.
+    Create the VPC for the Redshift data warehouse and its ETL.
+
+#    We use one public and one private subnet, an Internet Gateway, a service
+#    Endpoint (for S3 and DynamoDB), a NAT Gateway and lots of security groups.
+#    This VPC should then be referenced when building clusters to use its exported outputs.
 
 AWSTemplateFormatVersion: '2010-09-09'
 
@@ -12,19 +13,21 @@ Parameters:
     ObjectStore:
         Description: (required) A bucket name where schemas and data will be stored (temporarily)
         Type: String
+        MinLength: 3
+        MaxLength: 63
 
     DataLake:
         Description: (required) A bucket name where data is stored, likely using 'unload' for other applications
         Type: String
+        MinLength: 3
+        MaxLength: 63
 
-    VpcCIDR:
-        Description: (optional) IP range in CIDR notation for this VPC
-        Type: String
-        Default: 10.10.0.0/16
-        MinLength: 9
-        MaxLength: 18
-        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+    VpcNetworkSelection:
+        Description: (required) Second octect of the IP range (final IP range is 10.(selection).0.0/16),
+            e.g. 20 for production and 30 for development
+        Type: Number
+        MinValue: 0
+        MaxValue: 255
 
     PrimaryAvailabilityZone:
         Description: (optional) Availability zone for the subnets
@@ -32,24 +35,6 @@ Parameters:
         Default: us-east-1d
         # Choices are limited by the possible locations for the Redshift cluster.
         AllowedValues: ["us-east-1a", "us-east-1c", "us-east-1d"]
-
-    PublicSubnetCIDR:
-        Description: (optional) IP range in CIDR notation for the public subnet
-        Type: String
-        Default: 10.10.0.0/22
-        MinLength: 9
-        MaxLength: 18
-        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
-
-    PrivateSubnetCIDR:
-        Description: (optional) IP range in CIDR notation for the private subnet
-        Type: String
-        Default: 10.10.8.0/22
-        MinLength: 9
-        MaxLength: 18
-        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR1:
         Description: (recommended) First IP range in CIDR notation that can be used to SSH to EC2 instances
@@ -108,7 +93,7 @@ Resources:
     VPC:
         Type: "AWS::EC2::VPC"
         Properties:
-            CidrBlock: !Ref VpcCIDR
+            CidrBlock: !Sub "10.${VpcNetworkSelection}.0.0/16"
             EnableDnsSupport: true
             EnableDnsHostnames: true
             Tags:
@@ -120,7 +105,7 @@ Resources:
         Properties:
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "igw" ] ]
+                  Value: !Sub "${AWS::StackName}-igw"
 
     InternetGatewayAttachment:
         Type: "AWS::EC2::VPCGatewayAttachment"
@@ -133,22 +118,22 @@ Resources:
         Properties:
             VpcId: !Ref VPC
             AvailabilityZone: !Ref PrimaryAvailabilityZone
-            CidrBlock: !Ref PublicSubnetCIDR
+            CidrBlock: !Sub "10.${VpcNetworkSelection}.0.0/22"
             MapPublicIpOnLaunch: true
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "public", !Ref 'AWS::Region' ] ]
+                  Value: !Sub "${AWS::StackName}-public-${AWS::Region}"
 
     PrivateSubnet:
         Type: "AWS::EC2::Subnet"
         Properties:
             VpcId: !Ref VPC
-            AvailabilityZone: us-east-1b
-            CidrBlock: !Ref PrivateSubnetCIDR
+            AvailabilityZone: !Ref PrimaryAvailabilityZone
+            CidrBlock: !Sub "10.${VpcNetworkSelection}.24.0/22"
             MapPublicIpOnLaunch: false
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "private", !Ref 'AWS::Region' ] ]
+                  Value: !Sub "${AWS::StackName}-private-${AWS::Region}"
 
     NatGatewayEIP:
         Type: "AWS::EC2::EIP"
@@ -161,9 +146,7 @@ Resources:
         Properties:
             AllocationId: !GetAtt NatGatewayEIP.AllocationId
             SubnetId: !Ref PublicSubnet
-#            Tags:
-#                - Key: Name
-#                  Value: !Join [ "-", [ !Ref "AWS::StackName", "nat" ] ]
+        # Cannot be tagged during creation: http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html
 
     PublicRouteTable:
         Type: AWS::EC2::RouteTable
@@ -171,7 +154,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "route", "public" ] ]
+                  Value: !Sub "${AWS::StackName}-route-public"
 
     DefaultPublicRoute:
         Type: AWS::EC2::Route
@@ -193,7 +176,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "route", "private" ] ]
+                  Value: !Sub "${AWS::StackName}-route-private"
 
     DefaultPrivateRoute:
         Type: AWS::EC2::Route
@@ -215,36 +198,82 @@ Resources:
             PolicyDocument: {
                 Version: "2012-10-17",
                 Statement: [
-                  {
-                    "Sid": "ReadOnlyEverything",
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": [
-                        "s3:Describe*",
-                        "s3:Get*",
-                        "s3:List*"
-                    ],
-                    "Resource": "*"
-                  },
-                  {
-                    "Sid": "WriteSelective",
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": [
-                        "s3:DeleteObject*",
-                        "s3:PutObject*"
-                    ],
-                    "Resource": [
-                        !Sub "arn:aws:s3:::${ObjectStore}/*" ,
-                        !Sub "arn:aws:s3:::${DataLake}/*"
-                    ]
+                    {
+                        "Sid": "ReadOnlyEverything",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "s3:Describe*",
+                            "s3:Get*",
+                            "s3:List*"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                        "Sid": "WriteSelective",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "s3:DeleteObject*",
+                            "s3:PutObject*"
+                        ],
+                        "Resource": [
+                            !Sub "arn:aws:s3:::${ObjectStore}/*" ,
+                            !Sub "arn:aws:s3:::${DataLake}/*"
+                        ]
+                    }
+                ]
+            }
+            RouteTableIds:
+                - !Ref PublicRouteTable
+                - !Ref PrivateRouteTable
+            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
+
+    VPCEndpointForDynamoDB:
+        Type: "AWS::EC2::VPCEndpoint"
+        Properties:
+            VpcId: !Ref VPC
+            PolicyDocument: {
+                Version: "2012-10-17",
+                Statement: [
+                    {
+                        "Sid": "ReadOnlyAllTables",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "dynamodb:BatchGetItem",
+                            "dynamodb:Describe*",
+                            "dynamodb:Get*",
+                            "dynamodb:List*",
+                            "dynamodb:Query",
+                            "dynamodb:Scan"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                        "Sid": "WriteEventsTables",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": [
+                            "dynamodb:BatchWriteItem",
+                            "dynamodb:CreateTable",
+                            "dynamodb:DeleteItem",
+                            "dynamodb:DeleteTable",
+                            "dynamodb:PutItem",
+                            "dynamodb:UpdateItem",
+                            "dynamodb:UpdateTable",
+                            "dynamodb:UpdateTimeToLive",
+                            "dynamodb:TagResource",
+                            "dynamodb:UntagResource"
+                        ],
+                        "Resource": !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/dw-etl-*"
                   }
                 ]
             }
             RouteTableIds:
-              - !Ref PublicRouteTable
-              - !Ref PrivateRouteTable
-            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
+                - !Ref PublicRouteTable
+                - !Ref PrivateRouteTable
+            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "dynamodb" ] ]
 
     WhitelistSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -270,7 +299,7 @@ Resources:
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "office" ] ]
+                  Value: !Sub "${AWS::StackName}-office"
 
     RedshiftLambdaSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -279,7 +308,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-lambda" ] ]
+                  Value: !Sub "${AWS::StackName}-redshift-lambda"
 
     RedshiftEC2SecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -288,7 +317,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-ec2" ] ]
+                  Value: !Sub "${AWS::StackName}-redshift-ec2"
 
     ManagedMasterSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -297,7 +326,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "managed-master" ] ]
+                  Value: !Sub "${AWS::StackName}-managed-master"
 
     ManagedCoreSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -306,7 +335,7 @@ Resources:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "managed-core" ] ]
+                  Value: !Sub "${AWS::StackName}-managed-core"
 
     # Although EMR can update the security groups to add these ingress rules, the resulting cyclic
     # redundancy would prevent us from later deleting the stack. So we setup the rules explicitly.
@@ -423,8 +452,8 @@ Resources:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
-            FromPort: "22"
-            ToPort: "22"
+            FromPort: 22
+            ToPort: 22
             SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
 
@@ -432,8 +461,8 @@ Resources:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
-            FromPort: "22"
-            ToPort: "22"
+            FromPort: 22
+            ToPort: 22
             SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
 
@@ -441,10 +470,37 @@ Resources:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
             IpProtocol: "tcp"
-            FromPort: "22"
-            ToPort: "22"
+            FromPort: 22
+            ToPort: 22
             SourceSecurityGroupId: !Ref ManagedCoreSecurityGroup
             GroupId: !Ref RedshiftEC2SecurityGroup
+
+    RedshiftEC2SecurityGroupHttpIngressFromItself:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: 8086
+            ToPort: 8086
+            SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
+            GroupId: !Ref RedshiftEC2SecurityGroup
+
+    RedshiftEC2SecurityGroupIngressHttpFromMaster:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: 8086
+            ToPort: 8086
+            SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
+            GroupId: !Ref RedshiftEC2SecurityGroup
+
+    ManagedMasterSecurityGroupIngressHttpFromEC2:
+        Type: "AWS::EC2::SecurityGroupIngress"
+        Properties:
+            IpProtocol: "tcp"
+            FromPort: 8086
+            ToPort: 8086
+            SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
+            GroupId: !Ref ManagedMasterSecurityGroup
 
     RedshiftPublicSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -453,206 +509,215 @@ Resources:
             VpcId: !Ref VPC
             SecurityGroupIngress:
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   SourceSecurityGroupId: !Ref RedshiftLambdaSecurityGroup
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   SourceSecurityGroupId: !Ref RedshiftEC2SecurityGroup
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   SourceSecurityGroupId: !Ref ManagedMasterSecurityGroup
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
+                  SourceSecurityGroupId: !Ref ManagedCoreSecurityGroup
+                - IpProtocol: "tcp"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR1, !Ref "WhitelistCIDR1", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR2, !Ref "WhitelistCIDR2", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR3, !Ref "WhitelistCIDR3", !Ref "AWS::NoValue" ]
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
                 # Heap
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 52.20.48.42/32
                 # Looker
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 54.208.10.167/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 54.209.116.191/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 52.1.5.228/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 52.1.157.156/32
                 - IpProtocol: "tcp"
-                  FromPort: "5439"
-                  ToPort: "5439"
+                  FromPort: 5439
+                  ToPort: 5439
                   CidrIp: 54.83.113.5/32
             Tags:
                 - Key: Name
-                  Value: !Join [ "-", [ !Ref "AWS::StackName", "redshift-public" ] ]
+                  Value: !Sub "${AWS::StackName}-redshift-public"
 
-    EmrServiceRole:
+    # This starts from the default EMR role and from the default Data Pipeline role
+    # (For testing with EMR clusters outside a data pipeline, the EMR service must also be able to assume this role.)
+    DataPipelineRole:
         Type: "AWS::IAM::Role"
         Properties:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
-                  -
-                    Effect: "Allow"
+                  - Effect: "Allow"
                     Principal:
-                      Service:
-                        - "elasticmapreduce.amazonaws.com"
-                    Action:
-                      - "sts:AssumeRole"
-            Path: "/services/"
+                        Service:
+                            - "elasticmapreduce.amazonaws.com"
+                            - "datapipeline.amazonaws.com"
+                    Action: "sts:AssumeRole"
+            # Must use the standard Path because ElasticMapReduce does not support something other than '/'
+            Path: "/"
             Policies:
-              -
-                PolicyName: "emr_default_policy"
-                PolicyDocument:
-                    Version: "2012-10-17"
-                    Statement:
-                      -
-                        Effect: "Allow"
-                        Action:
-                          - "ec2:AuthorizeSecurityGroupEgress"
-                          - "ec2:AuthorizeSecurityGroupIngress"
-                          - "ec2:CancelSpotInstanceRequests"
-                          - "ec2:CreateNetworkInterface"
-                          - "ec2:CreateSecurityGroup"
-                          - "ec2:CreateTags"
-                          - "ec2:DeleteNetworkInterface"
-                          - "ec2:DeleteSecurityGroup"
-                          - "ec2:DeleteTags"
-                          - "ec2:DescribeAvailabilityZones"
-                          - "ec2:DescribeAccountAttributes"
-                          - "ec2:DescribeDhcpOptions"
-                          - "ec2:DescribeImages"
-                          - "ec2:DescribeInstanceStatus"
-                          - "ec2:DescribeInstances"
-                          - "ec2:DescribeKeyPairs"
-                          - "ec2:DescribeNetworkAcls"
-                          - "ec2:DescribeNetworkInterfaces"
-                          - "ec2:DescribePrefixLists"
-                          - "ec2:DescribeRouteTables"
-                          - "ec2:DescribeSecurityGroups"
-                          - "ec2:DescribeSpotInstanceRequests"
-                          - "ec2:DescribeSpotPriceHistory"
-                          - "ec2:DescribeSubnets"
-                          - "ec2:DescribeTags"
-                          - "ec2:DescribeVpcAttribute"
-                          - "ec2:DescribeVpcEndpoints"
-                          - "ec2:DescribeVpcEndpointServices"
-                          - "ec2:DescribeVpcs"
-                          - "ec2:DetachNetworkInterface"
-                          - "ec2:ModifyImageAttribute"
-                          - "ec2:ModifyInstanceAttribute"
-                          - "ec2:RequestSpotInstances"
-                          - "ec2:RevokeSecurityGroupEgress"
-                          - "ec2:RunInstances"
-                          - "ec2:TerminateInstances"
-                          - "ec2:DeleteVolume"
-                          - "ec2:DescribeVolumeStatus"
-                          - "ec2:DescribeVolumes"
-                          - "ec2:DetachVolume"
-                          - "iam:GetRole"
-                          - "iam:GetRolePolicy"
-                          - "iam:ListInstanceProfiles"
-                          - "iam:ListRolePolicies"
-                          - "iam:PassRole"
-                          - "s3:CreateBucket"
-                          - "s3:Get*"
-                          - "s3:List*"
-                          - "sdb:BatchPutAttributes"
-                          - "sdb:Select"
-                          - "sqs:CreateQueue"
-                          - "sqs:Delete*"
-                          - "sqs:GetQueue*"
-                          - "sqs:PurgeQueue"
-                          - "sqs:ReceiveMessage"
-                          - "cloudwatch:PutMetricAlarm"
-                          - "cloudwatch:DescribeAlarms"
-                          - "cloudwatch:DeleteAlarms"
-                          - "application-autoscaling:RegisterScalableTarget"
-                          - "application-autoscaling:DeregisterScalableTarget"
-                          - "application-autoscaling:PutScalingPolicy"
-                          - "application-autoscaling:DeleteScalingPolicy"
-                          - "application-autoscaling:Describe*"
-                        Resource: "*"
+                - PolicyName: "service_role_default_policy"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action:
+                                - "application-autoscaling:DeleteScalingPolicy"
+                                - "application-autoscaling:DeregisterScalableTarget"
+                                - "application-autoscaling:Describe*"
+                                - "application-autoscaling:PutScalingPolicy"
+                                - "application-autoscaling:RegisterScalableTarget"
+                                - "cloudwatch:*"
+                                - "datapipeline:DescribeObjects"
+                                - "datapipeline:EvaluateExpression"
+                                - "dynamodb:BatchGetItem"
+                                - "dynamodb:DescribeTable"
+                                - "dynamodb:GetItem"
+                                - "dynamodb:Query"
+                                - "dynamodb:Scan"
+                                - "dynamodb:UpdateTable"
+                                - "ec2:AuthorizeSecurityGroupEgress"
+                                - "ec2:AuthorizeSecurityGroupIngress"
+                                - "ec2:CancelSpotInstanceRequests"
+                                - "ec2:CreateNetworkInterface"
+                                - "ec2:CreateSecurityGroup"
+                                - "ec2:CreateTags"
+                                - "ec2:DeleteNetworkInterface"
+                                - "ec2:DeleteSecurityGroup"
+                                - "ec2:DeleteTags"
+                                - "ec2:DeleteVolume"
+                                - "ec2:Describe*"
+                                - "ec2:DetachNetworkInterface"
+                                - "ec2:DetachVolume"
+                                - "ec2:ModifyImageAttribute"
+                                - "ec2:ModifyInstanceAttribute"
+                                - "ec2:RequestSpotInstances"
+                                - "ec2:RevokeSecurityGroupEgress"
+                                - "ec2:RunInstances"
+                                - "ec2:StartInstances"
+                                - "ec2:StopInstances"
+                                - "ec2:TerminateInstances"
+                                - "elasticmapreduce:*"
+                                - "iam:GetInstanceProfile"
+                                - "iam:GetRole"
+                                - "iam:GetRolePolicy"
+                                - "iam:ListAttachedRolePolicies"
+                                - "iam:ListInstanceProfiles"
+                                - "iam:ListRolePolicies"
+                                - "iam:PassRole"
+                                - "rds:DescribeDBInstances"
+                                - "rds:DescribeDBSecurityGroups"
+                                - "redshift:DescribeClusters"
+                                - "redshift:DescribeClusterSecurityGroups"
+                                - "s3:CreateBucket"
+                                - "s3:DeleteObject"
+                                - "s3:Get*"
+                                - "s3:List*"
+                                - "s3:Put*"
+                                - "sdb:BatchPutAttributes"
+                                - "sdb:Select"
+                                - "sdb:Select*"
+                                - "sns:GetTopicAttributes"
+                                - "sns:ListTopics"
+                                - "sns:Publish"
+                                - "sns:Subscribe"
+                                - "sns:Unsubscribe"
+                                - "sqs:CreateQueue"
+                                - "sqs:Delete*"
+                                - "sqs:GetQueue*"
+                                - "sqs:PurgeQueue"
+                                - "sqs:ReceiveMessage"
+                            Resource: "*"
 
+    # This starts from the default EMR instance profile role plus the Data Pipeline default resource role.
+    # (NB We need allow ec2:CreateTags here so that bootstrap can update the tags of the instance.)
     Ec2Role:
         Type: "AWS::IAM::Role"
         Properties:
-            RoleName: !Sub "${AWS::StackName}-emr-ec2-role"
+            RoleName: !Sub "${AWS::StackName}-ec2-role"
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
-                  -
-                    Effect: "Allow"
-                    Principal:
-                      Service:
-                        - "ec2.amazonaws.com"
-                    Action:
-                      - "sts:AssumeRole"
-            Path: "/services/"
+                    - Effect: "Allow"
+                      Principal:
+                          Service: "ec2.amazonaws.com"
+                      Action: "sts:AssumeRole"
+            Path: "/"
             Policies:
-              -
-                PolicyName: "ec2_default_policy"
-                PolicyDocument:
-                    Version: "2012-10-17"
-                    Statement:
-                      -
-                        Effect: "Allow"
-                        Action:
-                          - "cloudwatch:*"
-                          - "dynamodb:*"
-                          - "ec2:Describe*"
-                          - "elasticmapreduce:Describe*"
-                          - "elasticmapreduce:ListBootstrapActions"
-                          - "elasticmapreduce:ListClusters"
-                          - "elasticmapreduce:ListInstanceGroups"
-                          - "elasticmapreduce:ListInstances"
-                          - "elasticmapreduce:ListSteps"
-                          - "kinesis:CreateStream"
-                          - "kinesis:DeleteStream"
-                          - "kinesis:DescribeStream"
-                          - "kinesis:GetRecords"
-                          - "kinesis:GetShardIterator"
-                          - "kinesis:MergeShards"
-                          - "kinesis:PutRecord"
-                          - "kinesis:SplitShard"
-                          - "rds:Describe*"
-                          - "s3:*"
-                          - "sdb:*"
-                          - "sns:*"
-                          - "sqs:*"
-                        Resource: "*"
+                - PolicyName: "resource_role_default_policy"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action:
+                                - "cloudwatch:*"
+                                - "datapipeline:*"
+                                - "dynamodb:*"
+                                - "ec2:CreateTags"
+                                - "ec2:Describe*"
+                                - "elasticmapreduce:AddJobFlowSteps"
+                                - "elasticmapreduce:Describe*"
+                                - "elasticmapreduce:ListBootstrapActions"
+                                - "elasticmapreduce:ListClusters"
+                                - "elasticmapreduce:ListInstance*"
+                                - "elasticmapreduce:ListInstances"
+                                - "elasticmapreduce:ListSteps"
+                                - "elasticmapreduce:ModifyInstanceGroups"
+                                - "kinesis:CreateStream"
+                                - "kinesis:DeleteStream"
+                                - "kinesis:DescribeStream"
+                                - "kinesis:GetRecords"
+                                - "kinesis:GetShardIterator"
+                                - "kinesis:MergeShards"
+                                - "kinesis:PutRecord"
+                                - "kinesis:SplitShard"
+                                - "rds:Describe*"
+                                - "redshift:DescribeClusters"
+                                - "redshift:DescribeClusterSecurityGroups"
+                                - "s3:*"
+                                - "sdb:*"
+                                - "sns:*"
+                                - "sqs:*"
+                            Resource: "*"
 
-    EmrEc2InstanceProfile:
+    Ec2InstanceProfile:
         Type: "AWS::IAM::InstanceProfile"
         Properties:
-            InstanceProfileName: !Sub "${AWS::StackName}-emr-ec2-role"
-            Path: "/services/"
+            InstanceProfileName: !Sub "${AWS::StackName}-ec2-instance-profile"
+            Path: "/"
             Roles:
-              - !Ref Ec2Role
+                - !Ref Ec2Role
 
     RedshiftCopyCole:
         Type: "AWS::IAM::Role"
@@ -660,57 +725,52 @@ Resources:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
-                  -
-                    Effect: "Allow"
-                    Principal:
-                      Service:
-                        - "redshift.amazonaws.com"
-                    Action:
-                      - "sts:AssumeRole"
+                    - Effect: "Allow"
+                      Principal:
+                          Service: "redshift.amazonaws.com"
+                      Action: "sts:AssumeRole"
             # Must use the standard Path because Redshift does not support something other than '/'
             Path: "/"
             Policies:
-              -
-                PolicyName: "redshift_read_access"
-                PolicyDocument:
-                    Version: "2012-10-17"
-                    Statement:
-                      -
-                        Sid: "ReadAccess"
-                        Effect: "Allow"
-                        Action:
-                          - "s3:GetBucket*"
-                          - "s3:ListBucket*"
-                        Resource:
-                          - !Sub "arn:aws:s3:::${ObjectStore}"
-                          - !Sub "arn:aws:s3:::${DataLake}"
-                      -
-                        Sid: "WriteAccess"
-                        Effect: "Allow"
-                        Action:
-                          - "s3:DeleteObject*"
-                          - "s3:GetObject*"
-                          - "s3:ListObject*"
-                          - "s3:PutObject*"
-                        Resource:
-                          - !Sub "arn:aws:s3:::${ObjectStore}/*"
-                          - !Sub "arn:aws:s3:::${DataLake}/*"
-                      -
-                        Sid: "EventAccess"
-                        Effect: "Allow"
-                        Action:
-                          - "dynamodb:Describe*"
-                          - "dynamodb:Scan"
-                        Resource: "arn:aws:dynamodb:*:*:table/redshift-etl-events_*"
+                - PolicyName: "redshift_access"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Sid: "ReadAccessBuckets"
+                            Effect: "Allow"
+                            Action: "s3:ListBucket*"
+                            Resource: "arn:aws:s3:::*"
+                          - Sid: "ReadAccessObjects"
+                            Effect: "Allow"
+                            Action: "s3:GetObject"
+                            Resource: "arn:aws:s3:::*/*"
+                          - Sid: "WriteAccess"
+                            Effect: "Allow"
+                            Action:
+                                - "s3:DeleteObject"
+                                - "s3:PutObject"
+                            Resource:
+                                - !Sub "arn:aws:s3:::${ObjectStore}/*"
+                                - !Sub "arn:aws:s3:::${DataLake}/*"
+                          - Sid: "EventAccess"
+                            Effect: "Allow"
+                            Action:
+                                - "dynamodb:Describe*"
+                                - "dynamodb:Scan"
+                            Resource: "arn:aws:dynamodb:*:*:table/dw-etl-*"
 
 
 Outputs:
 
     VpcId:
-        Description: (VPC.id) A reference to the created VPC
+        Description: A reference to the created VPC
         Value: !Ref VPC
         Export:
             Name: !Sub "${AWS::StackName}::vpc-id"
+
+    VpcRegion:
+        Description: (VPC.region) Name of the region
+        Value: !Ref "AWS::Region"
 
     DefaultAvailabilityZone:
         Description: A reference to the primary availability zone (used as default elsewhere)
@@ -725,7 +785,7 @@ Outputs:
             Name: !Sub "${AWS::StackName}::public-subnet-id"
 
     PrivateSubnet:
-        Description: A reference to the private subnet
+        Description: (VPC.private_subnet) A reference to the private subnet
         Value: !Ref PrivateSubnet
         Export:
             Name: !Sub "${AWS::StackName}::private-subnet-id"
@@ -742,21 +802,9 @@ Outputs:
         Description: (EMR.core.managed_security_group) A reference to the managed core security group for EMR setup
         Value: !Ref ManagedCoreSecurityGroup
 
-    EMRServiceRole:
-        Description: (EMR.service_role) A reference to the IAM role that allows EMR management
-        Value: !Ref EmrServiceRole
-
-    EMRInstanceProfile:
-        Description: (EMR.ec2_instance_profile) A reference to the IAM profile for EMR instances
-        Value: !Ref EmrEc2InstanceProfile
-
     PublicEC2SecurityGroups:
         Description: (EC2.public_security_group) A reference to the security group for EC2 instances
         Value: !Ref RedshiftEC2SecurityGroup
-
-    EC2InstanceProfile:
-        Description: (EC2.iam_instance_profile) A reference to the IAM profile for EC2 instances
-        Value: !Ref EmrEc2InstanceProfile
 
     RedshiftPublicSecurityGroup:
         Description: A reference to the "public" security group used for Redshift clusters
@@ -764,11 +812,25 @@ Outputs:
         Export:
             Name: !Sub "${AWS::StackName}::redshift-public-sg"
 
+    DataPipelineRole:
+        Description: (DataPipeline.role) A reference to the IAM role for Data Pipeline (or EMR) management
+        Value: !Ref DataPipelineRole
+
+    EC2InstanceProfile:
+        Description: (EC2.iam_instance_profile) A reference to the IAM profile for EC2 instances
+        Value: !Ref Ec2InstanceProfile
+
     ObjectStore:
         Description: (object_store.s3.bucket_name) Name of the bucket for the object store
         Value: !Ref ObjectStore
         Export:
             Name: !Sub "${AWS::StackName}::object-store"
+
+    DataLake:
+        Description: (data_lake.s3.bucket_name) Name of the bucket for the data lake
+        Value: !Ref DataLake
+        Export:
+            Name: !Sub "${AWS::StackName}::data-lake"
 
     RedshiftCopyCole:
         Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store

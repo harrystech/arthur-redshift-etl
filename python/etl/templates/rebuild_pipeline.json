@@ -6,10 +6,10 @@
             "schedule": { "ref": "ETLSchedule" },
             "scheduleType": "cron",
             "failureAndRerunMode": "CASCADE",
-            "resourceRole": "DataPipelineDefaultResourceRole",
-            "role": "DataPipelineDefaultRole",
-            "pipelineLogUri": "s3://#{myS3Bucket}/#{myEtlEnvironment}/logs/",
-            "region": "us-east-1",
+            "resourceRole": "${resources.EC2.iam_instance_profile}",
+            "role": "${resources.DataPipeline.role}",
+            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/logs/",
+            "region": "${resources.VPC.region}",
             "maximumRetries": "2"
         },
         {
@@ -22,34 +22,34 @@
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:us-east-1:${resources.VPC.account}:etl-status-#{myEtlEnvironment}"
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-status"
         },
         {
             "id": "SuccessNotification",
             "type": "SnsAlarm",
             "parent": {"ref": "SNSParent"},
-            "subject": "ETL Rebuild Success: #{myEtlEnvironment} at #{node.@scheduledStartTime}",
+            "subject": "ETL Rebuild Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
         },
         {
             "id": "FailureNotification",
             "type": "SnsAlarm",
             "parent": {"ref": "SNSParent"},
-            "subject": "ETL Rebuild Failure: #{myEtlEnvironment} at #{node.@scheduledStartTime}",
+            "subject": "ETL Rebuild Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
             "id": "PagerNotification",
             "type": "SnsAlarm",
-            "topicArn": "arn:aws:sns:us-east-1:${resources.VPC.account}:etl-page-#{myEtlEnvironment}",
-            "subject": "ETL Rebuild Failure: #{myEtlEnvironment} at #{node.@scheduledStartTime}",
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-page",
+            "subject": "ETL Rebuild Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
-            "terminateAfter": "8 Hours"
+            "terminateAfter": "6 Hours"
         },
         {
             "id": "ETLCluster",
@@ -62,8 +62,11 @@
             "coreInstanceCount": "${resources.EMR.core.instance_count}",
             "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
             "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
-            "additionalMasterSecurityGroupIds": [ "${resources.VPC.whitelist_security_group}" ],
-            "bootstrapAction": "s3://#{myS3Bucket}/#{myEtlEnvironment}/bin/bootstrap.sh,#{myS3Bucket},#{myEtlEnvironment}",
+            "additionalMasterSecurityGroupIds": [
+                "${resources.EC2.public_security_group}",
+                "${resources.VPC.whitelist_security_group}"
+            ],
+            "bootstrapAction": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh,${object_store.s3.bucket_name},${object_store.s3.prefix}",
             "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
             "configuration": []
         },
@@ -98,7 +101,7 @@
             "id": "EmrActivityUpstreamExtract",
             "name": "Arthur Extract (EMR Activity)",
             "type": "EmrActivity",
-            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--prolix,--prefix,#{myEtlEnvironment}",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--keep-going,--prolix,--prefix,${object_store.s3.prefix}",
             "runsOn": { "ref": "ETLCluster" },
             "maximumRetries": "0"
         },
@@ -107,22 +110,30 @@
             "name": "Copy Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp s3://#{myS3Bucket}/#{myEtlEnvironment}/bin/bootstrap.sh /tmp/bootstrap.sh"
+            "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh /tmp/bootstrap.sh"
         },
         {
             "id": "Bootstrap",
             "name": "Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/bootstrap.sh #{myS3Bucket} #{myEtlEnvironment}",
+            "command": "bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
             "dependsOn": { "ref": "CopyBootstrap" }
         },
         {
             "id": "PingCronutAfterBootstrap",
             "name": "Ping Cronut After Bootstrap (EC2)",
             "type": "ShellCommandActivity",
-            "parent": { "ref":"ShellCommandParent" },
+            "parent": { "ref": "ShellCommandParent" },
             "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_BOOTSTRAP",
+            "dependsOn": { "ref": "Bootstrap" }
+        },
+        {
+            "id": "ArthurTerminateSessions",
+            "name": "Arthur Terminate Sessions (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ terminate_sessions --prolix --dry-run",
             "dependsOn": { "ref": "Bootstrap" }
         },
         {
@@ -130,17 +141,15 @@
             "name": "Arthur Load (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment} --concurrent-extract",
-            "dependsOn": [
-                { "ref": "Bootstrap" }
-            ]
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix} --concurrent-extract",
+            "dependsOn": { "ref": "ArthurTerminateSessions" }
         },
         {
             "id": "PublishAndBackup",
             "name": "Publish and Backup (EC2)",
             "type": "ShellCommandActivity",
             "parent": {"ref": "ShellCommandParent"},
-            "command": "bash /tmp/redshift_etl/bin/sync_env.sh -y #{myS3Bucket} #{myEtlEnvironment} #{myEtlEnvironment}/current",
+            "command": "bash /tmp/redshift_etl/bin/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/current",
             "dependsOn": { "ref": "ArthurLoad" }
         },
         {
@@ -148,14 +157,14 @@
             "name": "Arthur Unload (EC2)",
             "type": "ShellCommandActivity",
             "parent": {"ref": "ArthurCommandParent"},
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ unload --prolix --keep-going --prefix #{myEtlEnvironment}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ unload --keep-going --prolix --prefix ${object_store.s3.prefix}",
             "dependsOn": {"ref": "ArthurLoad"}
         },
         {
             "id": "PingCronutAfterEtl",
             "name": "Ping Cronut After ETL (EC2)",
             "type": "ShellCommandActivity",
-            "parent": { "ref":"ShellCommandParent" },
+            "parent": { "ref": "ShellCommandParent" },
             "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_ETL",
             "dependsOn": [
                 { "ref": "PublishAndBackup" },
@@ -169,22 +178,6 @@
         }
     ],
     "parameters": [
-        {
-            "id": "myS3Bucket",
-            "type": "String",
-            "optional": "false",
-            "description": "Name of S3 bucket",
-            "watermark": "data_lake_bucket",
-            "helpText": "Pick the name of the data lake."
-        },
-        {
-            "id": "myEtlEnvironment",
-            "type": "String",
-            "optional": "false",
-            "description": "Name of ETL environment",
-            "watermark": "production",
-            "helpText": "Pick the name such as 'production', 'development' or your user name."
-        },
         {
             "id": "myStartDateTime",
             "type": "String",
@@ -203,8 +196,6 @@
         }
     ],
     "values": {
-        "myS3Bucket": "data_lake_bucket",
-        "myEtlEnvironment": "development",
         "myStartDateTime": "2525-01-01T00:00:00",
         "myOccurrences": "1000"
     }

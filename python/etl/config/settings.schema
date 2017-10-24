@@ -36,10 +36,15 @@
             "uniqueItems": true,
             "minItems": 1
         },
+        "bucket_template" : {
+            "description": "'Templates' used in static sources to configure their bucket",
+            "type": "string",
+            "pattern": "^(([a-zA-Z0-9_$-]+)|(\\${[.\\w]+}))+$"
+        },
         "path_template" : {
             "description": "'Templates' used in static sources to configure their effective prefix",
             "type": "string",
-            "pattern": "^[(\\w+/)|(\\${\\w+})]+$"
+            "pattern": "^(([a-zA-Z0-9_$-]+/?)|(\\${[.\\w]+})/?)+$"
         },
         "upstream_database": {
             "type": "object",
@@ -60,7 +65,7 @@
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
                 "description": { "type": "string" },
-                "s3_bucket": { "$ref": "#/definitions/identifier" },
+                "s3_bucket": { "$ref": "#/definitions/bucket_template" },
                 "s3_path_template": { "$ref": "#/definitions/path_template" },
                 "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
                 "include_tables": { "$ref": "#/definitions/glob_pattern_list" },
@@ -93,7 +98,7 @@
         "aws_arn": {
             "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
             "type": "string",
-            "pattern": "^arn:aws[^:]*:[^:]+:[^:]*:[0-9a-f]+:"
+            "pattern": "^arn:aws[^:]*:[^:]*:[^:]*:[0-9a-f]+:"
         }
     },
     "type": "object",
@@ -119,23 +124,8 @@
                 "users": {
                     "type": "array",
                     "items": { "$ref": "#/definitions/user_info" },
-                    "uniqueItems": true
-                },
-                "iam_role": { "$ref": "#/definitions/aws_arn" },
-                "schemas": {
-                    "description": "DEPRECATED use 'transformations' instead",
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": { "$ref": "#/definitions/identifier" },
-                            "description": { "type": "string" },
-                            "groups": { "$ref": "#/definitions/identifier_list" }
-                        },
-                        "required": [ "name" ],
-                        "additionalProperties": false
-                    },
-                    "uniqueItems": true
+                    "uniqueItems": true,
+                    "minItems": 1
                 },
                 "transformations": {
                     "description": "List of schemas with transformations",
@@ -160,7 +150,7 @@
                     ]
                 }
             },
-            "required": [ "admin_access", "etl_access", "owner" ],
+            "required": [ "admin_access", "etl_access", "owner", "users" ],
             "additionalProperties": false
         },
         "sources": {
@@ -195,17 +185,8 @@
             "required": [ "as_is_att_type", "cast_needed_att_type" ],
             "additionalProperties": false
         },
-        "s3": {
-            "description": "DEPRECATED use setting in object_store",
-            "type": "object",
-            "properties": {
-                "bucket_name": { "$ref": "#/definitions/identifier" }
-            },
-            "required": [ "bucket_name" ],
-            "additionalProperties": false
-        },
         "data_lake": {
-            "description": "DEPRECATED use setting in object_store",
+            "description": "Location and attributes for shared storage, e.g. for unloads",
             "type": "object",
             "properties": {
                 "s3": {
@@ -241,17 +222,21 @@
         "resources": {
             "type": "object",
             "properties": {
-                "key_name": { "type": "string" },
+                "key_name": { "$ref": "#/definitions/identifier" },
                 "VPC": {
                     "type": "object",
                     "properties": {
-                        "id": { "type": "string" },
-                        "public_subnet": { "type": "string" },
-                        "whitelist_security_group": { "type": "string" },
-                        "region": { "type": "string" },
-                        "account": { "type": "string" }
+                        "region": { "$ref": "#/definitions/identifier" },
+                        "account": {
+                            "type": "string",
+                            "pattern": "^[0-9]+$"
+                        },
+                        "name": { "$ref": "#/definitions/identifier" },
+                        "public_subnet": { "$ref": "#/definitions/identifier" },
+                        "private_subnet": { "$ref": "#/definitions/identifier" },
+                        "whitelist_security_group": { "$ref": "#/definitions/identifier" }
                     },
-                    "required": [ "account", "public_subnet", "whitelist_security_group", "region" ],
+                    "required": [ "region", "account", "name", "public_subnet", "whitelist_security_group" ],
                     "additionalProperties": false
                 },
                 "EC2": {
@@ -259,8 +244,8 @@
                     "properties": {
                         "instance_type": { "type": "string" },
                         "image_id": { "type": "string" },
-                        "public_security_group": { "type": "string" },
-                        "iam_instance_profile": { "type": "string" }
+                        "public_security_group": { "$ref": "#/definitions/identifier" },
+                        "iam_instance_profile": { "$ref": "#/definitions/identifier" }
                     },
                     "required": [ "instance_type", "image_id", "public_security_group", "iam_instance_profile" ],
                     "additionalProperties": false
@@ -271,8 +256,6 @@
                         "release_label": { "type": "string" },
                         "master": { "$ref": "#/definitions/cluster_group" },
                         "core": { "$ref": "#/definitions/cluster_group" },
-                        "service_role": { "type": "string" },
-                        "ec2_instance_profile": { "type": "string" },
                         "max_partitions": {
                             "description": "Maximum number of partitions during extract, limits num_partitions for each table",
                             "type": "integer",
@@ -282,29 +265,18 @@
                     "required": [ "release_label", "master", "core" ],
                     "additionalProperties": false
                 },
-                "SNS": {
+                "DataPipeline": {
                     "type": "object",
                     "properties": {
-                        "success": {
-                            "type": "object",
-                            "properties": {
-                                "topicArn": { "$ref": "#/definitions/aws_arn" }
-                            },
-                            "additionalProperties": false
-                        },
-                        "failure": {
-                            "type": "object",
-                            "properties": {
-                                "topicArn": { "$ref": "#/definitions/aws_arn" }
-                            },
-                            "additionalProperties": false
-                        }
+                        "role": { "$ref": "#/definitions/identifier" }
                     },
+                    "required": [ "role" ],
                     "additionalProperties": false
                 },
                 "RedshiftCluster": {
                     "type": "object",
                     "properties": {
+                        "name": { "$ref": "#/definitions/identifier" },
                         "max_concurrency": {
                             "type": "integer",
                             "minimum": 1
@@ -317,7 +289,7 @@
                     "additionalProperties": false
                 }
             },
-            "required": [ "key_name", "VPC", "EC2", "EMR" ],
+            "required": [ "key_name", "VPC", "EC2", "EMR", "DataPipeline" ],
             "additionalProperties": false
         },
         "pipelines": {
@@ -339,33 +311,22 @@
         "etl_events": {
             "type": "object",
             "properties": {
-                "dynamodb": {
-                    "type": "object",
-                    "properties": {
-                        "table_prefix": { "type": "string" },
-                        "capacity": { "type": "integer" },
-                        "region": { "type": "string" }
-                    },
-                    "required": [ "table_prefix", "capacity", "region" ],
-                    "additionalProperties": false
-                },
-                "postgresql": {
-                    "type": "object",
-                    "properties": {
-                        "table_prefix": { "type": "string" },
-                        "write_access": { "type": "string" }
-                    },
-                    "required": [ "table_prefix", "write_access" ],
-                    "additionalProperties": false
-                }
+                "enabled": { "type": "boolean" },
+                "read_capacity": { "type": "integer" },
+                "write_capacity": { "type": "integer" }
             },
+            "required": [ "enabled", "read_capacity", "write_capacity" ],
             "additionalProperties": false
         },
-        "required_in_full_load": {
-            "description": "DEPRECATED USE 'required_for_success' instead",
-            "$ref": "#/definitions/glob_pattern_list"
+        "date": {
+            "type": "object",
+            "properties": {
+                "today": { "type": "string" },
+                "yesterday": { "type": "string" }
+            },
+            "additionalProperties": false
         }
     },
-    "required": [ "arthur_settings", "data_warehouse", "sources", "type_maps" ],
+    "required": [ "arthur_settings", "data_warehouse", "type_maps", "object_store", "resources", "etl_events" ],
     "additionalProperties": false
 }

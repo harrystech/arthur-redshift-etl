@@ -205,7 +205,7 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.debug("Starting command: %s", cmdline)
             sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      universal_newlines=True)
-            self.logger.debug("Sqoop is running with pid %d", sqoop.pid)
+            self.logger.info("Sqoop is running with pid %d", sqoop.pid)
             out, err = sqoop.communicate()
             nice_out, nice_err = ('\n' + str(out)).rstrip(), ('\n' + str(err)).rstrip()  # using str() for type check
             self.logger.debug("Sqoop finished with return code %d", sqoop.returncode)

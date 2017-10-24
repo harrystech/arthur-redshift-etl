@@ -116,14 +116,18 @@ def run_arg_as_command(my_name="arthur.py"):
             setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
+                etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
+                # Create name used as prefix for resources, like DynamoDB tables or SNS topics
+                base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
+                etl.config.set_safe_config_value("resource_prefix", "{}-{}".format(base_env, args.prefix))
                 if getattr(args, "use_monitor"):
-                    etl.monitor.set_environment(args.prefix)
+                    etl.monitor.start_monitors(args.prefix)
 
             dw_config = etl.config.get_dw_config()
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
                 args.pattern.base_schemas = [s.name for s in dw_config.schemas]
 
-            # TODO Remove dw_config and let subcommands handle it!
+            # TODO Remove dw_config and let sub-commands handle it!
             args.func(args, dw_config)
 
 
@@ -250,16 +254,17 @@ def build_full_parser(prog_name):
                                        dest='sub_command')
     for klass in [
             # Commands to deal with data warehouse as admin:
-            InitializeSetupCommand, CreateUserCommand,
+            InitializeSetupCommand, CreateUserCommand, UpdateUserCommand,
             # Commands to help with table designs and uploading them
             BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
             SyncWithS3Command,
             # ETL commands to extract, load (or update), or transform
             ExtractToS3Command, LoadDataWarehouseCommand, UpgradeDataWarehouseCommand, UpdateDataWarehouseCommand,
             UnloadDataToS3Command,
-            # Helper commands
+            # Helper commands (database, filesystem)
             CreateSchemasCommand, PromoteSchemasCommand,
-            ListFilesCommand, PingCommand,
+            PingCommand, TerminateSessionsCommand,
+            ListFilesCommand,
             ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
             # Environment commands
             RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
@@ -404,7 +409,7 @@ class SubCommand:
 
 class MonitoredSubCommand(SubCommand):
     """
-    A subcommand that will also use monitors to update some event table
+    A sub-command that will also use monitors to update some event table
     """
     def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         parser = super().add_to_parser(parent_parser)
@@ -440,10 +445,11 @@ class CreateUserCommand(SubCommand):
     def __init__(self):
         super().__init__("create_user",
                          "add new user",
-                         "Add new user and set group membership, optionally add a personal schema."
+                         "Add new user and set group membership, optionally create a personal schema."
                          " Note that you have to set a password for the user in your .pgpass file"
                          " before invoking this command. The password must be valid in Redshift,"
-                         " so must contain upper case and lower case characters as well as numbers.")
+                         " so must contain upper case and lower case characters as well as numbers."
+                         " It is ok to re-initialize a user defined in a settings file.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
@@ -451,24 +457,44 @@ class CreateUserCommand(SubCommand):
         parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
                             action="store_true")
-        parser.add_argument("-r", "--skip-user-creation",
-                            help="skip new user; only change search path of existing user", action="store_true")
 
     def callback(self, args, config):
         with etl.db.log_error():
-            etl.data_warehouse.create_new_user(config, args.username,
-                                               group=args.group, add_user_schema=args.add_user_schema,
-                                               skip_user_creation=args.skip_user_creation, dry_run=args.dry_run)
+            etl.data_warehouse.create_new_user(args.username, group=args.group, add_user_schema=args.add_user_schema,
+                                               dry_run=args.dry_run)
+
+
+class UpdateUserCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("update_user",
+                         "update user's group, password, and path",
+                         "Update existing user with group membership, password, and search path."
+                         " Note that you have to have set a password for the user in your .pgpass file"
+                         " before invoking this command. The password must be valid in Redshift,"
+                         " so must contain upper case and lower case characters as well as numbers.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument("username", help="name of existing user")
+        parser.add_argument("-g", "--group", help="add user to specified group")
+        parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
+                            action="store_true")
+
+    def callback(self, args, config):
+        with etl.db.log_error():
+            etl.data_warehouse.update_user(args.username, group=args.group, add_user_schema=args.add_user_schema,
+                                           dry_run=args.dry_run)
 
 
 class BootstrapSourcesCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("design",
+        super().__init__("bootstrap_sources",
                          "bootstrap schema information from sources",
                          "Download schema information from upstream sources and compare against current table designs."
                          " If there is no current design file, then create one as a starting point.",
-                         aliases=["bootstrap_sources"])
+                         aliases=["design"])
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
@@ -482,11 +508,11 @@ class BootstrapSourcesCommand(SubCommand):
 class BootstrapTransformationsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("auto_design",
+        super().__init__("bootstrap_transformations",
                          "bootstrap schema information from transformations",
                          "Download schema information as if transformation had been run in data warehouse."
                          " If there is no local design file, then create one as a starting point.",
-                         aliases=["bootstrap_transformations"])
+                         aliases=["auto_design"])
 
     def add_arguments(self, parser):
         parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",
@@ -680,7 +706,8 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
     def __init__(self):
         super().__init__("update",
                          "update data in the data warehouse from files in S3",
-                         "Load data into data warehouse from files in S3 and then update all dependent CTAS relations.")
+                         "Load data into data warehouse from files in S3 and then update all dependent CTAS relations"
+                         " (within a transaction).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "wlm-query-slots", "dry-run"])
@@ -706,7 +733,7 @@ class UnloadDataToS3Command(MonitoredSubCommand):
     def __init__(self):
         super().__init__("unload",
                          "unload data from data warehouse to files in S3",
-                         "Unload data from data warehouse into files in S3 (along with files of column names).")
+                         "Unload data from data warehouse into CSV files in S3 (along with files of column names).")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
@@ -719,7 +746,7 @@ class UnloadDataToS3Command(MonitoredSubCommand):
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
-        etl.unload.unload_to_s3(config, descriptions, args.prefix, allow_overwrite=args.force,
+        etl.unload.unload_to_s3(config, descriptions, allow_overwrite=args.force,
                                 keep_going=args.keep_going, dry_run=args.dry_run)
 
 
@@ -836,10 +863,12 @@ class ListFilesCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
                             action="store_true")
+        parser.add_argument("-t", "--sort-by-time", help="sort files by timestamp (and list in single column)",
+                            action="store_true")
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
-        etl.file_sets.list_files(file_sets, long_format=args.long_format)
+        etl.file_sets.list_files(file_sets, long_format=args.long_format, sort_by_time=args.sort_by_time)
 
 
 class PingCommand(SubCommand):
@@ -860,6 +889,22 @@ class PingCommand(SubCommand):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
         with etl.db.log_error():
             etl.db.ping(dsn)
+
+
+class TerminateSessionsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("terminate_sessions",
+                         "terminate sessions holding table locks",
+                         "Terminate sessions that hold table locks and might interfere with the ETL. "
+                         "This is always run as the admin user.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+
+    def callback(self, args, config):
+        with etl.db.log_error():
+            etl.data_warehouse.terminate_sessions(dry_run=args.dry_run)
 
 
 class ShowDownstreamDependentsCommand(SubCommand):
@@ -903,7 +948,7 @@ class RenderTemplateCommand(SubCommand):
     def __init__(self):
         super().__init__("render_template",
                          "render selected template by filling in configuration settings",
-                         "Print template after replacing placeholders (like '${resources.VPC.id}') with values"
+                         "Print template after replacing placeholders (like '${resources.VPC.region}') with values"
                          " from the settings files")
 
     def add_arguments(self, parser):
@@ -944,7 +989,8 @@ class ShowVarsCommand(SubCommand):
         super().__init__("show_vars",
                          "show variables available for template files",
                          "Print list of variables and their values based on the configuration files."
-                         " These variables can be used with ${name} substitutions in templates.")
+                         " These variables can be used with ${name} substitutions in templates.",
+                         aliases=["settings"])
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
@@ -977,11 +1023,10 @@ class EventsQueryCommand(SubCommand):
                          "Query the table of events written during an ETL.")
 
     def add_arguments(self, parser):
-        parser.add_argument("--etl-id", help="pick ETL id to look for")
-        parser.add_argument("pattern", help="limit what to show", nargs='?')
+        add_standard_arguments(parser, ["pattern", "prefix"])
 
     def callback(self, args, config):
-        etl.monitor.query_for(args.pattern, args.etl_id)
+        etl.monitor.query_for(args.pattern)
 
 
 class SelfTestCommand(SubCommand):

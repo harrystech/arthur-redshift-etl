@@ -10,7 +10,8 @@ from typing import Dict
 import etl.config.env
 import etl.names
 import etl.db
-from etl.errors import InvalidEnvironmentError
+import etl.render_template
+from etl.errors import ETLConfigError, InvalidEnvironmentError
 
 
 class DataWarehouseUser:
@@ -64,13 +65,37 @@ class DataWarehouseSchema:
         else:
             self._dsn_env_var = etl_access
         self.has_dsn = self._dsn_env_var is not None
-
-        self.s3_bucket = schema_info.get("s3_bucket")
-        self.s3_path_template = schema_info.get("s3_path_template")
-        self.s3_unload_path_template = schema_info.get("s3_unload_path_template")
+        # The S3 bucket, path template and unload path template must be rendered since they may be template strings.
+        self._s3_bucket_template = schema_info.get("s3_bucket")
+        self._s3_path_template = schema_info.get("s3_path_template")
+        self._s3_unload_path_template = schema_info.get("s3_unload_path_template")
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
+
+    @property
+    def s3_bucket(self) -> str:
+        """
+        Renders S3 Bucket name (if it references Arthur configuration, for instance, the data lake)
+        """
+        return etl.render_template.render_from_config(self._s3_bucket_template,
+                                                      context="s3_bucket of schema '{}'".format(self.name))
+
+    @property
+    def s3_path_prefix(self) -> str:
+        """
+        Render S3 path prefix in particular wrt. prefix (environment) and dates.
+        """
+        return etl.render_template.render_from_config(
+            self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name))
+
+    @property
+    def s3_unload_path_prefix(self) -> str:
+        """
+        Render S3 unload path prefix in particular wrt. prefix (environment) and dates.
+        """
+        return etl.render_template.render_from_config(
+            self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name))
 
     @property
     def dsn(self):
@@ -105,6 +130,7 @@ class DataWarehouseConfig:
     """
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
+        schema_settings = settings.get("sources", []) + dw_settings.get("transformations", [])
 
         # Environment variables with DSN
         self._admin_access = dw_settings["admin_access"]
@@ -123,7 +149,7 @@ class DataWarehouseConfig:
             DataWarehouseSchema(
                 dict(info, owner=schema_owner_map.get(info['name'], root.name)),
                 self._etl_access)
-            for info in settings["sources"] + dw_settings.get("transformations", dw_settings.get("schemas", []))
+            for info in schema_settings
         ]
         self._schema_lookup = {schema.name: schema for schema in self.schemas}
 
@@ -132,11 +158,16 @@ class DataWarehouseConfig:
 
         # Groups are in sorted order after the root group
         self.groups = [root.group] + sorted(other_groups)
-        [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+        try:
+            [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+        except ValueError:
+            raise ETLConfigError("Failed to find group of default user")
+        # Relation glob patterns indicating unacceptable load failures; matches everything if unset
+        required_patterns = dw_settings.get("required_for_success", [])
+        self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)
+
         # Mapping SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
-        # Relation glob patterns indicating unacceptable load failures; matches everything if unset
-        self.required_in_full_load_selector = etl.names.TableSelector(settings.get("required_in_full_load", []))
 
     def _check_access_to_cluster(self):
         """

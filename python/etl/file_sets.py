@@ -338,27 +338,39 @@ def approx_pretty_size(total_bytes) -> str:
     return "{:d}{}".format(div, unit)
 
 
-def list_files(file_sets, long_format=False) -> None:
+def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
     """
     List files in the given S3 bucket or from current directory.
 
     With the long format, shows content length and tallies up the total size in bytes.
+    When sorted by time, only prints files but sorted by their timestamp.
     """
-    total_length = 0
-    for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
-        print("Schema: '{}'".format(schema_name))
-        for file_set in file_group:
-            if file_set.manifest_file_name is None:
-                print("    Table: '{}'".format(file_set.target_table_name.identifier))
-            else:
-                print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.identifier,
-                                                                     file_set.source_table_name.identifier))
+    if sort_by_time:
+        found = []
+        for file_set in file_sets:
             for filename in file_set.files:
-                if long_format:
-                    content_length, last_modified = file_set.stat(filename)
-                    total_length += content_length
-                    print("        {} ({:d}, {})".format(file_set.uri(filename), content_length, last_modified))
+                _, last_modified = file_set.stat(filename)
+                found.append((last_modified, file_set.uri(filename), file_set.target_table_name.identifier))
+        if found:
+            print("Files (and their target tables) sorted by their modification times:")
+        for last_modified, uri, identifier in sorted(found):
+            print("{} ({}, {})".format(uri, identifier, last_modified))
+    else:
+        total_length = 0
+        for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
+            print("Schema: '{}'".format(schema_name))
+            for file_set in file_group:
+                if file_set.manifest_file_name is None:
+                    print("    Table: '{}'".format(file_set.target_table_name.identifier))
                 else:
-                    print("        {}".format(file_set.uri(filename)))
-    if total_length > 0:
-        print("Total size in bytes: {:d} ({})".format(total_length, approx_pretty_size(total_length)))
+                    print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.identifier,
+                                                                         file_set.source_table_name.identifier))
+                for filename in file_set.files:
+                    if long_format:
+                        content_length, last_modified = file_set.stat(filename)
+                        total_length += content_length
+                        print("        {} ({:d}, {})".format(file_set.uri(filename), content_length, last_modified))
+                    else:
+                        print("        {}".format(file_set.uri(filename)))
+        if total_length > 0:
+            print("Total size in bytes: {:d} ({})".format(total_length, approx_pretty_size(total_length)))

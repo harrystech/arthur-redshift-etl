@@ -41,17 +41,16 @@ if ! GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
 fi
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-  ENV_NAME="production"
   PIPELINE_NAME="ETL Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 else
-  ENV_NAME="development"
   PIPELINE_NAME="Validation Pipeline ($USER:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 fi
-# Note: key/value are lower-case keywords here.
-AWS_TAGS="key=user:project,value=data-warehouse key=user:env,value=$ENV_NAME"
+# Note: "key" and "value" are lower-case keywords here.
+AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" validation_pipeline > "$PIPELINE_DEFINITION_FILE"
 
@@ -72,8 +71,6 @@ fi
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://${PIPELINE_DEFINITION_FILE}" \
     --parameter-values \
-        myS3Bucket="$PROJ_BUCKET" \
-        myEtlEnvironment="$PROJ_ENVIRONMENT" \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
     --pipeline-id "$PIPELINE_ID"

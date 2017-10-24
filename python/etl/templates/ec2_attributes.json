@@ -1,6 +1,7 @@
 {
     "KeyName": "${resources.key_name}",
     "SubnetId": "${resources.VPC.public_subnet}",
+    "InstanceProfile": "${resources.EC2.iam_instance_profile}",
     "EmrManagedMasterSecurityGroup": "${resources.EMR.master.managed_security_group}",
     "EmrManagedSlaveSecurityGroup": "${resources.EMR.core.managed_security_group}",
     "AdditionalMasterSecurityGroups": [

@@ -1,0 +1,151 @@
+Description: >
+    Create the admin role for users and add permission to assume this role to the given group.
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+
+Parameters:
+
+    VpcStackName:
+        Description: (required) Name of cloudformation stack with VPC
+        Type: String
+
+    OfficeIPs:
+        Description: (required) List of IP ranges which are source IP conditions for assuming admin role
+            (Make sure to put escaped quotes around this list)
+        Type: CommaDelimitedList
+
+    AdminGroupName:
+        Description: (optional) Name of the group to be trusted to assume this role
+        Type: String
+        Default: "dw-etl-admin"
+
+
+Resources:
+
+    AdminRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: "Allow"
+                    Principal:
+                        AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+                    Action: "sts:AssumeRole"
+            Path: "/"
+            Policies:
+              - PolicyName: "admin_default_policy"
+                PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                      - Sid: "CreateAnything"
+                        Effect: "Allow"
+                        Action:
+                            - "cloudwatch:DescribeAlarms"
+                            - "datapipeline:Describe*"
+                            - "datapipeline:Get*"
+                            - "datapipeline:List*"
+                            - "datapipeline:Query*"
+                            - "ec2:AuthorizeSecurityGroup*"
+                            - "ec2:CreateNetworkInterface"
+                            - "ec2:CreateTags"
+                            - "ec2:Describe*"
+                            - "ec2:RunInstances"
+                            - "elasticmapreduce:*"
+                            - "emr:*"
+                            - "iam:GetRole"
+                            - "iam:GetRolePolicy"
+                            - "iam:ListInstanceProfiles"
+                            - "iam:ListRolePolicies"
+                            - "iam:PassRole"
+                            - "s3:Get*"
+                            - "s3:List*"
+                            - "sns:Create*"
+                            - "sns:Get*"
+                            - "sns:List*"
+                            - "sns:Publish"
+                        Resource: "*"
+                      - Sid: "ModifyOnlyOursInS3"
+                        Effect: "Allow"
+                        Action:
+                            - "s3:Delete*"
+                            - "s3:Put*"
+                        Resource:
+                            - !Join [ '', [ 'arn:aws:s3:::', "Fn::ImportValue": !Sub "${VpcStackName}::object-store", "/*" ] ]
+                            - !Join [ '', [ 'arn:aws:s3:::', "Fn::ImportValue": !Sub "${VpcStackName}::data-lake", "/*" ] ]
+                      - Sid: "ModifyOnlyOursInSNS"
+                        Effect: "Allow"
+                        Action:
+                            - "sns:ConfirmSubscription"
+                            - "sns:Delete*"
+                            - "sns:Remove*"
+                            - "sns:Set*"
+                            - "sns:Subscribe"
+                            - "sns:Unsubscribe"
+                        Resource: "arn:aws:sns:*:*:dw-etl-*"
+                      - Sid: "ModifyOnlyOursInDynamoDB"
+                        Effect: "Allow"
+                        Action: "dynamodb:*"
+                        Resource: "arn:aws:dynamodb:*:*:table/dw-etl-*"
+                      - Sid: "ModifyOnlyOursInDataPipeline"
+                        Effect: "Allow"
+                        Action: "datapipeline:*"
+                        Resource: "*"
+                        # Could we use this condition based on our tag for more (or all) stuff?
+                        Condition:
+                            StringEquals:
+                                "datapipeline:Tag/user:project": "data-warehouse"
+                      - Sid: "ModifyParameters"
+                        Effect: "Allow"
+                        Action:
+                            - "ssm:AddTagsToResource"
+                            - "ssm:DeleteParameter"
+                            - "ssm:DescribeParameters"
+                            - "ssm:GetParameter*"
+                            - "ssm:PutParameter"
+                        Resource: "arn:aws:ssm:*:*:parameter/DW-ETL/*"
+                      - Sid: "ModifyOnlyOursWIP"
+                        Effect: "Allow"
+                        Action:
+                            - "cloudwatch:DeleteAlarms"
+                            - "cloudwatch:PutMetricAlarm"
+                            - "ec2:DeleteNetworkInterface"
+                            - "ec2:DeleteTags"
+                            - "ec2:DeleteVolume"
+                            - "ec2:DetachNetworkInterface"
+                            - "ec2:ModifyInstanceAttribute"
+                            - "ec2:RevokeSecurityGroupEgress"
+                            - "ec2:TerminateInstances"
+                        Resource: "*"
+
+
+
+    AssumeAdminPolicy:
+        Type: AWS::IAM::Policy
+        Properties:
+            Groups:
+                - !Ref "AdminGroupName"
+            PolicyName: !Sub "Assume_Admin_Role_${AWS::StackName}"
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Action: "sts:AssumeRole"
+                      Resource: !GetAtt AdminRole.Arn
+                      Condition:
+                          IpAddress:
+                              "aws:SourceIp": !Ref OfficeIPs
+
+
+Outputs:
+
+    AdminRole:
+        Description: Role with enough permissions to administer ETLs
+        Value: !GetAtt AdminRole.Arn
+        Export:
+            Name: !Sub "${AWS::StackName}::admin-role"
+
+    SigninURL:
+        Description: Link for users to switch roles in console
+        Value: !Sub "https://signin.aws.amazon.com/switchrole?roleName=${AdminRole}&account=${AWS::AccountId}"

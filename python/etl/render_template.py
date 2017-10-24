@@ -51,6 +51,21 @@ def list_templates(compact=False) -> None:
             print("{name:{width}s}: {filename}".format(name=name, filename=filename, width=width))
 
 
+def render_from_config(template_string, context=None):
+    try:
+        config_mapping = etl.config.get_config_map()
+        # FIXME Remove code that serves backwards-compatibility once new settings files have been deployed
+        config_mapping.update({
+            "prefix": config_mapping["object_store.s3.prefix"],
+            "today": config_mapping["date.today"],
+            "yesterday": config_mapping["date.yesterday"]
+        })
+        template = DottedNameTemplate(template_string)
+        return template.substitute(config_mapping)
+    except (KeyError, ValueError) as exc:
+        raise MissingValueTemplateError("failed to render template in {}".format(context)) from exc
+
+
 def render(template_name: str, compact=False) -> None:
     """
     Replace template ${strings} by configuration values.
@@ -62,12 +77,7 @@ def render(template_name: str, compact=False) -> None:
     logger.info("Rendering template '%s' from file '%s'", template_name, filename)
     original = pkg_resources.resource_string("etl", filename).decode()
 
-    try:
-        config_mapping = etl.config.get_config_map()
-        template = DottedNameTemplate(original)
-        rendered = template.substitute(config_mapping)
-    except (KeyError, ValueError) as exc:
-        raise MissingValueTemplateError("failed to render template in '{}'".format(filename)) from exc
+    rendered = render_from_config(original, context="'{}'".format(filename))
 
     if filename.endswith((".json", ".yaml", ".yml")):
         # Always load as YAML in order to support comments.

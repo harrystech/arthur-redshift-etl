@@ -50,7 +50,6 @@ from itertools import chain, dropwhile
 from typing import Any, Dict, List, Optional, Set
 
 
-import boto3
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -112,6 +111,7 @@ class LoadableRelation:
         Compared to RelationDescription, we have the additional complexity of dealing with
         the position (staging or not) of a table.
 
+        >>> import etl.file_sets
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
@@ -562,6 +562,7 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
                 load_ctas_directly(conn, relation, dry_run=dry_run)
         else:
             copy_data(conn, relation, dry_run=dry_run)
+        # TODO Check whether we can skip analyze during refreshes
         analyze(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise UpdateTableError(exc) from exc
@@ -589,6 +590,8 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             pass
         elif relation.skip_copy:
             logger.info("Skipping loading data into {:x}".format(relation))
+        elif relation.failed:
+            logger.info("Bypassing already failed relation {:x}".format(relation))
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
@@ -640,6 +643,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
     any relation from the full set of relations that depends on a source relation that failed
     to load.
     """
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+    if not source_relations:
+        logger.info("None of the relations are in source schemas")
+        return
+
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
 
@@ -658,7 +666,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         Check DynamoDB for successful extracts
         Get items from the queue 'to_poll'
         When the item
-            - is an identifer: poll DynamoDB
+            - is an identifier: poll DynamoDB
             - is an int: sleep that many seconds
         """
         while True:
@@ -699,11 +707,12 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     if extract_payload['event'] == etl.monitor.STEP_FINISH:
                         logger.info("Poller: Recently completed extract found for '%s', marking as ready.",
                                     item.identifier)
-                        to_load.put(item)
                     elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
                         item.mark_failure(relations, exc_info=False)
+                    # We'll create the relation on success and failure (but skip copy on failure)
+                    to_load.put(item)
 
     uncaught_load_worker_exception = threading.Event()
 
@@ -728,11 +737,6 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                              item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
                 raise
-
-    source_relations = [relation for relation in relations if not relation.is_transformation]
-    if not source_relations:
-        logger.info("None of the relations are in source schemas")
-        return
 
     to_poll = queue.Queue()  # type: ignore
     to_load = queue.Queue()  # type: ignore
@@ -946,8 +950,8 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
-        logger.info("Open connections:\n%s", etl.db.format_result(etl.db.list_connections(conn)))
-        logger.info("Open transactions:\n%s", etl.db.format_result(etl.db.list_transactions(conn)))
+        tx_info = etl.data_warehouse.list_open_transactions(conn)
+        etl.db.print_result("List of sessions that have open transactions:", tx_info)
 
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:

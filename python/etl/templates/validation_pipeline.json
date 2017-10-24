@@ -6,10 +6,10 @@
             "schedule": { "ref": "ValidationSchedule" },
             "scheduleType": "cron",
             "failureAndRerunMode": "CASCADE",
-            "resourceRole": "DataPipelineDefaultResourceRole",
-            "role": "DataPipelineDefaultRole",
-            "pipelineLogUri": "s3://#{myS3Bucket}/#{myEtlEnvironment}/logs/",
-            "region": "us-east-1",
+            "resourceRole": "${resources.EC2.iam_instance_profile}",
+            "role": "${resources.DataPipeline.role}",
+            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/logs/",
+            "region": "${resources.VPC.region}",
             "maximumRetries": "2"
         },
         {
@@ -22,20 +22,20 @@
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:us-east-1:${resources.VPC.account}:etl-validation-#{myEtlEnvironment}"
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-validation"
         },
         {
             "id": "SuccessNotification",
             "type": "SnsAlarm",
             "parent": {"ref": "SNSParent"},
-            "subject": "ETL Validation Success: #{myEtlEnvironment}/validation at #{node.@scheduledStartTime}",
+            "subject": "ETL Validation Success: ${object_store.s3.prefix}/validation at #{node.@scheduledStartTime}",
             "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
         },
         {
             "id": "FailureNotification",
             "type": "SnsAlarm",
             "parent": {"ref": "SNSParent"},
-            "subject": "ETL Validation Failure: #{myEtlEnvironment}/validation at #{node.@scheduledStartTime}",
+            "subject": "ETL Validation Failure: ${object_store.s3.prefix}/validation at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
@@ -65,87 +65,71 @@
         },
         {
             "id": "ShellCommandParent",
-            "parent": {"ref": "Ec2CommandGrandParent"}
+            "parent": { "ref": "Ec2CommandGrandParent" }
         },
         {
             "id": "ArthurCommandParent",
-            "parent": {"ref": "Ec2CommandGrandParent"},
+            "parent": { "ref": "Ec2CommandGrandParent" },
             "maximumRetries": "0"
         },
         {
             "id": "CopyStartupScripts",
             "name": "Copy Startup Scripts (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ShellCommandParent"},
-            "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'sync_env.sh' s3://#{myS3Bucket}/#{myEtlEnvironment}/bin /tmp"
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'sync_env.sh' s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin /tmp"
         },
         {
             "id": "SyncEnvironment",
             "name": "Sync environments (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ShellCommandParent"},
-            "command": "bash /tmp/sync_env.sh -y #{myS3Bucket} #{myEtlEnvironment} #{myEtlEnvironment}/validation",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "bash /tmp/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/validation",
             "dependsOn": { "ref": "CopyStartupScripts" }
         },
         {
             "id": "Bootstrap",
             "name": "Bootstrap (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ShellCommandParent"},
-            "command": "bash /tmp/bootstrap.sh #{myS3Bucket} #{myEtlEnvironment}/validation",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
             "dependsOn": { "ref": "SyncEnvironment" }
         },
         {
             "id": "ArthurValidateUpstream",
             "name": "Validate Upstream (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ArthurCommandParent"},
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ validate --prolix --remote-files --prefix #{myEtlEnvironment}/validation --keep-going --skip-dependencies-check",
-            "dependsOn": {"ref": "Bootstrap"}
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ validate --prolix --remote-files --prefix ${object_store.s3.prefix}/validation --keep-going --skip-dependencies-check",
+            "dependsOn": { "ref": "Bootstrap" }
         },
         {
             "id": "ArthurInitialize",
             "name": "Initialize (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ArthurCommandParent"},
+            "parent": { "ref": "ArthurCommandParent" },
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ initialize --prolix",
-            "dependsOn": {"ref": "ArthurValidateUpstream"}
+            "dependsOn": { "ref": "ArthurValidateUpstream" }
         },
         {
             "id": "ArthurLoad",
             "name": "Load with skip copy (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ArthurCommandParent"},
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix #{myEtlEnvironment}/validation --skip-copy",
-            "dependsOn": {"ref": "ArthurInitialize"}
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix}/validation --skip-copy",
+            "dependsOn": { "ref": "ArthurInitialize" }
         },
         {
             "id": "ArthurValidateDependencies",
             "name": "Validate Dependencies (EC2)",
             "type": "ShellCommandActivity",
-            "parent": {"ref": "ArthurCommandParent"},
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ validate --prolix --remote-files --prefix #{myEtlEnvironment}/validation --keep-going --skip-sources-check",
-            "dependsOn": {"ref": "ArthurLoad"},
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ validate --prolix --remote-files --prefix ${object_store.s3.prefix}/validation --keep-going --skip-sources-check",
+            "dependsOn": { "ref": "ArthurLoad" },
             "onSuccess": {"ref": "SuccessNotification"}
         }
     ],
     "parameters": [
-        {
-            "id": "myS3Bucket",
-            "type": "String",
-            "optional": "false",
-            "description": "Name of S3 bucket",
-            "watermark": "data_lake_bucket",
-            "helpText": "Pick the name of the data lake."
-        },
-        {
-            "id": "myEtlEnvironment",
-            "type": "String",
-            "optional": "false",
-            "description": "Name of ETL environment",
-            "watermark": "production",
-            "helpText": "Pick the name such as 'production', 'development' or your user name."
-        },
         {
             "id": "myStartDateTime",
             "type": "String",
@@ -164,8 +148,6 @@
         }
     ],
     "values": {
-        "myS3Bucket": "data_lake_bucket",
-        "myEtlEnvironment": "development",
         "myStartDateTime": "2525-01-01T00:00:00",
         "myOccurrences": "1000"
     }

@@ -16,22 +16,19 @@
             "group": "etl_rw"
 
         },
-        # Schemas that are filled out based on CTAS or views and have no direct upstream source
-        "schemas": []
+        "users": [
+            {
+                # Default group specified as group of pseudo-user "default"
+                "name": "default",
+                "group": "analyst_ro"
+            }
+        ]
     },
     # Logging of the ETL into events tables
     "etl_events": {
-        # Send ETL events to DynamoDB table
-        "dynamodb": {
-            "table_prefix": "redshift-etl-events",
-            "capacity": 3,
-            "region": "us-east-1"
-        # },
-        # # Send ETL events to an RDS instance / PostgreSQL host
-        # "postgresql": {
-        #     "table_prefix": "redshift_etl_events",
-        #     "write_access": "REDSHIFT_ETL_EVENTS_URI"
-        }
+        "enabled": True,  # required to be enabled for concurrent extract/load
+        "read_capacity": 3,
+        "write_capacity": 3
     },
     # Type information from source (PostgreSQL) to target (Redshift)
     "type_maps": {
