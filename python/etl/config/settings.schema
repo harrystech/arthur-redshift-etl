@@ -222,16 +222,19 @@
         "resources": {
             "type": "object",
             "properties": {
-                "key_name": { "type": "string" },
+                "key_name": { "$ref": "#/definitions/identifier" },
                 "VPC": {
                     "type": "object",
                     "properties": {
-                        "region": { "type": "string" },
-                        "account": { "type": "string" },
-                        "name": { "type": "string" },
-                        "public_subnet": { "type": "string" },
-                        "private_subnet": { "type": "string" },
-                        "whitelist_security_group": { "type": "string" }
+                        "region": { "$ref": "#/definitions/identifier" },
+                        "account": {
+                            "type": "string",
+                            "pattern": "^[0-9]+$"
+                        },
+                        "name": { "$ref": "#/definitions/identifier" },
+                        "public_subnet": { "$ref": "#/definitions/identifier" },
+                        "private_subnet": { "$ref": "#/definitions/identifier" },
+                        "whitelist_security_group": { "$ref": "#/definitions/identifier" }
                     },
                     "required": [ "region", "account", "name", "public_subnet", "whitelist_security_group" ],
                     "additionalProperties": false
@@ -241,8 +244,8 @@
                     "properties": {
                         "instance_type": { "type": "string" },
                         "image_id": { "type": "string" },
-                        "public_security_group": { "type": "string" },
-                        "iam_instance_profile": { "type": "string" }
+                        "public_security_group": { "$ref": "#/definitions/identifier" },
+                        "iam_instance_profile": { "$ref": "#/definitions/identifier" }
                     },
                     "required": [ "instance_type", "image_id", "public_security_group", "iam_instance_profile" ],
                     "additionalProperties": false
@@ -265,7 +268,7 @@
                 "DataPipeline": {
                     "type": "object",
                     "properties": {
-                        "role": { "type": "string" }
+                        "role": { "$ref": "#/definitions/identifier" }
                     },
                     "required": [ "role" ],
                     "additionalProperties": false
@@ -273,6 +276,7 @@
                 "RedshiftCluster": {
                     "type": "object",
                     "properties": {
+                        "name": { "$ref": "#/definitions/identifier" },
                         "max_concurrency": {
                             "type": "integer",
                             "minimum": 1
