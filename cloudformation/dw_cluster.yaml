@@ -113,6 +113,7 @@ Resources:
                 true
             IamRoles:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-iam-role"
+                - Fn::ImportValue: !Sub "${VpcStackName}::redshift-copy-role"
             MasterUsername:
                 !Ref MasterUsername
             MasterUserPassword:
@@ -135,7 +136,7 @@ Resources:
                 - Key: user:sub-project
                   Value: redshift-cluster
 
-    # Note that an option to set enhanced VPC routing is missing in cloudformation, so this must be done using the CLI
+    # Note that an option to set enhanced VPC routing is missing in CloudFormation, so this must be done using the CLI
     # aws redshift modify-cluster --cluster-identifier "[cluster identifier]" --enhanced-vpc-routing
 
 
