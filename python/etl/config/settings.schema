@@ -20,6 +20,7 @@
             "type": "object",
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
+                "description": { "type": "string" },
                 "group": { "$ref": "#/definitions/identifier" },
                 "schema": { "$ref": "#/definitions/identifier" }
             },
