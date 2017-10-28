@@ -35,6 +35,8 @@ import simplejson as json
 import etl.assets
 import etl.config.env
 import etl.db
+import etl.text
+from etl.errors import ETLRuntimeError
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds
 
@@ -367,7 +369,8 @@ class MemoryStorage(PayloadDispatcher):
 
     The output should pass validator at https://validator.w3.org/#validate_by_input+with_options
     """
-    SERVER_ADDRESS = ('', 8086)
+    SERVER_HOST = ''  # meaning: all that we can bind to locally
+    SERVER_PORT = 8086
 
     def __init__(self):
         self.queue = queue.Queue()
@@ -479,9 +482,10 @@ class MemoryStorage(PayloadDispatcher):
 
         class BackgroundServer(threading.Thread):
             def run(self):
-                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_ADDRESS[1])
+                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_PORT)
                 try:
-                    httpd = _ThreadingSimpleServer(MemoryStorage.SERVER_ADDRESS, handler_class)
+                    httpd = _ThreadingSimpleServer((MemoryStorage.SERVER_HOST, MemoryStorage.SERVER_PORT),
+                                                   handler_class)
                     httpd.serve_forever()
                 except Exception as exc:
                     logger.info("Background server stopped: %s", str(exc))
@@ -552,7 +556,8 @@ def test_run():
     table_names = ["apple", "banana", "cantaloupe", "durian", "fig"]
     index = {"current": 0, "final": len(schema_names) * len(table_names)}
 
-    print("Creating events ... follow along at http://{0}:{1}/".format(*MemoryStorage.SERVER_ADDRESS))
+    host = MemoryStorage.SERVER_HOST if MemoryStorage.SERVER_HOST else "localhost"
+    print("Creating events ... follow along at http://{0}:{1}/".format(host, MemoryStorage.SERVER_PORT))
 
     with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
         for i, names in enumerate(itertools.product(schema_names, table_names)):

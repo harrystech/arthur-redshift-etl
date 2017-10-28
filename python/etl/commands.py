@@ -859,8 +859,10 @@ class ListFilesCommand(SubCommand):
 
     def __init__(self):
         super().__init__("ls",
-                         "list files in S3",
-                         "List files in the S3 bucket and starting with prefix by source, table, and file type.")
+                         "list files in local directory or in S3",
+                         "List files in local directory or in the S3 bucket and starting with prefix by"
+                         " source, table, and file type."
+                         " (If sorting by timestamp, only print filename and timestamp.)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
@@ -1009,7 +1011,7 @@ class ShowPipelinesCommand(SubCommand):
     def __init__(self):
         super().__init__("show_pipelines",
                          "show installed pipelines",
-                         "Show additional information about currently installed pipelines.")
+                         "Show information about currently installed pipelines.")
 
     def add_arguments(self, parser):
         parser.add_argument("selection", help="pick pipelines to show", nargs="*")

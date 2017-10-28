@@ -27,8 +27,10 @@ import os.path
 import re
 
 import etl.config
-from etl.names import TableName, TableSelector
 import etl.s3
+import etl.text
+from etl.errors import ETLSystemError
+from etl.names import TableName, TableSelector
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -350,11 +352,9 @@ def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
         for file_set in file_sets:
             for filename in file_set.files:
                 _, last_modified = file_set.stat(filename)
-                found.append((last_modified, file_set.uri(filename), file_set.target_table_name.identifier))
-        if found:
-            print("Files (and their target tables) sorted by their modification times:")
-        for last_modified, uri, identifier in sorted(found):
-            print("{} ({}, {})".format(uri, identifier, last_modified))
+                found.append((last_modified, file_set.uri(filename)))
+        print(etl.text.format_lines([(uri, last_modified) for last_modified, uri in sorted(found)],
+                                    header_row=["File", "Last modified"], max_column_width=120))
     else:
         total_length = 0
         for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
