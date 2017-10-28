@@ -31,7 +31,7 @@ import etl.db
 import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import CyclicDependencyError, MissingQueryError
+from etl.errors import CyclicDependencyError, ETLRuntimeError, MissingQueryError
 from etl.names import join_with_quotes, TableName, TableSelector, TempTableName
 
 logger = logging.getLogger(__name__)
@@ -163,7 +163,8 @@ class RelationDescription:
     @property
     def is_required(self) -> bool:
         if self._is_required is None:
-            raise RuntimeError("State of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self))
+            raise ETLRuntimeError("state of 'is_required' unknown for RelationDescription '{0.identifier}'"
+                                  .format(self))
         return self._is_required
 
     @property

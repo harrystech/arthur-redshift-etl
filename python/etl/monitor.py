@@ -79,7 +79,7 @@ class MetaMonitor(type):
     @property
     def environment(cls):
         if cls._environment is None:
-            raise ValueError("Value of 'environment' is None")
+            raise ValueError("value of 'environment' is None")
         return cls._environment
 
     @environment.setter
@@ -134,7 +134,7 @@ class Monitor(metaclass=MetaMonitor):
     >>> Monitor.environment
     Traceback (most recent call last):
         ...
-    ValueError: Value of 'environment' is None
+    ValueError: value of 'environment' is None
     >>> Monitor.environment = 'saturn'
     >>> Monitor.environment
     'saturn'

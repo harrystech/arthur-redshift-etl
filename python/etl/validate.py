@@ -264,7 +264,7 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
 
     columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
     if not columns_info:
-        raise UpstreamValidationError("Table '%s' is gone or has no columns left" % source_table_name.identifier)
+        raise UpstreamValidationError("table '%s' is gone or has no columns left" % source_table_name.identifier)
     logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
 
     current_columns = frozenset(column.name for column in columns_info)

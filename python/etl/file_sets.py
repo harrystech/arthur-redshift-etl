@@ -18,13 +18,13 @@ For CTAS or views, the directory after 'schemas' is the name of the schema in th
 configuration.  The 'source_schema_name' is only used for sorting.
 """
 
-from datetime import datetime
 import logging
-from itertools import groupby
-from operator import attrgetter
 import os
 import os.path
 import re
+from datetime import datetime
+from itertools import groupby
+from operator import attrgetter
 
 import etl.config
 import etl.s3
@@ -96,7 +96,7 @@ class TableFileSet:
         elif self.scheme == "file":
             return filename
         else:
-            raise RuntimeError("illegal scheme in file set")
+            raise ETLSystemError("illegal scheme in file set")
 
     def stat(self, filename):
         """
@@ -107,7 +107,7 @@ class TableFileSet:
         elif self.scheme == "file":
             return local_file_stat(filename)
         else:
-            raise RuntimeError("illegal scheme in file set")
+            raise ETLSystemError("illegal scheme in file set")
 
     @property
     def source_name(self):

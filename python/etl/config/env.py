@@ -10,9 +10,9 @@ def get(name: str, default: Union[str, None]=None) -> str:
     """
     value = os.environ.get(name, default)
     if value is None:
-        raise KeyError('Environment variable "%s" not set' % name)
+        raise KeyError('environment variable "%s" not set' % name)
     if not value:
-        raise ValueError('Environment variable "%s" is empty' % name)
+        raise ValueError('environment variable "%s" is empty' % name)
     return value
 
 

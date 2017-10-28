@@ -179,14 +179,14 @@ class TableName:
         "Table 'public.users' contains users"
         >>> "Oops: {:y}".format(pu)
         Traceback (most recent call last):
-        ValueError: Unknown format code 'y' for TableName
+        ValueError: unknown format code 'y' for TableName
         """
         if (not code) or (code == 's'):
             return str(self)
         elif code == 'x':
             return "'{:s}'".format(self.identifier)
         else:
-            raise ValueError("Unknown format code '{}' for {}".format(code, self.__class__.__name__))
+            raise ValueError("unknown format code '{}' for {}".format(code, self.__class__.__name__))
 
     def __eq__(self, other: object):
         if isinstance(other, TableName):
