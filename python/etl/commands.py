@@ -12,6 +12,7 @@ import shlex
 import sys
 import traceback
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import boto3
@@ -271,7 +272,7 @@ def build_full_parser(prog_name):
             ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
             # Environment commands
             RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
-            QueryEventsCommand,
+            QueryEventsCommand, TailEventsCommand,
             # Development commands
             SelfTestCommand]:
         cmd = klass()
@@ -1029,7 +1030,7 @@ class QueryEventsCommand(SubCommand):
 
     def __init__(self):
         super().__init__("query_events",
-                         "query the tables for ETL events",
+                         "query the tables of ETL events",
                          "Query the table of events written during an ETL."
                          " When an ETL is specified, then it is used as a filter."
                          " Otherwise ETLs from the last day are listed.")
@@ -1043,6 +1044,47 @@ class QueryEventsCommand(SubCommand):
             etl.monitor.query_for_etl_ids(days_ago=1)
         else:
             etl.monitor.scan_etl_events(args.etl_id)
+
+
+class TailEventsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("tail_events",
+                         "show tail of the ETL events and optionally follow for changes",
+                         "Show latest ETL events for the selected tables in a 15-minute window or"
+                         " since the given start time. (Use '-t #{@latestRunTime}' in a Data Pipeline definition.)"
+                         " Optionally keep looking for events in 30s intervals,"
+                         " which automatically quits when no new event arrives within an hour.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix"])
+        parser.add_argument("-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"],
+                            help="pick which step to tail")
+        now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
+        parser.add_argument("-t", "--start-time", help="beginning of time window, e.g. '%s'" % now)
+        parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
+
+    def callback(self, args, config):
+        if args.start_time:
+            try:
+                start_time = datetime.strptime(args.start_time, "%Y-%m-%dT%H:%M:%S")
+            except ValueError as exc:
+                raise InvalidArgumentError from exc
+        else:
+            start_time = datetime.utcnow() - timedelta(seconds=15 * 60)
+        if args.follow:
+            update_interval = 30
+            idle_time_out = 60 * 60
+        else:
+            update_interval = idle_time_out = None
+
+        # This will sort events by 30s time buckets and execution order within those buckets.
+        # (If events for all tables already happen to exist, then this matches the desired execution order.)
+        all_relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        selected_relations = etl.relation.select_in_execution_order(all_relations, args.pattern)
+        etl.monitor.tail_events(selected_relations,
+                                start_time=start_time, update_interval=update_interval, idle_time_out=idle_time_out,
+                                step=args.step)
 
 
 class SelfTestCommand(SubCommand):

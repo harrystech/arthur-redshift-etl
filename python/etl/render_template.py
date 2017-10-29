@@ -9,8 +9,9 @@ import pkg_resources
 import simplejson
 import yaml
 
-from etl.errors import InvalidArgumentError, MissingValueTemplateError
 import etl.config
+import etl.text
+from etl.errors import InvalidArgumentError, MissingValueTemplateError
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -114,6 +115,4 @@ def show_vars(name: Optional[str]) -> None:
         if not keys:
             raise InvalidArgumentError("no matching setting for '{}'".format(name))
     values = [config_mapping[key] for key in keys]
-    width = max(map(len, keys))
-    for key, value in zip(keys, values):
-        print("{key:{width}} = {value}".format(key=key, value=value, width=width))
+    print(etl.text.format_lines(zip(keys, values), header_row=["Name", "Value"]))

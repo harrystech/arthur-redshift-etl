@@ -20,6 +20,7 @@ import os.path
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from functools import partial
+from itertools import chain
 from operator import attrgetter
 from queue import PriorityQueue
 from typing import Any, Dict, FrozenSet, Optional, Union, List
@@ -456,3 +457,18 @@ def find_dependents(relations: List[RelationDescription], seed_relations: List[R
             in_dependency_path.add(relation.identifier)
     dependents = in_dependency_path - seeds
     return [relation for relation in relations if relation.identifier in dependents]
+
+
+def select_in_execution_order(relations: List[RelationDescription], selector: TableSelector,
+                              include_dependents=False) -> List[RelationDescription]:
+    """
+    Return list of relations that were selected and optionally, expand the list by the dependents of the selected ones.
+    """
+    logger.info("Pondering execution order of %d relation(s)", len(relations))
+    execution_order = order_by_dependencies(relations)
+    selected = find_matches(execution_order, selector)
+    if include_dependents:
+        dependents = find_dependents(execution_order, selected)
+        combined = frozenset(relation.identifier for relation in chain(selected, dependents))
+        selected = [relation for relation in execution_order if relation.identifier in combined]
+    return selected

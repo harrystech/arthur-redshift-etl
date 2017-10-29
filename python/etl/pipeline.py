@@ -9,8 +9,8 @@ from typing import List
 
 import boto3
 
-from etl.names import join_with_quotes
 import etl.text
+from etl.names import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

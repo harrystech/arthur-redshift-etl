@@ -2,12 +2,10 @@ import logging
 import os.path
 import shlex
 import subprocess
-from contextlib import closing
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional
 
 import etl.config
-import etl.monitor
 import etl.db
 import etl.s3
 from etl.config.dw import DataWarehouseSchema

@@ -5,6 +5,30 @@ Deal with text, mostly around matrices of texts which we want to pretty print.
 import textwrap
 
 
+class ColumnWrapper(textwrap.TextWrapper):
+    """
+    Unlike the TextWrapper, we don't care about words and just treat the entire column as a chunk.
+
+    If the column is "too long", then we force a "word break" with whitespace.
+    """
+
+    def _split(self, text):
+        """
+        Create one chunk smaller than the column width or three chunks with the last one wider than the placeholder.
+
+        >>> cw = ColumnWrapper(width=10, placeholder='..')
+        >>> cw._split("ciao")
+        ['ciao']
+        >>> cw._split("good morning")
+        ['good mo', ' ', '???']
+        """
+        chunk = text.rstrip()
+        if len(chunk) > self.width:
+            return [chunk[:self.width - len(self.placeholder) - 1], ' ', '?' * (len(self.placeholder) + 1)]
+        else:
+            return [chunk]
+
+
 def format_lines(value_rows, header_row=None, has_header=False, max_column_width=100) -> str:
     """
     Format a list of rows which each have a list of values, optionally with a header.
@@ -13,10 +37,10 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     If any column is longer than the max_column_width, a placeholder will be inserted after cutting the value.
 
     >>> print(format_lines([["aa", "b", "ccc"], ["a", "bb", "c"]]))
-    #1 | #2 | #3
-    ---+----+----
-    aa | b  | ccc
-    a  | bb | c
+    col #1 | col #2 | col #3
+    -------+--------+-------
+    aa     | b      | ccc
+    a      | bb     | c
     (2 rows)
     >>> print(format_lines([["name", "breed"], ["monty", "spaniel"], ["cody", "poodle"], ["cooper", "shepherd"]],
     ...                    has_header=True))
@@ -33,6 +57,10 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     (1 row)
     >>> print(format_lines([]))
     (0 rows)
+    >>> print(format_lines([], header_row=["nothing"]))
+    nothing
+    -------
+    (0 rows)
     >>> format_lines([["a", "b"], ["c"]])
     Traceback (most recent call last):
     ValueError: unexpected row length: got 1, expected 2
@@ -40,28 +68,34 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     if header_row is not None and has_header is True:
         raise ValueError("cannot have separate header row and mark first row as header")
     # Make sure that we are working with a list of lists of strings (and not generators and such).
-    wrapper = textwrap.TextWrapper(width=max_column_width, max_lines=1, placeholder="...",
-                                   expand_tabs=True, replace_whitespace=True, drop_whitespace=False)
+    wrapper = ColumnWrapper(width=max_column_width, max_lines=1, placeholder="...",
+                            expand_tabs=True, replace_whitespace=True, drop_whitespace=False)
     matrix = [[wrapper.fill(str(column)) for column in row] for row in value_rows]
-    n_columns = len(matrix[0]) if len(matrix) > 0 else 0
-    # Add header row as needed
+    # Add header row as needed, have number of columns depend on header
     if header_row is not None:
+        n_columns = len(header_row)
         matrix.insert(0, [str(column) for column in header_row])
-    elif not has_header:
-        matrix.insert(0, ["#{:d}".format(i + 1) for i in range(n_columns)])
+    elif has_header:
+        n_columns = len(matrix[0])
+    else:
+        n_columns = len(matrix[0]) if len(matrix) > 0 else 0
+        matrix.insert(0, ["col #{:d}".format(i + 1) for i in range(n_columns)])
+    assert len(matrix) > 0
     for i, row in enumerate(matrix):
         if len(row) != n_columns:
             raise ValueError("unexpected row length: got {:d}, expected {:d}".format(len(row), n_columns))
-    if len(matrix) == 1:
-        return "(0 rows)"
-    final = "\n({:d} {})".format(len(matrix) - 1, "row" if len(matrix) == 2 else "rows")
+    row_count = "({:d} {})".format(len(matrix) - 1, "row" if len(matrix) == 2 else "rows")
     # Determine column widths, add separator between header and body as dashed line
     column_width = [max(len(row[i]) for row in matrix) for i in range(n_columns)]
     if max_column_width is not None:
         column_width = [min(actual_width, max_column_width) for actual_width in column_width]
     matrix.insert(1, ["-" * width for width in column_width])
     # Now rewrite the matrix values to fill the columns
-    matrix = [["{:{}s}".format(row[i], column_width[i]) for i in range(n_columns)] for row in matrix]
-    rows = [' | '.join(row).rstrip() for row in matrix]
-    rows[1] = rows[1].replace(' | ', '-+-')
-    return '\n'.join(rows) + final
+    if header_row or len(matrix) > 2:
+        matrix = [["{:{}s}".format(row[i], column_width[i]) for i in range(n_columns)] for row in matrix]
+        rows = [' | '.join(row).rstrip() for row in matrix]
+        rows[1] = rows[1].replace(' | ', '-+-')
+        rows.append(row_count)
+    else:
+        rows = [row_count]  # without data, don't even try to print the column headers, like "col #1".
+    return '\n'.join(rows)
