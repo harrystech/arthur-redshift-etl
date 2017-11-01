@@ -105,6 +105,11 @@ class LogRecord(collections.UserDict):
                     "end_pos": {"type": "long"},
                     "chars": {"type": "long"}
                 },
+            },
+            "context": {
+                "properties": {
+                    "remaining_time_in_millis": {"type": "long"}
+                }
             }
         }
     }
@@ -171,15 +176,20 @@ class LogRecord(collections.UserDict):
             }
         })
         if values["message"].startswith("Monitor payload ="):
-            monitor_payload = json.loads(values["message"].replace("Monitor payload = ", "", 1))
-            self["monitor"] = {
-                "id": monitor_payload["monitor_id"],
-                "step": monitor_payload["step"],
-                "event": monitor_payload["event"],
-                "target": monitor_payload["target"],
-            }
-            if "elapsed" in monitor_payload:
-                self["monitor"]["elapsed"] = monitor_payload["elapsed"]
+            payload_text = values["message"].replace("Monitor payload = ", "", 1)
+            try:
+                monitor_payload = json.loads(payload_text)
+            except json.decoder.JSONDecodeError as exc:
+                print("Partial monitor payload detected in '{}': {}".format(payload_text, exc))
+            else:
+                self["monitor"] = {
+                    "id": monitor_payload["monitor_id"],
+                    "step": monitor_payload["step"],
+                    "event": monitor_payload["event"],
+                    "target": monitor_payload["target"],
+                }
+                if "elapsed" in monitor_payload:
+                    self["monitor"]["elapsed"] = monitor_payload["elapsed"]
         self.message = values["message"]
 
     # Properties to help with updating parser information

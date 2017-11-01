@@ -216,7 +216,7 @@ Outputs:
 
     LambdaFunction:
         Description: Function that processes and indexes log files
-        Value: !GetAtt LogParsingLambdaRole.Arn
+        Value: !GetAtt LogParsingLambdaFunction.Arn
 
     LambdaCode:
         Description: Location of installed code

@@ -59,6 +59,7 @@ Resources:
                             - "iam:ListInstanceProfiles"
                             - "iam:ListRolePolicies"
                             - "iam:PassRole"
+                            - "lambda:*"
                             - "s3:Get*"
                             - "s3:List*"
                             - "sns:Create*"

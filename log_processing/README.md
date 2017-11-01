@@ -28,16 +28,16 @@ This code uses Python 3. See the [toplevel INSTALL](../INSTALL.md) for general i
 In order to run this code locally or to upload it as a lambda function, you have to have a
 virtual environment setup:
 ```shell
-./update_env.sh venv
+./update_virtual_env.sh venv
 ```
 
 To deploy the lambda function, create a package
 ```shell
-./create_deployment.sh venv
+./create_deployment_package.sh venv
 ```
 
 You need to upload the latest package to S3 in order to use it in the CloudFormation step:
-```
+```shell
 aws s3 cp log_processing_*.zip s3://<your code bucket>/lambda/
 ```
 
@@ -46,7 +46,7 @@ aws s3 cp log_processing_*.zip s3://<your code bucket>/lambda/
 You can use the included [`dw_es_domain.yaml`](log_processing/dw_es_domain.yaml) file
 to bring up a ES domain along with a Lambda function to load log files.
 
-```
+```shell
 ../cloudformation/do_cloudformation.sh create dw_es_domain dev DomainName=dw-es-dev \
     CodeS3Bucket="<your code bucket>" CodeS3Key="<your latest zip file>" \
     NodeStorageSize=20 WhitelistCIDR1=192.168.1.1/32
@@ -54,7 +54,7 @@ to bring up a ES domain along with a Lambda function to load log files.
 Replace the IP address with your actual office IP address.
 
 If you need to update the stack, modify this line appropriately:
-```
+```shell
 ../cloudformation/do_cloudformation.sh update dw_es_domain dev DomainName=UsePreviousValue \
     CodeS3Bucket=UsePreviousValue CodeS3Key=UsePreviousValue \
     NodeStorageSize=UsePreviousValue WhitelistCIDR1=UsePreviousValue
@@ -67,7 +67,7 @@ with `=UserPreviousValue` or it reverts to its default.
 ### S3 lambda notification
 
 Since the bucket for log files is not part of the CloudFormation template, we have to manually add the trigger:
-```
+```shell
 aws s3api put-bucket-notification-configuration --bucket "<your bucket>" --notification-configuration \
   '{"LambdaFunctionConfigurations":[{ "LambdaFunctionArn":"<your function arn>","Events":["s3:ObjectCreated:*"]}]}'
 ```
@@ -142,4 +142,13 @@ upload_log dev examples
 upload_log dev ../arthur.log
 # remote files
 upload_log dev s3://example/logs/df-pipeline-id/component/instance/attempt/StdError.gzip
+```
+
+# Loading log files from the past using Lambda
+
+In case you find yourself already having log files that are in the bucket but not indexed,
+then you can run the following script to invoke the lambda function:
+
+```shell
+./backfill_logfiles.py "<bucket_name>" "<prefix>" "<function_name>"
 ```

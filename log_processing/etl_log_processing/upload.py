@@ -86,50 +86,48 @@ def lambda_handler(event, context):
                         "name": "source_bucket"
                     },
                     "object": {
-                        "key": "StdError.gz",
-                        "size": 1024
+                        "key": "StdError.gz"
                     }
                 }
             }
         ]
     }
     """
-    event_data = event['Records'][0]
-    bucket_name = event_data['s3']['bucket']['name']
-    object_key = urllib.parse.unquote_plus(event_data['s3']['object']['key'])
-    object_size = event_data['s3']['object']['size']
-    print("Event: eventSource={}, eventName={}, bucket_name={}, object_key={} object_size={}".format(
-        event_data['eventSource'], event_data['eventName'], bucket_name, object_key, object_size))
+    for i, event_data in enumerate(event['Records']):
+        bucket_name = event_data['s3']['bucket']['name']
+        object_key = urllib.parse.unquote_plus(event_data['s3']['object']['key'])
+        print("Event #{:d}: source={}, event={}, time={}, bucket={}, key={}".format(
+            i, event_data['eventSource'], event_data['eventName'], event_data['eventTime'], bucket_name, object_key))
 
-    try:
-        environment, path = object_key.split("/logs/", 1)
-    except ValueError:
-        print("Path does not contain '/logs/' ... skipping this file")
-        return
+        try:
+            environment, path = object_key.split("/logs/", 1)
+        except ValueError:
+            print("Path does not contain '/logs/' ... skipping this file")
+            return
 
-    file_uri = "s3://{}/{}".format(bucket_name, object_key)
-    try:
-        processed = compile.load_remote_records(file_uri)
-        host, port = config.get_es_endpoint(bucket_name=bucket_name)
-        es = config.connect_to_es(host, port, use_auth=True)
-        ok, errors = index_records(es, processed)
-        print("Time remaining (ms) after indexing:", context.get_remaining_time_in_millis())
+        file_uri = "s3://{}/{}".format(bucket_name, object_key)
+        try:
+            processed = compile.load_remote_records(file_uri)
+            host, port = config.get_es_endpoint(bucket_name=bucket_name)
+            es = config.connect_to_es(host, port, use_auth=True)
+            ok, errors = index_records(es, processed)
+            print("Time remaining (ms) after indexing:", context.get_remaining_time_in_millis())
 
-    except parse.NoRecordsFoundError:
-        print("Failed to find records in '{}'".format(file_uri))
-        return
-    except botocore.exceptions.ClientError as exc:
-        error_code = exc.response['Error']['Code']
-        print("Error code {} for object '{}'".format(error_code, file_uri))
-        return
+        except parse.NoRecordsFoundError:
+            print("Failed to find records in '{}'".format(file_uri))
+            return
+        except botocore.exceptions.ClientError as exc:
+            error_code = exc.response['Error']['Code']
+            print("Error code {} for object '{}'".format(error_code, file_uri))
+            return
 
-    body = _build_meta_doc(context, environment, path, event_data['eventTime'],
-                           "Index result for '{}': ok = {}, errors = {}".format(file_uri, ok, errors))
-    sha1_hash = hashlib.sha1()
-    sha1_hash.update(file_uri.encode())
-    id_ = sha1_hash.hexdigest()
-    res = es.index(index=config.log_index(), doc_type=config.LOG_DOC_TYPE, id=id_, body=body)
-    print("Sent meta information, result: {}, index: {}".format(res['result'], res['_index']))
+        body = _build_meta_doc(context, environment, path, event_data['eventTime'],
+                               "Index result for '{}': ok = {}, errors = {}".format(file_uri, ok, errors))
+        sha1_hash = hashlib.sha1()
+        sha1_hash.update(file_uri.encode())
+        id_ = sha1_hash.hexdigest()
+        res = es.index(index=config.log_index(), doc_type=config.LOG_DOC_TYPE, id=id_, body=body)
+        print("Sent meta information, result: {}, index: {}".format(res['result'], res['_index']))
 
 
 def main():
