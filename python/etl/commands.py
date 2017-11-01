@@ -101,7 +101,7 @@ def run_arg_as_command(my_name="arthur.py"):
     args = parser.parse_args()
     if not args.func:
         parser.print_usage()
-    elif args.cluster_id:
+    elif args.cluster_id is not None:
         submit_step(args.cluster_id, args.sub_command)
     else:
         # We need to configure logging before running context because that context expects logging to be setup.
@@ -135,6 +135,9 @@ def submit_step(cluster_id, sub_command):
     """
     Send the current arthur command to a cluster instead of running it locally.
     """
+    # Don't even bother trying to submit the case of 'arthur.py --submit "$CLUSTER_ID"' where CLUSTER_ID is not set.
+    if not cluster_id:
+        raise InvalidArgumentError("cluster id in submit may not be empty")
     # We need to remove --submit and --config to avoid an infinite loop and insert a redirect to the config directory
     partial_parser = build_basic_parser('arthur.py')
     done, remaining = partial_parser.parse_known_args()
