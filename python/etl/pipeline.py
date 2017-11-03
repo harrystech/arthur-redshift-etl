@@ -62,7 +62,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
         resp = client.describe_pipelines(pipelineIds=selected_pipeline_ids[block:block+chunk_size])
         for description in resp['pipelineDescriptionList']:
             for tag in description['tags']:
-                if tag['key'] == 'user:sub-project' and tag['value'] == 'dw-etl':
+                if tag['key'] == 'user:project' and tag['value'] == 'data-warehouse':
                     dw_pipelines.append(DataPipeline(description))
     return sorted(dw_pipelines, key=attrgetter("name"))
 
