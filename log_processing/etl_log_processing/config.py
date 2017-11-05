@@ -15,7 +15,9 @@ from etl_log_processing import parse
 
 # Index for our log records
 LOG_INDEX_PATTERN = "dw-etl-logs-*"
+LOG_INDEX_TEMPLATE = LOG_INDEX_PATTERN.replace("-*", "-template")
 LOG_DOC_TYPE = "arthur-redshift-etl-log"
+OLDEST_INDEX_IN_DAYS = 380
 
 ES_ENDPOINT_BY_ENV_TYPE = "/DW-ETL/ES-By-Env-Type/{env_type}"
 ES_ENDPOINT_BY_BUCKET = "/DW-ETL/ES-By-Bucket/{bucket_name}"
@@ -105,9 +107,12 @@ def connect_to_es(host, port, use_auth=False):
     return es
 
 
+def exists_index_template(client):
+    return client.indices.exists_template(LOG_INDEX_TEMPLATE)
+
+
 def put_index_template(client):
     version = int(time.time())
-    template_id = LOG_INDEX_PATTERN.replace("-*", "-template")
     body = {
         "template": LOG_INDEX_PATTERN,
         "version": version,
@@ -120,8 +125,8 @@ def put_index_template(client):
             LOG_DOC_TYPE: parse.LogRecord.index_fields()
         }
     }
-    print("Updating index template '{}' (doc_type={}, version={})".format(template_id, LOG_DOC_TYPE, version))
-    client.indices.put_template(template_id, body)
+    print("Updating index template '{}' (doc_type={}, version={})".format(LOG_INDEX_TEMPLATE, LOG_DOC_TYPE, version))
+    client.indices.put_template(LOG_INDEX_TEMPLATE, body)
 
 
 def get_current_indices(client):
@@ -133,7 +138,7 @@ def get_current_indices(client):
 
 def get_active_indices():
     today = datetime.datetime.utcnow()
-    names = [log_index(today - datetime.timedelta(days=days)) for days in range(0, 380)]
+    names = [log_index(today - datetime.timedelta(days=days)) for days in range(0, OLDEST_INDEX_IN_DAYS)]
     return sorted(names)
 
 

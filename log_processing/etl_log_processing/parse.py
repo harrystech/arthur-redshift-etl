@@ -25,12 +25,12 @@ class LogRecord(collections.UserDict):
 
     _INDEX_FIELDS = {
         "properties": {
-            "application": {"type": "keyword"},
+            "application_name": {"type": "keyword"},
             "environment": {"type": "keyword"},
             "logfile": {
                 "type": "keyword",
                 "include_in_all": False
-                # too many double matches after pulling out the interesting values from the name
+                # or else you get too many double matches after pulling out the interesting values from the name
             },
             "data_pipeline": {
                 "properties": {
@@ -46,14 +46,15 @@ class LogRecord(collections.UserDict):
                     "step_id": {"type": "keyword"}
                 }
             },
-            "timestamp": {"type": "date", "format": "strict_date_optional_time"},  # optional millis, actually
+            "@timestamp": {"type": "date", "format": "strict_date_optional_time"},  # generic ISO datetime parser
             "datetime": {
                 "properties": {
-                    "epoch_millis": {"type": "long"},
+                    "epoch_time_in_millis": {"type": "long"},
                     "date": {"type": "date", "format": "strict_date"},  # used to select index during upload
                     "year": {"type": "integer"},
                     "month": {"type": "integer"},
                     "day": {"type": "integer"},
+                    "day_of_week": {"type": "integer"},
                     "hour": {"type": "integer"},
                     "minute": {"type": "integer"},
                     "second": {"type": "integer"}
@@ -92,11 +93,12 @@ class LogRecord(collections.UserDict):
             },
             "monitor": {
                 "properties": {
-                    "id": {"type": "keyword"},
+                    "monitor_id": {"type": "keyword"},
                     "step": {"type": "keyword"},
                     "event": {"type": "keyword"},
                     "target": {"type": "keyword"},
-                    "elapsed": {"type": "float"}
+                    "elapsed": {"type": "float"},
+                    "error_codes": {"type": "text"}
                 }
             },
             "parser": {
@@ -106,6 +108,9 @@ class LogRecord(collections.UserDict):
                     "chars": {"type": "long"}
                 },
             },
+            # These last properties are only used by the Lambda handler:
+            "lambda_name": {"type": "keyword"},
+            "lambda_version": {"type": "keyword"},
             "context": {
                 "properties": {
                     "remaining_time_in_millis": {"type": "long"}
@@ -127,7 +132,7 @@ class LogRecord(collections.UserDict):
         sha1_hash = hashlib.sha1()
         key_values = (
             "v1",
-            self["timestamp"],
+            self["@timestamp"],
             self["etl_id"],
             self["log_level"],
             self["logger"],
@@ -144,53 +149,45 @@ class LogRecord(collections.UserDict):
         Copy values from regular expression match into appropriate positions.
         """
         values = match.groupdict()
-        ts = values["timestamp"]
-        if values["milliseconds"] is None:
-            # Create pseudo-milliseconds so that log lines stay in order of logfile in Elasticsearch index.
-            self.__counter[ts] += 1
-            ts += ",{:03d}".format(self.__counter[ts])
+        # --- Basic info ---
+        self.message = values["message"]
+        self.update({k: v for k, v in values.items() if k in ["etl_id", "log_level", "logger", "thread_name"]})
+        self["source_code"] = {k: v for k, v in values.items() if k in ["filename", "line_number"]}
+        self["parser"] = {"start_pos": match.start(), "end_pos": match.end()}
+        # --- Timestamp (with pseudo-microseconds so that log lines stay sorted in order of logfile) ---
+        ts = values["_timestamp"]
+        self.__counter[ts] += 1
+        if values["_milliseconds"] is None:
+            ts += ",{:06d}".format(self.__counter[ts])  # 04:05:06 -> 04:05:06,000001
+        else:
+            ts += "{:03d}".format(self.__counter[ts])  # 04:05:06,789 -> 04:05:06,789001
         timestamp = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S,%f").replace(tzinfo=datetime.timezone.utc)
         self.update({
-            "timestamp": timestamp.isoformat(),  # Drops milliseconds if value is 0.
+            "@timestamp": timestamp.isoformat(),  # Python datetime drops milliseconds if value is 0.
             "datetime": {
-                "epoch_millis": calendar.timegm(timestamp.timetuple()) * 1000 + timestamp.microsecond // 1000,
+                "epoch_time_in_millis": calendar.timegm(timestamp.timetuple()) * 1000 + timestamp.microsecond // 1000,
                 "date": timestamp.date().isoformat(),
                 "year": timestamp.year,
                 "month": timestamp.month,
                 "day": timestamp.day,
+                "day_of_week": timestamp.date().isoweekday(),
                 "hour": timestamp.hour,
                 "minute": timestamp.minute,
                 "second": timestamp.second
-            },
-            "etl_id": values["etl_id"],
-            "log_level": values["log_level"],
-            "logger": values["logger"],
-            "thread_name": values["thread_name"],
-            "source_code": {
-                "filename": values["filename"],
-                "line_number": int(values["line_number"])
-            },
-            "parser": {
-                "start_pos": match.start(),
-                "end_pos": match.end()
             }
         })
-        if values["message"].startswith("Monitor payload ="):
+        # --- Monitor payload ---
+        if values["message"].startswith("Monitor payload = "):
             payload_text = values["message"].replace("Monitor payload = ", "", 1)
             try:
                 monitor_payload = json.loads(payload_text)
             except json.decoder.JSONDecodeError as exc:
                 print("Partial monitor payload detected in '{}': {}".format(payload_text, exc))
             else:
-                self["monitor"] = {
-                    "id": monitor_payload["monitor_id"],
-                    "step": monitor_payload["step"],
-                    "event": monitor_payload["event"],
-                    "target": monitor_payload["target"],
-                }
-                if "elapsed" in monitor_payload:
-                    self["monitor"]["elapsed"] = monitor_payload["elapsed"]
-        self.message = values["message"]
+                self["monitor"] = {k: v for k, v in monitor_payload.items()
+                                   if k in ["monitor_id", "step", "event", "target", "elapsed"]}
+                if "errors" in monitor_payload:
+                    self["monitor"]["error_codes"] = " ".join(error["code"] for error in monitor_payload["errors"])
 
     # Properties to help with updating parser information
 
@@ -217,7 +214,7 @@ class LogParser:
     # Basic Regex to split up Arthur log lines
     _LOG_LINE_REGEX = """
         # Look for timestamp from beginning of line, e.g. 2017-06-09 06:16:19,350 (where msecs are optional)
-        ^(?P<timestamp>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:,(?P<milliseconds>\d{3}))?)\s
+        ^(?P<_timestamp>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:,(?P<_milliseconds>\d{3}))?)\s
         # Look for ETL id, e.g. CD58E5D3C73E4D45
         (?P<etl_id>[0-9A-Z]{16})\s
         # Look for log level, e.g. INFO
@@ -236,7 +233,7 @@ class LogParser:
         logfile = str(logfile)
         # Information that is copied into every record
         self.shared_info = {
-            "application": "arthur-redshift-etl",
+            "application_name": "arthur-redshift-etl",
             "logfile": logfile
         }
         # Try to find the information for the Data Pipeline or EMR cluster

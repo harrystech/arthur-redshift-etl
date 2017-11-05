@@ -23,7 +23,7 @@ from etl_log_processing import compile, config, parse
 def _build_actions_from(index, records):
     for record in records:
         if record["logfile"] == "examples":
-            print("Example record ... _id={0.id_} timestamp={0[timestamp]}".format(record))
+            print("Example record ... _id={0.id_} timestamp={0[@timestamp]}".format(record))
         yield {
             "_op_type": "index",
             "_index": index,
@@ -35,11 +35,11 @@ def _build_actions_from(index, records):
 
 def _build_meta_doc(context, environment, path, timestamp, message):
     doc = {
-        "application": context.function_name,
+        "lambda_name": context.function_name,
+        "lambda_version": context.function_version,
         "environment": environment,
         "logfile": '/'.join((context.log_group_name, context.log_stream_name)),
-        "timestamp": timestamp,
-        "log_level": "INFO",
+        "@timestamp": timestamp,
         "context": {
             "remaining_time_in_millis": context.get_remaining_time_in_millis()
         },
@@ -107,12 +107,12 @@ def lambda_handler(event, context):
 
         file_uri = "s3://{}/{}".format(bucket_name, object_key)
         try:
-            processed = compile.load_remote_records(file_uri)
             host, port = config.get_es_endpoint(bucket_name=bucket_name)
             es = config.connect_to_es(host, port, use_auth=True)
+            if not config.exists_index_template(es):
+                config.put_index_template(es)
+            processed = compile.load_remote_records(file_uri)
             ok, errors = index_records(es, processed)
-            print("Time remaining (ms) after indexing:", context.get_remaining_time_in_millis())
-
         except parse.NoRecordsFoundError:
             print("Failed to find records in '{}'".format(file_uri))
             return
@@ -128,6 +128,7 @@ def lambda_handler(event, context):
         id_ = sha1_hash.hexdigest()
         res = es.index(index=config.log_index(), doc_type=config.LOG_DOC_TYPE, id=id_, body=body)
         print("Sent meta information, result: {}, index: {}".format(res['result'], res['_index']))
+        print("Time remaining (ms):", context.get_remaining_time_in_millis())
 
 
 def main():

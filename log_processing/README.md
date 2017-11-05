@@ -53,7 +53,7 @@ to bring up a ES domain along with a Lambda function to load log files.
 ```
 Replace the IP address with your actual office IP address.
 
-If you need to update the stack, modify this line appropriately:
+If you need to update the stack, e.g. to update the Lambda handler, modify this line appropriately:
 ```shell
 ../cloudformation/do_cloudformation.sh update dw_es_domain dev DomainName=UsePreviousValue \
     CodeS3Bucket=UsePreviousValue CodeS3Key=UsePreviousValue \
@@ -88,13 +88,11 @@ config_log get_endpoint dev
 
 ### Index template
 
-You need to upload the index template:
+If you need to update the index template (the initial template will be automatically set by the lambda handler):
 
 ```shell
 config_log put_index_template dev
 ```
-
-In Kibana, add `dw-etl-logs-*`
 
 ## Deleting older indices
 
@@ -102,6 +100,19 @@ In Kibana, add `dw-etl-logs-*`
 config_log list_indices dev
 config_log delete_old_indices dev
 ```
+
+## Kibana
+
+In Kibana, add `dw-etl-logs-*` in **Management** -> **Index Patterns** and select `@timestamp` as the timestamp.
+
+Also, it's probably best to use UTC instead of the browser time, e.g. **Management** -> **Advanced Settings**:
+```text
+dateFormat:tz    UTC
+dateFormat       YYYY/MM/DD HH:mm:ss.SSS
+defaultIndex     dw-etl-logs-*
+```
+
+No further changes should be necessary. We use `@timestamp` so tools like Timelion should pick up the timestamp correctly.
 
 # Testing
 
