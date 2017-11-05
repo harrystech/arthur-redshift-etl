@@ -3,9 +3,9 @@
 The goal of the log processing is to make the logs from Arthur ETLs
 available in Kibana (via an Elasticsearch Service) in order to have dashboards
 for some key metrics of the ETL, like
-    * Top N sources that take the most time to extract
-    * Top N relations that take the most time to load
-    * Number of warnings or errors
+* Top N sources that take the most time to extract
+* Top N relations that take the most time to load
+* Number of warnings or errors
 and to just more quickly get to the error message from validation pipelines.
 
 # Requirements
@@ -13,9 +13,9 @@ and to just more quickly get to the error message from validation pipelines.
 ## Amazon Elasticsearch Service Domains
 
 You have to have an Elasticsearch service running.
-For more information about Elasticsearch in AWS, see [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
+For more information about Elasticsearch in AWS, see their [Getting Started Guide](http://docs.aws.amazon.com/elasticsearch-service/latest/developerguide/es-gsg.html).
 
-The `config_log` utility is used to store the endpoint address in the parameter store.
+The `config_log` utility is used to store the endpoint address in the parameter store, see below for usage information.
 
 See https://aws.amazon.com/blogs/security/how-to-control-access-to-your-amazon-elasticsearch-service-domain/
 
@@ -43,7 +43,7 @@ aws s3 cp log_processing_*.zip s3://<your code bucket>/lambda/
 
 ## CloudFormation
 
-You can use the included [`dw_es_domain.yaml`](log_processing/dw_es_domain.yaml) file
+You can use the included [`dw_es_domain.yaml`](./dw_es_domain.yaml) file
 to bring up a ES domain along with a Lambda function to load log files.
 
 ```shell
@@ -72,32 +72,33 @@ aws s3api put-bucket-notification-configuration --bucket "<your bucket>" --notif
   '{"LambdaFunctionConfigurations":[{ "LambdaFunctionArn":"<your function arn>","Events":["s3:ObjectCreated:*"]}]}'
 ```
 
-**Note** If you use S3 notifications on this bucket for something else, you must add them since the
+**Note** If you use S3 notifications on this bucket for something else, you must **add** them since the
 notification configuration will be replaced.
 
 ### ES Endpoint
 
 Need to pass in the "environment type" which comes from the VPC, like `dev`.
 Sets endpoint for env and also for bucket (so that lambda can use it).
-(The endpoint used here is an output of the CloudFormation stack.)
 
 ```shell
 config_log set_endpoint dev "your bucket" "your endpoint:443"
 config_log get_endpoint dev
 ```
+The endpoint that is used here can be found as an output of the CloudFormation stack.
 
 ### Index template
 
-If you need to update the index template (the initial template will be automatically set by the lambda handler):
+If you need to update the index template:
 
 ```shell
 config_log put_index_template dev
 ```
+The template will be automatically set by the lambda handler with the first call.
 
 ## Deleting older indices
 
 ```shell
-config_log list_indices dev
+config_log get_indices dev
 config_log delete_old_indices dev
 ```
 
@@ -105,14 +106,15 @@ config_log delete_old_indices dev
 
 In Kibana, add `dw-etl-logs-*` in **Management** -> **Index Patterns** and select `@timestamp` as the timestamp.
 
-Also, it's probably best to use UTC instead of the browser time, e.g. **Management** -> **Advanced Settings**:
+Also, it's probably best to use UTC instead of the browser time, so change in **Management** -> **Advanced Settings**:
 ```text
 dateFormat:tz    UTC
 dateFormat       YYYY/MM/DD HH:mm:ss.SSS
 defaultIndex     dw-etl-logs-*
 ```
 
-No further changes should be necessary. We use `@timestamp` so tools like Timelion should pick up the timestamp correctly.
+No further changes should be necessary.
+We use `@timestamp` so tools like Timelion will pick up the timestamp automatically.
 
 # Testing
 

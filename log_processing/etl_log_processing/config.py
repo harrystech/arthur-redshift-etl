@@ -189,19 +189,29 @@ def sub_put_index_template(args):
 def sub_get_indices(args):
     host, port = get_es_endpoint(env_type=args.env_type)
     es = connect_to_es(host, port, use_auth=False)
-    current_names = get_current_indices(es)
-    active_names = frozenset(get_active_indices())
-    for name in current_names:
-        if name in active_names:
-            print("   ", name)
-        else:
-            print("** ", name)
-    if frozenset(current_names).difference(active_names):
-        print("Indices marked '**' should be deleted")
+    for name in get_current_indices(es):
+        print("   ", name)
 
 
 def sub_delete_stale_indices(args):
-    raise NotImplementedError("left to the reader as an exercise")
+    host, port = get_es_endpoint(env_type=args.env_type)
+    es = connect_to_es(host, port, use_auth=False)
+    current_names = get_current_indices(es)
+    active_names = frozenset(get_active_indices())
+    stale = frozenset(current_names).difference(active_names)
+    if not stale:
+        print("Found no indices older than {} days.".format(OLDEST_INDEX_IN_DAYS))
+        return
+    for name in sorted(stale):
+        print("** ", name)
+    print("Indices marked '**' are older than {} days.".format(OLDEST_INDEX_IN_DAYS))
+    try:
+        proceed = input("Proceed to delete old indices? (y/[n]) ")
+    except EOFError:
+        proceed = 'n'
+    if proceed.lower() in ('y', 'yes'):
+        print("Ok, deleting old indices.")
+        es.indices.delete(','.join(sorted(stale)))
 
 
 def main():
