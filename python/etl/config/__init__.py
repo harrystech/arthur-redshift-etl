@@ -26,7 +26,7 @@ import yaml
 import etl.config.dw
 import etl.monitor
 from etl.config.dw import DataWarehouseConfig
-from etl.errors import InvalidArgumentError, SchemaInvalidError, SchemaValidationError
+from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -241,7 +241,7 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
-        raise RuntimeError("Failed to find enough configuration files (need at least default and local config)")
+        raise ETLRuntimeError("Failed to find enough configuration files (need at least default and local config)")
 
     validate_with_schema(settings, "settings.schema")
 

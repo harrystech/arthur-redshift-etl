@@ -12,6 +12,7 @@ import shlex
 import sys
 import traceback
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import boto3
@@ -271,7 +272,7 @@ def build_full_parser(prog_name):
             ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
             # Environment commands
             RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
-            EventsQueryCommand,
+            QueryEventsCommand, TailEventsCommand,
             # Development commands
             SelfTestCommand]:
         cmd = klass()
@@ -614,6 +615,7 @@ class ExtractToS3Command(MonitoredSubCommand):
 
         descriptions = self.find_relation_descriptions(args, default_scheme="s3",
                                                        required_relation_selector=config.required_in_full_load_selector)
+        etl.monitor.Monitor.marker_payload("extract").emit(dry_run=args.dry_run)
         etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
                                              max_partitions=max_partitions,
                                              use_sampling=args.use_sampling,
@@ -651,6 +653,7 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
+        etl.monitor.Monitor.marker_payload("load").emit(dry_run=args.dry_run)
         max_concurrency = (args.max_concurrency or
                            etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
         wlm_query_slots = (args.wlm_query_slots or
@@ -690,6 +693,7 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3",
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
+        etl.monitor.Monitor.marker_payload("upgrade").emit(dry_run=args.dry_run)
         max_concurrency = (args.max_concurrency or
                            etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
         wlm_query_slots = (args.wlm_query_slots or
@@ -723,6 +727,7 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        etl.monitor.Monitor.marker_payload("update").emit(dry_run=args.dry_run)
         wlm_query_slots = (args.wlm_query_slots or
                            etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
         etl.load.update_data_warehouse(relations, args.pattern,
@@ -749,6 +754,7 @@ class UnloadDataToS3Command(MonitoredSubCommand):
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
+        etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
         etl.unload.unload_to_s3(config, descriptions, allow_overwrite=args.force,
                                 keep_going=args.keep_going, dry_run=args.dry_run)
 
@@ -859,8 +865,10 @@ class ListFilesCommand(SubCommand):
 
     def __init__(self):
         super().__init__("ls",
-                         "list files in S3",
-                         "List files in the S3 bucket and starting with prefix by source, table, and file type.")
+                         "list files in local directory or in S3",
+                         "List files in local directory or in the S3 bucket and starting with prefix by"
+                         " source, table, and file type."
+                         " (If sorting by timestamp, only print filename and timestamp.)")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
@@ -1009,7 +1017,7 @@ class ShowPipelinesCommand(SubCommand):
     def __init__(self):
         super().__init__("show_pipelines",
                          "show installed pipelines",
-                         "Show additional information about currently installed pipelines.")
+                         "Show information about currently installed pipelines.")
 
     def add_arguments(self, parser):
         parser.add_argument("selection", help="pick pipelines to show", nargs="*")
@@ -1018,18 +1026,65 @@ class ShowPipelinesCommand(SubCommand):
         etl.pipeline.show_pipelines(args.selection)
 
 
-class EventsQueryCommand(SubCommand):
+class QueryEventsCommand(SubCommand):
 
     def __init__(self):
-        super().__init__("query",
-                         "query the events table for the ETL",
-                         "Query the table of events written during an ETL.")
+        super().__init__("query_events",
+                         "query the tables of ETL events",
+                         "Query the table of events written during an ETL."
+                         " When an ETL is specified, then it is used as a filter."
+                         " Otherwise ETLs from the last day are listed.")
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix"])
+        parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
+
+    def callback(self, args, config):
+        if args.etl_id is None:
+            etl.monitor.query_for_etl_ids(days_ago=1)
+        else:
+            etl.monitor.scan_etl_events(args.etl_id)
+
+
+class TailEventsCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("tail_events",
+                         "show tail of the ETL events and optionally follow for changes",
+                         "Show latest ETL events for the selected tables in a 15-minute window or"
+                         " since the given start time. (Use '-t #{@latestRunTime}' in a Data Pipeline definition.)"
+                         " Optionally keep looking for events in 30s intervals,"
+                         " which automatically quits when no new event arrives within an hour.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix"])
+        parser.add_argument("-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"],
+                            help="pick which step to tail")
+        now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
+        parser.add_argument("-t", "--start-time", help="beginning of time window, e.g. '%s'" % now)
+        parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
 
     def callback(self, args, config):
-        etl.monitor.query_for(args.pattern)
+        if args.start_time:
+            try:
+                start_time = datetime.strptime(args.start_time, "%Y-%m-%dT%H:%M:%S")
+            except ValueError as exc:
+                raise InvalidArgumentError from exc
+        else:
+            start_time = datetime.utcnow() - timedelta(seconds=15 * 60)
+        if args.follow:
+            update_interval = 30
+            idle_time_out = 60 * 60
+        else:
+            update_interval = idle_time_out = None
+
+        # This will sort events by 30s time buckets and execution order within those buckets.
+        # (If events for all tables already happen to exist, then this matches the desired execution order.)
+        all_relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        selected_relations = etl.relation.select_in_execution_order(all_relations, args.pattern)
+        etl.monitor.tail_events(selected_relations,
+                                start_time=start_time, update_interval=update_interval, idle_time_out=idle_time_out,
+                                step=args.step)
 
 
 class SelfTestCommand(SubCommand):

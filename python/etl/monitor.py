@@ -26,6 +26,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
+from operator import itemgetter
 from typing import List, Optional
 
 import boto3
@@ -33,10 +34,11 @@ import botocore.exceptions
 import simplejson as json
 
 import etl.assets
-import etl.config.env
-import etl.db
+import etl.config
+import etl.text
+from etl.errors import ETLRuntimeError
 from etl.json_encoder import FancyJsonEncoder
-from etl.timer import utc_now, elapsed_seconds
+from etl.timer import utc_now, elapsed_seconds, Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -45,7 +47,7 @@ logger.addHandler(logging.NullHandler())
 STEP_START = "start"
 STEP_FINISH = "finish"
 STEP_FAIL = "fail"
-STEP_EVENTS = [STEP_START, STEP_FINISH, STEP_FAIL]
+_DUMMY_TARGET = "#.dummy"
 
 
 def trace_key():
@@ -76,7 +78,7 @@ class MetaMonitor(type):
     @property
     def environment(cls):
         if cls._environment is None:
-            raise ValueError("Value of 'environment' is None")
+            raise ValueError("value of 'environment' is None")
         return cls._environment
 
     @environment.setter
@@ -115,7 +117,7 @@ class Monitor(metaclass=MetaMonitor):
         step: command that is running, like 'dump', or 'load'
 
     The payloads will have at least the properties of the Monitor instance and:
-        event: one of STEP_EVENTS ('start', 'finish', 'fail')
+        event: one of ('start', 'finish', 'fail')
         timestamp: UTC timestamp
 
     In case of errors, they are added as an array 'errors'.  It is also possible to send
@@ -131,7 +133,7 @@ class Monitor(metaclass=MetaMonitor):
     >>> Monitor.environment
     Traceback (most recent call last):
         ...
-    ValueError: Value of 'environment' is None
+    ValueError: value of 'environment' is None
     >>> Monitor.environment = 'saturn'
     >>> Monitor.environment
     'saturn'
@@ -212,6 +214,11 @@ class Monitor(metaclass=MetaMonitor):
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
 
+    @classmethod
+    def marker_payload(cls, step: str):
+        monitor = cls(_DUMMY_TARGET, step)
+        return MonitorPayload(monitor, STEP_FINISH, utc_now(), elapsed=0, extra={"is_marker": True})
+
 
 class MonitorPayload:
     """
@@ -268,8 +275,16 @@ class DynamoDBStorage(PayloadDispatcher):
     """
     Store ETL events in a DynamoDB table.
 
-    Note the table is created if it doesn't already exist when class is instantiated.
+    Note the table is created if it doesn't already exist when a payload needs to be stored.
     """
+
+    @staticmethod
+    def factory() -> "DynamoDBStorage":
+        table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
+        return DynamoDBStorage(table_name,
+                               etl.config.get_config_value("etl_events.read_capacity"),
+                               etl.config.get_config_value("etl_events.write_capacity"),
+                               etl.config.get_config_value("resources.VPC.region"))
 
     def __init__(self, table_name, read_capacity, write_capacity, region_name):
         self.table_name = table_name
@@ -279,9 +294,9 @@ class DynamoDBStorage(PayloadDispatcher):
         # Avoid default sessions and have one table reference per thread
         self._thread_local_table = threading.local()
 
-    def _get_table(self):
+    def get_table(self, create_if_not_exists=True):
         """
-        Fetch table or create it (within a new session)
+        Get table reference from DynamoDB or create it (within a new session)
         """
         session = boto3.session.Session(region_name=self.region_name)
         dynamodb = session.resource('dynamodb')
@@ -296,6 +311,8 @@ class DynamoDBStorage(PayloadDispatcher):
             # Nullify assignment and start over
             table = None
             status = None
+        if not (status == "ACTIVE" or create_if_not_exists):
+            raise ETLRuntimeError("DynamoDB table '%s' does not exist or is not active" % self.table_name)
         if table is None:
             logger.info("Creating DynamoDB table: '%s'", self.table_name)
             table = dynamodb.create_table(
@@ -329,7 +346,7 @@ class DynamoDBStorage(PayloadDispatcher):
         try:
             table = getattr(self._thread_local_table, 'table', None)
             if not table:
-                table = self._get_table()
+                table = self.get_table()
                 setattr(self._thread_local_table, 'table', table)
             item = dict(payload)
             # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
@@ -341,7 +358,7 @@ class DynamoDBStorage(PayloadDispatcher):
         except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
-                logger.exception("Trying to store payload a second time after this mishap:")
+                logger.warning("Trying to store payload a second time after this mishap:", exc_info=True)
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
                 time.sleep(delay)
@@ -367,7 +384,8 @@ class MemoryStorage(PayloadDispatcher):
 
     The output should pass validator at https://validator.w3.org/#validate_by_input+with_options
     """
-    SERVER_ADDRESS = ('', 8086)
+    SERVER_HOST = ''  # meaning: all that we can bind to locally
+    SERVER_PORT = 8086
 
     def __init__(self):
         self.queue = queue.Queue()
@@ -381,9 +399,10 @@ class MemoryStorage(PayloadDispatcher):
         try:
             while True:
                 payload = self.queue.get_nowait()
-                # Overwrite earlier events by later ones
-                key = payload["target"], payload["step"]
-                self.events[key] = payload
+                if not payload.get("extra", {}).get("is_marker", False):
+                    # Overwrite earlier events by later ones
+                    key = payload["target"], payload["step"]
+                    self.events[key] = payload
         except queue.Empty:
             pass
 
@@ -479,9 +498,10 @@ class MemoryStorage(PayloadDispatcher):
 
         class BackgroundServer(threading.Thread):
             def run(self):
-                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_ADDRESS[1])
+                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_PORT)
                 try:
-                    httpd = _ThreadingSimpleServer(MemoryStorage.SERVER_ADDRESS, handler_class)
+                    httpd = _ThreadingSimpleServer((MemoryStorage.SERVER_HOST, MemoryStorage.SERVER_PORT),
+                                                   handler_class)
                     httpd.serve_forever()
                 except Exception as exc:
                     logger.info("Background server stopped: %s", str(exc))
@@ -508,39 +528,220 @@ def start_monitors(environment):
     MonitorPayload.dispatchers.append(memory)
 
     if etl.config.get_config_value("etl_events.enabled"):
-        table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
-        ddb = DynamoDBStorage(table_name,
-                              etl.config.get_config_value("etl_events.read_capacity"),
-                              etl.config.get_config_value("etl_events.write_capacity"),
-                              etl.config.get_config_value("resources.VPC.region"))
+        ddb = DynamoDBStorage.factory()
         MonitorPayload.dispatchers.append(ddb)
     else:
         logger.warning("Writing events to a DynamoDB table is disabled in settings.")
 
 
-def query_for(target_list):
-    logger.warning("This is a bit experimental (good day) and temperamental (bad day)")
-    # TODO refactor with start_monitors
-    table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
-    ddb = DynamoDBStorage(table_name,
-                          etl.config.get_config_value("etl_events.read_capacity"),
-                          etl.config.get_config_value("etl_events.write_capacity"),
-                          etl.config.get_config_value("resources.VPC.region"))
-    table = ddb._get_table()
+def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
+    start_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago)
+    epoch_seconds = timegm(start_time.utctimetuple())
+    ddb = DynamoDBStorage.factory()
+    table = ddb.get_table(create_if_not_exists=False)
+    keys = ["etl_id", "step", "timestamp"]
+    response = table.query(
+        ConsistentRead=True,
+        ExpressionAttributeNames={
+            "#timestamp": "timestamp"  # "timestamp" is a reserved word. You're welcome.
+        },
+        ExpressionAttributeValues={
+            ":marker": _DUMMY_TARGET,
+            ":epoch_seconds": epoch_seconds,
+            ":start_event": STEP_START
+        },
+        KeyConditionExpression="target = :marker and #timestamp > :epoch_seconds",
+        FilterExpression="event <> :start_event",
+        ProjectionExpression="etl_id, step, #timestamp",  # matches keys with substitution of keywords
+        ReturnConsumedCapacity="TOTAL"
+    )
+    if 'LastEvaluatedKey' in response:
+        logger.warning("This is is a partial result! Last evaluated key: '%s'", response['LastEvaluatedKey'])
 
-    recent_cutoff = datetime.utcnow() - timedelta(days=5)
-    cutoff_epoch = timegm(recent_cutoff.utctimetuple())
-    for relation in target_list._patterns:
-        res = table.query(
-            ConsistentRead=True,
-            KeyConditionExpression="target = :table and #ts > :dt",
-            FilterExpression="event <> :event",
-            ExpressionAttributeNames={"#ts": "timestamp"},
-            ExpressionAttributeValues={":dt": cutoff_epoch, ":table": relation.identifier, ":event": STEP_START}
-        )
-        print("Count: {:d} (Scanned count: {:d})".format(res['Count'], res['ScannedCount']))
-        for item in res['Items']:
-            print(json.dumps(item, sort_keys=True, cls=FancyJsonEncoder))
+    logger.info("Query result: count = %d, scanned count = %d, consumed capacity = %f",
+                response['Count'], response['ScannedCount'], response['ConsumedCapacity']['CapacityUnits'])
+    rows = [
+        [
+            # Make timestamp readable by turning epoch seconds into a date.
+            item[key] if key != "timestamp" else datetime.utcfromtimestamp(item[key]).isoformat()
+            for key in keys
+        ]
+        for item in response['Items']
+    ]
+    rows.sort(key=itemgetter(keys.index("timestamp")))
+    print(etl.text.format_lines(rows, header_row=keys))
+
+
+def scan_etl_events(etl_id) -> None:
+    ddb = DynamoDBStorage.factory()
+    table = ddb.get_table(create_if_not_exists=False)
+    keys = ["target", "step", "event", "timestamp", "elapsed"]
+
+    # The paginator operates on the client not resource. So open a client and start iterating.
+    client = boto3.client('dynamodb')
+    paginator = client.get_paginator('scan')
+    response_iterator = paginator.paginate(
+        TableName=table.name,
+        ConsistentRead=False,
+        ExpressionAttributeNames={
+            "#timestamp": "timestamp"
+        },
+        ExpressionAttributeValues={
+            ":etl_id": {"S": etl_id},
+            ":marker": {"S": _DUMMY_TARGET},
+            ":start_event": {"S": STEP_START}
+        },
+        FilterExpression="etl_id = :etl_id and target <> :marker and event <> :start_event",
+        ProjectionExpression="target, step, event, #timestamp, elapsed",
+        ReturnConsumedCapacity="TOTAL",
+        # PaginationConfig={
+        #     "PageSize": 100
+        # }
+    )
+    consumed_capacity = .0
+    scanned_count = 0
+    rows = []
+    for response in response_iterator:
+        consumed_capacity += response['ConsumedCapacity']['CapacityUnits']
+        scanned_count += response['ScannedCount']
+        rows.extend([
+            [
+                item[key].get('S', item[key].get('N')) for key in keys
+            ]
+            for item in response['Items']
+        ])
+    logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
+    rows.sort(key=itemgetter(keys.index("timestamp")))
+    print(etl.text.format_lines(rows, header_row=keys))
+
+
+class EventsQuery:
+
+    def __init__(self, step: Optional[str]=None) -> None:
+        self._keys = ["target", "step", "event", "timestamp"]
+        values = {
+            ":target": None,  # set when called
+            ":epoch_seconds": None,  # set when called
+            ":start_event": STEP_START
+        }
+        base_query = {
+            "ConsistentRead": False,
+            "ExpressionAttributeNames": {
+                "#timestamp": "timestamp"
+            },
+            "ExpressionAttributeValues": values,
+            "KeyConditionExpression": "target = :target and #timestamp > :epoch_seconds",
+            "FilterExpression": "event <> :start_event",
+            "ProjectionExpression": "target, step, event, #timestamp"
+        }
+        if step is not None:
+            values[":step"] = step
+            base_query["FilterExpression"] = "event <> :start_event and step = :step"
+        self._base_query = base_query
+
+    @property
+    def keys(self):
+        return self._keys[:]
+
+    def __call__(self, table, target, epoch_seconds):
+        query = deepcopy(self._base_query)
+        query["ExpressionAttributeValues"][":target"] = target
+        query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
+        response = table.query(**query)
+        events = [[item[key] for key in self._keys] for item in response['Items']]
+        # Return latest event or None
+        if events:
+            events.sort(key=itemgetter(3))
+            return events[-1]
+        else:
+            return None
+
+
+class BackgroundQueriesRunner(threading.Thread):
+    """
+    An instance of this thread will repeatedly try to run queries on a DynamoDB table.
+    Every time a query returns a result, this result is sent to a queue and the query will no longer be tried.
+    """
+    def __init__(self, targets, query, consumer_queue, start_time, update_interval, idle_time_out, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.targets = list(targets)
+        self.query = query
+        self.queue = consumer_queue
+        self.start_time = start_time
+        self.update_interval = update_interval
+        self.idle_time_out = idle_time_out
+
+    def run(self):
+        ddb = DynamoDBStorage.factory()
+        table = ddb.get_table(create_if_not_exists=False)
+        targets = self.targets
+        start_time = self.start_time
+        idle = Timer()
+        while targets:
+            logger.debug("Waiting for events for %d target(s), start time = '%s'",
+                         len(targets), datetime.utcfromtimestamp(start_time).isoformat())
+            new_start_time = datetime.utcnow() - timedelta(seconds=1)  # avoid rounding errors
+            query_loop = Timer()
+            retired = set()
+            for target in targets:
+                latest_event = self.query(table, target, start_time)
+                if latest_event:
+                    self.queue.put(latest_event)
+                    retired.add(latest_event[0])
+            targets = [t for t in targets if t not in retired]
+            start_time = timegm(new_start_time.utctimetuple())
+            if self.update_interval is None or not targets:
+                break
+            if retired:
+                idle = Timer()
+            elif self.idle_time_out and idle.elapsed > self.idle_time_out:
+                logger.info("Idle time-out: Waited for %d seconds but no events arrived, %d target(s) remaining",
+                            self.idle_time_out, len(targets))
+                break
+            if query_loop.elapsed < self.update_interval:
+                time.sleep(self.update_interval - query_loop.elapsed)
+        logger.info("Found events for %d out of %d target(s)", len(self.targets) - len(targets), len(self.targets))
+        self.queue.put(None)
+
+
+def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str]=None) -> None:
+    """
+    Tail the events table and show latest events coming in (which are not start events, just fail or finish).
+    """
+    targets = [relation.identifier for relation in relations]
+    query = EventsQuery(step)
+    consumer_queue = queue.Queue()  # type: ignore
+    epoch_seconds = timegm(start_time.utctimetuple())
+
+    thread = BackgroundQueriesRunner(targets, query, consumer_queue, epoch_seconds, update_interval, idle_time_out,
+                                     daemon=True)
+    thread.start()
+
+    events = []
+    n_printed = 0
+    done = False
+    while not done:
+        progress = Timer()
+        while progress.elapsed < 10:
+            try:
+                event = consumer_queue.get(timeout=10)
+                if event is None:
+                    done = True
+                    break
+                event[3] = datetime.utcfromtimestamp(event[3]).isoformat()  # timestamp to isoformat
+                events.append(event)
+            except queue.Empty:
+                break
+        # Keep printing tail of table that accumulates the events.
+        if len(events) > n_printed:
+            lines = etl.text.format_lines(events, header_row=["target", "step", "event", "timestamp"]).split('\n')
+            if n_printed:
+                print('\n'.join(lines[n_printed + 2:-1]))  # skip header and final "(x rows)" line
+            else:
+                print('\n'.join(lines[:-1]))  # only skip the "(x rows)" line
+            n_printed = len(lines) - 3  # header, separator, final = 3 extra rows
+            if done:
+                print(lines[-1])
 
 
 def test_run():
@@ -552,7 +753,8 @@ def test_run():
     table_names = ["apple", "banana", "cantaloupe", "durian", "fig"]
     index = {"current": 0, "final": len(schema_names) * len(table_names)}
 
-    print("Creating events ... follow along at http://{0}:{1}/".format(*MemoryStorage.SERVER_ADDRESS))
+    host = MemoryStorage.SERVER_HOST if MemoryStorage.SERVER_HOST else "localhost"
+    print("Creating events ... follow along at http://{0}:{1}/".format(host, MemoryStorage.SERVER_PORT))
 
     with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
         for i, names in enumerate(itertools.product(schema_names, table_names)):
@@ -566,6 +768,7 @@ def test_run():
                 pass
 
     input("Press return (or Ctrl-c) to stop server\n")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

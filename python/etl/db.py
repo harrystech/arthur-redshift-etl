@@ -24,6 +24,7 @@ import psycopg2.extras
 import psycopg2.pool
 import pgpasslib
 
+import etl.text
 from etl.errors import ETLRuntimeError
 from etl.timer import Timer
 
@@ -238,27 +239,16 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
         return execute(cx, stmt, args=args, return_result=return_result)
 
 
-def format_result(dict_rows) -> str:
-    """
-    Take result from query() and pretty-format it into one string, ready for print or log.
-    """
-    keys = list(dict_rows[0].keys())
-    content = [keys]  # header
-    for row in dict_rows:
-        content.append([
-            str(row[k]).strip() for k in keys
-        ])
-    return '\n'.join([', '.join(c) for c in content])
-
-
-def print_result(header, dict_rows) -> None:
+def print_result(title, dict_rows) -> None:
     """
     Print query result
     """
-    print(header)
+    print(title)
     if dict_rows:
-        print(format_result(dict_rows))
-    print("({:d} rows)".format(len(dict_rows)))
+        keys = list(dict_rows[0].keys())
+    else:
+        keys = []
+    print(etl.text.format_lines([[row[key] for key in keys] for row in dict_rows], header_row=keys))
 
 
 def explain(cx, stmt, args=()):

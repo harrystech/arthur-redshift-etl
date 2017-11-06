@@ -46,7 +46,7 @@ import queue
 from contextlib import closing
 from datetime import datetime, timedelta
 from calendar import timegm
-from itertools import chain, dropwhile
+from itertools import dropwhile
 from typing import Any, Dict, List, Optional, Set
 
 
@@ -208,9 +208,9 @@ class LoadableRelation:
         Build a list of "loadable" relations
         """
         dsn_etl = etl.config.get_dw_config().dsn_etl
-        dbname = dsn_etl["database"]
-        base_index = {"name": dbname, "current": 0, "final": len(relations)}
-        base_destination = {"name": dbname}
+        database = dsn_etl["database"]
+        base_index = {"name": database, "current": 0, "final": len(relations)}
+        base_destination = {"name": database}
 
         loadable = []
         for i, relation in enumerate(relations):
@@ -659,7 +659,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
 
     for dispatcher in etl.monitor.MonitorPayload.dispatchers:
         if isinstance(dispatcher, etl.monitor.DynamoDBStorage):
-            table = dispatcher._get_table()  # Note, not thread-safe, so we can only have one poller
+            table = dispatcher.get_table()  # Note, not thread-safe, so we can only have one poller
 
     def poll_worker():
         """
@@ -899,21 +899,6 @@ def create_relations(relations: List[LoadableRelation], max_concurrency=1, wlm_q
     create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
 
 
-def select_execution_order(relations: List[RelationDescription], selector: TableSelector,
-                           include_dependents=False) -> List[RelationDescription]:
-    """
-    Return list of relations that were selected and optionally, expand the list by the dependents of the selected ones.
-    """
-    logger.info("Pondering execution order of %d relation(s)", len(relations))
-    execution_order = etl.relation.order_by_dependencies(relations)
-    selected = etl.relation.find_matches(execution_order, selector)
-    if include_dependents:
-        dependents = etl.relation.find_dependents(execution_order, selected)
-        combined = frozenset(relation.identifier for relation in chain(selected, dependents))
-        selected = [relation for relation in execution_order if relation.identifier in combined]
-    return selected
-
-
 # ---- Section 5: "Callbacks" (functions that implement commands) ----
 
 def load_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, use_staging=True,
@@ -938,7 +923,7 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
     N.B. If arthur gets interrupted (eg. because the instance is inadvertently shut down),
     then there will be an incomplete state.
     """
-    selected_relations = select_execution_order(all_relations, selector, include_dependents=True)
+    selected_relations = etl.relation.select_in_execution_order(all_relations, selector, include_dependents=True)
     if not selected_relations:
         logger.warning("Found no relations matching: %s", selector)
         return
@@ -986,7 +971,8 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
             3.1 Load data into tables
             3.2 Verify constraints
     """
-    selected_relations = select_execution_order(all_relations, selector, include_dependents=not only_selected)
+    selected_relations = etl.relation.select_in_execution_order(all_relations, selector,
+                                                                include_dependents=not only_selected)
     if not selected_relations:
         logger.warning("Found no relations matching: %s", selector)
         return
@@ -1023,7 +1009,8 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
     Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
     Finally, if elected, run vacuum (in new connection) for all tables that were modified.
     """
-    selected_relations = select_execution_order(all_relations, selector, include_dependents=not only_selected)
+    selected_relations = etl.relation.select_in_execution_order(all_relations, selector,
+                                                                include_dependents=not only_selected)
     tables = [relation for relation in selected_relations if not relation.is_view_relation]
     if not tables:
         logger.warning("Found no tables matching: %s", selector)
@@ -1052,7 +1039,7 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    complete_sequence = select_execution_order(relations, selector, include_dependents=True)
+    complete_sequence = etl.relation.select_in_execution_order(relations, selector, include_dependents=True)
     if len(complete_sequence) == 0:
         logger.warning("Found no matching relations for: %s", selector)
         return

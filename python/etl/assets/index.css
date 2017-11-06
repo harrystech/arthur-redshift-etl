@@ -33,7 +33,7 @@ table {
 }
 
 th, td {
-    border: 1px solid darkgray;
+    border: 2px solid darkgray;
     text-align: left;
     padding: 8px;
 }

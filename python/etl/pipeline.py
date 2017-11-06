@@ -9,6 +9,7 @@ from typing import List
 
 import boto3
 
+import etl.text
 from etl.names import join_with_quotes
 
 logger = logging.getLogger(__name__)
@@ -23,16 +24,20 @@ class DataPipeline:
         self.fields = {
             field['key']: field['stringValue']
             for field in description['fields']
-            if field['key'] not in ('name', '@id', '*tags')
+            if field['key'] != '*tags'  # tags are an ugly list of dicts
         }
 
     def __str__(self):
         return "DataPipeline('{}','{}')".format(self.pipeline_id, self.name)
 
+    @property
+    def health_status(self):
+        return self.fields.get('@healthStatus', '---')
+
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     """
-    List pipelines related to this project (which must have the tag for 'DataWarehouseEnvironment' set)
+    List pipelines related to this project (which must have the tag for our project set)
 
     The :selection should be a list of glob patterns to select specific pipelines by their ID.
     If the selection is an empty list, then all pipelines are used.
@@ -62,7 +67,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
         resp = client.describe_pipelines(pipelineIds=selected_pipeline_ids[block:block+chunk_size])
         for description in resp['pipelineDescriptionList']:
             for tag in description['tags']:
-                if tag['key'] == 'DataWarehouseEnvironment':
+                if tag['key'] == 'user:project' and tag['value'] == 'data-warehouse':
                     dw_pipelines.append(DataPipeline(description))
     return sorted(dw_pipelines, key=attrgetter("name"))
 
@@ -79,14 +84,19 @@ def show_pipelines(selection: List[str]) -> None:
     if not pipelines:
         logger.warning("Found no pipelines")
         print("*** No pipelines found ***")
-    elif not selection:
-        logger.info("Currently active pipelines: %s", join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
-        for pipeline in pipelines:
-            print('{:24s} "{:s}"'.format(pipeline.pipeline_id, pipeline.name))
-    else:
-        logger.info("Currently active and selected pipelines: %s",
-                    join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
-        for pipeline in pipelines:
-            print('{:24s} "{:s}"'.format(pipeline.pipeline_id, pipeline.name))
-            for key in sorted(pipeline.fields):
-                print("    {}: {}".format(key, pipeline.fields[key]))
+    elif selection and len(pipelines) > 1:
+        logger.warning("Selection matches more than one pipeline")
+    if pipelines:
+        if selection:
+            logger.info("Currently active and selected pipelines: %s",
+                        join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
+        else:
+            logger.info("Currently active pipelines: %s",
+                        join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
+        print(etl.text.format_lines([(pipeline.pipeline_id, pipeline.name, pipeline.health_status)
+                                     for pipeline in pipelines],
+                                    header_row=["Pipeline ID", "Name", "Health"], max_column_width=80))
+    if selection and len(pipelines) == 1:
+        pipeline = pipelines[0]
+        print(etl.text.format_lines([[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
+                                    header_row=["Key", "Value"]))
