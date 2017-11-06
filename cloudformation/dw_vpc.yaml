@@ -37,7 +37,7 @@ Parameters:
         AllowedValues: ["us-east-1a", "us-east-1c", "us-east-1d"]
 
     WhitelistCIDR1:
-        Description: (recommended) First IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) First IP range in CIDR notation that can be used to connect to EC2 instances or Redshift
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -46,7 +46,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR2:
-        Description: (recommended) Second IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) Second IP range in CIDR notation that can be used to connect to EC2 instances or Redshift
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -55,7 +55,7 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR3:
-        Description: (recommended) Third IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) Third IP range in CIDR notation that can be used to connect to EC2 instances or Redshift
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -64,7 +64,16 @@ Parameters:
         ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
 
     WhitelistCIDR4:
-        Description: (recommended) Fourth IP range in CIDR notation that can be used to SSH to EC2 instances
+        Description: (recommended) Fourth IP range in CIDR notation that can be used to connect to EC2 instances or Redshift
+        Type: String
+        Default: 0.0.0.0/0
+        MinLength: 9
+        MaxLength: 18
+        AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+        ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+
+    WhitelistCIDR5:
+        Description: (frivolous) Fifth IP range in CIDR notation that can be used to connect to EC2 instances or Redshift
         Type: String
         Default: 0.0.0.0/0
         MinLength: 9
@@ -86,6 +95,9 @@ Conditions:
 
     ValidNotAnythingWhitelistCIDR4:
         !Not [ !Equals [ !Ref WhitelistCIDR4, "0.0.0.0/0" ] ]
+
+    ValidNotAnythingWhitelistCIDR5:
+        !Not [ !Equals [ !Ref WhitelistCIDR5, "0.0.0.0/0" ] ]
 
 
 Resources:
@@ -297,6 +309,10 @@ Resources:
                   FromPort: "22"
                   ToPort: "22"
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
+                - IpProtocol: "tcp"
+                  FromPort: "22"
+                  ToPort: "22"
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR5, !Ref "WhitelistCIDR5", !Ref "AWS::NoValue" ]
             Tags:
                 - Key: Name
                   Value: !Sub "${AWS::StackName}-office"
@@ -540,6 +556,10 @@ Resources:
                   FromPort: 5439
                   ToPort: 5439
                   CidrIp: !If [ ValidNotAnythingWhitelistCIDR4, !Ref "WhitelistCIDR4", !Ref "AWS::NoValue" ]
+                - IpProtocol: "tcp"
+                  FromPort: 5439
+                  ToPort: 5439
+                  CidrIp: !If [ ValidNotAnythingWhitelistCIDR5, !Ref "WhitelistCIDR5", !Ref "AWS::NoValue" ]
                 # Heap
                 - IpProtocol: "tcp"
                   FromPort: 5439
@@ -719,7 +739,48 @@ Resources:
             Roles:
                 - !Ref Ec2Role
 
+    # Oops, misspellled this one.  Bring up new role, switch over, delete this one...
     RedshiftCopyCole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: "Allow"
+                      Principal:
+                          Service: "redshift.amazonaws.com"
+                      Action: "sts:AssumeRole"
+            # Must use the standard Path because Redshift does not support something other than '/'
+            Path: "/"
+            Policies:
+                - PolicyName: "redshift_access"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Sid: "ReadAccessBuckets"
+                            Effect: "Allow"
+                            Action: "s3:ListBucket*"
+                            Resource: "arn:aws:s3:::*"
+                          - Sid: "ReadAccessObjects"
+                            Effect: "Allow"
+                            Action: "s3:GetObject"
+                            Resource: "arn:aws:s3:::*/*"
+                          - Sid: "WriteAccess"
+                            Effect: "Allow"
+                            Action:
+                                - "s3:DeleteObject"
+                                - "s3:PutObject"
+                            Resource:
+                                - !Sub "arn:aws:s3:::${ObjectStore}/*"
+                                - !Sub "arn:aws:s3:::${DataLake}/*"
+                          - Sid: "EventAccess"
+                            Effect: "Allow"
+                            Action:
+                                - "dynamodb:Describe*"
+                                - "dynamodb:Scan"
+                            Resource: "arn:aws:dynamodb:*:*:table/dw-etl-*"
+
+    RedshiftCopyRole:
         Type: "AWS::IAM::Role"
         Properties:
             AssumeRolePolicyDocument:
@@ -794,6 +855,10 @@ Outputs:
         Description: (VPC.whitelist_security_group) A reference to the security group allowing access from whitelisted IP ranges
         Value: !Ref WhitelistSecurityGroup
 
+    WhitelistIPRanges:
+        Description: A list of IP ranges that are whitelisted (where ranges of 0.0.0.0/32 are ignored)
+        Value: !Join [ ",", [ !Ref WhitelistCIDR1, !Ref WhitelistCIDR2, !Ref WhitelistCIDR3, !Ref WhitelistCIDR4, !Ref WhitelistCIDR5 ] ]
+
     ManagedMasterSecurityGroup:
         Description: (EMR.master.managed_security_group) A reference to the managed master security group for EMR setup
         Value: !Ref ManagedMasterSecurityGroup
@@ -837,3 +902,9 @@ Outputs:
         Value: !GetAtt RedshiftCopyCole.Arn
         Export:
             Name: !Sub "${AWS::StackName}::redshift-iam-role"
+
+    RedshiftCopyRole:
+        Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
+        Value: !GetAtt RedshiftCopyRole.Arn
+        Export:
+            Name: !Sub "${AWS::StackName}::redshift-copy-role"
