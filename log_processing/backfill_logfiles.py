@@ -8,6 +8,7 @@ import json
 import logging
 import os.path
 import sys
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
@@ -37,28 +38,36 @@ def invoke_log_parser(function_name, bucket_name, object_key):
                         "name": bucket_name
                     },
                     "object": {
-                        "key": object_key
+                        "key": urllib.parse.quote_plus(object_key)
                     }
                 }
             }
         ]
     }
-    client = boto3.client("lambda")
-    response = client.invoke(
-        FunctionName=function_name,
-        InvocationType='RequestResponse',
-        LogType='None',
-        Payload=json.dumps(payload).encode()
-    )
-    status_code = response['StatusCode']
-    logging.info("Finished parsing of s3://{}/{} with status code {}".format(bucket_name, object_key, status_code))
+    try:
+        client = boto3.client("lambda")
+        response = client.invoke(
+            FunctionName=function_name,
+            InvocationType='RequestResponse',
+            LogType='None',
+            Payload=json.dumps(payload).encode()
+        )
+        status_code = response['StatusCode']
+        if status_code == 200:
+            logging.info("Finished parsing of 's3://{}/{}' successfully".format(bucket_name, object_key))
+        else:
+            logging.warning("Finished parsing of 's3://{}/{}' with status code {}".format(bucket_name, object_key,
+                                                                                          status_code))
+    except Exception:
+        logging.exception("Failed to upload 's3://{}/{}':".format(bucket_name, object_key))
+        raise
 
 
 def main(bucket, prefix, function_name):
     logging.info("Attempting to load log files from s3://{}/{} using {}".format(bucket, prefix, function_name))
     objects = list_objects(bucket, prefix)
     caller = partial(invoke_log_parser, function_name, bucket)
-    with ThreadPoolExecutor(max_workers=100, thread_name_prefix='lambda_caller') as executor:
+    with ThreadPoolExecutor(max_workers=20, thread_name_prefix='lambda_caller') as executor:
         executor.map(caller, objects)
 
 

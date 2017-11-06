@@ -33,11 +33,10 @@ def _build_actions_from(index, records):
         }
 
 
-def _build_meta_doc(context, environment, path, timestamp, message):
+def _build_meta_doc(context, timestamp, message):
     doc = {
         "lambda_name": context.function_name,
         "lambda_version": context.function_version,
-        "environment": environment,
         "logfile": '/'.join((context.log_group_name, context.log_stream_name)),
         "@timestamp": timestamp,
         "context": {
@@ -45,14 +44,6 @@ def _build_meta_doc(context, environment, path, timestamp, message):
         },
         "message": message
     }
-    try:
-        resource = path[:path.index('/')]
-        if resource.startswith("df-"):
-            doc["data_pipeline"] = {"id": resource}
-        elif resource.startswith("j-"):
-            doc["emr_cluster"] = {"id": resource}
-    except ValueError:
-        pass
     return doc
 
 
@@ -82,12 +73,8 @@ def lambda_handler(event, context):
                 "eventName": "ObjectCreated:Put",
                 "eventSource": "aws:s3",
                 "s3": {
-                    "bucket": {
-                        "name": "source_bucket"
-                    },
-                    "object": {
-                        "key": "StdError.gz"
-                    }
+                    "bucket": { "name": "source_bucket" },
+                    "object": { "key": "StdError.gz" }
                 }
             }
         ]
@@ -99,10 +86,8 @@ def lambda_handler(event, context):
         print("Event #{:d}: source={}, event={}, time={}, bucket={}, key={}".format(
             i, event_data['eventSource'], event_data['eventName'], event_data['eventTime'], bucket_name, object_key))
 
-        try:
-            environment, path = object_key.split("/logs/", 1)
-        except ValueError:
-            print("Path does not contain '/logs/' ... skipping this file")
+        if not (object_key.startswith("_logs/") or "/logs/" in object_key):
+            print("Path is not in log folder ... skipping this file")
             return
 
         file_uri = "s3://{}/{}".format(bucket_name, object_key)
@@ -121,7 +106,7 @@ def lambda_handler(event, context):
             print("Error code {} for object '{}'".format(error_code, file_uri))
             return
 
-        body = _build_meta_doc(context, environment, path, event_data['eventTime'],
+        body = _build_meta_doc(context, event_data['eventTime'],
                                "Index result for '{}': ok = {}, errors = {}".format(file_uri, ok, errors))
         sha1_hash = hashlib.sha1()
         sha1_hash.update(file_uri.encode())

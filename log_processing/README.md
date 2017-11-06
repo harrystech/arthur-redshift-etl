@@ -38,7 +38,7 @@ To deploy the lambda function, create a package
 
 You need to upload the latest package to S3 in order to use it in the CloudFormation step:
 ```shell
-aws s3 cp log_processing_*.zip s3://<your code bucket>/lambda/
+aws s3 cp log_processing_*.zip s3://<your code bucket>/_lambda/
 ```
 
 ## CloudFormation
