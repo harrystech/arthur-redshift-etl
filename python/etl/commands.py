@@ -11,6 +11,7 @@ import os
 import shlex
 import sys
 import traceback
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -273,8 +274,8 @@ def build_full_parser(prog_name):
             # Environment commands
             RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
             QueryEventsCommand, TailEventsCommand,
-            # Development commands
-            SelfTestCommand]:
+            # General and development commands
+            ShowHelpCommand, SelfTestCommand]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -471,12 +472,15 @@ class CreateUserCommand(SubCommand):
 class UpdateUserCommand(SubCommand):
 
     def __init__(self):
+        random_password = uuid.uuid4().hex
+        example_password = random_password[:16].upper() + random_password[16:].lower()
         super().__init__("update_user",
                          "update user's group, password, and path",
-                         "Update existing user with group membership, password, and search path."
+                         "Update an existing user with group membership, password, and search path."
                          " Note that you have to have set a password for the user in your .pgpass file"
                          " before invoking this command. The password must be valid in Redshift,"
-                         " so must contain upper case and lower case characters as well as numbers.")
+                         " so must contain upper case and lower case characters as well as numbers"
+                         " (for example: %s)" % example_password)
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
@@ -1085,6 +1089,22 @@ class TailEventsCommand(SubCommand):
         etl.monitor.tail_events(selected_relations,
                                 start_time=start_time, update_interval=update_interval, idle_time_out=idle_time_out,
                                 step=args.step)
+
+
+class ShowHelpCommand(SubCommand):
+
+    def __init__(self):
+        super().__init__("help",
+                         "show help by topic",
+                         "Show helpful information around selected topic.")
+        self.topics = ["extract", "load", "unload", "sync", "validate"]
+
+    def add_arguments(self, parser):
+        parser.set_defaults(log_level="CRITICAL")
+        parser.add_argument("topic", help="select topic", choices=self.topics)
+
+    def callback(self, args, config):
+        print(sys.modules['etl.' + args.topic].__doc__.strip())
 
 
 class SelfTestCommand(SubCommand):
