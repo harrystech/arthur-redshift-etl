@@ -1,0 +1,26 @@
+[
+  {
+    "_id": "c07949d0-bfcb-11e7-aed9-cd054a2cd6bc",
+    "_type": "dashboard",
+    "_source": {
+      "title": "ETL: Top tables by elapsed time",
+      "hits": 0,
+      "description": "",
+      "panelsJSON": "[{\"col\":1,\"id\":\"9b2c0870-bfcb-11e7-aed9-cd054a2cd6bc\",\"panelIndex\":1,\"row\":1,\"size_x\":7,\"size_y\":5,\"type\":\"visualization\"}]",
+      "optionsJSON": "{\"darkTheme\":false}",
+      "uiStateJSON": "{\"P-1\":{\"vis\":{\"params\":{\"sort\":{\"columnIndex\":null,\"direction\":null}}}}}",
+      "version": 1,
+      "timeRestore": true,
+      "timeTo": "now",
+      "timeFrom": "now-24h",
+      "refreshInterval": {
+        "display": "Off",
+        "pause": false,
+        "value": 0
+      },
+      "kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\"filter\":[{\"query\":{\"match_all\":{}}}],\"highlightAll\":true,\"version\":true}"
+      }
+    }
+  }
+]
