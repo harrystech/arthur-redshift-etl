@@ -1,4 +1,4 @@
-Description: >
+Description: |
     Create a Redshift cluster with its subnet group and parameter group.
 
 AWSTemplateFormatVersion: '2010-09-09'

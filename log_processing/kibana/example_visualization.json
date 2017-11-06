@@ -1,0 +1,16 @@
+[
+  {
+    "_id": "9b2c0870-bfcb-11e7-aed9-cd054a2cd6bc",
+    "_type": "visualization",
+    "_source": {
+      "title": "ETL: Table of target relations by pipeline and step",
+      "visState": "{\"title\":\"ETL: Table of target relations by pipeline and step\",\"type\":\"table\",\"params\":{\"perPage\":5,\"showPartialRows\":false,\"showMeticsAtAllLevels\":false,\"sort\":{\"columnIndex\":null,\"direction\":null},\"showTotal\":true,\"totalFunc\":\"sum\"},\"aggs\":[{\"id\":\"1\",\"enabled\":true,\"type\":\"sum\",\"schema\":\"metric\",\"params\":{\"field\":\"monitor.elapsed\",\"customLabel\":\"Total time spent [s]\"}},{\"id\":\"5\",\"enabled\":true,\"type\":\"terms\",\"schema\":\"split\",\"params\":{\"field\":\"data_pipeline.id\",\"size\":5,\"order\":\"desc\",\"orderBy\":\"1\",\"customLabel\":\"(data pipeline id)\",\"row\":true}},{\"id\":\"4\",\"enabled\":true,\"type\":\"terms\",\"schema\":\"bucket\",\"params\":{\"field\":\"monitor.target\",\"size\":5,\"order\":\"desc\",\"orderBy\":\"1\",\"customLabel\":\"Target relation\"}},{\"id\":\"3\",\"enabled\":true,\"type\":\"terms\",\"schema\":\"split\",\"params\":{\"field\":\"monitor.step\",\"size\":5,\"order\":\"desc\",\"orderBy\":\"1\",\"customLabel\":\"Target relations with longest elapsed times\",\"row\":true}}],\"listeners\":{}}",
+      "uiStateJSON": "{\"vis\":{\"params\":{\"sort\":{\"columnIndex\":null,\"direction\":null}}}}",
+      "description": "",
+      "version": 1,
+      "kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\"index\":\"dw-etl-logs-*\",\"query\":{\"query_string\":{\"query\":\"_exists_:monitor.elapsed\",\"analyze_wildcard\":true}},\"filter\":[]}"
+      }
+    }
+  }
+]

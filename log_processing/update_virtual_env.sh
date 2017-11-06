@@ -9,11 +9,13 @@ Usage:
 Example:
   $0 venv
 
-Create the necessary virtual environment and install required packages.
+Create or update the virtual environment by installing required packages.
 
 USAGE
     exit 0
 fi
+
+deactivate || echo "failed to deactivate previous virtual env (OK)"
 
 set -e -x
 VENV_DIR="${1%/}"

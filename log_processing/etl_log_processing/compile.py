@@ -75,7 +75,7 @@ def load_remote_content(uri):
 
 def print_message(record):
     """Callback function which simply only prints the timestamp and the message of the log record."""
-    print("{0[timestamp]} {0[etl_id]} {0[log_level]} {0[message]}".format(record))
+    print("{0[@timestamp]} {0[etl_id]} {0[log_level]} {0[message]}".format(record))
 
 
 def filter_record(query, record):
@@ -92,7 +92,7 @@ def main():
     query = str(sys.argv[1])
     processed = load_records(sys.argv[2:])
     matched = filter(partial(filter_record, query), processed)
-    for record in sorted(matched, key=lambda r: r["datetime"]["epoch_time"]):
+    for record in sorted(matched, key=lambda r: r["datetime"]["epoch_time_in_millis"]):
         print_message(record)
 
 
