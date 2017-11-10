@@ -76,7 +76,9 @@ trap "rm \"$RELEASE_FILE\"" EXIT
 
 echo "toplevel=`git rev-parse --show-toplevel`" >> "$RELEASE_FILE"
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
-if GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
+if GIT_LATEST_TAG=$(git describe --exact-match --tags HEAD); then
+    echo "commit=$GIT_COMMIT_HASH ($GIT_LATEST_TAG)" >> "$RELEASE_FILE"
+elif GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
     echo "commit=$GIT_COMMIT_HASH ($GIT_BRANCH)" >> "$RELEASE_FILE"
 else
     echo "commit=$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
