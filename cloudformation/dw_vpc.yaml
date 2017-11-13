@@ -10,17 +10,40 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 Parameters:
 
-    ObjectStore:
-        Description: (required) A bucket name where schemas and data will be stored (temporarily)
-        Type: String
-        MinLength: 3
-        MaxLength: 63
-
     DataLake:
-        Description: (required) A bucket name where data is stored, likely using 'unload' for other applications
+        Description: (required) A bucket where data is stored, likely using 'unload', for other applications
         Type: String
         MinLength: 3
         MaxLength: 63
+        AllowedPattern: ^[a-zA-Z][a-zA-Z0-9-]*$
+        ConstraintDescription: Must be DNS-friendly, consisting of letters, numbers and hyphens.
+
+    ObjectStore1:
+        Description: (recommended) A bucket where schemas and data will be stored (temporarily) for first cluster
+        Type: String
+        Default: default-will-be-ignored
+        MinLength: 3
+        MaxLength: 63
+        AllowedPattern: ^[a-zA-Z][a-zA-Z0-9-]*$
+        ConstraintDescription: Must be DNS-friendly, consisting of letters, numbers and hyphens.
+
+    ObjectStore2:
+        Description: (optional) A bucket where schemas and data will be stored (temporarily) for second cluster
+        Type: String
+        Default: default-will-be-ignored
+        MinLength: 3
+        MaxLength: 63
+        AllowedPattern: ^[a-zA-Z][a-zA-Z0-9-]*$
+        ConstraintDescription: Must be DNS-friendly, consisting of letters, numbers and hyphens.
+
+    ObjectStore3:
+        Description: (optional) A bucket where schemas and data will be stored (temporarily) for third cluster
+        Type: String
+        Default: default-will-be-ignored
+        MinLength: 3
+        MaxLength: 63
+        AllowedPattern: ^[a-zA-Z][a-zA-Z0-9-]*$
+        ConstraintDescription: Must be DNS-friendly, consisting of letters, numbers and hyphens.
 
     VpcNetworkSelection:
         Description: (required) Second octect of the IP range (final IP range is 10.(selection).0.0/16),
@@ -83,6 +106,15 @@ Parameters:
 
 
 Conditions:
+
+    ValidObjectStore1:
+        !Not [ !Equals [ !Ref ObjectStore1, "default-will-be-ignored" ] ]
+
+    ValidObjectStore2:
+        !Not [ !Equals [ !Ref ObjectStore2, "default-will-be-ignored" ] ]
+
+    ValidObjectStore3:
+        !Not [ !Equals [ !Ref ObjectStore3, "default-will-be-ignored" ] ]
 
     ValidNotAnythingWhitelistCIDR1:
         !Not [ !Equals [ !Ref WhitelistCIDR1, "0.0.0.0/0" ] ]
@@ -230,8 +262,10 @@ Resources:
                             "s3:PutObject*"
                         ],
                         "Resource": [
-                            !Sub "arn:aws:s3:::${ObjectStore}/*" ,
-                            !Sub "arn:aws:s3:::${DataLake}/*"
+                            !Sub "arn:aws:s3:::${DataLake}/*" ,
+                            !If [ ValidObjectStore1, !Sub "arn:aws:s3:::${ObjectStore1}/*", !Ref "AWS::NoValue" ] ,
+                            !If [ ValidObjectStore2, !Sub "arn:aws:s3:::${ObjectStore2}/*", !Ref "AWS::NoValue" ] ,
+                            !If [ ValidObjectStore3, !Sub "arn:aws:s3:::${ObjectStore3}/*", !Ref "AWS::NoValue" ]
                         ]
                     }
                 ]
@@ -239,7 +273,7 @@ Resources:
             RouteTableIds:
                 - !Ref PublicRouteTable
                 - !Ref PrivateRouteTable
-            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "s3" ] ]
+            ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
 
     VPCEndpointForDynamoDB:
         Type: "AWS::EC2::VPCEndpoint"
@@ -285,7 +319,7 @@ Resources:
             RouteTableIds:
                 - !Ref PublicRouteTable
                 - !Ref PrivateRouteTable
-            ServiceName: !Join [ ".", [ "com.amazonaws", !Ref "AWS::Region", "dynamodb" ] ]
+            ServiceName: !Sub "com.amazonaws.${AWS::Region}.dynamodb"
 
     WhitelistSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -771,8 +805,10 @@ Resources:
                                 - "s3:DeleteObject"
                                 - "s3:PutObject"
                             Resource:
-                                - !Sub "arn:aws:s3:::${ObjectStore}/*"
                                 - !Sub "arn:aws:s3:::${DataLake}/*"
+                                - !If [ ValidObjectStore1, !Sub "arn:aws:s3:::${ObjectStore1}/*", !Ref "AWS::NoValue" ]
+                                - !If [ ValidObjectStore2, !Sub "arn:aws:s3:::${ObjectStore2}/*", !Ref "AWS::NoValue" ]
+                                - !If [ ValidObjectStore3, !Sub "arn:aws:s3:::${ObjectStore3}/*", !Ref "AWS::NoValue" ]
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
@@ -793,7 +829,7 @@ Resources:
             # Must use the standard Path because Redshift does not support something other than '/'
             Path: "/"
             Policies:
-                - PolicyName: "redshift_access"
+                - PolicyName: "access_from_redshift"
                   PolicyDocument:
                       Version: "2012-10-17"
                       Statement:
@@ -811,8 +847,10 @@ Resources:
                                 - "s3:DeleteObject"
                                 - "s3:PutObject"
                             Resource:
-                                - !Sub "arn:aws:s3:::${ObjectStore}/*"
                                 - !Sub "arn:aws:s3:::${DataLake}/*"
+                                - !If [ ValidObjectStore1, !Sub "arn:aws:s3:::${ObjectStore1}/*", !Ref "AWS::NoValue" ]
+                                - !If [ ValidObjectStore2, !Sub "arn:aws:s3:::${ObjectStore2}/*", !Ref "AWS::NoValue" ]
+                                - !If [ ValidObjectStore3, !Sub "arn:aws:s3:::${ObjectStore3}/*", !Ref "AWS::NoValue" ]
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
@@ -833,78 +871,31 @@ Outputs:
         Description: (VPC.region) Name of the region
         Value: !Ref "AWS::Region"
 
-    DefaultAvailabilityZone:
-        Description: A reference to the primary availability zone (used as default elsewhere)
-        Value: !Ref PrimaryAvailabilityZone
-        Export:
-            Name: !Sub "${AWS::StackName}::vpc-az"
-
-    PublicSubnet:
-        Description: (VPC.public_subnet) A reference to the public subnet
-        Value: !Ref PublicSubnet
-        Export:
-            Name: !Sub "${AWS::StackName}::public-subnet-id"
-
-    PrivateSubnet:
-        Description: (VPC.private_subnet) A reference to the private subnet
-        Value: !Ref PrivateSubnet
-        Export:
-            Name: !Sub "${AWS::StackName}::private-subnet-id"
-
-    WhitelistSecurityGroup:
-        Description: (VPC.whitelist_security_group) A reference to the security group allowing access from whitelisted IP ranges
-        Value: !Ref WhitelistSecurityGroup
-
-    WhitelistIPRanges:
-        Description: A list of IP ranges that are whitelisted (where ranges of 0.0.0.0/32 are ignored)
-        Value: !Join [ ",", [ !Ref WhitelistCIDR1, !Ref WhitelistCIDR2, !Ref WhitelistCIDR3, !Ref WhitelistCIDR4, !Ref WhitelistCIDR5 ] ]
-
-    ManagedMasterSecurityGroup:
-        Description: (EMR.master.managed_security_group) A reference to the managed master security group for EMR setup
-        Value: !Ref ManagedMasterSecurityGroup
-
-    ManagedCoreSecurityGroup:
-        Description: (EMR.core.managed_security_group) A reference to the managed core security group for EMR setup
-        Value: !Ref ManagedCoreSecurityGroup
-
-    PublicEC2SecurityGroups:
-        Description: (EC2.public_security_group) A reference to the security group for EC2 instances
-        Value: !Ref RedshiftEC2SecurityGroup
-
-    RedshiftPublicSecurityGroup:
-        Description: A reference to the "public" security group used for Redshift clusters
-        Value: !Ref RedshiftPublicSecurityGroup
-        Export:
-            Name: !Sub "${AWS::StackName}::redshift-public-sg"
-
-    DataPipelineRole:
-        Description: (DataPipeline.role) A reference to the IAM role for Data Pipeline (or EMR) management
-        Value: !Ref DataPipelineRole
-
-    EC2InstanceProfile:
-        Description: (EC2.iam_instance_profile) A reference to the IAM profile for EC2 instances
-        Value: !Ref Ec2InstanceProfile
-
-    ObjectStore:
-        Description: (object_store.s3.bucket_name) Name of the bucket for the object store
-        Value: !Ref ObjectStore
-        Export:
-            Name: !Sub "${AWS::StackName}::object-store"
-
     DataLake:
         Description: (data_lake.s3.bucket_name) Name of the bucket for the data lake
         Value: !Ref DataLake
         Export:
             Name: !Sub "${AWS::StackName}::data-lake"
 
-    RedshiftCopyCole:
-        Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
-        Value: !GetAtt RedshiftCopyCole.Arn
-        Export:
-            Name: !Sub "${AWS::StackName}::redshift-iam-role"
+    ObjectStore1:
+        Description: (object_store.s3.bucket_name) Name of the first bucket acting as an object store
+        Value: !Ref ObjectStore1
 
-    RedshiftCopyRole:
-        Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
-        Value: !GetAtt RedshiftCopyRole.Arn
+    ObjectStore2:
+        Description: (object_store.s3.bucket_name) Name of the second bucket acting as an object store
+        Value: !Ref ObjectStore2
+
+    ObjectStore3:
+        Description: (object_store.s3.bucket_name) Name of the second bucket acting as an object store
+        Value: !Ref ObjectStore3
+
+    ConcatenatedBucketArns:
+        Description: List of ARNs for buckets referenced to which users would need access
+        Value: !Join [ "," , [
+            !Sub "arn:aws:s3:::${DataLake}/*" ,
+            !If [ ValidObjectStore1, !Sub "arn:aws:s3:::${ObjectStore1}/*", !Ref "AWS::NoValue" ] ,
+            !If [ ValidObjectStore2, !Sub "arn:aws:s3:::${ObjectStore2}/*", !Ref "AWS::NoValue" ] ,
+            !If [ ValidObjectStore3, !Sub "arn:aws:s3:::${ObjectStore3}/*", !Ref "AWS::NoValue" ]
+        ] ]
         Export:
-            Name: !Sub "${AWS::StackName}::redshift-copy-role"
+            Name: !Sub "${AWS::StackName}::concatenated-bucket-arns"

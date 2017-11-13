@@ -249,7 +249,7 @@
         "resources": {
             "type": "object",
             "properties": {
-                "key_name": { "$ref": "#/definitions/identifier" },
+                "key_name": { "type": "string" },
                 "VPC": {
                     "type": "object",
                     "properties": {

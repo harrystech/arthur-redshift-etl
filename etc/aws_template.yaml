@@ -15,7 +15,7 @@
         }
     },
     "resources": {
-        "key_name": "dw-{env_type}-keypair.pem",  # copy from the outputs of the VPC
+        "key_name": "dw-example-keypair.pem",  # copy from the outputs of the VPC
         "VPC": {
             "region": "copy from the outputs of the VPC",
             "account": "copy from the outputs of the VPC",
