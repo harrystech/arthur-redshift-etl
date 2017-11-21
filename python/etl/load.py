@@ -1077,7 +1077,7 @@ def show_upstream_dependencies(relations: List[RelationDescription], selector: T
     """
     List the relations upstream (towards sources) from the selected ones, report in execution order.
     """
-    execution_order = etl.relation.order_by_dependencies(relations)
+    execution_order = etl.relation.order_by_dependencies(relations, selector.base_schemas)
     selected_relations = etl.relation.find_matches(execution_order, selector)
     if len(selected_relations) == 0:
         logger.warning("Found no matching relations for: %s", selector)
