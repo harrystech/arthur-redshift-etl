@@ -11,6 +11,8 @@ import fnmatch
 import uuid
 from typing import Optional, List
 
+import etl.config
+
 
 def join_with_quotes(names):
     """
@@ -102,7 +104,7 @@ class TableName:
     @property
     def schema(self):
         # for system table dependencies, the schema should not be in a "staging" version
-        if self.staging and not self._schema.startswith('pg_catalog'):
+        if self.staging and self.is_managed:
             return as_staging_name(self._schema)
         else:
             return self._schema
@@ -136,6 +138,11 @@ class TableName:
         'hello.world'
         """
         return "{}.{}".format(*self.to_tuple())
+
+    @property
+    def is_managed(self) -> bool:
+        base_schemas = etl.config.get_dw_config().schemas
+        return self._schema in [s.name for s in base_schemas]
 
     @classmethod
     def from_identifier(cls, identifier: str):

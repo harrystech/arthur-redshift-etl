@@ -188,9 +188,10 @@ class RelationDescription:
         return str(self._query_stmt)  # The str(...) shuts up the type checker.
 
     @property
-    def dependencies(self) -> FrozenSet[str]:
+    def dependencies(self) -> FrozenSet[TableName]:
         if self._dependencies is None:
-            self._dependencies = frozenset(self.table_design.get("depends_on", []))
+            dependent_table_names = [TableName.from_identifier(d) for d in self.table_design.get("depends_on", [])]
+            self._dependencies = frozenset(dependent_table_names)
         return self._dependencies
 
     @property
@@ -346,7 +347,7 @@ class SortableRelationDescription:
         self.order = None
 
 
-def order_by_dependencies(relation_descriptions, base_schemas):
+def order_by_dependencies(relation_descriptions):
     """
     Sort the relations such that any dependents surely are loaded afterwards.
 
@@ -364,39 +365,37 @@ def order_by_dependencies(relation_descriptions, base_schemas):
     RelationDescription.load_in_parallel(relation_descriptions)
     descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
-    known_schemas = frozenset(base_schemas)
-    known_tables = frozenset({description.identifier for description in descriptions})
+    known_tables = frozenset({d.target_table_name for d in relation_descriptions})
     nr_tables = len(known_tables)
 
     # Phase 1 -- build up the priority queue all the while making sure we have only dependencies that we know about
     has_unknown_dependencies = set()
-    has_unmanaged_dependencies = set()
+    has_internal_dependencies = set()
     known_unknowns = set()
     queue = PriorityQueue()
     for initial_order, description in enumerate(descriptions):
-        unmanaged_dependencies = set(d for d in description.dependencies if d.split('.')[0] not in base_schemas)
+        # superset including internal dependencies
+        unmanaged_dependencies = set(d for d in description.dependencies if not d.is_managed)
+        pg_internal_dependencies = set(d for d in description.dependencies if d.schema == 'pg_catalog')
         unknowns = description.dependencies - known_tables - unmanaged_dependencies
         if unknowns:
             known_unknowns.update(unknowns)
-            has_unknown_dependencies.add(description.identifier)
-            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
-            description.dependencies = description.dependencies.difference(unknowns)
+            has_unknown_dependencies.add(description.original_description.target_table_name)
         if unmanaged_dependencies:
-            description.dependencies = description.dependencies.difference(unmanaged_dependencies)
-            has_unmanaged_dependencies.add(description.identifier)
-        if unmanaged_dependencies:
-            logger.info("The following dependent relations are unmanaged by Arthur: %s",
+            logger.info("The following dependent relations are not managed by Arthur: %s",
                         join_with_quotes(unmanaged_dependencies))
+        if pg_internal_dependencies:
+            has_internal_dependencies.add(description.original_description.target_table_name)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         logger.warning("These relations were unknown during dependency ordering: %s",
-                       join_with_quotes(known_unknowns))
+                       join_with_quotes([d.identifier for d in known_unknowns]))
         logger.warning('This caused these relations to have dependencies that are not known: %s',
-                       join_with_quotes(has_unknown_dependencies))
-    has_no_unmanaged_dependencies = known_tables - known_unknowns - has_unmanaged_dependencies
+                       join_with_quotes([d.identifier for d in has_unknown_dependencies]))
+    has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
-        if description.identifier in has_unmanaged_dependencies:
-            description.dependencies.update(has_no_unmanaged_dependencies)
+        if description.original_description.target_table_name in has_internal_dependencies:
+            description.dependencies.update(has_no_internal_dependencies)
 
     # Phase 2 -- keep looping until all relations have their dependencies ordered before them
     table_map = {description.identifier: description for description in descriptions}
@@ -405,7 +404,7 @@ def order_by_dependencies(relation_descriptions, base_schemas):
         minimum, tie_breaker, description = queue.get()
         if minimum > 2 * nr_tables:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
-        others = [table_map[dep].order for dep in description.dependencies]
+        others = [table_map[dep.identifier].order for dep in description.dependencies if dep.is_managed]
         if not others:
             latest = description.order = latest + 1
         elif all(others):
@@ -425,7 +424,7 @@ def set_required_relations(relations: List[RelationDescription], required_select
     into relations selected by the :required_selector.
     """
     logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
-    ordered_descriptions = order_by_dependencies(relations, required_selector.base_schemas)
+    ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
     required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
     # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
@@ -469,7 +468,7 @@ def select_in_execution_order(relations: List[RelationDescription], selector: Ta
     Return list of relations that were selected and optionally, expand the list by the dependents of the selected ones.
     """
     logger.info("Pondering execution order of %d relation(s)", len(relations))
-    execution_order = order_by_dependencies(relations, selector.base_schemas)
+    execution_order = order_by_dependencies(relations)
     selected = find_matches(execution_order, selector)
     if include_dependents:
         dependents = find_dependents(execution_order, selected)

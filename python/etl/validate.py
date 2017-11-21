@@ -391,12 +391,12 @@ def validate_upstream_sources(schemas: List[DataWarehouseSchema], relations: Lis
                 validate_upstream_table(conn, table, keep_going=keep_going)
 
 
-def validate_execution_order(relations: List[RelationDescription], base_schemas: List[str], keep_going=False):
+def validate_execution_order(relations: List[RelationDescription], keep_going=False):
     """
     Wrapper around order_by_dependencies to deal with our keep_going predilection.
     """
     try:
-        ordered_relations = etl.relation.order_by_dependencies(relations, base_schemas)
+        ordered_relations = etl.relation.order_by_dependencies(relations)
     except ETLConfigError:
         if keep_going:
             _error_occurred.set()
@@ -417,8 +417,7 @@ def validate_designs(config: DataWarehouseConfig, relations: List[RelationDescri
     _error_occurred.clear()
 
     valid_descriptions = validate_semantics(relations, keep_going=keep_going)
-    base_schemas = [s.name for s in config.schemas]
-    ordered_descriptions = validate_execution_order(valid_descriptions, base_schemas, keep_going=keep_going)
+    ordered_descriptions = validate_execution_order(valid_descriptions, keep_going=keep_going)
 
     validate_reload(config.schemas, valid_descriptions, keep_going=keep_going)
 
