@@ -352,7 +352,7 @@ def order_by_dependencies(relation_descriptions):
     Sort the relations such that any dependents surely are loaded afterwards.
 
     If a table (or view) depends on other tables, then its order is larger
-    than any of its dependencies. Ties are resolved based on the initial order
+    than any of its managed dependencies. Ties are resolved based on the initial order
     of the tables. (This motivates the use of a priority queue.)
 
     If a table depends on some system catalogs (living in pg_catalog), then the table

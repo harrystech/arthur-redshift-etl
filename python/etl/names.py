@@ -96,13 +96,14 @@ class TableName:
     """
 
     __slots__ = ("_schema", "_table", "_staging", "_base_schemas")
+    _identifier_slots = ("_schema", "_table", "_staging")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._staging = False
-        self._base_schemas = [] # type: List
+        self._base_schemas = None  # type: Optional[List]
 
     @property
     def schema(self):
@@ -119,6 +120,12 @@ class TableName:
     @property
     def staging(self):
         return self._staging
+
+    @property
+    def base_schemas(self) -> List:
+        if self._base_schemas is None:
+            self._base_schemas = etl.config.get_dw_config().schemas
+        return self._base_schemas or []  # the 'or []' is just for the type checker
 
     def to_tuple(self):
         """
@@ -144,9 +151,7 @@ class TableName:
 
     @property
     def is_managed(self) -> bool:
-        if not self._base_schemas:
-            self._base_schemas = etl.config.get_dw_config().schemas
-        return self._schema in [s.name for s in self._base_schemas]
+        return self._schema in [s.name for s in self.base_schemas]
 
     @classmethod
     def from_identifier(cls, identifier: str):
@@ -208,7 +213,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash(tuple(getattr(self, slot) for slot in self.__slots__ if slot != '_base_schemas'))
+        return hash(tuple(getattr(self, slot) for slot in self._identifier_slots))
 
     def __lt__(self, other: "TableName"):
         """
