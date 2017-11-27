@@ -112,7 +112,10 @@ class LoadableRelation:
         the position (staging or not) of a table.
 
         >>> import etl.file_sets
-        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
+        >>> from etl.config.dw import DataWarehouseSchema
+        >>> target_table_name = TableName("c", "b")
+        >>> target_table_name._base_schemas = [DataWarehouseSchema(schema_info={'name': 'c', 'owner': ''})]
+        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), target_table_name, None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
         'As delimited identifier: "c"."b", as string: \\'c.b\\''

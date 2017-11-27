@@ -72,7 +72,7 @@ class RelationDescription:
         # Lazy-loading of table design and query statement and any derived information from the table design
         self._table_design = None  # type: Optional[Dict[str, Any]]
         self._query_stmt = None  # type: Optional[str]
-        self._dependencies = None  # type: Optional[FrozenSet[str]]
+        self._dependencies = None  # type: Optional[FrozenSet[TableName]]
         self._is_required = None  # type: Union[None, bool]
 
     @property

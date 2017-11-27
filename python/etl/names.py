@@ -68,6 +68,7 @@ class TableName:
 
     Comparisons (for schema and table names) are case-insensitive.
 
+    >>> from etl.config.dw import DataWarehouseSchema
     >>> orders = TableName.from_identifier("www.orders")
     >>> str(orders)
     '"www"."orders"'
@@ -86,6 +87,7 @@ class TableName:
     >>> purchases = TableName.from_identifier("www.purchases")
     >>> orders < purchases
     True
+    >>> purchases._base_schemas = [DataWarehouseSchema(schema_info={'name': 'www', 'owner': ''})]
     >>> staging_purchases = purchases.as_staging_table_name()
     >>> staging_purchases.table == purchases.table
     True
@@ -93,17 +95,18 @@ class TableName:
     False
     """
 
-    __slots__ = ("_schema", "_table", "_staging")
+    __slots__ = ("_schema", "_table", "_staging", "_base_schemas")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._staging = False
+        self._base_schemas = [] # type: List
 
     @property
     def schema(self):
-        # for system table dependencies, the schema should not be in a "staging" version
+        # for unmanaged dependencies, the schema should not be in a "staging" version
         if self.staging and self.is_managed:
             return as_staging_name(self._schema)
         else:
@@ -141,8 +144,9 @@ class TableName:
 
     @property
     def is_managed(self) -> bool:
-        base_schemas = etl.config.get_dw_config().schemas
-        return self._schema in [s.name for s in base_schemas]
+        if not self._base_schemas:
+            self._base_schemas = etl.config.get_dw_config().schemas
+        return self._schema in [s.name for s in self._base_schemas]
 
     @classmethod
     def from_identifier(cls, identifier: str):
@@ -161,7 +165,9 @@ class TableName:
         """
         Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
 
+        >>> from etl.config.dw import DataWarehouseSchema
         >>> tn = TableName("hello", "world")
+        >>> tn._base_schemas = [DataWarehouseSchema(schema_info={'name': 'hello', 'owner': ''})]
         >>> str(tn)
         '"hello"."world"'
         >>> str(tn.as_staging_table_name())
@@ -202,7 +208,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash(tuple(getattr(self, slot) for slot in self.__slots__))
+        return hash(tuple(getattr(self, slot) for slot in self.__slots__ if slot != '_base_schemas'))
 
     def __lt__(self, other: "TableName"):
         """
@@ -249,6 +255,7 @@ class TableName:
     def as_staging_table_name(self):
         tn = TableName(*self.to_tuple())
         tn._staging = True
+        tn._base_schemas = self._base_schemas
         return tn
 
 
