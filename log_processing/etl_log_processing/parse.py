@@ -251,19 +251,49 @@ class LogParser:
         """
         Return information related to a data pipeline if it is contained in the filename of the logfile.
 
-        Basically extract from:  s3://<bucket>/_logs/<prefix>/<id>/<component>/<instance>/<attempt>/<basename>
-                            or:  s3://<bucket>/<prefix>/logs/<id>/<component>/<instance>/<attempt>/<basename>
+        The examples below have "<prefix>/{number}" as an environment to make them easier to distinguish.
+        >>> lp = LogParser("s3://<bucket>/_logs/<prefix>/1/df-<id>/<component>/<instance>/<attempt>/<cluster_id>/"
+        ...                "steps/<step_id>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/1'
+        >>> lp.shared_info["data_pipeline"]["id"]
+        'df-<id>'
+        >>> lp = LogParser("s3://<bucket>/_logs/<prefix>/2/df-<id>/<component>/<instance>/<attempt>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/2'
+        >>> lp.shared_info["data_pipeline"]["id"]
+        'df-<id>'
+        >>> lp = LogParser("s3://<bucket>/<prefix>/3/logs/df-<id>/<component>/<instance>/<attempt>/<cluster_id>/"
+        ...                "steps/<step_id>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/3'
+        >>> lp.shared_info["data_pipeline"]["id"]
+        'df-<id>'
+        >>> lp = LogParser("s3://<bucket>/<prefix>/4/logs/df-<id>/<component>/<instance>/<attempt>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/4'
+        >>> lp.shared_info["data_pipeline"]["id"]
+        'df-<id>'
         """
         parts = self.shared_info["logfile"].replace("s3://", "", 1).split('/')
         if len(parts) >= 8:
             if parts[1] == "_logs":
-                environment = '/'.join(parts[2:-5])
+                if parts[-3] == "steps":
+                    environment = '/'.join(parts[2:-8])
+                    data_pipeline = parts[-8:-4]
+                else:
+                    environment = '/'.join(parts[2:-5])
+                    data_pipeline = parts[-5:-1]
+            elif len(parts) > 11 and parts[-9] == "logs" and parts[-3] == "steps":
+                    environment = '/'.join(parts[1:-9])
+                    data_pipeline = parts[-8:-3]
             elif parts[-6] == "logs":
                 environment = '/'.join(parts[1:-6])
+                data_pipeline = parts[-5:-1]
             else:
                 environment = None
-            data_pipeline = parts[-5:-1]
-            if environment and data_pipeline[0].startswith("df-"):
+                data_pipeline = None
+            if environment is not None and data_pipeline[0].startswith("df-"):
                 return environment, dict(zip(["id", "component", "instance", "attempt"], data_pipeline))
         return None, {}
 
@@ -272,11 +302,30 @@ class LogParser:
         Return information related to an EMR cluster if it is contained in the filename of the logfile.
 
         Basically extract from:
-            s3://<bucket>/_logs/<prefix>/<id>/node/<node_id>/applications/hadoop/steps/<step_id>/<basename>
-            s3://<bucket>/_logs/<prefix>/<id>/steps/<step_id>/<basename>
-            s3://<bucket>/<prefix>/logs/<id>/node/<node_id>/applications/hadoop/steps/<step_id>/<basename>
-            s3://<bucket>/<prefix>/logs/<id>/steps/<step_id>/<basename>
+        >>> lp = LogParser("s3://<bucket>/_logs/<prefix>/1/j-<id>/node/<node_id>/applications/hadoop/"
+        ...                "steps/<step_id>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/1'
+        >>> lp.shared_info["emr_cluster"]["id"]
+        'j-<id>'
+        >>> lp = LogParser("s3://<bucket>/_logs/<prefix>/2/j-<id>/steps/<step_id>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/2'
+        >>> lp.shared_info["emr_cluster"]["id"]
+        'j-<id>'
 
+
+        >>> lp = LogParser("s3://<bucket>/<prefix>/3/logs/j-<id>/node/<node_id>/applications/hadoop/"
+        ...                "steps/<step_id>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/3'
+        >>> lp.shared_info["emr_cluster"]["id"]
+        'j-<id>'
+        >>> lp = LogParser("s3://<bucket>/<prefix>/4/logs/j-<id>/steps/<step_id>/<basename>")
+        >>> lp.shared_info["environment"]
+        '<prefix>/4'
+        >>> lp.shared_info["emr_cluster"]["id"]
+        'j-<id>'
         """
         parts = self.shared_info["logfile"].replace("s3://", "", 1).split('/')
         if len(parts) >= 7 and parts[-3] == "steps":
