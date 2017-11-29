@@ -96,7 +96,6 @@ class TableName:
     """
 
     __slots__ = ("_schema", "_table", "_staging", "_base_schemas")
-    _identifier_slots = ("_schema", "_table", "_staging")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
@@ -213,7 +212,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash(tuple(getattr(self, slot) for slot in self._identifier_slots))
+        return hash(self.to_tuple())
 
     def __lt__(self, other: "TableName"):
         """
