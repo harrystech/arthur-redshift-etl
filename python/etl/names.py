@@ -12,6 +12,7 @@ import uuid
 from typing import Optional, List
 
 import etl.config
+from etl.errors import ETLSystemError
 
 
 def join_with_quotes(names):
@@ -87,22 +88,23 @@ class TableName:
     >>> purchases = TableName.from_identifier("www.purchases")
     >>> orders < purchases
     True
-    >>> purchases._base_schemas = [DataWarehouseSchema(schema_info={'name': 'www', 'owner': ''})]
+    >>> purchases.managed_schemas = ['www']
     >>> staging_purchases = purchases.as_staging_table_name()
+    >>> staging_purchases.managed_schemas = ['www']
     >>> staging_purchases.table == purchases.table
     True
     >>> staging_purchases.schema == purchases.schema
     False
     """
 
-    __slots__ = ("_schema", "_table", "_staging", "_base_schemas")
+    __slots__ = ("_schema", "_table", "_staging", "_managed_schemas")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._staging = False
-        self._base_schemas = None  # type: Optional[List]
+        self._managed_schemas = None  # type: Optional[frozenset]
 
     @property
     def schema(self):
@@ -121,10 +123,18 @@ class TableName:
         return self._staging
 
     @property
-    def base_schemas(self) -> List:
-        if self._base_schemas is None:
-            self._base_schemas = etl.config.get_dw_config().schemas
-        return self._base_schemas or []  # the 'or []' is just for the type checker
+    def managed_schemas(self) -> frozenset:
+        if self._managed_schemas is not None:
+            return self._managed_schemas
+        try:
+            schemas = etl.config.get_dw_config().schemas
+        except AttributeError:
+            raise ETLSystemError("dw_config has not been set!")
+        return frozenset(schema.name for schema in schemas)
+
+    @managed_schemas.setter
+    def managed_schemas(self, schemas: List) -> None:
+        self._managed_schemas = frozenset(schemas)
 
     def to_tuple(self):
         """
@@ -150,7 +160,7 @@ class TableName:
 
     @property
     def is_managed(self) -> bool:
-        return self._schema in [s.name for s in self.base_schemas]
+        return self._schema in self.managed_schemas
 
     @classmethod
     def from_identifier(cls, identifier: str):
@@ -169,9 +179,12 @@ class TableName:
         """
         Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
 
-        >>> from etl.config.dw import DataWarehouseSchema
+        >>> import etl.config
+        >>> from collections import namedtuple
+        >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])
+        >>> MockSchema = namedtuple('MockSchema', ['name'])
+        >>> etl.config._dw_config = MockDWConfig(schemas=[MockSchema(name='hello')])
         >>> tn = TableName("hello", "world")
-        >>> tn._base_schemas = [DataWarehouseSchema(schema_info={'name': 'hello', 'owner': ''})]
         >>> str(tn)
         '"hello"."world"'
         >>> str(tn.as_staging_table_name())
@@ -259,7 +272,6 @@ class TableName:
     def as_staging_table_name(self):
         tn = TableName(*self.to_tuple())
         tn._staging = True
-        tn._base_schemas = self._base_schemas
         return tn
 
 
