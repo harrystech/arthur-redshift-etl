@@ -366,7 +366,7 @@ def order_by_dependencies(relation_descriptions):
     RelationDescription.load_in_parallel(relation_descriptions)
     descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
-    known_tables = frozenset({d.target_table_name for d in relation_descriptions})
+    known_tables = frozenset({description.target_table_name for description in relation_descriptions})
     nr_tables = len(known_tables)
 
     # Phase 1 -- build up the priority queue all the while making sure we have only dependencies that we know about
@@ -376,8 +376,8 @@ def order_by_dependencies(relation_descriptions):
     queue = PriorityQueue()
     for initial_order, description in enumerate(descriptions):
         # superset including internal dependencies
-        unmanaged_dependencies = set(d for d in description.dependencies if not d.is_managed)
-        pg_internal_dependencies = set(d for d in description.dependencies if d.schema == 'pg_catalog')
+        unmanaged_dependencies = set(dep for dep in description.dependencies if not dep.is_managed)
+        pg_internal_dependencies = set(dep for dep in description.dependencies if dep.schema == 'pg_catalog')
         unknowns = description.dependencies - known_tables - unmanaged_dependencies
         if unknowns:
             known_unknowns.update(unknowns)
@@ -427,7 +427,8 @@ def set_required_relations(relations: List[RelationDescription], required_select
     logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
     ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
-    required_relations = [d for d in ordered_descriptions if required_selector.match(d.target_table_name)]
+    required_relations = [description for description in ordered_descriptions
+                          if required_selector.match(description.target_table_name)]
     # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
     for description in ordered_descriptions[::-1]:
         if any([description.identifier in required.dependencies for required in required_relations]):
