@@ -188,7 +188,7 @@ class LoadableRelation:
         if self.use_staging:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
-                staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
+                staging_dependency = dependency.as_staging_table_name()
                 stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
         return stmt
 
