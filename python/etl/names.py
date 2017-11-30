@@ -69,6 +69,12 @@ class TableName:
 
     Comparisons (for schema and table names) are case-insensitive.
 
+    TableNames have a notion of known "managed" schemas, which include both
+    sources and transformations listed in configuration files. A TableName
+    is considered unmanaged if its schema does not belong to the list of
+    managed schemas, and in that case its schema property is never translated
+    into a staging version.
+
     >>> from etl.config.dw import DataWarehouseSchema
     >>> orders = TableName.from_identifier("www.orders")
     >>> str(orders)
@@ -108,7 +114,6 @@ class TableName:
 
     @property
     def schema(self):
-        # for unmanaged dependencies, the schema should not be in a "staging" version
         if self.staging and self.is_managed:
             return as_staging_name(self._schema)
         else:
