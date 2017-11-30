@@ -344,6 +344,7 @@ class SortableRelationDescription:
         self.original_description = original_description
         self.identifier = original_description.identifier
         self.dependencies = set(original_description.dependencies)
+        self.target_table_name = original_description.target_table_name
         self.order = None
 
 
@@ -380,12 +381,12 @@ def order_by_dependencies(relation_descriptions):
         unknowns = description.dependencies - known_tables - unmanaged_dependencies
         if unknowns:
             known_unknowns.update(unknowns)
-            has_unknown_dependencies.add(description.original_description.target_table_name)
+            has_unknown_dependencies.add(description.target_table_name)
         if unmanaged_dependencies:
             logger.info("The following dependent relations are not managed by Arthur: %s",
                         join_with_quotes(unmanaged_dependencies))
         if pg_internal_dependencies:
-            has_internal_dependencies.add(description.original_description.target_table_name)
+            has_internal_dependencies.add(description.target_table_name)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         logger.warning("These relations were unknown during dependency ordering: %s",
@@ -394,17 +395,17 @@ def order_by_dependencies(relation_descriptions):
                        join_with_quotes([d.identifier for d in has_unknown_dependencies]))
     has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
-        if description.original_description.target_table_name in has_internal_dependencies:
+        if description.target_table_name in has_internal_dependencies:
             description.dependencies.update(has_no_internal_dependencies)
 
     # Phase 2 -- keep looping until all relations have their dependencies ordered before them
-    table_map = {description.identifier: description for description in descriptions}
+    table_map = {description.target_table_name: description for description in descriptions}
     latest = 0
     while not queue.empty():
         minimum, tie_breaker, description = queue.get()
         if minimum > 2 * nr_tables:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
-        others = [table_map[dep.identifier].order for dep in description.dependencies if dep.is_managed]
+        others = [table_map[dep].order for dep in description.dependencies if dep.is_managed]
         if not others:
             latest = description.order = latest + 1
         elif all(others):
