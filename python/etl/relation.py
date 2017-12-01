@@ -384,15 +384,15 @@ def order_by_dependencies(relation_descriptions):
             has_unknown_dependencies.add(description.target_table_name)
         if unmanaged_dependencies:
             logger.info("The following dependent relations are not managed by Arthur: %s",
-                        join_with_quotes(unmanaged_dependencies))
+                        join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))
         if pg_internal_dependencies:
             has_internal_dependencies.add(description.target_table_name)
         queue.put((1, initial_order, description))
     if has_unknown_dependencies:
         logger.warning("These relations were unknown during dependency ordering: %s",
-                       join_with_quotes([d.identifier for d in known_unknowns]))
+                       join_with_quotes([dep.identifier for dep in known_unknowns]))
         logger.warning('This caused these relations to have dependencies that are not known: %s',
-                       join_with_quotes([d.identifier for d in has_unknown_dependencies]))
+                       join_with_quotes([dep.identifier for dep in has_unknown_dependencies]))
     has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
     for description in descriptions:
         if description.target_table_name in has_internal_dependencies:
