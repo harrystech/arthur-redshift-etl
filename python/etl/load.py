@@ -112,6 +112,11 @@ class LoadableRelation:
         the position (staging or not) of a table.
 
         >>> import etl.file_sets
+        >>> import etl.config
+        >>> from collections import namedtuple
+        >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])
+        >>> MockSchema = namedtuple('MockSchema', ['name'])
+        >>> etl.config._dw_config = MockDWConfig(schemas=[MockSchema(name='c')])
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
@@ -183,7 +188,7 @@ class LoadableRelation:
         if self.use_staging:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
-                staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
+                staging_dependency = dependency.as_staging_table_name()
                 stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
         return stmt
 

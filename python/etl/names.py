@@ -11,6 +11,9 @@ import fnmatch
 import uuid
 from typing import Optional, List
 
+import etl.config
+from etl.errors import ETLSystemError
+
 
 def join_with_quotes(names):
     """
@@ -66,6 +69,13 @@ class TableName:
 
     Comparisons (for schema and table names) are case-insensitive.
 
+    TableNames have a notion of known "managed" schemas, which include both
+    sources and transformations listed in configuration files. A TableName
+    is considered unmanaged if its schema does not belong to the list of
+    managed schemas, and in that case its schema property is never translated
+    into a staging version.
+
+    >>> from etl.config.dw import DataWarehouseSchema
     >>> orders = TableName.from_identifier("www.orders")
     >>> str(orders)
     '"www"."orders"'
@@ -84,25 +94,27 @@ class TableName:
     >>> purchases = TableName.from_identifier("www.purchases")
     >>> orders < purchases
     True
+    >>> purchases.managed_schemas = ['www']
     >>> staging_purchases = purchases.as_staging_table_name()
+    >>> staging_purchases.managed_schemas = ['www']
     >>> staging_purchases.table == purchases.table
     True
     >>> staging_purchases.schema == purchases.schema
     False
     """
 
-    __slots__ = ("_schema", "_table", "_staging")
+    __slots__ = ("_schema", "_table", "_staging", "_managed_schemas")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._staging = False
+        self._managed_schemas = None  # type: Optional[frozenset]
 
     @property
     def schema(self):
-        # for system table dependencies, the schema should not be in a "staging" version
-        if self.staging and not self._schema.startswith('pg_catalog'):
+        if self.staging and self.is_managed:
             return as_staging_name(self._schema)
         else:
             return self._schema
@@ -114,6 +126,20 @@ class TableName:
     @property
     def staging(self):
         return self._staging
+
+    @property
+    def managed_schemas(self) -> frozenset:
+        if self._managed_schemas is None:
+            try:
+                schemas = etl.config.get_dw_config().schemas
+            except AttributeError:
+                raise ETLSystemError("dw_config has not been set!")
+            self._managed_schemas = frozenset(schema.name for schema in schemas)
+        return self._managed_schemas
+
+    @managed_schemas.setter
+    def managed_schemas(self, schema_names: List) -> None:
+        self._managed_schemas = frozenset(schema_names)
 
     def to_tuple(self):
         """
@@ -137,6 +163,10 @@ class TableName:
         """
         return "{}.{}".format(*self.to_tuple())
 
+    @property
+    def is_managed(self) -> bool:
+        return self._schema in self.managed_schemas
+
     @classmethod
     def from_identifier(cls, identifier: str):
         """
@@ -154,6 +184,11 @@ class TableName:
         """
         Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
 
+        >>> import etl.config
+        >>> from collections import namedtuple
+        >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])
+        >>> MockSchema = namedtuple('MockSchema', ['name'])
+        >>> etl.config._dw_config = MockDWConfig(schemas=[MockSchema(name='hello')])
         >>> tn = TableName("hello", "world")
         >>> str(tn)
         '"hello"."world"'
@@ -195,7 +230,7 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash(tuple(getattr(self, slot) for slot in self.__slots__))
+        return hash(self.to_tuple())
 
     def __lt__(self, other: "TableName"):
         """
