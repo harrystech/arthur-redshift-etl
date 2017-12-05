@@ -433,7 +433,7 @@ def set_required_relations(relations: List[RelationDescription], required_select
                           if required_selector.match(description.target_table_name)]
     # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
     for description in ordered_descriptions[::-1]:
-        if any([description.identifier in required.dependencies for required in required_relations]):
+        if any([description.target_table_name in required.dependencies for required in required_relations]):
             required_relations.append(description)
 
     for relation in ordered_descriptions:
