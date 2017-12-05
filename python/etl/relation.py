@@ -382,6 +382,8 @@ def order_by_dependencies(relation_descriptions):
         if unknowns:
             known_unknowns.update(unknowns)
             has_unknown_dependencies.add(description.target_table_name)
+            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
+            description.dependencies = description.dependencies.difference(unknowns)
         if unmanaged_dependencies:
             logger.info("The following dependent relations are not managed by Arthur: %s",
                         join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))

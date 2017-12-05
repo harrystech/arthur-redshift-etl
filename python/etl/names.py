@@ -129,17 +129,17 @@ class TableName:
 
     @property
     def managed_schemas(self) -> frozenset:
-        if self._managed_schemas is not None:
-            return self._managed_schemas
-        try:
-            schemas = etl.config.get_dw_config().schemas
-        except AttributeError:
-            raise ETLSystemError("dw_config has not been set!")
-        return frozenset(schema.name for schema in schemas)
+        if self._managed_schemas is None:
+            try:
+                schemas = etl.config.get_dw_config().schemas
+            except AttributeError:
+                raise ETLSystemError("dw_config has not been set!")
+            self._managed_schemas = frozenset(schema.name for schema in schemas)
+        return self._managed_schemas
 
     @managed_schemas.setter
-    def managed_schemas(self, schemas: List) -> None:
-        self._managed_schemas = frozenset(schemas)
+    def managed_schemas(self, schema_names: List) -> None:
+        self._managed_schemas = frozenset(schema_names)
 
     def to_tuple(self):
         """
