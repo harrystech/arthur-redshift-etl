@@ -385,7 +385,7 @@ def order_by_dependencies(relation_descriptions):
             # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
             description.dependencies = description.dependencies.difference(unknowns)
         if unmanaged_dependencies:
-            logger.info("The following dependent relations are not managed by Arthur: %s",
+            logger.info("The following dependencies are not managed by Arthur: %s",
                         join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))
         if pg_internal_dependencies:
             has_internal_dependencies.add(description.target_table_name)
