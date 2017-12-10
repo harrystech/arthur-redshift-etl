@@ -443,6 +443,7 @@ def load_relation_from_prior_data(conn: connection, relation: LoadableRelation, 
         prior_name = relation.target_table_name.as_standard_table_name()
     else:
         prior_name = relation.target_table_name.as_backup_table_name()
+    logger.info("Loading {:x} with rows from '{:s}'".format(relation, prior_name))
     inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), prior_name)
     insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
 
@@ -627,10 +628,13 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             try:
                 update_table(conn, relation, dry_run=dry_run)
                 verify_constraints(conn, relation, dry_run=dry_run)
-            except ETLRuntimeError as exc:
+            except ETLRuntimeError:
+                logger.warning("Failed to update relation {:x}".format(relation))
                 if relation.in_transaction and conn.get_transaction_status() is TRANSACTION_STATUS_INERROR:
-                    raise exc
+                    logger.error("Transaction is in error state, cannot attempt to use prior contents")
+                    raise
                 else:
+                    logger.warning("Attempting to populate relation using prior contents")
                     update_table(conn, relation, from_prior=True, dry_run=dry_run)
 
 
