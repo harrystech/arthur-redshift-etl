@@ -99,7 +99,7 @@ class TableName:
     False
     """
 
-    __slots__ = ("_schema", "_table", "_staging")
+    __slots__ = ("_schema", "_table", "_staging", "_backup", "_managed_schemas")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
