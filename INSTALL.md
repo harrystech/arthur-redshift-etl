@@ -19,7 +19,7 @@ brew install jq
 
 # Setup tools -- later
 brew upgrade awscli
-brew install jq
+brew upgrade jq
 
 # Setup python3 with virtualenv
 brew install python3

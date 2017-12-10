@@ -11,6 +11,9 @@ import fnmatch
 import uuid
 from typing import Optional, List
 
+import etl.config
+from etl.errors import ETLSystemError
+
 
 def join_with_quotes(names):
     """
@@ -92,7 +95,9 @@ class TableName:
     >>> purchases = TableName.from_identifier("www.purchases")
     >>> orders < purchases
     True
+    >>> purchases.managed_schemas = ['www']
     >>> staging_purchases = purchases.as_staging_table_name()
+    >>> staging_purchases.managed_schemas = ['www']
     >>> staging_purchases.table == purchases.table
     True
     >>> staging_purchases.schema == purchases.schema
@@ -185,6 +190,7 @@ class TableName:
     def __str__(self):
         """
         Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
+
         >>> import etl.config
         >>> from collections import namedtuple
         >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])

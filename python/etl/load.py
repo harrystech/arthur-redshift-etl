@@ -59,9 +59,10 @@ import etl.monitor
 import etl.db
 import etl.design.redshift
 import etl.relation
+from etl.config import get_config_int
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
-                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError)
+                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError, retry)
 from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.timer import Timer
@@ -113,6 +114,11 @@ class LoadableRelation:
         the position (staging or not) of a table.
 
         >>> import etl.file_sets
+        >>> import etl.config
+        >>> from collections import namedtuple
+        >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])
+        >>> MockSchema = namedtuple('MockSchema', ['name'])
+        >>> etl.config._dw_config = MockDWConfig(schemas=[MockSchema(name='c')])
         >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
@@ -184,7 +190,7 @@ class LoadableRelation:
         if self.use_staging:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
-                staging_dependency = TableName.from_identifier(dependency).as_staging_table_name()
+                staging_dependency = dependency.as_staging_table_name()
                 stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
         return stmt
 
@@ -437,7 +443,7 @@ def load_relation_from_prior_data(conn: connection, relation: LoadableRelation, 
         prior_name = relation.target_table_name.as_standard_table_name()
     else:
         prior_name = relation.target_table_name.as_backup_table_name()
-    inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), backup_name)
+    inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), prior_name)
     insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
 
 
