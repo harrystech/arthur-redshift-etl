@@ -1,3 +1,4 @@
+import time
 from typing import Callable, TypeVar
 
 T = TypeVar("T")
@@ -238,9 +239,12 @@ def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
         except TransientETLError as e:
             # Only retry transient errors
             failure_reason = e
-            if max_retries - attempt:
-                logger.warning("Encountered the following error (retrying %s more times): %s",
-                               max_retries - attempt, str(e))
+            remaining_attempts = max_retries - attempt
+            if remaining_attempts:
+                sleep_time = 5 ** attempt
+                logger.warning("Encountered the following error (retrying %s more times after %s second sleep): %s",
+                               remaining_attempts, sleep_time, str(e))
+                time.sleep(sleep_time)
             continue
         except:
             # We consider all other errors permanent and immediately re-raise without retrying

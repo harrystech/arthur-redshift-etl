@@ -66,6 +66,14 @@ class TableName:
 
     Comparisons (for schema and table names) are case-insensitive.
 
+    TableNames are "managed" if their schema is among the source or transformation schemas listed in Data Warehouse
+    configuration files. A "managed" TableName may have its schema name prefixed to refer to a managed schema position,
+    one of:
+        staging (prefixed, private location for work-in-process),
+        standard (no prefix, user-facing warehouse state), or
+        backup (prefixed, private location for failure recovery).
+
+    >>> from etl.config.dw import DataWarehouseSchema
     >>> orders = TableName.from_identifier("www.orders")
     >>> str(orders)
     '"www"."orders"'
@@ -98,12 +106,17 @@ class TableName:
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._staging = False
+        self._backup = False
+        self._managed_schemas = None  # type: Optional[frozenset]
 
     @property
     def schema(self):
-        # for system table dependencies, the schema should not be in a "staging" version
-        if self.staging and not self._schema.startswith('pg_catalog'):
+        # Access the schema name, adjusting it for which 'position' the table is in
+        # if the table is among the Arthur-managed schemas
+        if self.staging and self.is_managed:
             return as_staging_name(self._schema)
+        elif self.backup and self.is_managed:
+            return as_backup_name(self._schema)
         else:
             return self._schema
 
@@ -115,10 +128,27 @@ class TableName:
     def staging(self):
         return self._staging
 
+    @property
+    def backup(self):
+        return self._backup
+
+    @property
+    def managed_schemas(self) -> frozenset:
+        if self._managed_schemas is None:
+            try:
+                schemas = etl.config.get_dw_config().schemas
+            except AttributeError:
+                raise ETLSystemError("dw_config has not been set!")
+            self._managed_schemas = frozenset(schema.name for schema in schemas)
+        return self._managed_schemas
+
+    @managed_schemas.setter
+    def managed_schemas(self, schema_names: List) -> None:
+        self._managed_schemas = frozenset(schema_names)
+
     def to_tuple(self):
         """
         Return schema name and table name as a handy tuple.
-
         >>> tn = TableName("weather", "temp")
         >>> schema_name, table_name = tn.to_tuple()
         >>> schema_name, table_name
@@ -130,18 +160,20 @@ class TableName:
     def identifier(self) -> str:
         """
         Return simple identifier, like one would use on the command line.
-
         >>> tn = TableName("hello", "world")
         >>> tn.identifier
         'hello.world'
         """
         return "{}.{}".format(*self.to_tuple())
 
+    @property
+    def is_managed(self) -> bool:
+        return self._schema in self.managed_schemas
+
     @classmethod
     def from_identifier(cls, identifier: str):
         """
         Split identifier into schema and table before creating a new TableName instance
-
         >>> identifier = "ford.mustang"
         >>> tn = TableName.from_identifier(identifier)
         >>> identifier == tn.identifier
@@ -153,7 +185,11 @@ class TableName:
     def __str__(self):
         """
         Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
-
+        >>> import etl.config
+        >>> from collections import namedtuple
+        >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])
+        >>> MockSchema = namedtuple('MockSchema', ['name'])
+        >>> etl.config._dw_config = MockDWConfig(schemas=[MockSchema(name='hello')])
         >>> tn = TableName("hello", "world")
         >>> str(tn)
         '"hello"."world"'
@@ -165,7 +201,6 @@ class TableName:
     def __format__(self, code):
         """
         Format name as delimited identifier (by default, or 's') or just as quoted identifier (using 'x').
-
         >>> pu = TableName("public", "users")
         >>> format(pu)
         '"public"."users"'
@@ -195,12 +230,11 @@ class TableName:
             return False
 
     def __hash__(self):
-        return hash(tuple(getattr(self, slot) for slot in self.__slots__))
+        return hash(self.to_tuple())
 
     def __lt__(self, other: "TableName"):
         """
         Order two table names, case-insensitive. (Used by sort.)
-
         >>> ta = TableName("Iowa", "Cedar Rapids")
         >>> tb = TableName("Iowa", "Davenport")
         >>> ta < tb
@@ -211,7 +245,6 @@ class TableName:
     def match(self, other: "TableName") -> bool:
         """
         Treat yo'self as a tuple of patterns and match against the other table.
-
         >>> tp = TableName("w*", "o*")
         >>> tn = TableName("www", "orders")
         >>> tp.match(tn)
@@ -230,7 +263,6 @@ class TableName:
     def match_pattern(self, pattern: str) -> bool:
         """
         Test whether this table matches the given pattern
-
         >>> tn = TableName("www", "orders")
         >>> tn.match_pattern("w*.o*")
         True
@@ -242,6 +274,14 @@ class TableName:
     def as_staging_table_name(self):
         tn = TableName(*self.to_tuple())
         tn._staging = True
+        return tn
+
+    def as_standard_table_name(self):
+        return TableName(*self.to_tuple())
+
+    def as_backup_table_name(self):
+        tn = TableName(*self.to_tuple())
+        tn._backup = True
         return tn
 
 

@@ -51,6 +51,7 @@ from typing import Any, Dict, List, Optional, Set
 
 
 from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import TRANSACTION_STATUS_INERROR
 
 import etl
 import etl.data_warehouse
@@ -321,7 +322,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if reader_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of select access on {:x} to {}".format(
-                            relation, join_with_quotes(reader_groups)))
+                        relation, join_with_quotes(reader_groups)))
         else:
             logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
             for reader in reader_groups:
@@ -330,7 +331,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if writer_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of write access on {:x} to {}".format(
-                            relation, join_with_quotes(writer_groups)))
+                        relation, join_with_quotes(writer_groups)))
         else:
             logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
             for writer in writer_groups:
@@ -349,6 +350,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
+    If the database reports an internal error and we aren't in a transaction, we'll retry.
     """
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
     s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
@@ -356,13 +358,18 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     if not relation.has_manifest:
         if dry_run:
             logger.info("Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
-                            relation.identifier, s3_uri))
+                        relation.identifier, s3_uri))
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
-                                           relation.identifier, s3_uri))
+                                       relation.identifier, s3_uri))
 
-    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
-                                      need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
+    def _copy_from_s3(attempt_num=0):
+        etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
+                                          need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
+    if relation.in_transaction:
+        _copy_from_s3()
+    else:
+        retry(get_config_int("arthur_settings.copy_data_retries"), _copy_from_s3, logger)
 
 
 def insert_from_query(conn: connection, relation: LoadableRelation,
@@ -420,6 +427,18 @@ def create_missing_dimension_row(columns: List[dict]) -> List[str]:
             else:
                 na_values_row.append("0")
     return na_values_row
+
+
+def load_relation_from_prior_data(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+    """
+    Populate relation by selecting contents out of that table's prior position
+    """
+    if relation.use_staging:
+        prior_name = relation.target_table_name.as_standard_table_name()
+    else:
+        prior_name = relation.target_table_name.as_backup_table_name()
+    inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), backup_name)
+    insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
 
 
 def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -496,11 +515,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
             logger.info("Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                        constraint_type, relation, join_with_quotes(columns)))
             etl.db.skip_query(conn, statement)
         else:
             logger.info("Checking {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                        constraint_type, relation, join_with_quotes(columns)))
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
@@ -541,10 +560,12 @@ def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: 
 
 # ---- Section 3: Functions that tie table operations together ----
 
-def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def update_table(conn: connection, relation: LoadableRelation, from_prior=False, dry_run=False) -> None:
     """
     Update table contents either from CSV files from upstream sources or by running some SQL
     for CTAS relations. This assumes that the table was previously created.
+
+    Relations can be filled with the rows they had in a prior position (standard for staging, backup for standard).
 
     For tables backed by upstream sources, data is copied in.
 
@@ -555,7 +576,9 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
     then it's assumed to be a dimension and a row with missing values (mostly 0, false, etc.) is added as well.
     """
     try:
-        if relation.is_ctas_relation:
+        if from_prior:
+            load_relation_from_prior_data(conn, relation, dry_run=dry_run)
+        elif relation.is_ctas_relation:
             if relation.has_identity_column:
                 load_ctas_using_temp_table(conn, relation, dry_run=dry_run)
             else:
@@ -592,9 +615,17 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             logger.info("Skipping loading data into {:x}".format(relation))
         elif relation.failed:
             logger.info("Bypassing already failed relation {:x}".format(relation))
+        elif relation.load_from_prior:
+            update_table(conn, relation, from_prior=True, dry_run=dry_run)
         else:
-            update_table(conn, relation, dry_run=dry_run)
-            verify_constraints(conn, relation, dry_run=dry_run)
+            try:
+                update_table(conn, relation, dry_run=dry_run)
+                verify_constraints(conn, relation, dry_run=dry_run)
+            except ETLRuntimeError as exc:
+                if relation.in_transaction and conn.get_transaction_status() is TRANSACTION_STATUS_INERROR:
+                    raise exc
+                else:
+                    update_table(conn, relation, from_prior=True, dry_run=dry_run)
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:

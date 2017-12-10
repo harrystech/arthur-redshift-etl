@@ -79,6 +79,10 @@
             "type" : "string",
             "pattern": "^(CTAS|VIEW|\\w[^.]*[.]\\w[^.]*[.]\\w[^.]*)$"
         },
+        "load_from_prior": {
+            "type": "boolean",
+            "description": "Optional. Indicates an unhealthy table that should retain its last successful contents rather than be updated."
+        },
         "unload_target" : {
             "type": "string",
             "description": "Optional. If the relation is unloadable will specify to which schemas."

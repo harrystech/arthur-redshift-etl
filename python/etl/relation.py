@@ -162,6 +162,10 @@ class RelationDescription:
         return "unload_target" in self.table_design
 
     @property
+    def load_from_prior(self):
+        return self.table_design.get("load_from_prior", False)
+
+    @property
     def is_required(self) -> bool:
         if self._is_required is None:
             raise ETLRuntimeError("state of 'is_required' unknown for RelationDescription '{0.identifier}'"
