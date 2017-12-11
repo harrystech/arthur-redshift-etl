@@ -437,13 +437,20 @@ def create_missing_dimension_row(columns: List[dict]) -> List[str]:
 
 def load_relation_from_prior_data(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
-    Populate relation by selecting contents out of that table's prior position
+    Load relation by selecting contents out of that table's prior position
     """
     if relation.use_staging:
         prior_name = relation.target_table_name.as_standard_table_name()
     else:
         prior_name = relation.target_table_name.as_backup_table_name()
-    logger.info("Loading {:x} with rows from '{:s}'".format(relation, prior_name))
+
+    key_columns = [column for column in relation.table_design["columns"]
+                   if column["name"].endswith("_key") and not column.get("identity")]
+    if key_columns:
+        raise RelationDataError("Non-identity key columns (%s) may have changed in related tables,"
+                                " reloading table is unsafe.", join_column_list([col['name'] for col in key_columns]))
+
+    logger.info("Loading {:x} with rows from {:s}".format(relation, prior_name))
     inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), prior_name)
     insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
 
@@ -628,14 +635,15 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             try:
                 update_table(conn, relation, dry_run=dry_run)
                 verify_constraints(conn, relation, dry_run=dry_run)
-            except ETLRuntimeError:
-                logger.warning("Failed to update relation {:x}".format(relation))
+            except ETLRuntimeError as exc:
                 if relation.in_transaction and conn.get_transaction_status() is TRANSACTION_STATUS_INERROR:
-                    logger.error("Transaction is in error state, cannot attempt to use prior contents")
+                    logger.warning("Transaction is in error state, cannot attempt to use prior contents")
                     raise
                 else:
-                    logger.warning("Attempting to populate relation using prior contents")
+                    logger.exception("Failed to update relation {:x}".format(relation))
+                    logger.warning("Attempting to fill relation {:x} with rows from earlier position".format(relation))
                     update_table(conn, relation, from_prior=True, dry_run=dry_run)
+                    logger.warning("Recovered from error by filling relation {:x} with prior data".format(relation))
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
