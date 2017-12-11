@@ -74,6 +74,7 @@ class RelationDescription:
         self._query_stmt = None  # type: Optional[str]
         self._dependencies = None  # type: Optional[FrozenSet[TableName]]
         self._is_required = None  # type: Union[None, bool]
+        self._load_from_prior = None  # type: Union[None, bool]
 
     @property
     def target_table_name(self) -> TableName:
@@ -163,7 +164,11 @@ class RelationDescription:
 
     @property
     def load_from_prior(self):
-        return self.table_design.get("load_from_prior", False)
+        return self.table_design.get("load_from_prior", False) if self._load_from_prior is None else self._load_from_prior
+
+    @load_from_prior.setter
+    def load_from_prior(self, value):
+        self._load_from_prior = value
 
     @property
     def is_required(self) -> bool:
