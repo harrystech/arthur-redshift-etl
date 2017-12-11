@@ -718,6 +718,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             - is an identifier: poll DynamoDB
             - is an int: sleep that many seconds
         """
+        load_remaining_from_prior = False
         while True:
             try:
                 item = to_poll.get(block=False)
@@ -732,8 +733,10 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 logger.debug("Poller: %s left to poll, %s ready to load, %s elapsed",
                              to_poll.qsize(), to_load.qsize(), timer.elapsed)
                 if checkpoint_queue_size_cutoff == to_poll.qsize() and timer.elapsed > checkpoint_time_cutoff:
-                    raise ETLRuntimeError(
-                        "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
+                    logger.error("No new extracts found in last %s seconds, setting remaining relations to"
+                                 " load from prior and enqueuing" % idle_termination_seconds)
+                    load_remaining_from_prior = True
+                    continue
                 else:
                     if to_poll.qsize():
                         logger.debug("Poller: Sleeping for %s seconds", item)
@@ -750,7 +753,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                                            ":step": "extract", ":event": etl.monitor.STEP_START}
             )
             if res['Count'] == 0:
-                to_poll.put(item)
+                if load_remaining_from_prior:
+                    item.load_from_prior = True
+                    to_load.put(item)
+                else:
+                    to_poll.put(item)
             else:
                 for extract_payload in res['Items']:
                     if extract_payload['event'] == etl.monitor.STEP_FINISH:
@@ -759,7 +766,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
-                        item.mark_failure(relations, exc_info=False)
+                        item.load_from_prior = True
                     # We'll create the relation on success and failure (but skip copy on failure)
                     to_load.put(item)
 
