@@ -166,15 +166,19 @@ def log_load_error(cx):
         raise
 
 
-def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_role: str,
+def copy_from_uri(conn: connection, relation, s3_uri: str, aws_iam_role: str,
                   need_compupdate=False, dry_run=False) -> None:
     """
     Load data into table in the data warehouse using the COPY command.
     """
     credentials = "aws_iam_role={}".format(aws_iam_role)
+    table_name = relation.target_table_name
+    columns = join_column_list(relation.unquoted_columns)
 
     stmt = """
-        COPY {table}
+        COPY {table} (
+            {columns}
+        )
         FROM %s
         CREDENTIALS %s MANIFEST
         DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
@@ -182,7 +186,7 @@ def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_
         TRUNCATECOLUMNS
         STATUPDATE OFF
         COMPUPDATE {compupdate}
-        """.format(table=table_name, compupdate="ON" if need_compupdate else "OFF")
+        """.format(table=table_name, columns=columns, compupdate="ON" if need_compupdate else "OFF")
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' from '%s'", table_name.identifier, s3_uri)
         etl.db.skip_query(conn, stmt, (s3_uri, credentials))
