@@ -13,7 +13,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.db
 from etl.names import join_column_list, TableName
-from etl.errors import TransientETLError, retry
+from etl.errors import TransientETLError
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
