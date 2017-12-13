@@ -59,7 +59,7 @@ import etl.monitor
 import etl.db
 import etl.design.redshift
 import etl.relation
-from etl.config import get_config_int
+from etl.config import get_config_int, get_config_value
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
                         RelationConstructionError, RequiredRelationLoadError, UpdateTableError, retry)
@@ -358,7 +358,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
     If the database reports an internal error and we aren't in a transaction, we'll retry.
     """
-    aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
+    aws_iam_role = str(get_config_value("object_store.iam_role"))
     s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
 
     if not relation.has_manifest:
@@ -444,15 +444,17 @@ def load_relation_from_prior_data(conn: connection, relation: LoadableRelation, 
     else:
         prior_name = relation.target_table_name.as_backup_table_name()
 
-    key_columns = [column for column in relation.table_design["columns"]
-                   if column["name"].endswith("_key") and not column.get("identity")]
-    if key_columns:
-        raise RelationDataError("Non-identity key columns (%s) may have changed in related tables,"
-                                " reloading table is unsafe.", join_column_list([col['name'] for col in key_columns]))
+    if relation.is_transformation:
+        key_columns = [column for column in relation.table_design["columns"]
+                       if column["name"].endswith("_key") and not column.get("identity")]
+        if key_columns and get_config_value("arthur_settings.loads_from_prior_data") != "all":
+            raise RelationDataError("Non-identity key columns ({}) may have changed in related tables,"
+                                    " reloading table is unsafe.".format(
+                                        join_column_list([col['name'] for col in key_columns])))
 
     logger.info("Loading {:x} with rows from {:s}".format(relation, prior_name))
-    inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), prior_name)
-    insert_from_query(conn, relation, query_stmt=inner_stmt, dry_run=dry_run)
+    prior_data_select_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), prior_name)
+    insert_from_query(conn, relation, query_stmt=prior_data_select_stmt, dry_run=dry_run)
 
 
 def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -629,13 +631,16 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             logger.info("Skipping loading data into {:x}".format(relation))
         elif relation.failed:
             logger.info("Bypassing already failed relation {:x}".format(relation))
-        elif relation.load_from_prior:
+        elif relation.loads_from_prior_data:
             update_table(conn, relation, from_prior=True, dry_run=dry_run)
         else:
             try:
                 update_table(conn, relation, dry_run=dry_run)
                 verify_constraints(conn, relation, dry_run=dry_run)
             except ETLRuntimeError as exc:
+                fallback_setting = get_config_value("arthur_settings.loads_from_prior_data")
+                if fallback_setting == "designed" or (fallback_setting == "source" and relation.is_transformation):
+                    raise
                 if relation.in_transaction and conn.get_transaction_status() is TRANSACTION_STATUS_INERROR:
                     logger.warning("Transaction is in error state, cannot attempt to use prior contents")
                     raise
@@ -698,6 +703,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         return
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
+    fallback_to_prior = get_config_value("arthur_settings.loads_from_prior_data") != "designed"
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
 
     recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
@@ -735,7 +741,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 if checkpoint_queue_size_cutoff == to_poll.qsize() and timer.elapsed > checkpoint_time_cutoff:
                     logger.error("No new extracts found in last %s seconds, setting remaining relations to"
                                  " load from prior and enqueuing" % idle_termination_seconds)
-                    load_remaining_from_prior = True
+                    load_remaining_from_prior = fallback_to_prior
                     continue
                 else:
                     if to_poll.qsize():
@@ -754,7 +760,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             )
             if res['Count'] == 0:
                 if load_remaining_from_prior:
-                    item.load_from_prior = True
+                    item.loads_from_prior_data = True
                     to_load.put(item)
                 else:
                     to_poll.put(item)
@@ -766,7 +772,8 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
-                        item.load_from_prior = True
+                        if fallback_to_prior:
+                            item.loads_from_prior_data = True
                     # We'll create the relation on success and failure (but skip copy on failure)
                     to_load.put(item)
 

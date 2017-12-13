@@ -3,7 +3,15 @@
     "arthur_settings": {
         # If an extract from an upstream source or copy from S3 files fails due to some transient error, retry the extract at most this many times. Zero disables retries
         "extract_retries": 3, 
-        "copy_data_retries": 3
+        "copy_data_retries": 3,
+        # If normal approach to refreshing a materialized relation (CTAS or source) fails, fill the relation with
+        # data already in the warehouse from a prior build of that relation.
+        # Setting determines when Arthur should fallback to prior data:
+        #   "designed" - use (instead of query) only on relations whose design file explicitly sets "loads_from_prior_data"
+        #   "source" - use for source relations where load has failed or concurrent extract failed or timed out
+        #   "non_key" - use for any failed materialized relation other than CTAS with non-"identity" columns named '*_key'
+        #   "all" - use for any failed materialized relation
+        "loads_from_prior_data": "source"
     },
     # Target (Redshift) cluster
     "data_warehouse": {

@@ -116,6 +116,11 @@
                     "description": "If a COPY command fails with a database internal error (which we optimistically hope are transient), retry the COPY at most this many times. Zero disables retries",
                     "type": "integer",
                     "minimum": 0
+                },
+                "loads_from_prior_data": {
+                    "description": "If a COPY command fails with a database internal error (which we optimistically hope are transient), retry the COPY at most this many times. Zero disables retries",
+                    "type" : "string",
+                    "pattern": "^(designed|source|non_key|all)$"
                 }
             },
             "required": [ "extract_retries", "copy_data_retries" ],
