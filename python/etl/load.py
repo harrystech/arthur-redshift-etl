@@ -51,6 +51,7 @@ from typing import Any, Dict, List, Optional, Set
 
 
 from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import TRANSACTION_STATUS_INERROR
 
 import etl
 import etl.data_warehouse
@@ -58,9 +59,10 @@ import etl.monitor
 import etl.db
 import etl.design.redshift
 import etl.relation
+from etl.config import get_config_int, get_config_value
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
-                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError)
+                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError, retry)
 from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.timer import Timer
@@ -189,7 +191,7 @@ class LoadableRelation:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
                 staging_dependency = dependency.as_staging_table_name()
-                stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
+                stmt = re.sub(r'\b' + dependency.identifier + r'\b', staging_dependency.identifier, stmt)
         return stmt
 
     @property
@@ -326,7 +328,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if reader_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of select access on {:x} to {}".format(
-                            relation, join_with_quotes(reader_groups)))
+                        relation, join_with_quotes(reader_groups)))
         else:
             logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
             for reader in reader_groups:
@@ -335,7 +337,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if writer_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of write access on {:x} to {}".format(
-                            relation, join_with_quotes(writer_groups)))
+                        relation, join_with_quotes(writer_groups)))
         else:
             logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
             for writer in writer_groups:
@@ -354,20 +356,26 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
+    If the database reports an internal error and we aren't in a transaction, we'll retry.
     """
-    aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
+    aws_iam_role = str(get_config_value("object_store.iam_role"))
     s3_uri = "s3://{}/{}".format(relation.bucket_name, relation.manifest_file_name)
 
     if not relation.has_manifest:
         if dry_run:
             logger.info("Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
-                            relation.identifier, s3_uri))
+                        relation.identifier, s3_uri))
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
-                                           relation.identifier, s3_uri))
+                                       relation.identifier, s3_uri))
 
-    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
-                                      need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
+    def _copy_from_s3(attempt_num=0):
+        etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
+                                          need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
+    if relation.in_transaction:
+        _copy_from_s3()
+    else:
+        retry(get_config_int("arthur_settings.copy_data_retries"), _copy_from_s3, logger)
 
 
 def insert_from_query(conn: connection, relation: LoadableRelation,
@@ -425,6 +433,28 @@ def create_missing_dimension_row(columns: List[dict]) -> List[str]:
             else:
                 na_values_row.append("0")
     return na_values_row
+
+
+def load_relation_from_prior_data(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+    """
+    Load relation by selecting contents out of that table's prior position
+    """
+    if relation.use_staging:
+        prior_name = relation.target_table_name.as_standard_table_name()
+    else:
+        prior_name = relation.target_table_name.as_backup_table_name()
+
+    if relation.is_transformation:
+        key_columns = [column for column in relation.table_design["columns"]
+                       if column["name"].endswith("_key") and not column.get("identity")]
+        if key_columns and get_config_value("arthur_settings.loads_from_prior_data") != "all":
+            raise RelationDataError("Non-identity key columns ({}) may have changed in related tables,"
+                                    " reloading table is unsafe.".format(
+                                        join_column_list([col['name'] for col in key_columns])))
+
+    logger.info("Loading {:x} with rows from {:s}".format(relation, prior_name))
+    prior_data_select_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), prior_name)
+    insert_from_query(conn, relation, query_stmt=prior_data_select_stmt, dry_run=dry_run)
 
 
 def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -501,11 +531,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
             logger.info("Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                        constraint_type, relation, join_with_quotes(columns)))
             etl.db.skip_query(conn, statement)
         else:
             logger.info("Checking {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                        constraint_type, relation, join_with_quotes(columns)))
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
@@ -546,10 +576,12 @@ def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: 
 
 # ---- Section 3: Functions that tie table operations together ----
 
-def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def update_table(conn: connection, relation: LoadableRelation, from_prior=False, dry_run=False) -> None:
     """
     Update table contents either from CSV files from upstream sources or by running some SQL
     for CTAS relations. This assumes that the table was previously created.
+
+    Relations can be filled with the rows they had in a prior position (standard for staging, backup for standard).
 
     For tables backed by upstream sources, data is copied in.
 
@@ -560,7 +592,9 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
     then it's assumed to be a dimension and a row with missing values (mostly 0, false, etc.) is added as well.
     """
     try:
-        if relation.is_ctas_relation:
+        if from_prior:
+            load_relation_from_prior_data(conn, relation, dry_run=dry_run)
+        elif relation.is_ctas_relation:
             if relation.has_identity_column:
                 load_ctas_using_temp_table(conn, relation, dry_run=dry_run)
             else:
@@ -597,9 +631,24 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             logger.info("Skipping loading data into {:x}".format(relation))
         elif relation.failed:
             logger.info("Bypassing already failed relation {:x}".format(relation))
+        elif relation.loads_from_prior_data:
+            update_table(conn, relation, from_prior=True, dry_run=dry_run)
         else:
-            update_table(conn, relation, dry_run=dry_run)
-            verify_constraints(conn, relation, dry_run=dry_run)
+            try:
+                update_table(conn, relation, dry_run=dry_run)
+                verify_constraints(conn, relation, dry_run=dry_run)
+            except ETLRuntimeError as exc:
+                fallback_setting = get_config_value("arthur_settings.loads_from_prior_data")
+                if fallback_setting == "designed" or (fallback_setting == "source" and relation.is_transformation):
+                    raise
+                if relation.in_transaction and conn.get_transaction_status() is TRANSACTION_STATUS_INERROR:
+                    logger.warning("Transaction is in error state, cannot attempt to use prior contents")
+                    raise
+                else:
+                    logger.exception("Failed to update relation {:x}".format(relation))
+                    logger.warning("Attempting to fill relation {:x} with rows from earlier position".format(relation))
+                    update_table(conn, relation, from_prior=True, dry_run=dry_run)
+                    logger.warning("Recovered from error by filling relation {:x} with prior data".format(relation))
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
@@ -654,6 +703,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
         return
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
+    fallback_to_prior = get_config_value("arthur_settings.loads_from_prior_data") != "designed"
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
 
     recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
@@ -674,6 +724,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             - is an identifier: poll DynamoDB
             - is an int: sleep that many seconds
         """
+        load_remaining_from_prior = False
         while True:
             try:
                 item = to_poll.get(block=False)
@@ -688,8 +739,10 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 logger.debug("Poller: %s left to poll, %s ready to load, %s elapsed",
                              to_poll.qsize(), to_load.qsize(), timer.elapsed)
                 if checkpoint_queue_size_cutoff == to_poll.qsize() and timer.elapsed > checkpoint_time_cutoff:
-                    raise ETLRuntimeError(
-                        "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds)
+                    logger.error("No new extracts found in last %s seconds, setting remaining relations to"
+                                 " load from prior and enqueuing" % idle_termination_seconds)
+                    load_remaining_from_prior = fallback_to_prior
+                    continue
                 else:
                     if to_poll.qsize():
                         logger.debug("Poller: Sleeping for %s seconds", item)
@@ -706,7 +759,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                                            ":step": "extract", ":event": etl.monitor.STEP_START}
             )
             if res['Count'] == 0:
-                to_poll.put(item)
+                if load_remaining_from_prior:
+                    item.loads_from_prior_data = True
+                    to_load.put(item)
+                else:
+                    to_poll.put(item)
             else:
                 for extract_payload in res['Items']:
                     if extract_payload['event'] == etl.monitor.STEP_FINISH:
@@ -715,7 +772,8 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                     elif extract_payload['event'] == etl.monitor.STEP_FAIL:
                         logger.info("Poller: Recently failed extract found for '%s', marking as failed.",
                                     item.identifier)
-                        item.mark_failure(relations, exc_info=False)
+                        if fallback_to_prior:
+                            item.loads_from_prior_data = True
                     # We'll create the relation on success and failure (but skip copy on failure)
                     to_load.put(item)
 

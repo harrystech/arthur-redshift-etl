@@ -111,9 +111,19 @@
                     "description": "If an extract from an upstream source fails due to some transient error, retry the extract at most this many times. Zero disables retries",
                     "type": "integer",
                     "minimum": 0
+                },
+                "copy_data_retries": {
+                    "description": "If a COPY command fails with a database internal error (which we optimistically hope are transient), retry the COPY at most this many times. Zero disables retries",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "loads_from_prior_data": {
+                    "description": "If a COPY command fails with a database internal error (which we optimistically hope are transient), retry the COPY at most this many times. Zero disables retries",
+                    "type" : "string",
+                    "pattern": "^(designed|source|non_key|all)$"
                 }
             },
-            "required": [ "extract_retries" ],
+            "required": [ "extract_retries", "copy_data_retries" ],
             "additionalProperties": false
         },
         "data_warehouse": {

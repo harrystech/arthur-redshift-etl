@@ -13,6 +13,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.db
 from etl.names import join_column_list, TableName
+from etl.errors import TransientETLError
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -189,7 +190,10 @@ def copy_from_uri(conn: connection, table_name: TableName, s3_uri: str, aws_iam_
     else:
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_uri)
         with log_load_error(conn):
-            etl.db.execute(conn, stmt, (s3_uri, credentials))
+            try:
+                etl.db.execute(conn, stmt, (s3_uri, credentials))
+            except psycopg2.InternalError as exc:
+                raise TransientETLError(exc) from exc
             row_count = etl.db.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
 

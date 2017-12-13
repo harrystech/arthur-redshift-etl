@@ -69,11 +69,12 @@ class TableName:
 
     Comparisons (for schema and table names) are case-insensitive.
 
-    TableNames have a notion of known "managed" schemas, which include both
-    sources and transformations listed in configuration files. A TableName
-    is considered unmanaged if its schema does not belong to the list of
-    managed schemas, and in that case its schema property is never translated
-    into a staging version.
+    TableNames are "managed" if their schema is among the source or transformation schemas listed in Data Warehouse
+    configuration files. A "managed" TableName may have its schema name prefixed to refer to a managed schema position,
+    one of:
+        staging (prefixed, private location for work-in-process),
+        standard (no prefix, user-facing warehouse state), or
+        backup (prefixed, private location for failure recovery).
 
     >>> from etl.config.dw import DataWarehouseSchema
     >>> orders = TableName.from_identifier("www.orders")
@@ -103,19 +104,24 @@ class TableName:
     False
     """
 
-    __slots__ = ("_schema", "_table", "_staging", "_managed_schemas")
+    __slots__ = ("_schema", "_table", "_staging", "_backup", "_managed_schemas")
 
     def __init__(self, schema: Optional[str], table: str) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._staging = False
+        self._backup = False
         self._managed_schemas = None  # type: Optional[frozenset]
 
     @property
     def schema(self):
+        # Access the schema name, adjusting it for which 'position' the table is in
+        # if the table is among the Arthur-managed schemas
         if self.staging and self.is_managed:
             return as_staging_name(self._schema)
+        elif self.backup and self.is_managed:
+            return as_backup_name(self._schema)
         else:
             return self._schema
 
@@ -126,6 +132,10 @@ class TableName:
     @property
     def staging(self):
         return self._staging
+
+    @property
+    def backup(self):
+        return self._backup
 
     @property
     def managed_schemas(self) -> frozenset:
@@ -144,7 +154,6 @@ class TableName:
     def to_tuple(self):
         """
         Return schema name and table name as a handy tuple.
-
         >>> tn = TableName("weather", "temp")
         >>> schema_name, table_name = tn.to_tuple()
         >>> schema_name, table_name
@@ -156,7 +165,6 @@ class TableName:
     def identifier(self) -> str:
         """
         Return simple identifier, like one would use on the command line.
-
         >>> tn = TableName("hello", "world")
         >>> tn.identifier
         'hello.world'
@@ -171,7 +179,6 @@ class TableName:
     def from_identifier(cls, identifier: str):
         """
         Split identifier into schema and table before creating a new TableName instance
-
         >>> identifier = "ford.mustang"
         >>> tn = TableName.from_identifier(identifier)
         >>> identifier == tn.identifier
@@ -200,7 +207,6 @@ class TableName:
     def __format__(self, code):
         """
         Format name as delimited identifier (by default, or 's') or just as quoted identifier (using 'x').
-
         >>> pu = TableName("public", "users")
         >>> format(pu)
         '"public"."users"'
@@ -235,7 +241,6 @@ class TableName:
     def __lt__(self, other: "TableName"):
         """
         Order two table names, case-insensitive. (Used by sort.)
-
         >>> ta = TableName("Iowa", "Cedar Rapids")
         >>> tb = TableName("Iowa", "Davenport")
         >>> ta < tb
@@ -246,7 +251,6 @@ class TableName:
     def match(self, other: "TableName") -> bool:
         """
         Treat yo'self as a tuple of patterns and match against the other table.
-
         >>> tp = TableName("w*", "o*")
         >>> tn = TableName("www", "orders")
         >>> tp.match(tn)
@@ -265,7 +269,6 @@ class TableName:
     def match_pattern(self, pattern: str) -> bool:
         """
         Test whether this table matches the given pattern
-
         >>> tn = TableName("www", "orders")
         >>> tn.match_pattern("w*.o*")
         True
@@ -277,6 +280,14 @@ class TableName:
     def as_staging_table_name(self):
         tn = TableName(*self.to_tuple())
         tn._staging = True
+        return tn
+
+    def as_standard_table_name(self):
+        return TableName(*self.to_tuple())
+
+    def as_backup_table_name(self):
+        tn = TableName(*self.to_tuple())
+        tn._backup = True
         return tn
 
 
