@@ -189,7 +189,7 @@ class LoadableRelation:
             # Rewrite the query to use staging schemas:
             for dependency in self.dependencies:
                 staging_dependency = dependency.as_staging_table_name()
-                stmt = re.sub(r'\b' + dependency + r'\b', staging_dependency.identifier, stmt)
+                stmt = re.sub(r'\b' + dependency.identifier + r'\b', staging_dependency.identifier, stmt)
         return stmt
 
     @property
@@ -366,7 +366,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
                                            relation.identifier, s3_uri))
 
-    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, s3_uri, aws_iam_role,
+    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
                                       need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
 
