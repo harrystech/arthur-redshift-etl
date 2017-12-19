@@ -460,7 +460,7 @@ def find_dependents(relations: List[RelationDescription], seed_relations: List[R
     seeds = frozenset(relation.identifier for relation in seed_relations)
     in_dependency_path = set(seeds)
     for relation in relations:
-        if any(dependency in in_dependency_path for dependency in relation.dependencies):
+        if any(dependency.identifier in in_dependency_path for dependency in relation.dependencies):
             in_dependency_path.add(relation.identifier)
     dependents = in_dependency_path - seeds
     return [relation for relation in relations if relation.identifier in dependents]
