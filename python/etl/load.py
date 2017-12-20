@@ -1059,7 +1059,7 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     selected = frozenset(relation.identifier for relation in selected_relations)
     immediate = set(selected)
     for relation in complete_sequence:
-        if relation.is_view_relation and any(name in immediate for name in relation.dependencies):
+        if relation.is_view_relation and any(dep.identifier in immediate for dep in relation.dependencies):
             immediate.add(relation.identifier)
     immediate -= selected
     logger.info("Execution order includes %d selected, %d immediate, and %d other downstream relation(s)",
@@ -1091,7 +1091,7 @@ def show_upstream_dependencies(relations: List[RelationDescription], selector: T
     dependencies = set(relation.identifier for relation in selected_relations)
     for relation in execution_order[::-1]:
         if relation.identifier in dependencies:
-            dependencies.update(relation.dependencies)
+            dependencies.update(dep.identifier for dep in relation.dependencies)
 
     max_len = max(len(identifier) for identifier in dependencies)
     line_template = ("{relation.identifier:{width}s}"
