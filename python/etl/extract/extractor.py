@@ -77,6 +77,7 @@ class Extractor:
         with Timer() as timer:
             for i, relation in enumerate(relations):
                 try:
+                    retries = get_config_int("arthur_settings.extract_retries")
                     def _monitored_table_extract(attempt_num):
                         with etl.monitor.Monitor(relation.identifier,
                                                  "extract",
@@ -87,7 +88,8 @@ class Extractor:
                                                  index={"current": i + 1, "final":
                                                         len(relations), "name": source.name},
                                                  dry_run=self.dry_run,
-                                                 attempt_num=attempt_num + 1):
+                                                 attempt_num=attempt_num + 1,
+                                                 is_final_attempt=(attempt_num == retries)):
                                 self.extract_table(source, relation)
 
                     retries = get_config_int("arthur_settings.extract_retries")

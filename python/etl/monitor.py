@@ -47,6 +47,7 @@ logger.addHandler(logging.NullHandler())
 STEP_START = "start"
 STEP_FINISH = "finish"
 STEP_FAIL = "fail"
+STEP_ATTEMPT_FAIL = "attempt_fail"
 _DUMMY_TARGET = "#.dummy"
 
 
@@ -155,13 +156,14 @@ class Monitor(metaclass=MetaMonitor):
     _environment = None
     _cluster_info = None
 
-    def __init__(self, target: str, step: str, dry_run: bool=False, **kwargs) -> None:
+    def __init__(self, target: str, step: str, dry_run: bool=False, is_final_attempt=True, **kwargs) -> None:
         self._monitor_id = trace_key()
         self._target = target
         self._step = step
         self._dry_run = dry_run
         # Create a deep copy so that changes that the caller might make later do not alter our payload
         self._extra = deepcopy(dict(**kwargs))
+        self._is_final_attempt = is_final_attempt
         self._index = self._extra.get("index")
 
     # Read-only properties (in order of cardinality)
@@ -209,7 +211,11 @@ class Monitor(metaclass=MetaMonitor):
             payload = MonitorPayload(self, STEP_FINISH, self._end_time, elapsed=seconds, extra=self._extra)
         else:
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, STEP_FAIL, self._end_time, elapsed=seconds, extra=self._extra)
+            if self._is_final_attempt:
+                event = STEP_FAIL
+            else:
+                event = STEP_ATTEMPT_FAIL
+            payload = MonitorPayload(self, event, self._end_time, elapsed=seconds, extra=self._extra)
             payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
                                'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
         payload.emit(dry_run=self._dry_run)
