@@ -226,6 +226,7 @@ class RetriesExhaustedError(ETLRuntimeError):
 def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
     """
     Retry a function a maximum number of times and return its results.
+    Sleeps for 5 ^ attempt_number seconds if there are remaining retry attempts.
 
     The given callback function is only retried if it throws a TransientETLError. Any other error is considered
     permanent, and therefore no retry attempt is made.
@@ -241,7 +242,7 @@ def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
             failure_reason = e
             remaining_attempts = max_retries - attempt
             if remaining_attempts:
-                sleep_time = 5 ** attempt
+                sleep_time = 5 ** (attempt + 1)
                 logger.warning("Encountered the following error (retrying %s more times after %s second sleep): %s",
                                remaining_attempts, sleep_time, str(e))
                 time.sleep(sleep_time)
