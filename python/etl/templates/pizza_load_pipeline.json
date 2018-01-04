@@ -115,7 +115,7 @@
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ promote_schemas --from-position staging --prolix",
-            "dependsOn": { "ref": "ArthurUpgrade" }
+            "dependsOn": { "ref": "ArthurTerminateSessions" }
         },
         {
             "id": "PublishAndBackup",
