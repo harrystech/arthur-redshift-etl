@@ -365,10 +365,14 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
                                            relation.identifier, s3_uri))
+    def _copy_from_s3(attempt_num=0):
+        etl.design.redshift.copy_from_uri(conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
+                                          need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
-    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
-                                      need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
-
+    if relation.in_transaction:
+        _copy_from_s3()
+    else:
+        retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), _copy_from_s3, logger)
 
 def insert_from_query(conn: connection, relation: LoadableRelation,
                       table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
