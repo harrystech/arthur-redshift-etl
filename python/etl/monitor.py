@@ -47,6 +47,7 @@ logger.addHandler(logging.NullHandler())
 STEP_START = "start"
 STEP_FINISH = "finish"
 STEP_FAIL = "fail"
+STEP_FAIL_BEFORE_RETRY = "fail_before_retry"
 _DUMMY_TARGET = "#.dummy"
 
 
@@ -155,11 +156,12 @@ class Monitor(metaclass=MetaMonitor):
     _environment = None
     _cluster_info = None
 
-    def __init__(self, target: str, step: str, dry_run: bool=False, **kwargs) -> None:
+    def __init__(self, target: str, step: str, is_final_attempt: bool=True, dry_run: bool=False, **kwargs) -> None:
         self._monitor_id = trace_key()
         self._target = target
         self._step = step
         self._dry_run = dry_run
+        self._is_final_attempt = is_final_attempt
         # Create a deep copy so that changes that the caller might make later do not alter our payload
         self._extra = deepcopy(dict(**kwargs))
         self._index = self._extra.get("index")
@@ -205,13 +207,19 @@ class Monitor(metaclass=MetaMonitor):
         self._end_time = utc_now()
         seconds = elapsed_seconds(self._start_time, self._end_time)
         if exc_type is None:
+            event = STEP_FINISH
+            errors = None
             logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, STEP_FINISH, self._end_time, elapsed=seconds, extra=self._extra)
         else:
+            if self._is_final_attempt:
+                event = STEP_FAIL
+            else:
+                event = STEP_FAIL_BEFORE_RETRY
+            errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
+                       'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
-            payload = MonitorPayload(self, STEP_FAIL, self._end_time, elapsed=seconds, extra=self._extra)
-            payload.errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
-                               'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
+
+        payload = MonitorPayload(self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra)
         payload.emit(dry_run=self._dry_run)
 
     @classmethod
@@ -231,7 +239,7 @@ class MonitorPayload:
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
     dispatchers = []  # type: List[PayloadDispatcher]
 
-    def __init__(self, monitor, event, timestamp, elapsed=None, extra=None):
+    def __init__(self, monitor, event, timestamp, elapsed=None, errors=None, extra=None):
         # Basic info
         self.environment = monitor.environment
         self.etl_id = monitor.etl_id
@@ -243,8 +251,8 @@ class MonitorPayload:
         # Premium info (when available)
         self.cluster_info = monitor.cluster_info
         self.elapsed = elapsed
+        self.errors = errors
         self.extra = extra
-        self.errors = None
 
     def emit(self, dry_run=False):
         payload = vars(self)
