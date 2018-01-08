@@ -1,7 +1,5 @@
 import time
-from typing import Callable, TypeVar
-
-T = TypeVar("T")
+from functools import partial
 
 
 class ETLError(Exception):
@@ -223,9 +221,10 @@ class RetriesExhaustedError(ETLRuntimeError):
     """
 
 
-def retry(max_retries: int, func: Callable[[], T], logger) -> T:
+def retry(max_retries: int, func: partial, logger):
     """
     Retry a function a maximum number of times and return its results.
+    The function should be a functools.partial called with no arguments.
     Sleeps for 5 ^ attempt_number seconds if there are remaining retry attempts.
 
     The given func function is only retried if it throws a TransientETLError. Any other error is considered
