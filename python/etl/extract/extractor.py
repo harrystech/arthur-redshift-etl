@@ -6,6 +6,7 @@ Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data fil
 import concurrent.futures
 import logging
 from itertools import groupby
+from functools import partial
 from operator import attrgetter
 from typing import Dict, List, Set
 
@@ -77,22 +78,16 @@ class Extractor:
         with Timer() as timer:
             for i, relation in enumerate(relations):
                 try:
-                    def _monitored_table_extract(attempt_num):
-                        with etl.monitor.Monitor(relation.identifier,
-                                                 "extract",
-                                                 options=self.options_info(),
-                                                 source=self.source_info(source, relation),
-                                                 destination={'bucket_name': relation.bucket_name,
-                                                              'object_key': relation.manifest_file_name},
-                                                 index={"current": i + 1, "final":
-                                                        len(relations), "name": source.name},
-                                                 attempt_num=attempt_num + 1,
-                                                 is_final_attempt=(attempt_num == extract_retries),
-                                                 dry_run=self.dry_run):
-                                self.extract_table(source, relation)
-
-                    retry(extract_retries, _monitored_table_extract, self.logger)
-
+                    extract_func = partial(self.extract_table, source, relation)
+                    with etl.monitor.Monitor(relation.identifier,
+                                             "extract",
+                                             options=self.options_info(),
+                                             source=self.source_info(source, relation),
+                                             destination={'bucket_name': relation.bucket_name,
+                                                           'object_key': relation.manifest_file_name},
+                                              index={"current": i + 1, "final": len(relations), "name": source.name},
+                                             dry_run=self.dry_run):
+                        retry(extract_retries, extract_func, self.logger)
                 except ETLRuntimeError:
                     self.failed_sources.add(source.name)
                     failed.append(relation)

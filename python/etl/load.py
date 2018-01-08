@@ -47,6 +47,7 @@ from contextlib import closing
 from datetime import datetime, timedelta
 from calendar import timegm
 from itertools import dropwhile
+from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
 
@@ -365,14 +366,14 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
                                            relation.identifier, s3_uri))
-    def _copy_from_s3(attempt_num=0):
-        etl.design.redshift.copy_from_uri(conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
-                                          need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
+    copy_func = partial(etl.design.redshift.copy_from_uri,
+                        conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
+                        need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
     if relation.in_transaction:
-        _copy_from_s3()
+        copy_func()
     else:
-        retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), _copy_from_s3, logger)
+        retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), copy_func, logger)
 
 def insert_from_query(conn: connection, relation: LoadableRelation,
                       table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
