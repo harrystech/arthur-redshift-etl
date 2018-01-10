@@ -620,8 +620,6 @@ def scan_etl_events(etl_id) -> None:
 
 class EventsQuery:
 
-    headers = ["target", "step", "event", "timestamp"]
-
     def __init__(self, step: Optional[str]=None) -> None:
         self._keys = ["target", "step", "event", "timestamp"]
         values = {
@@ -653,10 +651,10 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":target"] = target
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
-        events = [[item[key] for key in self._keys] for item in response['Items']]
+        events = [{key: item[key] for key in self.keys} for item in response['Items']]
         # Return latest event or None
         if events:
-            events.sort(key=itemgetter(3))
+            events.sort(key=itemgetter("timestamp"))
             return events[-1]
         else:
             return None
@@ -691,8 +689,8 @@ class BackgroundQueriesRunner(threading.Thread):
             for target in targets:
                 latest_event = self.query(table, target, start_time)
                 if latest_event:
-                    self.queue.put(dict(zip(self.query.headers, latest_event)))
-                    retired.add(latest_event[0])
+                    self.queue.put(latest_event)
+                    retired.add(latest_event["target"])
             targets = [t for t in targets if t not in retired]
             start_time = timegm(new_start_time.utctimetuple())
             if self.update_interval is None or not targets:
@@ -770,8 +768,8 @@ def tail_events(relations, start_time, update_interval=None, idle_time_out=None,
         # Keep printing tail of table that accumulates the events.
         if len(events) > n_printed:
             lines = etl.text.format_lines(
-                [[event[header] for header in query.headers] for event in events],
-                header_row=query.headers).split('\n')
+                [[event[header] for header in query.keys] for event in events],
+                header_row=query.keys).split('\n')
             if n_printed:
                 print('\n'.join(lines[n_printed + 2:-1]))  # skip header and final "(x rows)" line
             else:
