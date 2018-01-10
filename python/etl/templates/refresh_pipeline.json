@@ -103,6 +103,7 @@
             "type": "EmrActivity",
             "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--keep-going,--prolix,--prefix,${object_store.s3.prefix}/current,#{myCommaSeparatedSelection}",
             "runsOn": { "ref": "ETLCluster" },
+            "failureAndRerunMode": false,
             "maximumRetries": "0"
         },
         {

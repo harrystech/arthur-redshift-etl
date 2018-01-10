@@ -1008,8 +1008,8 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
 
 
-def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                          wlm_query_slots=1, only_selected=False, run_vacuum=False, dry_run=False):
+def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, wlm_query_slots=1,
+                          extract_look_back=0, only_selected=False, run_vacuum=False, dry_run=False):
     """
     Let new data percolate through the data warehouse.
 
@@ -1029,9 +1029,18 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         logger.warning("Found no tables matching: %s", selector)
         return
 
+    source_relations = [relation for relation in selected_relations if not relation.is_transformation]
+    if source_relations and extract_look_back > 0:
+        logger.info("Verifying that sources were extracted in last %s minutes.", extract_look_back)
+        recently_extracted = etl.monitor.recently_extracted_targets(source_relations, extract_look_back)
+        if len(source_relations) != len(recently_extracted):
+            raise ETLRuntimeError("Can't update unless all sources were recently extracted successfully")
+    elif source_relations:
+        logger.info("Attempting to use existing manifests for source relations without verifying recency.")
+
     relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
     logger.info("Starting to update %d tables(s)", len(relations))
-
+    sources = [relation for relation in selected_relations if not relation.is_view_relation]
     # Run update within a transaction:
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:

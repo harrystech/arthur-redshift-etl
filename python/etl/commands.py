@@ -726,6 +726,9 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
                             help="only load data into selected relations"
                                  " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
                             default=False, action="store_true")
+        parser.add_argument("--extract-look-back", metavar="N", type=int, default=0,
+                            help="require recent successful extract events in the last N minutes "
+                                 "(or don't check if N <= 0, default: %(default)s)")
         parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
                             default=False, action="store_true")
 
@@ -737,6 +740,7 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
         etl.load.update_data_warehouse(relations, args.pattern,
                                        wlm_query_slots=wlm_query_slots,
                                        only_selected=args.only_selected, run_vacuum=args.vacuum,
+                                       extract_look_back=args.extract_look_back,
                                        dry_run=args.dry_run)
 
 
