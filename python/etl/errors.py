@@ -1,6 +1,5 @@
-from typing import Callable, TypeVar
-
-T = TypeVar("T")
+import time
+from functools import partial
 
 
 class ETLError(Exception):
@@ -222,11 +221,13 @@ class RetriesExhaustedError(ETLRuntimeError):
     """
 
 
-def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
+def retry(max_retries: int, func: partial, logger):
     """
     Retry a function a maximum number of times and return its results.
+    The function should be a functools.partial called with no arguments.
+    Sleeps for 5 ^ attempt_number seconds if there are remaining retry attempts.
 
-    The given callback function is only retried if it throws a TransientETLError. Any other error is considered
+    The given func function is only retried if it throws a TransientETLError. Any other error is considered
     permanent, and therefore no retry attempt is made.
     """
     failure_reason = None
@@ -234,13 +235,16 @@ def retry(max_retries: int, callback: Callable[[int], T], logger) -> T:
 
     for attempt in range(max_retries + 1):
         try:
-            successful_result = callback(attempt)
+            successful_result = func()
         except TransientETLError as e:
             # Only retry transient errors
             failure_reason = e
-            if max_retries - attempt:
-                logger.warning("Encountered the following error (retrying %s more times): %s",
-                               max_retries - attempt, str(e))
+            remaining_attempts = max_retries - attempt
+            if remaining_attempts:
+                sleep_time = 5 ** (attempt + 1)
+                logger.warning("Encountered the following error (retrying %s more times after %s second sleep): %s",
+                               remaining_attempts, sleep_time, str(e))
+                time.sleep(sleep_time)
             continue
         except:
             # We consider all other errors permanent and immediately re-raise without retrying

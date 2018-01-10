@@ -102,12 +102,20 @@
             "dependsOn": { "ref": "Bootstrap" }
         },
         {
+            "id": "ArthurTerminateSessions",
+            "name": "Arthur Terminate Sessions (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ terminate_sessions --prolix",
+            "dependsOn": { "ref": "ArthurUpgrade" }
+        },
+        {
             "id": "ArthurPromote",
             "name": "Arthur Promote (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ promote_schemas --from-position staging --prolix",
-            "dependsOn": { "ref": "ArthurUpgrade" }
+            "dependsOn": { "ref": "ArthurTerminateSessions" }
         },
         {
             "id": "PublishAndBackup",

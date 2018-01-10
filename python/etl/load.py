@@ -47,6 +47,7 @@ from contextlib import closing
 from datetime import datetime, timedelta
 from calendar import timegm
 from itertools import dropwhile
+from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
 
@@ -60,7 +61,7 @@ import etl.design.redshift
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
-                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError)
+                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError, retry)
 from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.timer import Timer
@@ -365,10 +366,14 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
                                            relation.identifier, s3_uri))
+    copy_func = partial(etl.design.redshift.copy_from_uri,
+                        conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
+                        need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
 
-    etl.design.redshift.copy_from_uri(conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
-                                      need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
-
+    if relation.in_transaction:
+        copy_func()
+    else:
+        retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), copy_func, logger)
 
 def insert_from_query(conn: connection, relation: LoadableRelation,
                       table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
@@ -700,10 +705,11 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
             res = table.query(
                 ConsistentRead=True,
                 KeyConditionExpression="#ts > :dt and target = :table",
-                FilterExpression="step = :step and event <> :event",
+                FilterExpression="step = :step and event in (:fail_event, :finish_event)",
                 ExpressionAttributeNames={"#ts": "timestamp"},
                 ExpressionAttributeValues={":dt": cutoff_epoch, ":table": item.identifier,
-                                           ":step": "extract", ":event": etl.monitor.STEP_START}
+                                           ":step": "extract", ":fail_event": etl.monitor.STEP_FAIL,
+                                           ":finish_event": etl.monitor.STEP_FINISH}
             )
             if res['Count'] == 0:
                 to_poll.put(item)
@@ -718,6 +724,8 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                         item.mark_failure(relations, exc_info=False)
                     # We'll create the relation on success and failure (but skip copy on failure)
                     to_load.put(item)
+                    # There should be only one event, but definitely don't queue for loading twice.
+                    break
 
     uncaught_load_worker_exception = threading.Event()
 
