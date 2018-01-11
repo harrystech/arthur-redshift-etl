@@ -707,33 +707,33 @@ class BackgroundQueriesRunner(threading.Thread):
         self.queue.put(None)
 
 
-def recently_extracted_targets(source_relations, look_back_minutes=60):
+def recently_extracted_targets(source_relations, start_time):
     """
-    Query the events table for "extract" events on the provided source_relations in the last look_back_minutes.
-    Return the set of targets (ie, relation.target_table_name or event["target"]) with successful extracts
+    Query the events table for "extract" events on the provided source_relations after start_time.
+    Waits for up to an hour, sleeping for 30s between checks.
+    Return the set of targets (ie, relation.identifier or event["target"]) with successful extracts
     """
     targets = [relation.identifier for relation in source_relations]
+
     query = EventsQuery('extract')
     consumer_queue = queue.Queue()  # type: ignore
-    recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
-    cutoff_epoch = timegm(recent_cutoff.utctimetuple())
-
+    cutoff_epoch = timegm(start_time.utctimetuple())
+    timeout = 60 * 60
     extract_querying_thread = BackgroundQueriesRunner(
         targets, query, consumer_queue, cutoff_epoch,
-        update_interval=None, idle_time_out=None, daemon=True)
+        update_interval=30, idle_time_out=timeout, daemon=True)
     extract_querying_thread.start()
     extracted_targets = set()
 
     while True:
         try:
-            event = consumer_queue.get(timeout=10)
+            event = consumer_queue.get(timeout=timeout)
             if event is None:
                 break
             if event["event"] == STEP_FINISH:
                 extracted_targets.add(event['target'])
         except queue.Empty:
             break
-
     return extracted_targets
 
 

@@ -103,7 +103,6 @@
             "type": "EmrActivity",
             "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--keep-going,--prolix,--prefix,${object_store.s3.prefix}/current,#{myCommaSeparatedSelection}",
             "runsOn": { "ref": "ETLCluster" },
-            "failureAndRerunMode": false,
             "maximumRetries": "0"
         },
         {
@@ -134,10 +133,9 @@
             "name": "Arthur Update (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix ${object_store.s3.prefix}/current --extract-look-back 300 #{mySelection}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix ${object_store.s3.prefix}/current --scheduled-start-time #{node.@scheduledStartTime} #{mySelection}",
             "dependsOn": [
-                { "ref": "Bootstrap" },
-                { "ref": "EmrActivityUpstreamExtract" }
+                { "ref": "Bootstrap" }
             ]
         },
         {
