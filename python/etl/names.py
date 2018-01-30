@@ -13,34 +13,7 @@ from typing import Optional, List
 
 import etl.config
 from etl.errors import ETLSystemError
-
-
-def join_with_quotes(names):
-    """
-    Individually wrap the names in quotes and return comma-separated names in a string.
-
-    If the input is a set of names, the names are sorted first.
-    If the input is a list of names, the order of the list is respected.
-    If the input is cheese, the order is for more red wine.
-
-    >>> join_with_quotes(["foo", "bar"])
-    "'foo', 'bar'"
-    >>> join_with_quotes({"foo", "bar"})
-    "'bar', 'foo'"
-    >>> join_with_quotes(frozenset(["foo", "bar"]))
-    "'bar', 'foo'"
-    """
-    if isinstance(names, (set, frozenset)):
-        return ', '.join("'{}'".format(name) for name in sorted(names))
-    else:
-        return ', '.join("'{}'".format(name) for name in names)
-
-
-def join_column_list(columns):
-    """
-    Return string with comma-separated, delimited column names
-    """
-    return ", ".join('"{}"'.format(column) for column in columns)
+from etl.text import join_with_quotes
 
 
 def as_staging_name(name):

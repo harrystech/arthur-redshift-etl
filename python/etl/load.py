@@ -63,7 +63,8 @@ from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
                         RelationConstructionError, RequiredRelationLoadError, UpdateTableError,
                         MissingExtractEventError, retry)
-from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
+from etl.names import TableName, TableSelector, TempTableName
+from etl.text import join_column_list, join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -375,6 +376,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         copy_func()
     else:
         retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), copy_func, logger)
+
 
 def insert_from_query(conn: connection, relation: LoadableRelation,
                       table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
@@ -1032,7 +1034,8 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
 
     source_relations = [relation for relation in selected_relations if not relation.is_transformation]
     if source_relations and start_time is not None:
-        logger.info("Verifying that all source relations have extracts after %s but in the next hour" % start_time)
+        logger.info("Verifying that all source relations have extracts after %s;"
+                    " fails if incomplete and no update for 1 hour" % start_time)
         extracted_targets = etl.monitor.recently_extracted_targets(source_relations, start_time)
         if len(source_relations) > len(extracted_targets):
             raise MissingExtractEventError(source_relations, extracted_targets)

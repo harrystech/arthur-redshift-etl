@@ -34,7 +34,8 @@ import etl.relation
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLRuntimeError  # Exception classes that we might catch
 from etl.errors import TableDesignValidationError, UpstreamValidationError  # Exception classes that we might raise
-from etl.names import join_with_quotes, TableName
+from etl.names import TableName
+from etl.text import join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 

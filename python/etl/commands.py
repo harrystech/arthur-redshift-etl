@@ -730,9 +730,9 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
                             help="only load data into selected relations"
                                  " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
                             default=False, action="store_true")
-        parser.add_argument("--scheduled-start-time", metavar="T", default=None, type=isoformat_datetime_string,
+        parser.add_argument("--scheduled-start-time", metavar="TIME", default=None, type=isoformat_datetime_string,
                             help="require recent successful extract events for all selected source relations "
-                                 "after UTC time T (or, by default, don't require extract events)")
+                                 "after UTC time TIME (or, by default, don't require extract events)")
         parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
                             default=False, action="store_true")
 

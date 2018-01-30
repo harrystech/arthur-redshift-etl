@@ -21,7 +21,7 @@ from etl.errors import (
     MissingCsvFilesError,
     retry
 )
-from etl.names import join_with_quotes
+from etl.text import join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -84,8 +84,8 @@ class Extractor:
                                              options=self.options_info(),
                                              source=self.source_info(source, relation),
                                              destination={'bucket_name': relation.bucket_name,
-                                                           'object_key': relation.manifest_file_name},
-                                              index={"current": i + 1, "final": len(relations), "name": source.name},
+                                                          'object_key': relation.manifest_file_name},
+                                             index={"current": i + 1, "final": len(relations), "name": source.name},
                                              dry_run=self.dry_run):
                         retry(extract_retries, extract_func, self.logger)
                 except ETLRuntimeError:

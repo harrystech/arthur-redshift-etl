@@ -717,10 +717,10 @@ def recently_extracted_targets(source_relations, start_time):
 
     query = EventsQuery('extract')
     consumer_queue = queue.Queue()  # type: ignore
-    cutoff_epoch = timegm(start_time.utctimetuple())
+    start_as_epoch = timegm(start_time.utctimetuple())
     timeout = 60 * 60
     extract_querying_thread = BackgroundQueriesRunner(
-        targets, query, consumer_queue, cutoff_epoch,
+        targets, query, consumer_queue, start_as_epoch,
         update_interval=30, idle_time_out=timeout, daemon=True)
     extract_querying_thread.start()
     extracted_targets = set()

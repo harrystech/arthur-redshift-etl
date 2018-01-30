@@ -13,7 +13,8 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.db
 from etl.errors import TransientETLError
-from etl.names import join_column_list, TableName
+from etl.names import TableName
+from etl.text import join_column_list
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -185,7 +186,8 @@ def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str
         TRUNCATECOLUMNS
         STATUPDATE OFF
         COMPUPDATE {compupdate}
-        """.format(table=table_name, columns=join_column_list(column_list), compupdate="ON" if need_compupdate else "OFF")
+        """.format(table=table_name, columns=join_column_list(column_list),
+                   compupdate="ON" if need_compupdate else "OFF")
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' from '%s'", table_name.identifier, s3_uri)
         etl.db.skip_query(conn, stmt, (s3_uri, credentials))
