@@ -299,29 +299,29 @@ running code in development cluster first should go through a release candidate.
 
 ### Creating a release candidate
 
-* Create a new branch for the release candidate, e.g. `v0_22_0` for v0.22.0.
+* Create a new branch for the release candidate, e.g. `v1_2_0` for v1.2.0.
 (Do yourself a favor and use underscores in branch names and periods in the tag names.)
 
 * Your first commit on this branch is a bump in the version number in `setup.py`.
 
-* Create a pull request for your new branch.
+* Create a pull request for this new branch, add a message to state that it is <pre>"Release Candidate for v1.2.0"</pre>.
 
-* Go through pull requests that are ready for release and change their base branch to your release branch (in our example, `v0_22_0`).
-    * Make sure the PR message contains the Issue number or the Jira story (like DW-99).
+* Go through open pull requests that are ready for release and change their base branch to your release branch (in our example, `v1_2_0`).
+    * Make sure the PR message contains the Issue number or the Jira story (like DW-99) or the Issue number from this repo, as applicable.
     * Add the changes from the story work into comments of the PR.
-        * Consider changes that are user facing and make there's a summary for those
+        * Consider changes that are user facing and make sure there's a summary for those
         * List all bug fixes (especially when there are associated tickets)
         * Highlight internal changes, like changes in data structures or added control flow
     * Then merge the ready PRs into your release candidate.
 
-* Test then merge the PR with your release candidate into `next`.
+* After testing, merge the PR with your release candidate into `next`.
 
 * Create a release under [Releases](https://github.com/harrystech/arthur-redshift-etl/releases).
     * Create a new release and set the release version, e.g. `v1.2.0`.
     * Copy the comments from the PR where you collected all the changes into the release notes.
     * Save the release which will add the tag of the release.
 
-* Ship the new version using `upload_env.sh` in development.
+* Ship the new version using `upload_env.sh` in development.  Wait at least a day before promoting to production.
 
 ### Releasing code to master branch
 
@@ -379,7 +379,7 @@ pick up a key file.  Replace the `IdentityFile` value with the location of your 
 Host ec2-*.amazonaws.com
   ServerAliveInterval 60
   User hadoop
-  IdentityFile ~/.ssh/emr-cluster-key.pem
+  IdentityFile ~/.ssh/dw-dev-keypair.pem
 ```
 
 If you find yourself using a one-off EC2 instance more often than an EMR cluster, change the `User`:

@@ -392,6 +392,9 @@ class SubCommand:
 
         If a "required relation" selector is passed in, we first pick up ALL descriptions (to be able
         to build a dependency tree), build the dependency order, then pick out the matching descriptions.
+
+        Set the default_scheme to "s3" to leverage the object store -- avoid relying on having current files
+        locally and instead opt for the "publish first, then use S3" pattern.
         """
         if return_all or required_relation_selector is not None:
             selector = etl.names.TableSelector(base_schemas=args.pattern.base_schemas)

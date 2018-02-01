@@ -63,8 +63,9 @@ class TableName:
 
     Given a table s.t, then the cautious identifier for SQL code is: "s"."t"
     But the more readable name is still: s.t
+    Note that the preference for logging is to always use single-quotes, 's.t' (see {:x} below).
 
-    Another, more curious use is to store shell patterns for the schema name
+    Another, more curious use for instances is to store shell patterns for the schema name
     and table name so that we can match against other instances.
 
     Comparisons (for schema and table names) are case-insensitive.
