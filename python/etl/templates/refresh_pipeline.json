@@ -133,10 +133,9 @@
             "name": "Arthur Update (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix ${object_store.s3.prefix}/current #{mySelection}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ update --prolix --prefix ${object_store.s3.prefix}/current --scheduled-start-time #{@scheduledStartTime} #{mySelection}",
             "dependsOn": [
-                { "ref": "Bootstrap" },
-                { "ref": "EmrActivityUpstreamExtract" }
+                { "ref": "Bootstrap" }
             ]
         },
         {

@@ -211,6 +211,10 @@ class FancyArgumentParser(argparse.ArgumentParser):
         return args
 
 
+def isoformat_datetime_string(argument):
+    return datetime.strptime(argument, "%Y-%m-%dT%H:%M:%S")
+
+
 def build_basic_parser(prog_name, description=None):
     """
     Build basic parser that knows about the configuration setting.
@@ -726,6 +730,9 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
                             help="only load data into selected relations"
                                  " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
                             default=False, action="store_true")
+        parser.add_argument("--scheduled-start-time", metavar="TIME", default=None, type=isoformat_datetime_string,
+                            help="require recent successful extract events for all selected source relations "
+                                 "after UTC time TIME (or, by default, don't require extract events)")
         parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
                             default=False, action="store_true")
 
@@ -737,6 +744,7 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
         etl.load.update_data_warehouse(relations, args.pattern,
                                        wlm_query_slots=wlm_query_slots,
                                        only_selected=args.only_selected, run_vacuum=args.vacuum,
+                                       start_time=args.scheduled_start_time,
                                        dry_run=args.dry_run)
 
 
@@ -1065,17 +1073,12 @@ class TailEventsCommand(SubCommand):
         parser.add_argument("-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"],
                             help="pick which step to tail")
         now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
-        parser.add_argument("-t", "--start-time", help="beginning of time window, e.g. '%s'" % now)
+        parser.add_argument("-t", "--start-time", help="beginning of time window, e.g. '%s'" % now,
+                            type=isoformat_datetime_string)
         parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
 
     def callback(self, args, config):
-        if args.start_time:
-            try:
-                start_time = datetime.strptime(args.start_time, "%Y-%m-%dT%H:%M:%S")
-            except ValueError as exc:
-                raise InvalidArgumentError from exc
-        else:
-            start_time = datetime.utcnow() - timedelta(seconds=15 * 60)
+        start_time = args.start_time or (datetime.utcnow() - timedelta(seconds=15 * 60))
         if args.follow:
             update_interval = 30
             idle_time_out = 60 * 60

@@ -10,7 +10,7 @@ from typing import List
 import boto3
 
 import etl.text
-from etl.names import join_with_quotes
+from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

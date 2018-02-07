@@ -1,6 +1,9 @@
 import time
 from functools import partial
 
+# This module is import-free besides Arthur text utilities
+from etl.text import join_with_quotes
+
 
 class ETLError(Exception):
     """
@@ -177,6 +180,18 @@ class UpdateTableError(RelationDataError):
     pass
 
 
+class MissingExtractEventError(RelationDataError):
+
+    def __init__(self, source_relations, extracted_targets):
+        missing_relations = [relation for relation in source_relations
+                             if relation.identifier not in extracted_targets]
+        self.message = ("Some source relations did not have extract events after the step start time: " +
+                        join_with_quotes(missing_relations))
+
+    def __str__(self):
+        return self.message
+
+
 class FailedConstraintError(RelationDataError):
 
     def __init__(self, relation, constraint_type, columns, examples):
@@ -184,18 +199,17 @@ class FailedConstraintError(RelationDataError):
         self.constraint_type = constraint_type
         self.columns = columns
         self.example_string = ',\n  '.join(map(str, examples))
+        self.message = ("relation {0.identifier} violates {0.constraint_type} constraint.\n"
+                        "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self))
 
     def __str__(self):
-        return ("relation {0.identifier} violates {0.constraint_type} constraint.\n"
-                "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self))
+        return self.message
 
 
 class RequiredRelationLoadError(ETLRuntimeError):
 
     def __init__(self, failed_relations, bad_apple=None):
-        # Avoiding `join_with_quotes` here to keep this module import-free
-        self.message = "required relation(s) with failure: "
-        self.message += ", ".join("'{}'".format(name) for name in failed_relations)
+        self.message = "required relation(s) with failure: " + join_with_quotes(failed_relations)
         if bad_apple:
             self.message += ", triggered by load failure of '{}'".format(bad_apple)
 

@@ -33,7 +33,8 @@ import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import CyclicDependencyError, ETLRuntimeError, MissingQueryError
-from etl.names import join_with_quotes, TableName, TableSelector, TempTableName
+from etl.names import TableName, TableSelector, TempTableName
+from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

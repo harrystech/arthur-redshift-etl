@@ -651,10 +651,10 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":target"] = target
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
-        events = [[item[key] for key in self._keys] for item in response['Items']]
+        events = [{key: item[key] for key in self.keys} for item in response['Items']]
         # Return latest event or None
         if events:
-            events.sort(key=itemgetter(3))
+            events.sort(key=itemgetter("timestamp"))
             return events[-1]
         else:
             return None
@@ -690,7 +690,7 @@ class BackgroundQueriesRunner(threading.Thread):
                 latest_event = self.query(table, target, start_time)
                 if latest_event:
                     self.queue.put(latest_event)
-                    retired.add(latest_event[0])
+                    retired.add(latest_event["target"])
             targets = [t for t in targets if t not in retired]
             start_time = timegm(new_start_time.utctimetuple())
             if self.update_interval is None or not targets:
@@ -705,6 +705,36 @@ class BackgroundQueriesRunner(threading.Thread):
                 time.sleep(self.update_interval - query_loop.elapsed)
         logger.info("Found events for %d out of %d target(s)", len(self.targets) - len(targets), len(self.targets))
         self.queue.put(None)
+
+
+def recently_extracted_targets(source_relations, start_time):
+    """
+    Query the events table for "extract" events on the provided source_relations after start_time.
+    Waits for up to an hour, sleeping for 30s between checks.
+    Return the set of targets (ie, relation.identifier or event["target"]) with successful extracts
+    """
+    targets = [relation.identifier for relation in source_relations]
+
+    query = EventsQuery('extract')
+    consumer_queue = queue.Queue()  # type: ignore
+    start_as_epoch = timegm(start_time.utctimetuple())
+    timeout = 60 * 60
+    extract_querying_thread = BackgroundQueriesRunner(
+        targets, query, consumer_queue, start_as_epoch,
+        update_interval=30, idle_time_out=timeout, daemon=True)
+    extract_querying_thread.start()
+    extracted_targets = set()
+
+    while True:
+        try:
+            event = consumer_queue.get(timeout=timeout)
+            if event is None:
+                break
+            if event["event"] == STEP_FINISH:
+                extracted_targets.add(event['target'])
+        except queue.Empty:
+            break
+    return extracted_targets
 
 
 def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str]=None) -> None:
@@ -731,13 +761,15 @@ def tail_events(relations, start_time, update_interval=None, idle_time_out=None,
                 if event is None:
                     done = True
                     break
-                event[3] = datetime.utcfromtimestamp(event[3]).isoformat()  # timestamp to isoformat
+                event["timestamp"] = datetime.utcfromtimestamp(event["timestamp"]).isoformat()  # timestamp to isoformat
                 events.append(event)
             except queue.Empty:
                 break
         # Keep printing tail of table that accumulates the events.
         if len(events) > n_printed:
-            lines = etl.text.format_lines(events, header_row=["target", "step", "event", "timestamp"]).split('\n')
+            lines = etl.text.format_lines(
+                [[event[header] for header in query.keys] for event in events],
+                header_row=query.keys).split('\n')
             if n_printed:
                 print('\n'.join(lines[n_printed + 2:-1]))  # skip header and final "(x rows)" line
             else:

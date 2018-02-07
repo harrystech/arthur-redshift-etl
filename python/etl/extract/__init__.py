@@ -35,7 +35,7 @@ from etl.extract.manifest_only import ManifestOnlyExtractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
-from etl.names import join_with_quotes
+from etl.text import join_with_quotes
 from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)

@@ -60,8 +60,10 @@ import etl.design.redshift
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
-                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError, retry)
-from etl.names import join_column_list, join_with_quotes, TableName, TableSelector, TempTableName
+                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError,
+                        MissingExtractEventError, retry)
+from etl.names import TableName, TableSelector, TempTableName
+from etl.text import join_column_list, join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -1009,8 +1011,8 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
     create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
 
 
-def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector,
-                          wlm_query_slots=1, only_selected=False, run_vacuum=False, dry_run=False):
+def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, wlm_query_slots=1,
+                          start_time: Optional[datetime]=None, only_selected=False, run_vacuum=False, dry_run=False):
     """
     Let new data percolate through the data warehouse.
 
@@ -1030,9 +1032,18 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         logger.warning("Found no tables matching: %s", selector)
         return
 
+    source_relations = [relation for relation in selected_relations if not relation.is_transformation]
+    if source_relations and start_time is not None:
+        logger.info("Verifying that all source relations have extracts after %s;"
+                    " fails if incomplete and no update for 1 hour" % start_time)
+        extracted_targets = etl.monitor.recently_extracted_targets(source_relations, start_time)
+        if len(source_relations) > len(extracted_targets):
+            raise MissingExtractEventError(source_relations, extracted_targets)
+    elif source_relations:
+        logger.info("Attempting to use existing manifests for source relations without verifying recency.")
+
     relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
     logger.info("Starting to update %d tables(s)", len(relations))
-
     # Run update within a transaction:
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:

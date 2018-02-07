@@ -17,7 +17,7 @@ import etl.db
 import etl.file_sets
 import etl.s3
 from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
-from etl.names import join_with_quotes
+from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
