@@ -50,7 +50,6 @@ from itertools import dropwhile
 from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
-
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -375,6 +374,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     else:
         retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), copy_func, logger)
 
+
 def insert_from_query(conn: connection, relation: LoadableRelation,
                       table_name: Optional[TableName]=None, columns: Optional[List[str]]=None,
                       query_stmt: Optional[str]=None, dry_run=False) -> None:
@@ -556,13 +556,14 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
     Update table contents either from CSV files from upstream sources or by running some SQL
     for CTAS relations. This assumes that the table was previously created.
 
-    For tables backed by upstream sources, data is copied in.
-
-    If the CTAS doesn't have a key (no identity column), then values are inserted straight from a view.
-
-    If a column is marked as being a key (identity is true), then a temporary table is built from
+    1. For tables backed by upstream sources, data is copied in.
+    2. If the CTAS doesn't have a key (no identity column), then values are inserted straight from a view.
+    3. If a column is marked as being a key (identity is true), then a temporary table is built from
     the query and then copied into the "CTAS" relation. If the name of the relation starts with "dim_",
     then it's assumed to be a dimension and a row with missing values (mostly 0, false, etc.) is added as well.
+
+    Finally, we run an ANALYZE statement to update table statistics (unless we're updating the table
+    within a transaction since -- we've been having problems with locks so skip the ANALYZE for updates).
     """
     try:
         if relation.is_ctas_relation:
@@ -572,8 +573,8 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
                 load_ctas_directly(conn, relation, dry_run=dry_run)
         else:
             copy_data(conn, relation, dry_run=dry_run)
-        # TODO Check whether we can skip analyze during refreshes
-        analyze(conn, relation, dry_run=dry_run)
+        if not relation.in_transaction:
+            analyze(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise UpdateTableError(exc) from exc
 
