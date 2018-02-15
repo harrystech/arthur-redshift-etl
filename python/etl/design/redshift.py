@@ -193,13 +193,13 @@ def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str
         etl.db.skip_query(conn, stmt, (s3_uri, credentials))
     else:
         logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_uri)
-        with log_load_error(conn):
-            try:
+        try:
+            with log_load_error(conn):
                 etl.db.execute(conn, stmt, (s3_uri, credentials))
-            except psycopg2.InternalError as exc:
-                raise TransientETLError(exc) from exc
             row_count = etl.db.query(conn, "SELECT pg_last_copy_count()")
             logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
+        except psycopg2.InternalError as exc:
+            raise TransientETLError(exc) from exc
 
 # Find files that were just copied in:
 # select query, trim(filename) as file, curtime as updated from stl_load_commits where query = pg_last_copy_id();
