@@ -165,3 +165,4 @@ then you can run the following script to invoke the lambda function:
 ```shell
 ./backfill_logfiles.py "<bucket_name>" "<prefix>" "<function_name>"
 ```
+Where `<function_name>` may simply be copied from the _Outputs_ of the stack.
