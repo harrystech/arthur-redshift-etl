@@ -18,14 +18,14 @@ from etl.text import join_with_quotes
 
 def as_staging_name(name):
     """
-    The canonical transformation of a (schema) name to its staging position
+    The canonical transformation of a schema name to its staging position
     """
     return '$'.join(("etl_staging", name))
 
 
 def as_backup_name(name):
     """
-    The canonical transformation of a (schema) name to its backup position
+    The canonical transformation of a schema name to its backup position
     """
     return '$'.join(("etl_backup", name))
 
@@ -71,24 +71,25 @@ class TableName:
     >>> purchases.managed_schemas = ['www']
     >>> staging_purchases = purchases.as_staging_table_name()
     >>> staging_purchases.managed_schemas = ['www']
+    >>> # Now the table names are the same but they are in different schemas (staging vs. not)
     >>> staging_purchases.table == purchases.table
     True
     >>> staging_purchases.schema == purchases.schema
     False
     """
 
-    __slots__ = ("_schema", "_table", "_staging", "_managed_schemas")
+    __slots__ = ("_schema", "_table", "_is_staging", "_managed_schemas")
 
-    def __init__(self, schema: Optional[str], table: str) -> None:
+    def __init__(self, schema: Optional[str], table: str, is_staging=False) -> None:
         # Concession to subclasses ... schema is optional
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
-        self._staging = False
+        self._is_staging = is_staging
         self._managed_schemas = None  # type: Optional[frozenset]
 
     @property
     def schema(self):
-        if self.staging and self.is_managed:
+        if self.is_staging and self.is_managed:
             return as_staging_name(self._schema)
         else:
             return self._schema
@@ -98,11 +99,16 @@ class TableName:
         return self._table
 
     @property
-    def staging(self):
-        return self._staging
+    def is_staging(self):
+        return self._is_staging
 
     @property
     def managed_schemas(self) -> frozenset:
+        """
+        (Cached) list of schemas that are managed by Arthur
+
+        This contains all schemas not just the schema of this relation.
+        """
         if self._managed_schemas is None:
             try:
                 schemas = etl.config.get_dw_config().schemas
@@ -249,9 +255,7 @@ class TableName:
         return fnmatch.fnmatch(self.identifier, pattern)
 
     def as_staging_table_name(self):
-        tn = TableName(*self.to_tuple())
-        tn._staging = True
-        return tn
+        return TableName(*self.to_tuple(), is_staging=True)
 
 
 class TempTableName(TableName):
