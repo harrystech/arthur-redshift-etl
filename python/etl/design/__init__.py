@@ -1,6 +1,8 @@
 import re
+import logging
 
-from etl.errors import MissingMappingError
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class Attribute:
@@ -44,7 +46,7 @@ class ColumnDefinition:
         return d
 
     @staticmethod
-    def from_attribute(attribute, as_is_att_type, cast_needed_att_type):
+    def from_attribute(attribute, as_is_att_type, cast_needed_att_type, default_att_type):
         """
         Turn a table attribute into a "column" of a table design. This adds the generic type and
         possibly a cast into a supported type.
@@ -60,7 +62,10 @@ class ColumnDefinition:
                     # Found tuple with new SQL type, expression and generic type.  Rejoice.
                     break
             else:
-                raise MissingMappingError("Unknown type '{}' of '{}'".format(attribute.sql_type, attribute.name))
+                logger.warning("Unknown type '{}' of column '{}' (using default)".format(attribute.sql_type,
+                                                                                         attribute.name))
+                mapping_sql_type, mapping_expression, mapping_type = default_att_type
+
         delimited_name = '"{}"'.format(attribute.name)
         return ColumnDefinition(attribute.name,
                                 attribute.sql_type,

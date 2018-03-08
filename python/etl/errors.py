@@ -82,12 +82,6 @@ class InvalidEnvironmentError(ETLRuntimeError):
     """
 
 
-class MissingMappingError(ETLConfigError):
-    """
-    Exception when an attribute type's target type is unknown
-    """
-
-
 class TableDesignError(ETLConfigError):
     """
     Exception when a table design file is incorrect
