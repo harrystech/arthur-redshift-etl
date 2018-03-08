@@ -8,7 +8,7 @@
             "failureAndRerunMode": "CASCADE",
             "resourceRole": "${resources.EC2.iam_instance_profile}",
             "role": "${resources.DataPipeline.role}",
-            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/logs/",
+            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/_logs/${object_store.s3.prefix}/",
             "region": "${resources.VPC.region}",
             "maximumRetries": "2"
         },
