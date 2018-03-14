@@ -92,12 +92,13 @@ class Extractor:
                     self.failed_sources.add(source.name)
                     failed.append(relation)
                     if not relation.is_required:
-                        self.logger.exception("Extract failed for non-required relation '%s':", relation.identifier)
+                        self.logger.warning("Extract failed for non-required relation '%s':", relation.identifier,
+                                            exc_info=True)
                     elif self.keep_going:
-                        self.logger.exception("Ignoring failure of required relation '%s' and proceeding as requested:",
-                                              relation.identifier)
+                        self.logger.warning("Ignoring failure of required relation '%s' and proceeding as requested:",
+                                            relation.identifier, exc_info=True)
                     else:
-                        self.logger.debug("Extract failed for required relation '%s'", relation.identifier)
+                        self.logger.error("Extract failed for required relation '%s'", relation.identifier)
                         raise
             self.logger.info("Finished extract from source '%s': %d succeeded, %d failed (%s)",
                              source.name, len(relations) - len(failed), len(failed), timer)
@@ -122,14 +123,15 @@ class Extractor:
             else:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
         if self.failed_sources:
-            self.logger.error("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
+            self.logger.warning("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
 
         # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
         missing_tables = []  # type: List
         for future in done:
             missing_tables.extend(future.result())
-        for table_name in missing_tables:
-            self.logger.warning("Failed to extract: '%s'", table_name.identifier)
+
+        self.logger.warning("Failed to extract %d relation(s): %s", len(missing_tables),
+                            join_with_quotes(table_name.identifier for table_name in missing_tables))
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))
 
