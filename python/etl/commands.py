@@ -321,7 +321,8 @@ def add_standard_arguments(parser, options):
     if "continue-from" in options:
         parser.add_argument("--continue-from",
                             help="skip forward in execution until the specified relation, then work forward from it"
-                            " (the special token '*' is allowed to signify continuing from the first relation)")
+                            " (the special token '*' is allowed to signify continuing from the first relation;"
+                            " use ':transformations' as the argument to continue from the first transformation)")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
@@ -1092,6 +1093,8 @@ class TailEventsCommand(SubCommand):
         # (If events for all tables already happen to exist, then this matches the desired execution order.)
         all_relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         selected_relations = etl.relation.select_in_execution_order(all_relations, args.pattern)
+        if not selected_relations:
+            return
         etl.monitor.tail_events(selected_relations,
                                 start_time=start_time, update_interval=update_interval, idle_time_out=idle_time_out,
                                 step=args.step)
