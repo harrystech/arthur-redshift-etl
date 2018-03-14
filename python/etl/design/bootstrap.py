@@ -92,8 +92,8 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     """
     Retrieve table constraints from database by looking up indices.
 
-    We will only check primary key constraints and unique constraints. Also, if constraints
-    use functions we'll probably miss them.
+    We will only check primary key constraints and unique constraints. If constraints have predicates
+    (like a WHERE clause) or use functions (like COALESCE(column, value), we'll skip them.
 
     (To recreate the constraint, we could use `pg_get_indexdef`.)
     """
@@ -114,6 +114,8 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
           JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
          WHERE i.indisunique
+           AND i.indpred IS NULL
+           AND i.indexprs IS NULL
            AND ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY "constraint_type", ic.relname"""
@@ -173,11 +175,13 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     type_maps = etl.config.get_dw_config().type_maps
     as_is_attribute_type = type_maps["as_is_att_type"]  # source tables and CTAS
     cast_needed_attribute_type = type_maps["cast_needed_att_type"]  # only source tables
+    default_attribute_type = type_maps["default_att_type"]  # default (fallback)
 
     source_attributes = fetch_attributes(conn, source_table_name)
     target_columns = [ColumnDefinition.from_attribute(attribute,
                                                       as_is_attribute_type,
-                                                      cast_needed_attribute_type) for attribute in source_attributes]
+                                                      cast_needed_attribute_type,
+                                                      default_attribute_type) for attribute in source_attributes]
     table_design = {
         "name": "%s" % target_table_name.identifier,
         "description": "Automatically generated on {0:%Y-%m-%d} at {0:%H:%M:%S}".format(datetime.utcnow()),

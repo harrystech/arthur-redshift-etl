@@ -50,7 +50,7 @@
             "date": "string",
             "timestamp without time zone": "string"
         },
-        # Map of known PostgreSQL attribute types to usable types in Redshift.  Missing types will cause an exception
+        # Map of known PostgreSQL attribute types to usable types in Redshift.
         # The first element in the list is the new type, the second element is the necessary cast expression,
         # the third element is the serialization format in Avro files.
         # Note that in every expression, %s is replaced by the column name within quotes.
@@ -73,6 +73,8 @@
             "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
             # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
             "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"]
-        }
+        },
+        # Default type as a fallback solution. Example use case is for enumeration types.
+        "default_att_type": ["varchar(10000)", "%s::varchar(10000)", "string"],
     }
 }

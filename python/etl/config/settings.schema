@@ -186,9 +186,15 @@
                         "minItems": 3,
                         "maxItems": 3
                     }
+                },
+                "default_att_type": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 3,
+                    "maxItems": 3
                 }
             },
-            "required": [ "as_is_att_type", "cast_needed_att_type" ],
+            "required": [ "as_is_att_type", "cast_needed_att_type", "default_att_type" ],
             "additionalProperties": false
         },
         "data_lake": {
