@@ -39,32 +39,39 @@ Resources:
                 PolicyDocument:
                     Version: "2012-10-17"
                     Statement:
-                      - Sid: "CreateAnything"
+                      - Sid: "ReadAnything"
                         Effect: "Allow"
                         Action:
                             - "cloudwatch:DescribeAlarms"
+                            - "cloudwatch:GetDashboard"
+                            - "cloudwatch:ListDashboards"
+                            - "cloudwatch:GetMetricStatistics"
+                            - "cloudwatch:ListMetrics"
                             - "datapipeline:Describe*"
                             - "datapipeline:Get*"
                             - "datapipeline:List*"
                             - "datapipeline:Query*"
+                            - "ec2:Describe*"
+                            - "iam:GetRole*"
+                            - "iam:ListInstanceProfiles"
+                            - "iam:ListRolePolicies"
+                            - "s3:Get*"
+                            - "s3:List*"
+                            - "sns:Get*"
+                            - "sns:List*"
+                      # This should be much more selective in the resources!
+                      - Sid: "CreateAnything"
+                        Effect: "Allow"
+                        Action:
+                            - "datapipeline:Query*"
                             - "ec2:AuthorizeSecurityGroup*"
                             - "ec2:CreateNetworkInterface"
                             - "ec2:CreateTags"
-                            - "ec2:Describe*"
                             - "ec2:RunInstances"
                             - "elasticmapreduce:*"
                             - "emr:*"
-                            - "iam:GetRole"
-                            - "iam:GetRolePolicy"
-                            - "iam:ListInstanceProfiles"
-                            - "iam:ListRolePolicies"
                             - "iam:PassRole"
-                            - "lambda:*"
-                            - "s3:Get*"
-                            - "s3:List*"
                             - "sns:Create*"
-                            - "sns:Get*"
-                            - "sns:List*"
                             - "sns:Publish"
                         Resource: "*"
                       - Sid: "ModifyOnlyOursInS3"
@@ -137,6 +144,9 @@ Resources:
                       Condition:
                           IpAddress:
                               "aws:SourceIp": !Ref OfficeIPs
+                          Bool:
+                              "aws:SecureTransport": true
+
 
 
 Outputs:
