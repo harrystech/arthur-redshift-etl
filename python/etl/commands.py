@@ -1127,9 +1127,11 @@ class SelfTestCommand(SubCommand):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument("test_family", help="select which family of tests to run",
-                            nargs='?', choices=["doctest", "type-check", "all"], default="all")
+                            nargs='?', choices=["pep8", "doctest", "type-check", "all"], default="all")
 
     def callback(self, args, config):
+        if args.test_family in ("pep8", "all"):
+            etl.selftest.run_pep8("etl", args.log_level)
         if args.test_family in ("doctest", "all"):
             etl.selftest.run_doctest("etl", args.log_level)
         if args.test_family in ("type-check", "all"):
