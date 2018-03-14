@@ -159,7 +159,7 @@ Resources:
                 - Name: ClusterIdentifier
                   Value: !Ref RedshiftCluster
 
-    ClusterUnhealthyAlaram:
+    ClusterUnhealthyAlarm:
         Type: AWS::CloudWatch::Alarm
         Properties:
             AlarmDescription: "Cluster unhealthy"
@@ -175,6 +175,7 @@ Resources:
             Dimensions:
                 - Name: ClusterIdentifier
                   Value: !Ref RedshiftCluster
+
 
 Outputs:
 

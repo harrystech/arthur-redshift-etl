@@ -59,6 +59,7 @@ Resources:
                             - "s3:List*"
                             - "sns:Get*"
                             - "sns:List*"
+                        Resource: "*"
                       # This should be much more selective in the resources!
                       - Sid: "CreateAnything"
                         Effect: "Allow"
@@ -127,8 +128,6 @@ Resources:
                             - "ec2:TerminateInstances"
                         Resource: "*"
 
-
-
     AssumeAdminPolicy:
         Type: AWS::IAM::Policy
         Properties:
@@ -146,7 +145,6 @@ Resources:
                               "aws:SourceIp": !Ref OfficeIPs
                           Bool:
                               "aws:SecureTransport": true
-
 
 
 Outputs:
