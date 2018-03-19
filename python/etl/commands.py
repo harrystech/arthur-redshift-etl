@@ -321,7 +321,8 @@ def add_standard_arguments(parser, options):
     if "continue-from" in options:
         parser.add_argument("--continue-from",
                             help="skip forward in execution until the specified relation, then work forward from it"
-                            " (the special token '*' is allowed to signify continuing from the first relation)")
+                            " (the special token '*' is allowed to signify continuing from the first relation;"
+                            " use ':transformations' as the argument to continue from the first transformation)")
     if "pattern" in options:
         parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
                             nargs='*', action=StorePatternAsSelector)
@@ -1092,6 +1093,8 @@ class TailEventsCommand(SubCommand):
         # (If events for all tables already happen to exist, then this matches the desired execution order.)
         all_relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         selected_relations = etl.relation.select_in_execution_order(all_relations, args.pattern)
+        if not selected_relations:
+            return
         etl.monitor.tail_events(selected_relations,
                                 start_time=start_time, update_interval=update_interval, idle_time_out=idle_time_out,
                                 step=args.step)
@@ -1124,9 +1127,11 @@ class SelfTestCommand(SubCommand):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument("test_family", help="select which family of tests to run",
-                            nargs='?', choices=["doctest", "type-check", "all"], default="all")
+                            nargs='?', choices=["pep8", "doctest", "type-check", "all"], default="all")
 
     def callback(self, args, config):
+        if args.test_family in ("pep8", "all"):
+            etl.selftest.run_pep8("etl", args.log_level)
         if args.test_family in ("doctest", "all"):
             etl.selftest.run_doctest("etl", args.log_level)
         if args.test_family in ("type-check", "all"):
