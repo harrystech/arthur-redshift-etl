@@ -139,6 +139,43 @@ Resources:
     # Note that an option to set enhanced VPC routing is missing in CloudFormation, so this must be done using the CLI
     # aws redshift modify-cluster --cluster-identifier "[cluster identifier]" --enhanced-vpc-routing
 
+    ClusterAlertTopic:
+        Type: AWS::SNS::Topic
+
+    DiskSpaceUsageTooHighAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            AlarmDescription: "Disk space usage too high"
+            AlarmActions:
+                - !Ref ClusterAlertTopic
+            MetricName: PercentageDiskSpaceUsed
+            Namespace: AWS/Redshift
+            Statistic: Average
+            ComparisonOperator: GreaterThanThreshold
+            Threshold: 60
+            Period: 300
+            EvaluationPeriods: 3
+            Dimensions:
+                - Name: ClusterIdentifier
+                  Value: !Ref RedshiftCluster
+
+    ClusterUnhealthyAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            AlarmDescription: "Cluster unhealthy"
+            AlarmActions:
+                - !Ref ClusterAlertTopic
+            MetricName: HealthStatus
+            Namespace: AWS/Redshift
+            Statistic: Minimum
+            ComparisonOperator: LessThanThreshold
+            Threshold: 1
+            Period: 60
+            EvaluationPeriods: 3
+            Dimensions:
+                - Name: ClusterIdentifier
+                  Value: !Ref RedshiftCluster
+
 
 Outputs:
 
@@ -155,3 +192,7 @@ Outputs:
     RedshiftParamterGroupName:
         Description: Used as value for '--parameter-group-name' in AWS CLI
         Value: !Ref RedshiftClusterParameterGroup
+
+    ClusterAlertTopicArn:
+        Description: ARN of SNS topic to publish CloudWatch alarms
+        Value: !Ref ClusterAlertTopic
