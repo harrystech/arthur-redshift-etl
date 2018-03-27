@@ -176,7 +176,6 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
 
     You must close the stream when you're done with it.
     """
-    logger.debug("Downloading 's3://%s/%s'", bucket_name, object_key)
     bucket = _get_s3_bucket(bucket_name)
     try:
         s3_object = bucket.Object(object_key)
@@ -191,6 +190,9 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
     except botocore.exceptions.ClientError as exc:
         error_code = exc.response["Error"]["Code"]
         logger.error("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
+        raise
+    except Exception:
+        logger.error("Failed to download 's3://%s/%s'", bucket_name, object_key)
         raise
 
 
