@@ -737,7 +737,9 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
         parser.add_argument("--scheduled-start-time", metavar="TIME", default=None, type=isoformat_datetime_string,
                             help="require recent successful extract events for all selected source relations "
                                  "after UTC time TIME (or, by default, don't require extract events)")
-        parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
+        parser.add_argument("--with-analyze", help="run analyze on tables after the update (default: %(default)s)",
+                            default=False, action="store_true")
+        parser.add_argument("--with-vacuum", help="run vacuum on tables after the update (default: %(default)s)",
                             default=False, action="store_true")
 
     def callback(self, args, config):
@@ -747,7 +749,8 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
                            etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
         etl.load.update_data_warehouse(relations, args.pattern,
                                        wlm_query_slots=wlm_query_slots,
-                                       only_selected=args.only_selected, run_vacuum=args.vacuum,
+                                       only_selected=args.only_selected,
+                                       run_analyze=args.with_analyze, run_vacuum=args.with_vacuum,
                                        start_time=args.scheduled_start_time,
                                        dry_run=args.dry_run)
 

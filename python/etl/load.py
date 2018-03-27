@@ -627,18 +627,32 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         pool.putconn(conn, close=False)
 
 
-def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
+def op_tables(relations: List[RelationDescription], op: str, dry_run=False) -> None:
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        for relation in relations:
+            etl.db.run(conn, "Running {} on {:x}".format(op, relation),
+                       "{} {}".format(op.upper(), relation), dry_run=dry_run)
+        if not dry_run:
+            logger.info("Ran {} for %d table(s) (%s)", op, len(relations), timer)
+
+
+def analyze_tables(relations: List[RelationDescription], dry_run=False) -> None:
+    """
+    Analyze tables to update statistics on tables.
+
+    This needs to open a new connection since it needs to happen outside a transaction.
+    """
+    op_tables(relations, "analyze", dry_run=dry_run)
+
+
+def vacuum_tables(relations: List[RelationDescription], dry_run=False) -> None:
     """
     Final step ... tidy up the warehouse before guests come over.
 
     This needs to open a new connection since it needs to happen outside a transaction.
     """
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        for relation in relations:
-            etl.db.run(conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
-        if not dry_run:
-            logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
+    op_tables(relations, "vacuum", dry_run=dry_run)
 
 # ---- Experimental Section: load during extract ----
 
@@ -1002,7 +1016,8 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
 
 
 def update_data_warehouse(all_relations: List[RelationDescription], selector: TableSelector, wlm_query_slots=1,
-                          start_time: Optional[datetime]=None, only_selected=False, run_vacuum=False, dry_run=False):
+                          start_time: Optional[datetime]=None, only_selected=False,
+                          run_analyze=False, run_vacuum=False, dry_run=False):
     """
     Let new data percolate through the data warehouse.
 
@@ -1013,7 +1028,7 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
             3 Verify constraints
 
     Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
-    Finally, if elected, run vacuum (in new connection) for all tables that were modified.
+    Finally, if elected, run analyze and vacuum (outside transaction) for all tables that were modified.
     """
     selected_relations = etl.relation.select_in_execution_order(all_relations, selector,
                                                                 include_dependents=not only_selected)
@@ -1042,8 +1057,10 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
         for relation in relations:
             build_one_relation(conn, relation, dry_run=dry_run)
 
+    if run_analyze:
+        analyze_tables(tables, dry_run=dry_run)
     if run_vacuum:
-        vacuum(tables, dry_run=dry_run)
+        vacuum_tables(tables, dry_run=dry_run)
 
 
 def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector,
