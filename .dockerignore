@@ -1,0 +1,32 @@
+*.sw*
+*.log
+*.log.[0-9]
+*.out
+*.pyc
+*.RData
+
+# release information is created by upload_env.sh
+/python/etl/config/release.txt
+
+# temp data (including generated files)
+/config
+/data/
+/schemas
+/tmp/
+
+# virtual environment and local install
+venv/
+/dist/
+/build/
+*.egg-info
+/.mypy_cache
+
+# In case you accidentally download your credentials here
+credentials*
+
+# ignore jars
+jars/
+
+# Mac stuff
+.DS_Store
+.idea/
