@@ -6,5 +6,5 @@ COPY requirements-dev.txt ./
 RUN pip install --requirement ./requirements-dev.txt
 COPY . .
 RUN [ "python", "setup.py", "develop" ]
-WORKDIR "/hdw"
+WORKDIR "/data-warehouse"
 ENTRYPOINT ["arthur.py"]

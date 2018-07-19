@@ -41,7 +41,7 @@ PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix )
 
 CLUSTER_RELEASE_LABEL=$( arthur.py show_value resources.EMR.release_label )
-CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
+CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"},{"Name":"Hadoop"}]'
 CLUSTER_REGION=$( arthur.py show_value resources.VPC.region )
 
 # === Derived configuration ===
