@@ -304,7 +304,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
 
 @lru_cache()
 def load_json(filename: str):
-    return json.loads(pkg_resources.resource_string(__name__, filename))
+    return json.loads(pkg_resources.resource_string(__name__, filename))  # type: ignore
 
 
 if __name__ == "__main__":

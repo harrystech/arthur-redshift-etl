@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 
 # This will create a new distribution locally and upload everything into S3.
+#
+# NOTE: This won't work inside the Docker container because we don't add git
+# or the Arthur git repository this needs. Run this script directly from your
+# local clone of the repo. You'll most likely need to use the 2-argument form
+# of this script in that case, because otherwise you must have a proper data
+# warehouse config set up locally, pointed to by DATA_WAREHOUSE_CONFIG.
+# Additionally, you'll need to set AWS_PROFILE to something with permissions
+# if your default profile doesn't have the needed S3 access.
+#
+# Example:
+#   AWS_PROFILE=my-prof bin/upload_env.sh my-warehouse-bucket my-env
+
 
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
