@@ -14,23 +14,23 @@ git clone git@github.com:harrystech/arthur-redshift-etl.git
 cd arthur-redshift-etl
 
 # Setup tools -- initial
-brew install awscli
-brew install jq
+brew install awscli jq
 
 # Setup tools -- later
-brew upgrade awscli
-brew upgrade jq
+brew upgrade awscli jq
 
-# Setup python3 with virtualenv
+# Setup python3 with virtualenv and wrapper
 brew install python3
 pip3 install virtualenv
 pip3 install pip --upgrade --disable-pip-version-check
+pip3 install virtualenvwrapper
 
-# Setup virtualenv (with wrapper)
+# Run (and also add these lines to your ~/.bashrc file)
 export WORKON_HOME=~/Envs
 export VIRTUALENVWRAPPER_PYTHON=/usr/local/bin/python3
 source /usr/local/bin/virtualenvwrapper.sh
 
+# Finally  create the virtual environment to work on the ETL
 mkvirtualenv --python=python3 arthur-redshift-etl
 workon .
 pip3 install --requirement ./requirements-dev.txt
