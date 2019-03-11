@@ -20,8 +20,7 @@ RUN yum install -y \
     pip-3.5 install --upgrade --disable-pip-version-check virtualenv
 
 
-COPY requirements.txt ./
-COPY requirements-dev.txt ./
+COPY requirements*.txt ./
 RUN virtualenv --python=python3 venv && \
     source venv/bin/activate && \
     pip3 install --upgrade pip --disable-pip-version-check && \

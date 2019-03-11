@@ -5,15 +5,15 @@ show_usage_and_exit () {
     cat <<EOF
 Usage: `basename $0`
 
-Builds the Docker image you can use to run Arthur locally instead of manually
-configuring your enviornment. Docker itself must already be preinstalled.
+Builds the Docker image that you can use to run Arthur locally instead of manually
+configuring your development environment. Docker itself must already be installed.
 EOF
     exit ${1-0}
 }
 
 profile=""
 
-while getopts "hp:" opt; do
+while getopts ":h" opt; do
     case "$opt" in
       h)
         show_usage_and_exit
@@ -25,4 +25,5 @@ while getopts "hp:" opt; do
     esac
 done
 
+set -x
 docker build -t harrystech/arthur .
