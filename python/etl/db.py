@@ -48,12 +48,13 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     """
     # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
     # Now they have two problems.
-    dsn_re = re.compile(r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # be nice and accept either connection type
-                            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
-                            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
-                            (?P<database>\w+)  # database (and not dbname)
-                            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
-                        re.VERBOSE)
+    dsn_re = re.compile(
+        r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # be nice and accept either connection type
+            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
+            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
+            (?P<database>\w+)  # database (and not dbname)
+            (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
+        re.VERBOSE)
     dsn_after_expansion = os.path.expandvars(dsn)  # Supports stuff like $USER
     match = dsn_re.match(dsn_after_expansion)
     if match is None:
@@ -157,7 +158,7 @@ def remove_password(s):
     >>> remove_password(s)
     "COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS '';"
     """
-    match = re.search("(CREDENTIALS|PASSWORD)\s*'([^']*)'", s, re.IGNORECASE)
+    match = re.search(r"(CREDENTIALS|PASSWORD)\s*'([^']*)'", s, re.IGNORECASE)
     if match:
         start, end = match.span()
         creds = match.groups()[0]

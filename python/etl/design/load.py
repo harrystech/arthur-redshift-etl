@@ -53,7 +53,7 @@ def load_table_design_from_localfile(local_filename, table_name):
     try:
         with open(local_filename) as f:
             table_design = load_table_design(f, table_name)
-    except:
+    except Exception:
         logger.error("Failed to load table design from '%s'", local_filename)
         raise
     return table_design

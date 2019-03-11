@@ -254,7 +254,7 @@ def retry(max_retries: int, func: partial, logger):
                                remaining_attempts, sleep_time, str(e))
                 time.sleep(sleep_time)
             continue
-        except:
+        except Exception:
             # We consider all other errors permanent and immediately re-raise without retrying
             raise
         else:

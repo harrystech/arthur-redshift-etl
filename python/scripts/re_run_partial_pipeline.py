@@ -51,7 +51,7 @@ def get_scheduled_component_ids(client, pipeline_id):
         sphere="COMPONENT"
     )
     for response in response_iterator:
-            object_ids.extend(response["ids"])
+        object_ids.extend(response["ids"])
     return object_ids
 
 

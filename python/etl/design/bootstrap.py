@@ -266,12 +266,12 @@ def update_column_definition(new_column: dict, old_column: dict):
         if old_sql_type == "bigint" and new_sql_type == "integer":
             new_column["sql_type"] = "bigint"
             new_column["type"] = "long"
-        varchar_re = re.compile("(?:varchar|character varying)\((?P<size>\d+)\)")
+        varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)")
         old_text = varchar_re.search(old_sql_type)
         new_text = varchar_re.search(new_sql_type)
         if old_text and new_text:
             new_column["sql_type"] = "character varying({})".format(old_text.group('size'))
-        numeric_re = re.compile("(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
+        numeric_re = re.compile(r"(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
         old_numeric = numeric_re.search(old_sql_type)
         new_numeric = numeric_re.search(new_sql_type)
         if old_numeric and new_numeric:

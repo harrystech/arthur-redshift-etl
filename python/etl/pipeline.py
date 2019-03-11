@@ -64,7 +64,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     dw_pipelines = []
     chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
     for block in range(0, len(selected_pipeline_ids), chunk_size):
-        resp = client.describe_pipelines(pipelineIds=selected_pipeline_ids[block:block+chunk_size])
+        resp = client.describe_pipelines(pipelineIds=selected_pipeline_ids[block:block + chunk_size])
         for description in resp['pipelineDescriptionList']:
             for tag in description['tags']:
                 if tag['key'] == 'user:project' and tag['value'] == 'data-warehouse':

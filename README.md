@@ -270,9 +270,9 @@ Pull requests are welcome!
 Development takes place on the `next` branch. So go ahead, and create a branch off `next` and work
 on the next ETL feature.
 
-* Please run code through [pep8](https://www.python.org/dev/peps/pep-0008/) (see [local config](.pep8)):
+* Please run code through [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg)):
 ```shell
-pep8 python
+pycodestyle python
 ```
 
 * Even better, set up the git pre-commit hook to prevent you from accidentally breaking convention

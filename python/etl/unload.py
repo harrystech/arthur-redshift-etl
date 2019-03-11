@@ -142,7 +142,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
     with closing(conn) as conn:
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
-                index = {"current": i+1, "final": len(relation_target_tuples)}
+                index = {"current": i + 1, "final": len(relation_target_tuples)}
                 unload_relation(conn, relation, unload_schema, index,
                                 allow_overwrite=allow_overwrite, dry_run=dry_run)
             except Exception as exc:
