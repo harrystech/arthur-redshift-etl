@@ -63,5 +63,5 @@ fi
 set -x
 docker run --rm -it -v "$PWD":/data-warehouse -v ~/.aws:/root/.aws \
     -e DATA_WAREHOUSE_CONFIG=/data-warehouse/$config_dir \
-    -e ARTHUR_DEFAULT_PREFIX=$target_env \
+    -e "ARTHUR_DEFAULT_PREFIX=$target_env" -e "USER=$target_env" \
     $profile_arg harrystech/arthur
