@@ -515,9 +515,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
-                    logger.error("Constraint check failed on at least %d row(s)", len(results))
+                    logger.error("Constraint check for {:x} failed on at least {:d} row(s)".format(
+                        relation, len(results)))
                 else:
-                    logger.error("Constraint check failed on %d row(s)", len(results))
+                    logger.error("Constraint check for {:x} failed on {:d} row(s)".format(
+                        relation, len(results)))
                 raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
