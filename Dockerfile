@@ -35,7 +35,8 @@ RUN source venv/bin/activate && \
     run_tests.py
 
 # Ensure the venv is activated when running interactive shells
-RUN echo "source /tmp/redshift_etl/venv/bin/activate" > /root/.bashrc
+RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
+source /tmp/redshift_etl/etc/arthur_completion.sh' > /root/.bashrc
 
 WORKDIR /data-warehouse
 
