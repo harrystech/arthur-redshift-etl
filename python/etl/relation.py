@@ -14,6 +14,7 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
+import codecs
 import concurrent.futures
 import logging
 import os.path
@@ -182,7 +183,7 @@ class RelationDescription:
                 with closing(etl.s3.get_s3_object_content(self.bucket_name, self.sql_file_name)) as content:
                     query_stmt = content.read().decode()
             else:
-                with open(self.sql_file_name) as f:
+                with codecs.open(self.sql_file_name, encoding='utf-8') as f:
                     query_stmt = f.read()
 
             self._query_stmt = query_stmt.strip().rstrip(';')
