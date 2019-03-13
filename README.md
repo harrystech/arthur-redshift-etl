@@ -96,7 +96,7 @@ Copy the ETL code (including bootstrap scripts and configuration):
 ```shell
 export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentials>"
 # export DATA_WAREHOUSE_CONFIG="\cd ./config && \pwd`
-bin/upload_env.sh "<your S3 bucket>" $USER
+bin/upload_env.sh "<your S3 bucket>"
 ```
 
 ### Starting a cluster and submitting commands

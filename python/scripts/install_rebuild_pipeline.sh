@@ -39,8 +39,8 @@ set -x
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
 PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
-PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
+PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"

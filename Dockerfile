@@ -36,7 +36,8 @@ RUN source venv/bin/activate && \
 
 # Ensure the venv is activated when running interactive shells
 RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
-source /tmp/redshift_etl/etc/arthur_completion.sh' > /root/.bashrc
+source /tmp/redshift_etl/etc/arthur_completion.sh\n\
+PATH=$PATH:/tmp/redshift_etl/bin' > /root/.bashrc
 
 WORKDIR /data-warehouse
 

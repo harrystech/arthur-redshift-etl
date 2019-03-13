@@ -2,26 +2,27 @@
 
 RELEASE_PATH="python/etl/config/release.txt"
 
-set -e -u
+set -eu
 
 if [[ $# -gt 0 ]]; then
-    echo "Usage: `basename $0`"
-    echo
-    echo "This will write current version information to '$RELEASE_PATH'"
+    cat <<EOF
+
+Usage: `basename $0`
+
+This will write current version information to '$RELEASE_PATH'.
+
+EOF
     exit 0
 fi
 
-if ! which git >/dev/null ; then
+if ! type -a git >/dev/null 2>&1 ; then
     echo "Executable 'git' not found" >&2
     exit 1
 fi
 
-# Collect release information
 RELEASE_FILE="/tmp/upload_env_release_${USER-nobody}$$.txt"
 > "$RELEASE_FILE"
 trap "rm \"$RELEASE_FILE\"" EXIT
-
-set -x
 
 echo "toplevel=`git rev-parse --show-toplevel`" >> "$RELEASE_FILE"
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
@@ -33,4 +34,4 @@ else
     echo "commit=$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
 fi
 echo "date=`date '+%Y-%m-%d %H:%M:%S%z'`" >> "$RELEASE_FILE"
-cat "$RELEASE_FILE" > "python/etl/config/release.txt"
+cat "$RELEASE_FILE" | tee "python/etl/config/release.txt"

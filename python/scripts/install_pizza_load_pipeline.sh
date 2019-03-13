@@ -3,12 +3,14 @@
 if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
 
     cat <<EOF
+
 Pizza delivery! Right on time or it's free! Runs once, starting now.
 Expects S3 folder under prefix to already have all necessary manifests for source data.
 
 Usage: `basename $0` <environment> [<continue-from>]
 
 The loader will pick up from the "continue-from" relation if specified.
+
 EOF
     exit 0
 
@@ -43,8 +45,8 @@ set -x
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
 PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
-PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
+PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" pizza_load_pipeline > "$PIPELINE_DEFINITION_FILE"
