@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 PROJ_NAME="redshift_etl"
-PROJ_PACKAGES="postgresql95-devel python35 python35-pip python35-devel aws-cli gcc libyaml-devel tmux jq"
+PROJ_PACKAGES="aws-cli gcc jq libyaml-devel postgresql95-devel python35 python35-devel python35-pip tmux"
 
 PROJ_TEMP="/tmp/$PROJ_NAME"
 
