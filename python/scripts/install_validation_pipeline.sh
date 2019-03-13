@@ -37,14 +37,14 @@ fi
 set -x
 
 # N.B. This assumes you are in the directory with your warehouse definition (schemas, config, ...)
-if ! GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
-  GIT_BRANCH="(detached head)"
-fi
+GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD 2>/dev/null || true)
 
 if [[ "$PROJ_ENVIRONMENT" =~ "production" ]]; then
-  PIPELINE_NAME="ETL Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+    PIPELINE_NAME="ETL Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+elif [[ -n "$GIT_BRANCH" ]]; then
+    PIPELINE_NAME="Validation Pipeline ($DEFAULT_PREFIX:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 else
-  PIPELINE_NAME="Validation Pipeline ($USER:$GIT_BRANCH $PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+    PIPELINE_NAME="Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 fi
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
