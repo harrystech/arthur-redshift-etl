@@ -15,7 +15,6 @@ EOF
     exit ${1-0}
 }
 
-profile=""
 tag="latest"
 
 while getopts ":ht:" opt; do
@@ -25,14 +24,14 @@ while getopts ":ht:" opt; do
         ;;
       t)
         tag="$OPTARG"
-        shift
         ;;
       \?)
         echo "Invalid option: -$OPTARG" >&2
-        exit 1
+        show_usage_and_exit 1
       ;;
     esac
 done
+shift $((OPTIND -1))
 
 set -x
 bin/release_version.sh

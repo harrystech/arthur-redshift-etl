@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eu
+set -e
 
 show_usage_and_exit () {
     cat <<EOF
@@ -31,18 +31,17 @@ while getopts ":hp:t:" opt; do
         ;;
       p)
         profile="$OPTARG"
-        shift
         ;;
       t)
         tag="$OPTARG"
-        shift
         ;;
       \?)
         echo "Invalid option: -$OPTARG" >&2
-        exit 1
+        show_usage_and_exit 1
       ;;
     esac
 done
+shift $((OPTIND -1))
 
 if [[ $# -gt 2 ]]; then
     echo "Wrong number of arguments!" >&2
@@ -63,6 +62,8 @@ else
     config_arg="$DATA_WAREHOUSE_CONFIG"
     target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
 fi
+
+set -u
 
 if [[ ! -d "$config_arg" ]]; then
     echo "Bad configuration directory: $config_arg"
