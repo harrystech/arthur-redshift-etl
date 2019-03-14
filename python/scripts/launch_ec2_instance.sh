@@ -2,6 +2,7 @@
 
 # Start an EC2 instance in AWS for one-off stuff.
 
+USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 set -e -u
@@ -39,7 +40,7 @@ PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_
 
 # === Derived configuration ===
 
-INSTANCE_NAME="Arthur (env=$PROJ_ENVIRONMENT\, user=$USER\, `date '+%s'`)"
+INSTANCE_NAME="Arthur (env=$PROJ_ENVIRONMENT\, user=$DEFAULT_PREFIX\, `date '+%s'`)"
 
 # === Validate bucket and environment information (sanity check on args) ===
 

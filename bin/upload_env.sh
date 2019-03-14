@@ -2,27 +2,28 @@
 
 # This will create a new distribution locally and upload everything into S3.
 #
-# NOTE: This won't work inside the Docker container because we don't add git
-# or the Arthur git repository this needs. Run this script directly from your
-# local clone of the repo. You'll most likely need to use the 2-argument form
-# of this script in that case, because otherwise you must have a proper data
-# warehouse config set up locally, pointed to by DATA_WAREHOUSE_CONFIG.
-# Additionally, you'll need to set AWS_PROFILE to something with permissions
+# You'll need to set AWS_PROFILE to something with appropriate permissions
 # if your default profile doesn't have the needed S3 access.
 #
 # Example:
 #   AWS_PROFILE=my-prof bin/upload_env.sh my-warehouse-bucket my-env
 
-
-DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
-
 set -e
 
+USER="${USER-nobody}"
+DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
+
 if [[ $# -gt 2 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` [[<bucket_name>] <target_env>]"
-    echo "    The <target_env> defaults to \"$DEFAULT_PREFIX\"."
-    echo "    The <bucket_name> defaults to your object store setting."
-    echo "    If the bucket name is not specified, variable DATA_WAREHOUSE_CONFIG must be set."
+    cat <<EOF
+
+Usage: `basename $0` [[<bucket_name>] <target_env>]
+
+This creates a new distribution and uploads it into S3.
+The <target_env> defaults to \"$DEFAULT_PREFIX\".
+The <bucket_name> defaults to your object store setting.
+If the bucket name is not specified, variable DATA_WAREHOUSE_CONFIG must be set.
+
+EOF
     exit 0
 fi
 
@@ -44,6 +45,8 @@ else
     PROJ_TARGET_ENVIRONMENT=$( arthur.py show_value --prefix "$DEFAULT_PREFIX" object_store.s3.prefix )
 fi
 
+set -u
+
 ask_to_confirm () {
     while true; do
         read -r -p "$1 (y/[n]) " ANSWER
@@ -60,9 +63,18 @@ ask_to_confirm () {
     done
 }
 
+DIR_NAME=`dirname $0`
+BIN_PATH=$(\cd "$DIR_NAME" && \pwd)
+TOP_PATH=`dirname "$BIN_PATH"`
+
 if [[ ! -r ./setup.py ]]; then
     echo "Failed to find 'setup.py' file in the local directory."
-    exit 2
+    if [[ ! -r "$TOP_PATH/setup.py" ]]; then
+        echo "Failed to find '$TOP_PATH/setup.py' file."
+        exit 2
+    fi
+    echo "OK, found '$TOP_PATH/setup.py' instead."
+    cd "$TOP_PATH"
 fi
 
 if ! aws s3 ls "s3://$PROJ_BUCKET/" > /dev/null; then
@@ -77,26 +89,12 @@ else
     ask_to_confirm "Are you sure you want to create 's3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT'?"
 fi
 
+# Collect release information
+bin/release_version.sh || echo "File with release information was not updated!"
+
 echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to S3"
 
-set -x -u
-
-# Collect release information
-RELEASE_FILE="/tmp/upload_env_release_${USER}$$.txt"
-> "$RELEASE_FILE"
-trap "rm \"$RELEASE_FILE\"" EXIT
-
-echo "toplevel=`git rev-parse --show-toplevel`" >> "$RELEASE_FILE"
-GIT_COMMIT_HASH=$(git rev-parse HEAD)
-if GIT_LATEST_TAG=$(git describe --exact-match --tags HEAD); then
-    echo "commit=$GIT_COMMIT_HASH ($GIT_LATEST_TAG)" >> "$RELEASE_FILE"
-elif GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
-    echo "commit=$GIT_COMMIT_HASH ($GIT_BRANCH)" >> "$RELEASE_FILE"
-else
-    echo "commit=$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
-fi
-echo "date=`date '+%Y-%m-%d %H:%M:%S%z'`" >> "$RELEASE_FILE"
-cat "$RELEASE_FILE" > "python/etl/config/release.txt"
+set -x
 
 python3 setup.py sdist
 LATEST_TAR_FILE=`ls -1t dist/redshift_etl*tar.gz | head -1`
@@ -105,12 +103,14 @@ do
     aws s3 cp "$FILE" "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars/"
 done
 
-aws s3 sync --delete bin "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/bin"
+aws s3 sync --delete \
+    --exclude '*' --include bootstrap.sh --include ping_cronut.sh --include sync_env.sh \
+    bin "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/bin"
 
 # Users who don't intend to use Spark may not have the jars directory.
 if [[ -d "jars" ]]; then
     aws s3 sync --delete \
-        --exclude "*" \
+        --exclude '*' \
         --include postgresql-9.4.1208.jar \
         --include RedshiftJDBC41-1.2.1.1001.jar \
         jars "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars"

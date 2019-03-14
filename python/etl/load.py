@@ -327,7 +327,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if reader_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of select access on {:x} to {}".format(
-                            relation, join_with_quotes(reader_groups)))
+                relation, join_with_quotes(reader_groups)))
         else:
             logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
             for reader in reader_groups:
@@ -336,7 +336,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if writer_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of write access on {:x} to {}".format(
-                            relation, join_with_quotes(writer_groups)))
+                relation, join_with_quotes(writer_groups)))
         else:
             logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
             for writer in writer_groups:
@@ -362,10 +362,10 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     if not relation.has_manifest:
         if dry_run:
             logger.info("Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
-                            relation.identifier, s3_uri))
+                relation.identifier, s3_uri))
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
-                                           relation.identifier, s3_uri))
+                relation.identifier, s3_uri))
     copy_func = partial(etl.design.redshift.copy_from_uri,
                         conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
                         need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
@@ -507,17 +507,19 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
             logger.info("Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                constraint_type, relation, join_with_quotes(columns)))
             etl.db.skip_query(conn, statement)
         else:
             logger.info("Checking {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                constraint_type, relation, join_with_quotes(columns)))
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
-                    logger.error("Constraint check failed on at least %d row(s)", len(results))
+                    logger.error("Constraint check for {:x} failed on at least {:d} row(s)".format(
+                        relation, len(results)))
                 else:
-                    logger.error("Constraint check failed on %d row(s)", len(results))
+                    logger.error("Constraint check for {:x} failed on {:d} row(s)".format(
+                        relation, len(results)))
                 raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
@@ -747,7 +749,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 build_one_relation_using_pool(pool, item, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError):
                 item.mark_failure(relations)
-            except:
+            except Exception:
                 logger.error("Loader: Uncaught exception in load worker while loading '%s':",
                              item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
