@@ -79,9 +79,19 @@ else
     profile_arg=""
 fi
 
+# This binds the following directories
+#   - the "data warehouse" directory which is the parent of the chosen configuration directory
+#   - the '~/.aws' directory which contains the config and credentials needed
+#   - the '~/.ssh' directory which contains the keys to login into EMR and EC2 hosts
+# This sets the environment variables
+#   - DATA_WAREHOUSE_CONFIG so that Arthur finds the configuration files
+#   - ARTHUR_DEFAULT_PREFIX to pick the default "environment" (same as S3 prefix)
+#   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
 set -x
 docker run --rm -it \
-    --volume "$data_warehouse_path":/data-warehouse --volume ~/.aws:/root/.aws \
+    --volume "$data_warehouse_path":/data-warehouse \
+    --volume ~/.aws:/root/.aws \
+    --volume ~/.ssh:/root/.ssh \
     -e DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
     -e ARTHUR_DEFAULT_PREFIX="$target_env" \
     $profile_arg "arthur:$tag"

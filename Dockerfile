@@ -8,15 +8,17 @@ FROM amazonlinux:2017.03
 WORKDIR /tmp/redshift_etl
 
 RUN yum install -y \
-        postgresql95-devel \
-        python35 \
-        python35-pip \
-        python35-devel \
         aws-cli \
         gcc \
+        jq \
         libyaml-devel \
+        openssh-clients \
+        postgresql95-devel \
+        python35 \
+        python35-devel \
+        python35-pip \
         tmux \
-        jq && \
+    && \
     pip-3.5 install --upgrade --disable-pip-version-check virtualenv
 
 
