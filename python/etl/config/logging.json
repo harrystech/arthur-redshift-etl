@@ -87,6 +87,12 @@
             "level": "INFO",
             "propagate": 0
         },
+        "urllib3": {
+            "qualname": "urllib3",
+            "handlers": [ "file" ],
+            "level": "INFO",
+            "propagate": 0
+        },
         "py4j.java_gateway": {
             "qualname": "py4j.java_gateway",
             "handlers": [ "file" ],
