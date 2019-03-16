@@ -226,17 +226,20 @@ def skip_query(cx, stmt, args=()):
 def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
     """
     Execute the query and log the message around it.  Or just show what would have been run in dry-run mode.
+
+    This will try to use the caller's logger.
     """
     # Figure out caller for better logging
     current_frame = inspect.currentframe()
-    caller_code = current_frame.f_back.f_code
-    caller_name = caller_code.co_name
+    caller_globals = current_frame.f_back.f_globals
+    caller_logger = caller_globals.get('logger', logger)
+    assert isinstance(caller_logger, logging.Logger)
 
     if dry_run:
-        logger.info("({}) Dry-run: Skipping {}{}".format(caller_name, message[:1].lower(), message[1:]))
+        caller_logger.info("Dry-run: Skipping {}{}".format(message[:1].lower(), message[1:]))
         skip_query(cx, stmt, args=args)
     else:
-        logger.info("({}) {}".format(caller_name, message))
+        caller_logger.info("{}".format(message))
         return execute(cx, stmt, args=args, return_result=return_result)
 
 
