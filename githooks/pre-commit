@@ -7,7 +7,7 @@ git checkout-index --prefix=$tmpdir/ -af
 files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 if [ -n "$files" ]; then
     echo "Checking for pep8 violations"
-    echo $files | (cd $tmpdir; xargs pep8; exit $?) || die "Blocking commit because of pep8 issues"
+    echo $files | (cd $tmpdir; xargs pycodestyle; exit $?) || die "Blocking commit because of pep8 issues"
     echo "Checking for outstanding to-dos"
     echo $files | (cd $tmpdir; xargs grep '# XXX'; exit $?) && die "Blocking commit because string '# XXX' detected in patch"
 fi
