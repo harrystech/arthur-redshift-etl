@@ -130,8 +130,9 @@ class Extractor:
         for future in done:
             missing_tables.extend(future.result())
 
-        self.logger.warning("Failed to extract %d relation(s): %s", len(missing_tables),
-                            join_with_quotes(table_name.identifier for table_name in missing_tables))
+        if missing_tables:
+            self.logger.warning("Failed to extract %d relation(s): %s", len(missing_tables),
+                                join_with_quotes(table_name.identifier for table_name in missing_tables))
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))
 
