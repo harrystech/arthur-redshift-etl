@@ -1,3 +1,4 @@
+
                 _   _                  _____          _     _     _  __ _     ______ _______ _
      /\        | | | |                |  __ \        | |   | |   (_)/ _| |   |  ____|__   __| |
     /  \   _ __| |_| |__  _   _ _ __  | |__) |___  __| |___| |__  _| |_| |_  | |__     | |  | |
@@ -6,14 +7,39 @@
  /_/    \_\_|   \__|_| |_|\__,_|_|    |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
 
 
-Here are some frequently-used commands
-======================================
+Here are some frequently-used commands to get started
+=====================================================
 
-arthur.py ping
-arthur.py settings object_store.s3.*
+  arthur.py ping
+  arthur.py settings object_store.s3.*
 
-upload_env.sh
-arthur.py sync --deploy
+  upload_env.sh
+  arthur.py sync --deploy
 
-install_validation_pipeline.sh
+  install_validation_pipeline.sh
 
+
+Here are some frequently-used commands to work on a table design
+================================================================
+
+* Remember that most commands allow to specify a subset of tables
+  as "schema_name", "schema_name.table_name", or even "schema_name.pattern".
+
+  arthur.py validate -q foo.bar
+  arthur.py sync -q foo.b*
+  arthur.py upgrade --dry-run --only-selected foo.bar
+
+* All commands support "-h" to see more details and some commands
+  have their own descriptions, see the "help" command.
+
+  arthur.py show_dependents -h
+  arthur.py help load
+
+
+Most likely command to run if a production pipeline failed
+==========================================================
+
+  install_pizza_load_pipeline.sh ":transformations"
+
+
+Installed:
