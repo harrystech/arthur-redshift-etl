@@ -108,6 +108,11 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
     """
     Download the dependencies (usually, based on the temporary view) and compare with table design.
     """
+    if getattr(tmp_view_name, "is_late_binding_view", False):
+        logger.warning("Dependencies of '%s' cannot be verified because it depends on an external table",
+                       relation.identifier)
+        return
+
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
     # We break with tradition and show the list of dependencies such that they can be copied into a design file.
     logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, json.dumps(dependencies))
@@ -142,7 +147,7 @@ def validate_column_ordering(conn: connection, relation: RelationDescription, tm
         logger.info("Order of columns in design of '%s' matches result of running SQL query", relation.identifier)
 
 
-def validate_single_transform(conn: connection, relation: RelationDescription, keep_going: bool= False) -> None:
+def validate_single_transform(conn: connection, relation: RelationDescription, keep_going: bool=False) -> None:
     """
     Test-run a relation (CTAS or VIEW) by creating a temporary view.
 
@@ -174,6 +179,7 @@ def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_go
 
     # TODO Parallelize but use separate connections per thread
     with closing(etl.db.connection(dsn, autocommit=True)) as conn:
+        TableName.set_external_schemas(etl.db.get_external_schemas(conn))
         for relation in transforms:
             validate_single_transform(conn, relation, keep_going=keep_going)
 

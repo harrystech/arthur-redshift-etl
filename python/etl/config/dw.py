@@ -126,7 +126,7 @@ class DataWarehouseSchema:
 
 class DataWarehouseConfig:
     """
-    Pretty face to the object from the settings files.
+    Pretty interface to create objects from the settings files.
     """
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
