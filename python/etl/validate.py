@@ -34,7 +34,7 @@ import etl.relation
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import ETLConfigError, ETLDelayedExit, ETLRuntimeError  # Exception classes that we might catch
 from etl.errors import TableDesignValidationError, UpstreamValidationError  # Exception classes that we might raise
-from etl.names import TableName
+from etl.names import TableName, TempTableName
 from etl.text import join_with_quotes
 from etl.relation import RelationDescription
 from etl.timer import Timer
@@ -104,11 +104,11 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
         return None
 
 
-def validate_dependencies(conn: connection, relation: RelationDescription, tmp_view_name: TableName) -> None:
+def validate_dependencies(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
     """
     Download the dependencies (usually, based on the temporary view) and compare with table design.
     """
-    if getattr(tmp_view_name, "is_late_binding_view", False):
+    if tmp_view_name.is_late_binding_view:
         logger.warning("Dependencies of '%s' cannot be verified because it depends on an external table",
                        relation.identifier)
         return
@@ -125,12 +125,18 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
         logger.info('Dependencies listing in design file matches SQL')
 
 
-def validate_column_ordering(conn: connection, relation: RelationDescription, tmp_view_name: TableName) -> None:
+def validate_column_ordering(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
     """
     Download the column order (using the temporary view) and compare with table design.
     """
     attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
+
+    if not actual_columns and tmp_view_name.is_late_binding_view:
+        # Thanks to late-binding views it is not an error for a view to not be able to resolve its columns.
+        logger.warning("Order of columns in design of '%s' cannot be validated because external table is missing",
+                       relation.identifier)
+        return
 
     # Identity columns are inserted after the query has been run, so skip them here.
     expected_columns = [column["name"] for column in relation.table_design["columns"]
