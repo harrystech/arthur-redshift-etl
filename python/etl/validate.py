@@ -179,7 +179,6 @@ def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_go
 
     # TODO Parallelize but use separate connections per thread
     with closing(etl.db.connection(dsn, autocommit=True)) as conn:
-        TableName.set_external_schemas(etl.db.get_external_schemas(conn))
         for relation in transforms:
             validate_single_transform(conn, relation, keep_going=keep_going)
 

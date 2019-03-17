@@ -411,15 +411,6 @@ def select_schemas(cx, names) -> List[str]:
     return [name for name in names if name in found]
 
 
-def get_external_schemas(cx) -> List[str]:
-    rows = query(cx, """
-        SELECT DISTINCT
-               schemaname
-          FROM pg_catalog.svv_external_tables
-        """)
-    return [row[0] for row in rows]
-
-
 def drop_schema(cx, name):
     execute(cx, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(name))
 
