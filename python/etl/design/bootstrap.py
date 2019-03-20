@@ -71,19 +71,30 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     Retrieve table definition (column names and types).
     """
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
-    stmt = """
-        SELECT a.attname AS "name"
-             , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
-             , a.attnotnull AS "not_null"
-          FROM pg_catalog.pg_attribute AS a
-          JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
-          JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
-          JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-         WHERE a.attnum > 0  -- skip system columns
-           AND NOT a.attisdropped
-           AND ns.nspname LIKE %s
-           AND cls.relname = %s
-         ORDER BY a.attnum"""
+    if getattr(table_name, "is_late_binding_view", False):
+        stmt = """
+            SELECT col_name AS "name"
+                 , col_type AS "sql_type"
+                 , FALSE AS "not_null"
+              FROM pg_get_late_binding_view_cols() cols(
+                       view_schema name, view_name name, col_name name, col_type varchar, col_num int)
+             WHERE view_schema LIKE %s
+               AND view_name = %s
+             ORDER BY col_num"""
+    else:
+        stmt = """
+            SELECT a.attname AS "name"
+                 , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
+                 , a.attnotnull AS "not_null"
+              FROM pg_catalog.pg_attribute AS a
+              JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
+              JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
+              JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
+             WHERE a.attnum > 0  -- skip system columns
+               AND NOT a.attisdropped
+               AND ns.nspname LIKE %s
+               AND cls.relname = %s
+             ORDER BY a.attnum"""
     attributes = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [Attribute(**att) for att in attributes]
 
@@ -459,6 +470,7 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
         create_func = create_table_design_for_ctas
 
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+        TableName.set_external_schemas(etl.db.get_external_schemas(conn))
         for relation in relations:
             with relation.matching_temporary_view(conn) as tmp_view_name:
                 table_design = create_func(conn, tmp_view_name, relation, update)

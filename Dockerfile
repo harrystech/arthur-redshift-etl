@@ -23,23 +23,27 @@ RUN yum install -y \
 
 
 COPY requirements*.txt ./
+
 RUN virtualenv --python=python3 venv && \
     source venv/bin/activate && \
     pip3 install --upgrade pip --disable-pip-version-check && \
     pip3 install --requirement ./requirements-dev.txt
 
 COPY . .
+
 RUN source venv/bin/activate && \
     python3 setup.py develop
 
 # Use the self tests to check if everything was installed properly
 RUN source venv/bin/activate && \
-    run_tests.py
+    run_tests.py && \
+    arthur.py --version >> /tmp/redshift_etl/etc/motd
 
 # Ensure the venv is activated when running interactive shells
 RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
 source /tmp/redshift_etl/etc/arthur_completion.sh\n\
-PATH=$PATH:/tmp/redshift_etl/bin' > /root/.bashrc
+PATH=$PATH:/tmp/redshift_etl/bin\n\
+cat /tmp/redshift_etl/etc/motd' > /root/.bashrc
 
 WORKDIR /data-warehouse
 

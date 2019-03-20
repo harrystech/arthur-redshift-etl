@@ -78,7 +78,7 @@ class TableName:
     False
     """
 
-    __slots__ = ("_schema", "_table", "_is_staging", "_managed_schemas")
+    __slots__ = ("_schema", "_table", "_is_staging", "_managed_schemas", "_external_schemas")
 
     def __init__(self, schema: Optional[str], table: str, is_staging=False) -> None:
         # Concession to subclasses ... schema is optional
@@ -86,6 +86,7 @@ class TableName:
         self._table = table.lower()
         self._is_staging = is_staging
         self._managed_schemas = None  # type: Optional[frozenset]
+        self._external_schemas = None  # type: Optional[frozenset]
 
     @property
     def schema(self):
@@ -119,7 +120,20 @@ class TableName:
 
     @managed_schemas.setter
     def managed_schemas(self, schema_names: List) -> None:
+        # This setter only exists for tests.
         self._managed_schemas = frozenset(schema_names)
+
+    @property
+    def external_schemas(self) -> frozenset:
+        """
+        (Cached) list of external schemas that are never managed by Arthur and may not exist during validation
+        """
+        if self._external_schemas is None:
+            try:
+                self._external_schemas = frozenset(etl.config.get_dw_config().external_schema_names)
+            except AttributeError:
+                raise ETLSystemError("dw_config has not been set!")
+        return self._external_schemas
 
     def to_tuple(self):
         """
@@ -146,6 +160,10 @@ class TableName:
     @property
     def is_managed(self) -> bool:
         return self._schema in self.managed_schemas
+
+    @property
+    def is_external(self) -> bool:
+        return self._schema in self.external_schemas
 
     @classmethod
     def from_identifier(cls, identifier: str):
@@ -281,6 +299,8 @@ class TempTableName(TableName):
         if not table.startswith('#'):
             raise ValueError("name of temporary table must start with '#'")
         super().__init__(None, table)
+        # Enable remembering whether this is a temporary view with late schema binding.
+        self.is_late_binding_view = False
 
     @property
     def schema(self):
