@@ -326,9 +326,9 @@ class RelationDescription:
         temp_view = TempTableName.for_table(self.target_table_name)
 
         with etl.db.log_error():
-            ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}\n""".format(temp_view, self.query_stmt)
+            ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
             if any(dep.is_external for dep in self.dependencies):
-                ddl_stmt += "WITH NO SCHEMA BINDING"
+                ddl_stmt += "\nWITH NO SCHEMA BINDING"
                 temp_view.is_late_binding_view = True
 
             logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)

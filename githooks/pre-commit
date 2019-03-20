@@ -1,13 +1,15 @@
 #!/bin/sh
 
-. $(git --exec-path)/git-sh-setup # for die
+. $(git --exec-path)/git-sh-setup  # for die
+
 tmpdir=$(mktemp -d commitXXXXXX)
 trap "rm -rf $tmpdir" EXIT
+
 git checkout-index --prefix=$tmpdir/ -af
 files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 if [ -n "$files" ]; then
-    echo "Checking for pep8 violations"
-    echo $files | (cd $tmpdir; xargs pycodestyle; exit $?) || die "Blocking commit because of pep8 issues"
+    echo "Checking for PEP8 violations"
+    echo $files | (cd $tmpdir; xargs pycodestyle; exit $?) || die "Blocking commit because of PEP8 issues"
     echo "Checking for outstanding to-dos"
     echo $files | (cd $tmpdir; xargs grep '# XXX'; exit $?) && die "Blocking commit because string '# XXX' detected in patch"
 fi
