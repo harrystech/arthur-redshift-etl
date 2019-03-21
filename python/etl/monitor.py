@@ -768,8 +768,7 @@ def tail_events(relations, start_time, update_interval=None, idle_time_out=None,
         # Keep printing tail of table that accumulates the events.
         if len(events) > n_printed:
             lines = etl.text.format_lines(
-                [[event[header] for header in query.keys] for event in events],
-                header_row=query.keys).split('\n')
+                [[event[header] for header in query.keys] for event in events], header_row=query.keys).split('\n')
             if n_printed:
                 print('\n'.join(lines[n_printed + 2:-1]))  # skip header and final "(x rows)" line
             else:

@@ -82,6 +82,15 @@
             },
             "additionalProperties": false
         },
+        "upstream_external": {
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/definitions/identifier" },
+                "description": { "type": "string" },
+                "external": { "enum": [ true ] }
+            },
+            "additionalProperties": false
+        },
         "cluster_group": {
             "description": "Either the master or core group for an EMR cluster",
             "type": "object",
@@ -165,7 +174,8 @@
             "items": {
                 "oneOf": [
                     { "$ref": "#/definitions/upstream_database" },
-                    { "$ref": "#/definitions/upstream_static" }
+                    { "$ref": "#/definitions/upstream_static" },
+                    { "$ref": "#/definitions/upstream_external" }
                 ]
             },
             "minItems": 1,
@@ -186,9 +196,15 @@
                         "minItems": 3,
                         "maxItems": 3
                     }
+                },
+                "default_att_type": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 3,
+                    "maxItems": 3
                 }
             },
-            "required": [ "as_is_att_type", "cast_needed_att_type" ],
+            "required": [ "as_is_att_type", "cast_needed_att_type", "default_att_type" ],
             "additionalProperties": false
         },
         "data_lake": {

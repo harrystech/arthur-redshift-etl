@@ -31,7 +31,8 @@
             "mode": "a",
             "maxBytes": 5000000,
             "backupCount": 5,
-            "filters": [ "insert_trace_key" ]
+            "filters": [ "insert_trace_key" ],
+            "encoding": "UTF-8"
         },
         "arthur_http": {
             "class": "logging.handlers.RotatingFileHandler",
@@ -82,6 +83,12 @@
         },
         "s3transfer": {
             "qualname": "s3transfer",
+            "handlers": [ "file" ],
+            "level": "INFO",
+            "propagate": 0
+        },
+        "urllib3": {
+            "qualname": "urllib3",
             "handlers": [ "file" ],
             "level": "INFO",
             "propagate": 0

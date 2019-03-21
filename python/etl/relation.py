@@ -14,13 +14,14 @@ The descriptions of relations contain access to:
     "manifests" which are lists of data files for tables backed by upstream sources
 """
 
+import codecs
 import concurrent.futures
 import logging
 import os.path
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from functools import partial
-from itertools import chain
+from itertools import chain, dropwhile
 from operator import attrgetter
 from queue import PriorityQueue
 from typing import Any, Dict, FrozenSet, Optional, Union, List
@@ -182,7 +183,7 @@ class RelationDescription:
                 with closing(etl.s3.get_s3_object_content(self.bucket_name, self.sql_file_name)) as content:
                     query_stmt = content.read().decode()
             else:
-                with open(self.sql_file_name) as f:
+                with codecs.open(self.sql_file_name, encoding='utf-8') as f:
                     query_stmt = f.read()
 
             self._query_stmt = query_stmt.strip().rstrip(';')
@@ -326,6 +327,10 @@ class RelationDescription:
 
         with etl.db.log_error():
             ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
+            if any(dep.is_external for dep in self.dependencies):
+                ddl_stmt += "\nWITH NO SCHEMA BINDING"
+                temp_view.is_late_binding_view = True
+
             logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)
             etl.db.execute(conn, ddl_stmt)
 
@@ -468,9 +473,14 @@ def find_dependents(relations: List[RelationDescription], seed_relations: List[R
 
 
 def select_in_execution_order(relations: List[RelationDescription], selector: TableSelector,
-                              include_dependents=False) -> List[RelationDescription]:
+                              include_dependents=False, continue_from: Optional[str]=None) -> List[RelationDescription]:
     """
-    Return list of relations that were selected and optionally, expand the list by the dependents of the selected ones.
+    Return list of relations that were selected, optionally adding dependents and optionally skipping forward.
+
+    The values supported for skipping forward are:
+      - '*' to start from the first relation (which is the same behavior as passing in None)
+      - ':transformations' to start with the first transformation (i.e. non-source) relation
+      - other value to skip forward to the first matching relation
     """
     logger.info("Pondering execution order of %d relation(s)", len(relations))
     execution_order = order_by_dependencies(relations)
@@ -479,4 +489,19 @@ def select_in_execution_order(relations: List[RelationDescription], selector: Ta
         dependents = find_dependents(execution_order, selected)
         combined = frozenset(relation.identifier for relation in chain(selected, dependents))
         selected = [relation for relation in execution_order if relation.identifier in combined]
+    if not selected:
+        logger.warning("Found no relations matching: %s", selector)
+    elif continue_from == '*':
+        logger.info("Continuing from first (selected) relation since '*' was used")
+    elif continue_from in (":transformations", ":transformation"):
+        selected = list(dropwhile(lambda relation: not relation.is_transformation, selected))
+        if selected:
+            logger.info("Continuing from first transformation in (selected) relations")
+        else:
+            logger.warning("Found no transformations in list of relations to continue from")
+    elif continue_from is not None:
+        logger.info("Trying to fast forward to '%s'", continue_from)
+        selected = list(dropwhile(lambda relation: relation.identifier != continue_from, selected))
+        if not selected:
+            logger.warning("Found no relation to continue from while matching '%s'", continue_from)
     return selected

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 PROJ_NAME="redshift_etl"
-PROJ_PACKAGES="postgresql95-devel python35 python35-pip python35-devel aws-cli gcc libyaml-devel tmux jq"
+PROJ_PACKAGES="aws-cli gcc jq libyaml-devel postgresql95-devel python35 python35-devel python35-pip tmux"
 
 PROJ_TEMP="/tmp/$PROJ_NAME"
 
@@ -64,7 +64,7 @@ cd "$PROJ_TEMP"
 # Download code to all nodes, this includes Python code and its requirements.txt
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
 aws s3 cp --only-show-errors --recursive \
-    --exclude '*' --include ping_cronut.sh --include bootstrap.sh --include sync_env.sh \
+    --exclude '*' --include bootstrap.sh --include ping_cronut.sh --include sync_env.sh \
     "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh
 

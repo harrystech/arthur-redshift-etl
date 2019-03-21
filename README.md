@@ -96,7 +96,7 @@ Copy the ETL code (including bootstrap scripts and configuration):
 ```shell
 export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentials>"
 # export DATA_WAREHOUSE_CONFIG="\cd ./config && \pwd`
-bin/upload_env.sh "<your S3 bucket>" $USER
+bin/upload_env.sh "<your S3 bucket>"
 ```
 
 ### Starting a cluster and submitting commands
@@ -201,15 +201,18 @@ arthur.py show_downstream_dependents -q | grep 'kind=DATA' | tee sources.txt
 arthur.py ls --remote @sources.txt
 ```
 
-The above also works when we're just interested in transformations. This can
-save time while iterating on transformations since the sources won't be reloaded.
+Note that you should use the special value `:transformations` when you're interested
+to work with transformations.
 
 Example:
 ```shell
-arthur.py show_downstream_dependents -q | grep -v 'kind=DATA' | tee transformations.txt
+arthur.py show_downstream_dependents -q --continue-from=:transformations | tee transformations.txt
 
 arthur.py sync @transformations.txt
 arthur.py upgrade --only @transformations.txt
+
+# If you don't make changes to transformations.txt, then you might as well use
+arthur.py upgrade --continue-from=:transformations
 ```
 
 ### Working with a table and everything feeding it
@@ -267,9 +270,9 @@ Pull requests are welcome!
 Development takes place on the `next` branch. So go ahead, and create a branch off `next` and work
 on the next ETL feature.
 
-* Please run code through [pep8](https://www.python.org/dev/peps/pep-0008/) (see [local config](.pep8)):
+* Please run code through [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg)):
 ```shell
-pep8 python
+pycodestyle python
 ```
 
 * Even better, set up the git pre-commit hook to prevent you from accidentally breaking convention

@@ -46,7 +46,6 @@ import queue
 from contextlib import closing
 from datetime import datetime, timedelta
 from calendar import timegm
-from itertools import dropwhile
 from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
@@ -328,7 +327,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if reader_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of select access on {:x} to {}".format(
-                            relation, join_with_quotes(reader_groups)))
+                relation, join_with_quotes(reader_groups)))
         else:
             logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
             for reader in reader_groups:
@@ -337,7 +336,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     if writer_groups:
         if dry_run:
             logger.info("Dry-run: Skipping granting of write access on {:x} to {}".format(
-                            relation, join_with_quotes(writer_groups)))
+                relation, join_with_quotes(writer_groups)))
         else:
             logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
             for writer in writer_groups:
@@ -363,10 +362,10 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     if not relation.has_manifest:
         if dry_run:
             logger.info("Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
-                            relation.identifier, s3_uri))
+                relation.identifier, s3_uri))
         else:
             raise MissingManifestError("relation '{}' is missing manifest file '{}'".format(
-                                           relation.identifier, s3_uri))
+                relation.identifier, s3_uri))
     copy_func = partial(etl.design.redshift.copy_from_uri,
                         conn, relation.target_table_name, relation.unquoted_columns, s3_uri, aws_iam_role,
                         need_compupdate=relation.is_missing_encoding, dry_run=dry_run)
@@ -508,17 +507,19 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
         statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
         if dry_run:
             logger.info("Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                constraint_type, relation, join_with_quotes(columns)))
             etl.db.skip_query(conn, statement)
         else:
             logger.info("Checking {} constraint in {:x} on column(s): {}".format(
-                            constraint_type, relation, join_with_quotes(columns)))
+                constraint_type, relation, join_with_quotes(columns)))
             results = etl.db.query(conn, statement)
             if results:
                 if len(results) == limit:
-                    logger.error("Constraint check failed on at least %d row(s)", len(results))
+                    logger.error("Constraint check for {:x} failed on at least {:d} row(s)".format(
+                        relation, len(results)))
                 else:
-                    logger.error("Constraint check failed on %d row(s)", len(results))
+                    logger.error("Constraint check for {:x} failed on {:d} row(s)".format(
+                        relation, len(results)))
                 raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
@@ -748,7 +749,7 @@ def create_source_tables_when_ready(relations: List[LoadableRelation], max_concu
                 build_one_relation_using_pool(pool, item, dry_run=dry_run)
             except (RelationConstructionError, RelationDataError):
                 item.mark_failure(relations)
-            except:
+            except Exception:
                 logger.error("Loader: Uncaught exception in load worker while loading '%s':",
                              item.identifier, exc_info=True)
                 uncaught_load_worker_exception.set()
@@ -941,7 +942,6 @@ def load_data_warehouse(all_relations: List[RelationDescription], selector: Tabl
     """
     selected_relations = etl.relation.select_in_execution_order(all_relations, selector, include_dependents=True)
     if not selected_relations:
-        logger.warning("Found no relations matching: %s", selector)
         return
 
     relations = LoadableRelation.from_descriptions(selected_relations, "load",
@@ -988,18 +988,10 @@ def upgrade_data_warehouse(all_relations: List[RelationDescription], selector: T
             3.2 Verify constraints
     """
     selected_relations = etl.relation.select_in_execution_order(all_relations, selector,
-                                                                include_dependents=not only_selected)
+                                                                include_dependents=not only_selected,
+                                                                continue_from=continue_from)
     if not selected_relations:
-        logger.warning("Found no relations matching: %s", selector)
         return
-    if continue_from == '*':
-        logger.info("Continuing from first (selected) relation since '*' was selected")
-    elif continue_from is not None:
-        logger.info("Trying to fast forward to '%s'", continue_from)
-        selected_relations = list(dropwhile(lambda relation: relation.identifier != continue_from, selected_relations))
-        if not selected_relations:
-            logger.warning("Found no relations named '%s'", continue_from)
-            return
 
     relations = LoadableRelation.from_descriptions(selected_relations, "upgrade",
                                                    skip_copy=skip_copy, use_staging=use_staging)
@@ -1027,6 +1019,7 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
     """
     selected_relations = etl.relation.select_in_execution_order(all_relations, selector,
                                                                 include_dependents=not only_selected)
+
     tables = [relation for relation in selected_relations if not relation.is_view_relation]
     if not tables:
         logger.warning("Found no tables matching: %s", selector)
@@ -1064,31 +1057,25 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    complete_sequence = etl.relation.select_in_execution_order(relations, selector, include_dependents=True)
-    if len(complete_sequence) == 0:
-        logger.warning("Found no matching relations for: %s", selector)
+    selected_relations = etl.relation.select_in_execution_order(relations, selector,
+                                                                include_dependents=True, continue_from=continue_from)
+    if not selected_relations:
         return
-    if continue_from is not None:
-        logger.info("Trying to fast forward to '%s'", continue_from)
-        complete_sequence = list(dropwhile(lambda relation: relation.identifier != continue_from, complete_sequence))
-        if len(complete_sequence) == 0:
-            logger.warning("Found no relations matching relation '%s'", continue_from)
-            return
-    selected_relations = etl.relation.find_matches(complete_sequence, selector)
 
-    selected = frozenset(relation.identifier for relation in selected_relations)
+    directly_selected_relations = etl.relation.find_matches(selected_relations, selector)
+    selected = frozenset(relation.identifier for relation in directly_selected_relations)
     immediate = set(selected)
-    for relation in complete_sequence:
+    for relation in selected_relations:
         if relation.is_view_relation and any(dep.identifier in immediate for dep in relation.dependencies):
             immediate.add(relation.identifier)
     immediate -= selected
     logger.info("Execution order includes %d selected, %d immediate, and %d other downstream relation(s)",
-                len(selected), len(immediate), len(complete_sequence) - len(selected) - len(immediate))
+                len(selected), len(immediate), len(selected_relations) - len(selected) - len(immediate))
 
-    max_len = max(len(relation.identifier) for relation in complete_sequence)
+    max_len = max(len(relation.identifier) for relation in selected_relations)
     line_template = ("{relation.identifier:{width}s}"
                      " # index={index:4d}, flag={flag:.9s}, kind={relation.kind}, is_required={relation.is_required}")
-    for i, relation in enumerate(complete_sequence):
+    for i, relation in enumerate(selected_relations):
         if relation.identifier in selected:
             flag = "selected"
         elif relation.identifier in immediate:

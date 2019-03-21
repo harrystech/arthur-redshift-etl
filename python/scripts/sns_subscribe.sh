@@ -2,6 +2,7 @@
 
 # Create a topic (if necessary) and then subscribe the user
 
+USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 set -e -u

@@ -4,8 +4,6 @@ DatabaseExtractors query upstream databases and save their data on S3 before wri
 from contextlib import closing
 from typing import Dict, List, Optional
 
-from psycopg2.extensions import connection  # only for type annotation
-
 import etl.db
 from etl.extract.extractor import Extractor
 from etl.config.dw import DataWarehouseSchema

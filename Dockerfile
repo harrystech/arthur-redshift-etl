@@ -8,35 +8,42 @@ FROM amazonlinux:2017.03
 WORKDIR /tmp/redshift_etl
 
 RUN yum install -y \
-        postgresql95-devel \
-        python35 \
-        python35-pip \
-        python35-devel \
         aws-cli \
         gcc \
+        jq \
         libyaml-devel \
+        openssh-clients \
+        postgresql95-devel \
+        python35 \
+        python35-devel \
+        python35-pip \
         tmux \
-        jq && \
+    && \
     pip-3.5 install --upgrade --disable-pip-version-check virtualenv
 
 
-COPY requirements.txt ./
-COPY requirements-dev.txt ./
+COPY requirements*.txt ./
+
 RUN virtualenv --python=python3 venv && \
     source venv/bin/activate && \
     pip3 install --upgrade pip --disable-pip-version-check && \
     pip3 install --requirement ./requirements-dev.txt
 
 COPY . .
+
 RUN source venv/bin/activate && \
     python3 setup.py develop
 
 # Use the self tests to check if everything was installed properly
 RUN source venv/bin/activate && \
-    run_tests.py
+    run_tests.py && \
+    arthur.py --version >> /tmp/redshift_etl/etc/motd
 
 # Ensure the venv is activated when running interactive shells
-RUN echo "source /tmp/redshift_etl/venv/bin/activate" > /root/.bashrc
+RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
+source /tmp/redshift_etl/etc/arthur_completion.sh\n\
+PATH=$PATH:/tmp/redshift_etl/bin\n\
+cat /tmp/redshift_etl/etc/motd' > /root/.bashrc
 
 WORKDIR /data-warehouse
 

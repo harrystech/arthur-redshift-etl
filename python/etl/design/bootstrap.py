@@ -71,19 +71,30 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     Retrieve table definition (column names and types).
     """
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
-    stmt = """
-        SELECT a.attname AS "name"
-             , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
-             , a.attnotnull AS "not_null"
-          FROM pg_catalog.pg_attribute AS a
-          JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
-          JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
-          JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-         WHERE a.attnum > 0  -- skip system columns
-           AND NOT a.attisdropped
-           AND ns.nspname LIKE %s
-           AND cls.relname = %s
-         ORDER BY a.attnum"""
+    if getattr(table_name, "is_late_binding_view", False):
+        stmt = """
+            SELECT col_name AS "name"
+                 , col_type AS "sql_type"
+                 , FALSE AS "not_null"
+              FROM pg_get_late_binding_view_cols() cols(
+                       view_schema name, view_name name, col_name name, col_type varchar, col_num int)
+             WHERE view_schema LIKE %s
+               AND view_name = %s
+             ORDER BY col_num"""
+    else:
+        stmt = """
+            SELECT a.attname AS "name"
+                 , pg_catalog.format_type(t.oid, a.atttypmod) AS "sql_type"
+                 , a.attnotnull AS "not_null"
+              FROM pg_catalog.pg_attribute AS a
+              JOIN pg_catalog.pg_class AS cls ON a.attrelid = cls.oid
+              JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
+              JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
+             WHERE a.attnum > 0  -- skip system columns
+               AND NOT a.attisdropped
+               AND ns.nspname LIKE %s
+               AND cls.relname = %s
+             ORDER BY a.attnum"""
     attributes = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [Attribute(**att) for att in attributes]
 
@@ -92,8 +103,8 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     """
     Retrieve table constraints from database by looking up indices.
 
-    We will only check primary key constraints and unique constraints. Also, if constraints
-    use functions we'll probably miss them.
+    We will only check primary key constraints and unique constraints. If constraints have predicates
+    (like a WHERE clause) or use functions (like COALESCE(column, value), we'll skip them.
 
     (To recreate the constraint, we could use `pg_get_indexdef`.)
     """
@@ -114,6 +125,8 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           JOIN pg_catalog.pg_index AS i ON cls.oid = i.indrelid
           JOIN pg_catalog.pg_class AS ic ON i.indexrelid = ic.oid
          WHERE i.indisunique
+           AND i.indpred IS NULL
+           AND i.indexprs IS NULL
            AND ns.nspname LIKE %s
            AND cls.relname = %s
          ORDER BY "constraint_type", ic.relname"""
@@ -173,11 +186,13 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     type_maps = etl.config.get_dw_config().type_maps
     as_is_attribute_type = type_maps["as_is_att_type"]  # source tables and CTAS
     cast_needed_attribute_type = type_maps["cast_needed_att_type"]  # only source tables
+    default_attribute_type = type_maps["default_att_type"]  # default (fallback)
 
     source_attributes = fetch_attributes(conn, source_table_name)
     target_columns = [ColumnDefinition.from_attribute(attribute,
                                                       as_is_attribute_type,
-                                                      cast_needed_attribute_type) for attribute in source_attributes]
+                                                      cast_needed_attribute_type,
+                                                      default_attribute_type) for attribute in source_attributes]
     table_design = {
         "name": "%s" % target_table_name.identifier,
         "description": "Automatically generated on {0:%Y-%m-%d} at {0:%H:%M:%S}".format(datetime.utcnow()),
@@ -262,12 +277,12 @@ def update_column_definition(new_column: dict, old_column: dict):
         if old_sql_type == "bigint" and new_sql_type == "integer":
             new_column["sql_type"] = "bigint"
             new_column["type"] = "long"
-        varchar_re = re.compile("(?:varchar|character varying)\((?P<size>\d+)\)")
+        varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)")
         old_text = varchar_re.search(old_sql_type)
         new_text = varchar_re.search(new_sql_type)
         if old_text and new_text:
             new_column["sql_type"] = "character varying({})".format(old_text.group('size'))
-        numeric_re = re.compile("(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
+        numeric_re = re.compile(r"(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
         old_numeric = numeric_re.search(old_sql_type)
         new_numeric = numeric_re.search(new_sql_type)
         if old_numeric and new_numeric:
@@ -455,6 +470,7 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
         create_func = create_table_design_for_ctas
 
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+        TableName.set_external_schemas(etl.db.get_external_schemas(conn))
         for relation in relations:
             with relation.matching_temporary_view(conn) as tmp_view_name:
                 table_design = create_func(conn, tmp_view_name, relation, update)

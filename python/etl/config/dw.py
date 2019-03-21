@@ -126,7 +126,7 @@ class DataWarehouseSchema:
 
 class DataWarehouseConfig:
     """
-    Pretty face to the object from the settings files.
+    Pretty interface to create objects from the settings files.
     """
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
@@ -147,9 +147,10 @@ class DataWarehouseConfig:
         # Schemas (upstream sources followed by transformations, keeps order of settings file)
         self.schemas = [
             DataWarehouseSchema(
-                dict(info, owner=schema_owner_map.get(info['name'], root.name)),
+                dict(info, owner=schema_owner_map.get(info["name"], root.name)),
                 self._etl_access)
             for info in schema_settings
+            if not info.get("external", False)
         ]
         self._schema_lookup = {schema.name: schema for schema in self.schemas}
 
@@ -168,6 +169,9 @@ class DataWarehouseConfig:
 
         # Mapping SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
+
+        # External schemas are not only un-managed by Arthur but they also require late-binding views
+        self.external_schema_names = [info["name"] for info in schema_settings if info.get("external", False)]
 
     def _check_access_to_cluster(self):
         """

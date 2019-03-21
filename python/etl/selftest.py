@@ -13,6 +13,8 @@ import sys
 import unittest
 from typing import Optional
 
+import pycodestyle
+
 
 # Skip etl.commands to avoid circular dependency
 import etl.config
@@ -41,6 +43,19 @@ import etl.validate
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+
+def run_pep8(module_: Optional[str]=None, log_level: str= "INFO") -> None:
+    print("Running pep8...")
+    if module_ is None:
+        module_ = __name__
+    quiet = log_level not in ("DEBUG", "INFO")
+    style_guide = pycodestyle.StyleGuide(parse_argv=False, config_file="setup.cfg", quiet=quiet)
+    report = style_guide.check_files(['python'])
+    if report.total_errors > 0:
+        raise etl.errors.SelfTestError("Unsuccessful (warning=%d, errors=%d)" %
+                                       (report.get_count('W'), report.get_count('E')))
+    print("OK")
 
 
 def load_tests(loader, tests, pattern):
@@ -92,8 +107,13 @@ def run_type_checker() -> None:
 
 
 def run_tests() -> None:
-    run_doctest()
-    run_type_checker()
+    try:
+        run_pep8()
+        run_doctest()
+        run_type_checker()
+    except Exception as exc:
+        print(exc)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
