@@ -602,7 +602,7 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if relation.is_view_relation:
             pass
         elif relation.skip_copy:
-            logger.info("Skipping loading data into {:x}".format(relation))
+            logger.info("Skipping loading data into {:x} (skip copy is active)".format(relation))
         elif relation.failed:
             logger.info("Bypassing already failed relation {:x}".format(relation))
         else:
