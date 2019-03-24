@@ -46,7 +46,7 @@ logger.addHandler(logging.NullHandler())
 
 
 def run_pep8(module_: Optional[str]=None, log_level: str= "INFO") -> None:
-    print("Running pep8...")
+    print("Running PEP8 check...")
     if module_ is None:
         module_ = __name__
     quiet = log_level not in ("DEBUG", "INFO")
