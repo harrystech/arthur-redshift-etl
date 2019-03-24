@@ -5,7 +5,7 @@
         # retry the extract at most this many times. Zero disables retries.
         "extract_retries": 1,
         "copy_data_retries": 3,
-        "load_data_retries": 1
+        "insert_data_retries": 1
     },
     # Target (Redshift) cluster
     "data_warehouse": {

@@ -396,7 +396,7 @@ def insert_from_query(conn: connection, relation: LoadableRelation,
     if relation.in_transaction:
         insert_func()
     else:
-        retry(etl.config.get_config_int("arthur_settings.load_data_retries"), insert_func, logger)
+        retry(etl.config.get_config_int("arthur_settings.insert_data_retries"), insert_func, logger)
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:

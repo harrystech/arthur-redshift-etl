@@ -126,7 +126,7 @@
                     "type": "integer",
                     "minimum": 0
                 },
-                "load_data_retries": {
+                "insert_data_retries": {
                     "description": "If an INSERT command fails to load data with an error pointing to S3 fetch, retry the INSERT at most this many times. Zero disables retries",
                     "type": "integer",
                     "minimum": 0
