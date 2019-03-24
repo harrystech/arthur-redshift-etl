@@ -88,7 +88,7 @@ fi
 #   - ARTHUR_DEFAULT_PREFIX to pick the default "environment" (same as S3 prefix)
 #   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
 set -x
-docker run --rm -it \
+docker run --rm -it --publish 8086:8086/tcp \
     --volume "$data_warehouse_path":/data-warehouse \
     --volume ~/.aws:/root/.aws \
     --volume ~/.ssh:/root/.ssh \
