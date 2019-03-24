@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
+START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+USER="${USER-nobody}"
+DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
+
+if [[ $# -gt 2 || "$1" = "-h" ]]; then
 
     cat <<EOF
 
 Single-shot upgrade pipeline. This will run without staging schemas and without alerting.
 
-Usage: `basename $0` <environment> [<continue-from>]
+Usage: `basename $0` [<environment> [<continue-from>]]
 
+The environment defaults to \"$DEFAULT_PREFIX\".
 The upgrade will start from the "continue-from" relation if specified.
 
 EOF
@@ -26,10 +31,10 @@ if [[ ! -d "$DEFAULT_CONFIG" ]]; then
 fi
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT="$1"
-CONTINUE_FROM_RELATION="${2:-*}"
+PROJ_ENVIRONMENT="${1:-$DEFAULT_PREFIX}"
 
-START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
+CONTINUE_FROM_RELATION="${2:-*}"
+START_DATE_TIME="$START_NOW"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"

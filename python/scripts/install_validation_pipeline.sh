@@ -5,18 +5,26 @@ USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 if [[ $# -gt 3 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` [<environment> [<startdatetime> [<occurrences>]]]"
-    echo "      The environment defaults to \"$DEFAULT_PREFIX\"."
-    echo "      Start time should take the ISO8601 format, defaults to \"$START_NOW\" (now)."
-    echo "      The number of occurrences defaults to 1."
+
+    cat <<EOF
+
+Usage: `basename $0` [<environment> [<startdatetime> [<occurrences>]]]
+
+The environment defaults to \"$DEFAULT_PREFIX\".
+Start time should take the ISO8601 format, defaults to \"$START_NOW\" (now).
+The number of occurrences defaults to 1.
+
+EOF
     exit 0
 fi
 
 set -e -u
 
 # Verify that there is a local configuration directory
-if [[ ! -d ./config ]]; then
-    echo "Failed to find './config' directory. Make sure you are in the directory with your data warehouse setup."
+DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
+if [[ ! -d "$DEFAULT_CONFIG" ]]; then
+    echo "Failed to find \'$DEFAULT_CONFIG\' directory."
+    echo "Make sure you are in the directory with your data warehouse setup or have DATA_WAREHOUSE_CONFIG set."
     exit 1
 fi
 
@@ -46,11 +54,12 @@ elif [[ -n "$GIT_BRANCH" ]]; then
 else
     PIPELINE_NAME="Validation Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 fi
+
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
-PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER}_$$.json"
-PIPELINE_ID_FILE="/tmp/pipeline_id_${USER}_$$.json"
+PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
+PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" validation_pipeline > "$PIPELINE_DEFINITION_FILE"
@@ -70,7 +79,7 @@ if [[ -z "$PIPELINE_ID" ]]; then
 fi
 
 aws datapipeline put-pipeline-definition \
-    --pipeline-definition "file://${PIPELINE_DEFINITION_FILE}" \
+    --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
