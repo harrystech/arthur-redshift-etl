@@ -1,9 +1,11 @@
 {
     # General settings controlling how Arthur itself behaves
     "arthur_settings": {
-        # If an extract from an upstream source or copy from S3 files fails due to some transient error, retry the extract at most this many times. Zero disables retries
+        # If an extract from an upstream source or copy from S3 files fails due to some transient error,
+        # retry the extract at most this many times. Zero disables retries.
         "extract_retries": 1,
-        "copy_data_retries": 3
+        "copy_data_retries": 3,
+        "load_data_retries": 1
     },
     # Target (Redshift) cluster
     "data_warehouse": {

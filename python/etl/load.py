@@ -381,23 +381,22 @@ def insert_from_query(conn: connection, relation: LoadableRelation,
                       query_stmt: Optional[str]=None, dry_run=False) -> None:
     """
     Load data into table from its query (aka materializing a view).
+
     The table name, query, and columns may be overridden from their defaults, which are the values from the relation.
-    (If the table name is specified, we'll assume that it's a temp table for logging.)
     """
     if table_name is None:
         table_name = relation.target_table_name
-        message = "Loading data into {:x} from query".format(relation)
-    else:
-        message = "Loading data into temporary table for {:x} from query".format(relation)
     if columns is None:
         columns = relation.unquoted_columns
     if query_stmt is None:
         query_stmt = relation.query_stmt
 
-    stmt = """INSERT INTO {table} (\n  {columns}\n)""".format(table=table_name, columns=join_column_list(columns))
-    stmt += "\n" + query_stmt
+    insert_func = partial(etl.design.redshift.insert_from_query, conn, table_name, columns, query_stmt, dry_run=dry_run)
 
-    etl.db.run(conn, message, stmt, dry_run=dry_run)
+    if relation.in_transaction:
+        insert_func()
+    else:
+        retry(etl.config.get_config_int("arthur_settings.load_data_retries"), insert_func, logger)
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
