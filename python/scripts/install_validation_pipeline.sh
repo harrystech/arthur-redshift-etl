@@ -65,7 +65,7 @@ trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" validation_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
-    --unique-id validation_pipeline \
+    --unique-id validation-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
@@ -86,3 +86,7 @@ aws datapipeline put-pipeline-definition \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
+
+set +x
+echo "You can check the status of this validation pipeline using:"
+echo "  arthur.py show_pipelines '$PIPELINE_ID'"
