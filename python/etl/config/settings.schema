@@ -125,6 +125,11 @@
                     "description": "If a COPY command fails with a database internal error (which we optimistically hope are transient), retry the COPY at most this many times. Zero disables retries",
                     "type": "integer",
                     "minimum": 0
+                },
+                "insert_data_retries": {
+                    "description": "If an INSERT command fails to load data with an error pointing to S3 fetch, retry the INSERT at most this many times. Zero disables retries",
+                    "type": "integer",
+                    "minimum": 0
                 }
             },
             "required": [ "extract_retries", "copy_data_retries" ],

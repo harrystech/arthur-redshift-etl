@@ -232,6 +232,7 @@ class RetriesExhaustedError(ETLRuntimeError):
 def retry(max_retries: int, func: partial, logger):
     """
     Retry a function a maximum number of times and return its results.
+
     The function should be a functools.partial called with no arguments.
     Sleeps for 5 ^ attempt_number seconds if there are remaining retry attempts.
 
@@ -244,14 +245,14 @@ def retry(max_retries: int, func: partial, logger):
     for attempt in range(max_retries + 1):
         try:
             successful_result = func()
-        except TransientETLError as e:
+        except TransientETLError as exc:
             # Only retry transient errors
-            failure_reason = e
+            failure_reason = exc
             remaining_attempts = max_retries - attempt
             if remaining_attempts:
                 sleep_time = 5 ** (attempt + 1)
-                logger.warning("Encountered the following error (retrying %s more times after %s second sleep): %s",
-                               remaining_attempts, sleep_time, str(e))
+                logger.warning("Encountered the following error (retrying %s more time(s) after %s second sleep): %s",
+                               remaining_attempts, sleep_time, str(exc))
                 time.sleep(sleep_time)
             continue
         except Exception:
@@ -260,6 +261,6 @@ def retry(max_retries: int, func: partial, logger):
         else:
             break
     else:
-        raise RetriesExhaustedError("reached max number of retries (={:d})".format(max_retries)) from failure_reason
+        raise RetriesExhaustedError("reached max number of retries ({:d})".format(max_retries)) from failure_reason
 
     return successful_result

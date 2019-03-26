@@ -203,3 +203,31 @@ def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str
 
 # Find files that were just copied in:
 # select query, trim(filename) as file, curtime as updated from stl_load_commits where query = pg_last_copy_id();
+
+
+def insert_from_query(conn: connection, table_name: TableName, column_list: List[str], query_stmt: str,
+                      dry_run=False) -> None:
+    """
+    Load data into table in the data warehouse using the INSERT INTO command.
+    """
+    stmt = """
+        INSERT INTO {table} (
+            {columns}
+        )
+        {query}
+        """.format(table=table_name, columns=join_column_list(column_list), query=query_stmt)
+
+    if dry_run:
+        logger.info("Dry-run: Skipping inserting data into '%s' from query", table_name.identifier)
+        etl.db.skip_query(conn, stmt)
+    else:
+        logger.info("Inserting data into '%s' from query", table_name.identifier)
+        try:
+            etl.db.execute(conn, stmt)
+        except psycopg2.InternalError as exc:
+            if "S3 Query Exception (Fetch)" in exc.pgerror:
+                # If this error was caused by a table in S3 (see Redshift Spectrum) then we might be able to try again.
+                raise TransientETLError(exc) from exc
+            else:
+                logger.warning("SQL Error is not S3 Query Exception, cannot retry: %s", exc.pgerror)
+                raise
