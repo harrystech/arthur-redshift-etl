@@ -96,7 +96,8 @@ def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, aut
     """
     dsn_values = _dsn_connection_values(dsn_dict, application_name)
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
-    cx = psycopg2.connect(**dsn_values)
+    dsn_values.update(keepalives=1, keepalives_idle=30)
+    cx = psycopg2.connect(**dsn_values, )
     cx.set_session(autocommit=autocommit, readonly=readonly)
     logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
                  cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
