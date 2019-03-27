@@ -36,10 +36,10 @@ Here are some frequently-used commands to work on a table design
   arthur.py help load
 
 
-Most likely command to run if a production pipeline failed
-==========================================================
+Most likely command to run if a pipeline failed
+===============================================
 
-  install_pizza_load_pipeline.sh ":transformations"
+  install_pizza_load_pipeline.sh development ":transformations"
 
 
 Installed:

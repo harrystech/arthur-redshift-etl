@@ -47,6 +47,9 @@ cat /tmp/redshift_etl/etc/motd' > /root/.bashrc
 
 WORKDIR /data-warehouse
 
+# Whenever there is an ETL running, it offerst progress information on port 8086.
+EXPOSE 8086
+
 # From here, bind-mount your data warehouse code directory to /data-warehouse.
 # All of the normal Arthur configuration for accessing and managing the data
 # warehouse is assumed to have already been set up in that directory.
