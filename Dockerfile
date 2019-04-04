@@ -18,6 +18,7 @@ RUN yum install -y \
         python35-devel \
         python35-pip \
         tmux \
+        vim-minimal \
     && \
     pip-3.5 install --upgrade --disable-pip-version-check virtualenv
 
@@ -32,12 +33,12 @@ RUN virtualenv --python=python3 venv && \
 COPY . .
 
 RUN source venv/bin/activate && \
-    python3 setup.py develop
+    python3 setup.py develop && \
+    arthur.py --version >> /tmp/redshift_etl/etc/motd
 
 # Use the self tests to check if everything was installed properly
 RUN source venv/bin/activate && \
-    run_tests.py && \
-    arthur.py --version >> /tmp/redshift_etl/etc/motd
+    run_tests.py
 
 # Ensure the venv is activated when running interactive shells
 RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
