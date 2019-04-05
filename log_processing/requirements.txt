@@ -1,7 +1,0 @@
-boto3~=1.4
-botocore~=1.5
-certifi~=2017.4
-elasticsearch~=5.4
-requests~=2.18
-requests-aws4auth~=0.9
-pep8
