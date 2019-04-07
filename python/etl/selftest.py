@@ -46,7 +46,7 @@ logger.addHandler(logging.NullHandler())
 
 
 def run_pep8(module_: Optional[str]=None, log_level: str= "INFO") -> None:
-    print("Running PEP8 check...")
+    print("Running PEP8 check...", flush=True)
     if module_ is None:
         module_ = __name__
     quiet = log_level not in ("DEBUG", "INFO")
@@ -75,10 +75,12 @@ def run_doctest(module_: Optional[str]=None, log_level: str= "INFO") -> None:
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
-    print("Running doctests...")
+    print("Running doctests...", flush=True)
     if module_ is None:
         module_ = __name__
-    test_program = unittest.main(module=module_, verbosity=verbosity, exit=False, argv=sys.argv[:2])
+    test_runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=verbosity)
+    test_program = unittest.main(module=module_, exit=False, testRunner=test_runner, verbosity=verbosity,
+                                 argv=sys.argv[:2])
     test_result = test_program.result
     if not test_result.wasSuccessful():
         raise etl.errors.SelfTestError("Unsuccessful (run=%d, errors=%d, failures=%d)" %
@@ -86,15 +88,17 @@ def run_doctest(module_: Optional[str]=None, log_level: str= "INFO") -> None:
 
 
 def run_type_checker() -> None:
-    print("Running type checker...")
+    print("Running type checker...", flush=True)
     if not os.path.isdir("python"):
         raise etl.errors.ETLRuntimeError("Cannot find source directory: 'python'")
 
     # We wait with this import so that commands can be invoked in an environment where mypy is not installed.
     import mypy.api
-    normal_report, error_report, exit_status = mypy.api.run(["python",  # Should match setup.py's package_dir
-                                                             "--strict-optional",
-                                                             "--ignore-missing-imports"])
+    normal_report, error_report, exit_status = mypy.api.run([
+        "python",  # Should match setup.py's package_dir
+        "--strict-optional",
+        "--ignore-missing-imports",
+    ])
     if normal_report:
         print("Type checking report:\n")
         print(normal_report)
