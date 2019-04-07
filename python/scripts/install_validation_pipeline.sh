@@ -10,8 +10,8 @@ if [[ $# -gt 3 || "$1" = "-h" ]]; then
 
 Usage: `basename $0` [<environment> [<startdatetime> [<occurrences>]]]
 
-The environment defaults to \"$DEFAULT_PREFIX\".
-Start time should take the ISO8601 format, defaults to \"$START_NOW\" (now).
+The environment defaults to "$DEFAULT_PREFIX".
+Start time should take the ISO8601 format, defaults to "$START_NOW" (now).
 The number of occurrences defaults to 1.
 
 EOF

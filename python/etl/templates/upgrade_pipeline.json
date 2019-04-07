@@ -91,7 +91,7 @@
             "name": "Arthur Upgrade (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --continue-from '#{mySelection}' --prolix --prefix ${object_store.s3.prefix}",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --prolix --prefix ${object_store.s3.prefix} #{myUpgradeArguments}",
             "dependsOn": { "ref": "Bootstrap" }
         }
     ],
@@ -105,16 +105,16 @@
             "helpText": "When should the pipeline start?"
         },
         {
-            "id": "mySelection",
+            "id": "myUpgradeArguments",
             "type": "String",
             "optional": "false",
-            "description": "Relation name to start upgrade at (or use '*' for all, ':transformations' to skip load",
+            "description": "Arguments for the upgrade command, e.g. relations. Defaults to '--continue-from :transformations'",
             "watermark": "*",
             "helpText": "Which table should we continue from?"
         }
     ],
     "values": {
         "myStartDateTime": "2525-01-01T00:00:00",
-        "mySelection": "*"
+        "myUpgradeArguments": "--continue-from :transformations"
     }
 }

@@ -4,16 +4,18 @@ START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
 USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
-if [[ $# -gt 2 || "$1" = "-h" ]]; then
+if [[ $# -lt 1 || "$1" = "-h" ]]; then
 
     cat <<EOF
 
-Single-shot upgrade pipeline. This will run without staging schemas and without alerting.
+Single-shot upgrade pipeline. You get to pick the arguments to 'upgrade' command.
 
-Usage: `basename $0` [<environment> [<continue-from>]]
+Usage: `basename $0` upgrade_arg [upgrade_arg ...]
 
-The environment defaults to \"$DEFAULT_PREFIX\".
-The upgrade will start from the "continue-from" relation if specified.
+The remaining arguments will be passed to 'upgrade'.
+The environment defaults to "$DEFAULT_PREFIX".
+
+Example: `basename $0` --continue-from :transformations
 
 EOF
     exit 0
@@ -31,9 +33,10 @@ if [[ ! -d "$DEFAULT_CONFIG" ]]; then
 fi
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT="${1:-$DEFAULT_PREFIX}"
+PROJ_ENVIRONMENT="$DEFAULT_PREFIX"
 
-CONTINUE_FROM_RELATION="${2:-*}"
+UPGRADE_ARGUMENTS="$@"
+
 START_DATE_TIME="$START_NOW"
 
 # Verify that this bucket/environment pair is set up on s3
@@ -73,7 +76,7 @@ aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myStartDateTime="$START_DATE_TIME" \
-        mySelection="$CONTINUE_FROM_RELATION" \
+        myUpgradeArguments="$UPGRADE_ARGUMENTS" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
