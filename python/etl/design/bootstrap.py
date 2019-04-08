@@ -189,6 +189,8 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     default_attribute_type = type_maps["default_att_type"]  # default (fallback)
 
     source_attributes = fetch_attributes(conn, source_table_name)
+    if not source_attributes:
+        raise RuntimeError("failed to find attributes (check your query)")
     target_columns = [ColumnDefinition.from_attribute(attribute,
                                                       as_is_attribute_type,
                                                       cast_needed_attribute_type,
