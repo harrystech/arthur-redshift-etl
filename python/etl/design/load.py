@@ -33,14 +33,14 @@ def load_table_design(stream, table_name):
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError(exc) from exc
 
-    # BEGIN -- Support of DEPRECATED format of specifying constraints
-    # This rewrites the format from v0.23.1 and earlier to v0.24.0 -- I would prefer to drop this soon.
     etl.config.validate_with_schema(table_design, "table_design.schema")
+
+    # We used to specify constraints using an object (before v0.24.0) and then switched to using
+    # an array of objects (with v0.24.0). This rewrites the constraints into the new format as needed.
     constraints = table_design.get("constraints")
     if isinstance(constraints, dict):
         table_design["constraints"] = [{constraint_type: constraints[constraint_type]}
                                        for constraint_type in sorted(constraints)]
-    # END -- Support of DEPRECATED format of specifying constraints
 
     return validate_table_design(table_design, table_name)
 
@@ -49,7 +49,6 @@ def load_table_design_from_localfile(local_filename, table_name):
     """
     Load (and validate) table design file in local file system.
     """
-    logger.debug("Loading local table design from '%s'", local_filename)
     if local_filename is None:
         raise ValueError("local filename is unknown")
     try:
@@ -78,9 +77,12 @@ def validate_table_design(table_design, table_name):
     Phase 2 is built on specific rules that I couldn't figure out how
     to run inside json-schema.
     """
-    logger.debug("Trying to validate table design for '%s'", table_name.identifier)
-    validate_table_design_syntax(table_design, table_name)
-    validate_table_design_semantics(table_design, table_name)
+    try:
+        validate_table_design_syntax(table_design, table_name)
+        validate_table_design_semantics(table_design, table_name)
+    except Exception:
+        logger.error("Failed to validate table design for '%s'", table_name.identifier)
+        raise
     return table_design
 
 
