@@ -217,6 +217,11 @@ class Monitor(metaclass=MetaMonitor):
         payload = MonitorPayload(self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra)
         payload.emit(dry_run=self._dry_run)
 
+    def add_extra(self, key, value):
+        if key in self._extra:
+            raise KeyError("duplicate key in 'extra' payload")
+        self._extra[key] = value
+
     @classmethod
     def marker_payload(cls, step: str):
         monitor = cls(_DUMMY_TARGET, step)
