@@ -1022,7 +1022,7 @@ class ShowVarsCommand(SubCommand):
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
-        parser.add_argument("name", nargs="?", help="print just the value for the chosen setting")
+        parser.add_argument("name", help="print just the value for the chosen setting", nargs="*")
 
     def callback(self, args, config):
         etl.render_template.show_vars(args.name)
