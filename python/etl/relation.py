@@ -317,7 +317,7 @@ class RelationDescription:
         return None
 
     @contextmanager
-    def matching_temporary_view(self, conn):
+    def matching_temporary_view(self, conn, assume_external_schema=False):
         """
         Create a temporary view (with a name loosely based around the reference passed in).
 
@@ -327,7 +327,7 @@ class RelationDescription:
 
         with etl.db.log_error():
             ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
-            if any(dep.is_external for dep in self.dependencies):
+            if assume_external_schema or any(dep.is_external for dep in self.dependencies):
                 ddl_stmt += "\nWITH NO SCHEMA BINDING"
                 temp_view.is_late_binding_view = True
 
