@@ -168,14 +168,11 @@ def log_load_error(cx):
         raise
 
 
-def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str], s3_uri: str, aws_iam_role: str,
-                  need_compupdate=False, dry_run=False) -> None:
-    """
-    Load data into table in the data warehouse using the COPY command.
-    """
+def copy_using_manifest(conn: connection, table_name: TableName, column_list: List[str], s3_uri: str,
+                        aws_iam_role: str, need_compupdate=False, dry_run=False) -> None:
     credentials = "aws_iam_role={}".format(aws_iam_role)
 
-    stmt = """
+    copy_stmt = """
         COPY {table} (
             {columns}
         )
@@ -189,20 +186,71 @@ def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str
         """.format(table=table_name, columns=join_column_list(column_list),
                    compupdate="ON" if need_compupdate else "OFF")
     if dry_run:
-        logger.info("Dry-run: Skipping copying data into '%s' from '%s'", table_name.identifier, s3_uri)
-        etl.db.skip_query(conn, stmt, (s3_uri, credentials))
+        logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
+        etl.db.skip_query(conn, copy_stmt, (s3_uri, credentials))
     else:
-        logger.info("Copying data into '%s' from '%s'", table_name.identifier, s3_uri)
+        logger.info("Copying data into '%s' using '%s'", table_name.identifier, s3_uri)
         try:
             with log_load_error(conn):
-                etl.db.execute(conn, stmt, (s3_uri, credentials))
-            row_count = etl.db.query(conn, "SELECT pg_last_copy_count()")
-            logger.info("Copied %d rows into '%s'", row_count[0][0], table_name.identifier)
+                etl.db.execute(conn, copy_stmt, (s3_uri, credentials))
         except psycopg2.InternalError as exc:
             raise TransientETLError(exc) from exc
 
-# Find files that were just copied in:
-# select query, trim(filename) as file, curtime as updated from stl_load_commits where query = pg_last_copy_id();
+
+def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
+    stmt = """
+        SELECT TRIM(filename) AS filename
+             , lines_scanned
+          FROM stl_load_commits
+         WHERE query = pg_last_copy_id()
+         ORDER BY TRIM(filename)
+        """
+    if dry_run:
+        etl.db.skip_query(conn, stmt)
+    else:
+        rows = etl.db.query(conn, stmt)
+        summary = '  ' + '  \n'.join("'{filename}' ({lines_scanned} line(s))".format(**row) for row in rows)
+        logger.debug("Copied %d file(s) into '%s' using manifest '%s':\n%s",
+                     len(rows), table_name.identifier, s3_uri, summary)
+
+
+def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -> None:
+    # This query is not guarded by "dry_run" so that we have a copy_id for the other query.
+    [[copy_count, copy_id]] = etl.db.query(conn, "SELECT pg_last_copy_count(), pg_last_copy_id()")
+
+    stmt = """
+        SELECT COUNT(s3.key) AS file_count
+             , COUNT(DISTINCT s.slice) AS slice_count
+             , COUNT(DISTINCT s.node) AS node_count
+             , MAX(wq.slot_count) AS slot_count
+             , ROUND(MAX(wq.total_queue_time/1000000.0), 2) AS elapsed_queued
+             , ROUND(MAX(wq.total_exec_time/1000000.0), 2) AS elapsed
+             , ROUND(SUM(s3.transfer_size)/(1024.0*1024.0), 2) AS total_mb
+          FROM stl_wlm_query wq
+          JOIN stl_s3client s3 USING (query)
+          JOIN stv_slices s USING (slice)
+         WHERE wq.query = %s
+        """
+    if dry_run:
+        etl.db.skip_query(conn, stmt, (copy_id,))
+    else:
+        [row] = etl.db.query(conn, stmt, (copy_id,))
+        logger.info(
+            (
+                'Copied {copy_count:d} rows into {table_name:x} '
+                '(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, slots: {slot_count:d}, '
+                'elapsed: {elapsed}s ({elapsed_queued}s queued), size: {total_mb}MB)'
+            ).format(copy_count=copy_count, table_name=table_name, **row))
+
+
+def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str], s3_uri: str, aws_iam_role: str,
+                  need_compupdate=False, dry_run=False) -> None:
+    """
+    Load data into table in the data warehouse using the COPY command.
+    """
+    copy_using_manifest(conn, table_name, column_list, s3_uri, aws_iam_role, need_compupdate, dry_run)
+    query_load_commits(conn, table_name, s3_uri, dry_run)
+    query_load_summary(conn, table_name, dry_run)
 
 
 def insert_from_query(conn: connection, table_name: TableName, column_list: List[str], query_stmt: str,
