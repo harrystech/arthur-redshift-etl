@@ -591,7 +591,7 @@ def scan_etl_events(etl_id) -> None:
     table = ddb.get_table(create_if_not_exists=False)
     keys = ["target", "step", "event", "timestamp", "elapsed"]
 
-    # The paginator operates on the client not resource. So open a client and start iterating.
+    # We need to scan here since the events are stored by "target" and not by "etl_id".
     client = boto3.client('dynamodb')
     paginator = client.get_paginator('scan')
     response_iterator = paginator.paginate(
