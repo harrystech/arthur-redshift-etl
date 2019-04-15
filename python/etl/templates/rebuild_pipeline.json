@@ -49,7 +49,7 @@
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
-            "terminateAfter": "8 Hours"
+            "terminateAfter": "18 Hours"
         },
         {
             "id": "ETLCluster",
