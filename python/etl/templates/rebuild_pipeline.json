@@ -10,7 +10,7 @@
             "role": "${resources.DataPipeline.role}",
             "pipelineLogUri": "s3://${object_store.s3.bucket_name}/_logs/${object_store.s3.prefix}/",
             "region": "${resources.VPC.region}",
-            "maximumRetries": "2"
+            "maximumRetries": "8"
         },
         {
             "id": "ETLSchedule",
