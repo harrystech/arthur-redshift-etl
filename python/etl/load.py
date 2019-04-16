@@ -589,7 +589,7 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
     Within transaction? Only applies to tables which get emptied and then potentially filled again.
     Not in transaction? Drop and create all relations and for tables also potentially fill 'em up again.
     """
-    with relation.monitor():
+    with relation.monitor() as monitor:
 
         # Step 1 -- clear out existing data (by deletion or by re-creation)
         if relation.in_transaction:
@@ -608,6 +608,13 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
+
+        # Step 3 -- log size of table
+        if not (relation.in_transaction or relation.is_view_relation or relation.failed):
+            rows = etl.db.run(conn, "Calculating row count", "SELECT COUNT(*) AS rowcount FROM {}".format(relation),
+                              return_result=True, dry_run=dry_run)
+            if rows:
+                monitor.add_extra("rowcount", rows[0]["rowcount"])
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
