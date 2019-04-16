@@ -89,4 +89,4 @@ aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
 set +x
 echo "You can check the status of this validation pipeline using:"
-echo "  arthur.py show_pipelines '$PIPELINE_ID'"
+echo "  arthur.py show_pipelines -q '$PIPELINE_ID'"
