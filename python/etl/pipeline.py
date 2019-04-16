@@ -3,6 +3,7 @@ Implement commands that interact with AWS Data Pipeline
 """
 
 import fnmatch
+import funcy
 import logging
 from operator import attrgetter
 from typing import List
@@ -37,34 +38,27 @@ class DataPipeline:
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     """
-    List pipelines related to this project (which must have the tag for our project set)
+    Return list of pipelines related to this project (which must have the tag for our project set).
 
     The :selection should be a list of glob patterns to select specific pipelines by their ID.
     If the selection is an empty list, then all pipelines are used.
     """
     client = boto3.client('datapipeline')
-
-    all_pipeline_ids = []  # type: List[str]
-    resp = client.list_pipelines()
-    while True:
-        all_pipeline_ids.extend(id_['id'] for id_ in resp['pipelineIdList'])
-        if resp['hasMoreResults']:
-            resp = client.list_pipelines(marker=resp['marker'])
-        else:
-            break
-
+    paginator = client.get_paginator('list_pipelines')
+    response_iterator = paginator.paginate()
+    all_pipeline_ids = response_iterator.search("pipelineIdList[].id")
     if selection:
         selected_pipeline_ids = [pipeline_id
                                  for pipeline_id in all_pipeline_ids
                                  for glob in selection
                                  if fnmatch.fnmatch(pipeline_id, glob)]
     else:
-        selected_pipeline_ids = all_pipeline_ids
+        selected_pipeline_ids = list(all_pipeline_ids)
 
     dw_pipelines = []
     chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
-    for block in range(0, len(selected_pipeline_ids), chunk_size):
-        resp = client.describe_pipelines(pipelineIds=selected_pipeline_ids[block:block + chunk_size])
+    for ids_chunk in funcy.chunks(chunk_size, selected_pipeline_ids):
+        resp = client.describe_pipelines(pipelineIds=ids_chunk)
         for description in resp['pipelineDescriptionList']:
             for tag in description['tags']:
                 if tag['key'] == 'user:project' and tag['value'] == 'data-warehouse':
@@ -98,5 +92,6 @@ def show_pipelines(selection: List[str]) -> None:
                                     header_row=["Pipeline ID", "Name", "Health"], max_column_width=80))
     if selection and len(pipelines) == 1:
         pipeline = pipelines[0]
+        print()
         print(etl.text.format_lines([[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
                                     header_row=["Key", "Value"]))
