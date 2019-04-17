@@ -1022,7 +1022,7 @@ class ShowVarsCommand(SubCommand):
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
-        parser.add_argument("name", nargs="?", help="print just the value for the chosen setting")
+        parser.add_argument("name", help="print just the value for the chosen setting", nargs="*")
 
     def callback(self, args, config):
         etl.render_template.show_vars(args.name)
@@ -1049,7 +1049,7 @@ class QueryEventsCommand(SubCommand):
                          "query the tables of ETL events",
                          "Query the table of events written during an ETL."
                          " When an ETL is specified, then it is used as a filter."
-                         " Otherwise ETLs from the last day are listed.")
+                         " Otherwise ETLs from the last 48 hours are listed.")
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
@@ -1057,7 +1057,8 @@ class QueryEventsCommand(SubCommand):
 
     def callback(self, args, config):
         if args.etl_id is None:
-            etl.monitor.query_for_etl_ids(days_ago=1)
+            # Going back two days should cover at least one complete and one running rebuild ETL.
+            etl.monitor.query_for_etl_ids(days_ago=2)
         else:
             etl.monitor.scan_etl_events(args.etl_id)
 

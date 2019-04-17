@@ -11,11 +11,9 @@ Here are some frequently-used commands to get started
 =====================================================
 
   arthur.py ping
-  arthur.py settings object_store.s3.*
 
   upload_env.sh
   arthur.py sync --deploy
-
   install_validation_pipeline.sh
 
 
@@ -41,5 +39,3 @@ Most likely command to run if a pipeline failed
 
   install_pizza_load_pipeline.sh development ":transformations"
 
-
-Installed:

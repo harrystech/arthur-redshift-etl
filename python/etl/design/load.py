@@ -50,6 +50,8 @@ def load_table_design_from_localfile(local_filename, table_name):
     Load (and validate) table design file in local file system.
     """
     logger.debug("Loading local table design from '%s'", local_filename)
+    if local_filename is None:
+        raise ValueError("local filename is unknown")
     try:
         with open(local_filename) as f:
             table_design = load_table_design(f, table_name)
