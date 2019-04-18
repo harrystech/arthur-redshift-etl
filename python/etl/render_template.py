@@ -107,14 +107,16 @@ def show_vars(names: List[str]) -> None:
     List all known configuration settings as "variables" with their values or just the variables that are selected.
     """
     config_mapping = etl.config.get_config_map()
+    all_keys = sorted(config_mapping)
     if not names:
-        keys = list(config_mapping)
+        keys = all_keys
     else:
-        keys = []
+        selected_keys = set()
         for name in names:
-            selected_keys = [key for key in sorted(config_mapping) if fnmatch.fnmatch(key, name)]
-            if not selected_keys:
+            matching_keys = [key for key in all_keys if fnmatch.fnmatch(key, name)]
+            if not matching_keys:
                 raise InvalidArgumentError("no matching setting for '{}'".format(name))
-            keys.extend(selected_keys)
-    values = [config_mapping[key] for key in sorted(keys)]
+            selected_keys.update(matching_keys)
+        keys = sorted(selected_keys)
+    values = [config_mapping[key] for key in keys]
     print(etl.text.format_lines(zip(keys, values), header_row=["Name", "Value"]))
