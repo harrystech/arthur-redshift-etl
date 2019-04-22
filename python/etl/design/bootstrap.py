@@ -189,6 +189,8 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     default_attribute_type = type_maps["default_att_type"]  # default (fallback)
 
     source_attributes = fetch_attributes(conn, source_table_name)
+    if not source_attributes:
+        raise RuntimeError("failed to find attributes (check your query)")
     target_columns = [ColumnDefinition.from_attribute(attribute,
                                                       as_is_attribute_type,
                                                       cast_needed_attribute_type,
@@ -461,8 +463,12 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
     relations = [RelationDescription(file_set) for file_set in transforms]
     if update:
         logger.info("Loading existing table design file(s)")
-        # Unfortunately, this adds warnings about any of the upstream sources being unknown.
-        relations = etl.relation.order_by_dependencies(relations)
+        try:
+            # Unfortunately, this adds warnings about any of the upstream sources being unknown.
+            relations = etl.relation.order_by_dependencies(relations)
+        except ValueError as exc:
+            logger.error("Failed to load existing design file(s) before update: %s", exc)
+            raise
 
     if as_view:
         create_func = create_table_design_for_view
@@ -470,9 +476,8 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
         create_func = create_table_design_for_ctas
 
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
-        TableName.set_external_schemas(etl.db.get_external_schemas(conn))
         for relation in relations:
-            with relation.matching_temporary_view(conn) as tmp_view_name:
+            with relation.matching_temporary_view(conn, assume_external_schema=not update) as tmp_view_name:
                 table_design = create_func(conn, tmp_view_name, relation, update)
                 source_dir = os.path.join(local_dir, relation.source_name)
                 save_table_design(source_dir, relation.target_table_name, relation.target_table_name, table_design,

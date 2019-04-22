@@ -260,6 +260,8 @@ def load_config(config_files: Sequence[str], default_file: str="default_settings
     global _dw_config
     _dw_config = etl.config.dw.DataWarehouseConfig(settings)
 
+    set_config_value("version", package_version())
+
 
 def validate_with_schema(obj: dict, schema_name: str) -> None:
     """

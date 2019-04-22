@@ -32,23 +32,22 @@ RUN virtualenv --python=python3 venv && \
 
 COPY . .
 
-RUN source venv/bin/activate && \
-    python3 setup.py develop && \
-    arthur.py --version >> /tmp/redshift_etl/etc/motd
-
 # Use the self tests to check if everything was installed properly
 RUN source venv/bin/activate && \
+    python3 setup.py develop && \
     run_tests.py
 
 # Ensure the venv is activated when running interactive shells
 RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
 source /tmp/redshift_etl/etc/arthur_completion.sh\n\
 PATH=$PATH:/tmp/redshift_etl/bin\n\
-cat /tmp/redshift_etl/etc/motd' > /root/.bashrc
+cat /tmp/redshift_etl/etc/motd\n\
+echo "arthur.py settings object_store.s3.* version"\n\
+arthur.py settings object_store.s3.* version' > /root/.bashrc
 
 WORKDIR /data-warehouse
 
-# Whenever there is an ETL running, it offerst progress information on port 8086.
+# Whenever there is an ETL running, it offers progress information on port 8086.
 EXPOSE 8086
 
 # From here, bind-mount your data warehouse code directory to /data-warehouse.

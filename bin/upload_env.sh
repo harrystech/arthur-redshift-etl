@@ -19,7 +19,7 @@ if [[ $# -gt 2 || "$1" = "-h" ]]; then
 Usage: `basename $0` [[<bucket_name>] <target_env>]
 
 This creates a new distribution and uploads it into S3.
-The <target_env> defaults to \"$DEFAULT_PREFIX\".
+The <target_env> defaults to "$DEFAULT_PREFIX".
 The <bucket_name> defaults to your object store setting.
 If the bucket name is not specified, variable DATA_WAREHOUSE_CONFIG must be set.
 

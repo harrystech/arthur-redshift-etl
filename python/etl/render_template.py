@@ -3,7 +3,7 @@ import logging
 import os.path
 import string
 from collections import OrderedDict
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pkg_resources
 import simplejson
@@ -102,17 +102,21 @@ def show_value(name: str, default: Optional[str]) -> None:
     print(value)
 
 
-def show_vars(name: Optional[str]) -> None:
+def show_vars(names: List[str]) -> None:
     """
-    List all the known configuration settings as "variables" with their values or
-    just for the variable that's selected.
+    List all known configuration settings as "variables" with their values or just the variables that are selected.
     """
     config_mapping = etl.config.get_config_map()
-    if name is None:
-        keys = sorted(config_mapping)
+    all_keys = sorted(config_mapping)
+    if not names:
+        keys = all_keys
     else:
-        keys = [key for key in sorted(config_mapping) if fnmatch.fnmatch(key, name)]
-        if not keys:
-            raise InvalidArgumentError("no matching setting for '{}'".format(name))
+        selected_keys = set()
+        for name in names:
+            matching_keys = [key for key in all_keys if fnmatch.fnmatch(key, name)]
+            if not matching_keys:
+                raise InvalidArgumentError("no matching setting for '{}'".format(name))
+            selected_keys.update(matching_keys)
+        keys = sorted(selected_keys)
     values = [config_mapping[key] for key in keys]
     print(etl.text.format_lines(zip(keys, values), header_row=["Name", "Value"]))

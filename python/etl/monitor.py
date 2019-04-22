@@ -217,6 +217,11 @@ class Monitor(metaclass=MetaMonitor):
         payload = MonitorPayload(self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra)
         payload.emit(dry_run=self._dry_run)
 
+    def add_extra(self, key, value):
+        if key in self._extra:
+            raise KeyError("duplicate key in 'extra' payload")
+        self._extra[key] = value
+
     @classmethod
     def marker_payload(cls, step: str):
         monitor = cls(_DUMMY_TARGET, step)
@@ -537,7 +542,19 @@ def start_monitors(environment):
         logger.warning("Writing events to a DynamoDB table is disabled in settings.")
 
 
+def _format_output_column(key: str, value: str) -> str:
+    if key == "timestamp":
+        # Make timestamp readable by turning epoch seconds into a date.
+        return datetime.utcfromtimestamp(float(value)).replace(microsecond=0).isoformat()
+    elif key == "elapsed":
+        # Reduce number of decimals to 2.
+        return '{:6.2f}'.format(float(value))
+    else:
+        return value
+
+
 def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
+    """Search for ETLs by looking for the "marker" event at the start of an ETL command."""
     start_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago)
     epoch_seconds = timegm(start_time.utctimetuple())
     ddb = DynamoDBStorage.factory()
@@ -565,9 +582,7 @@ def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
                 response['Count'], response['ScannedCount'], response['ConsumedCapacity']['CapacityUnits'])
     rows = [
         [
-            # Make timestamp readable by turning epoch seconds into a date.
-            item[key] if key != "timestamp" else datetime.utcfromtimestamp(item[key]).isoformat()
-            for key in keys
+            _format_output_column(key, item[key]) for key in keys
         ]
         for item in response['Items']
     ]
@@ -576,11 +591,12 @@ def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
 
 
 def scan_etl_events(etl_id) -> None:
+    """Scan for all events belonging to the specific ETL."""
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
     keys = ["target", "step", "event", "timestamp", "elapsed"]
 
-    # The paginator operates on the client not resource. So open a client and start iterating.
+    # We need to scan here since the events are stored by "target" and not by "etl_id".
     client = boto3.client('dynamodb')
     paginator = client.get_paginator('scan')
     response_iterator = paginator.paginate(
@@ -601,6 +617,7 @@ def scan_etl_events(etl_id) -> None:
         #     "PageSize": 100
         # }
     )
+    logger.info("Scanning events table for elapsed times")
     consumed_capacity = .0
     scanned_count = 0
     rows = []
@@ -609,7 +626,7 @@ def scan_etl_events(etl_id) -> None:
         scanned_count += response['ScannedCount']
         rows.extend([
             [
-                item[key].get('S', item[key].get('N')) for key in keys
+                _format_output_column(key, item[key].get('S', item[key].get('N'))) for key in keys
             ]
             for item in response['Items']
         ])
