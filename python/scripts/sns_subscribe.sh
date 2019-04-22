@@ -45,13 +45,14 @@ ENV_PREFIX=$( arthur.py show_value resource_prefix --prefix "$PROJ_ENVIRONMENT" 
 STATUS_NAME="$ENV_PREFIX-status"
 PAGE_NAME="$ENV_PREFIX-page"
 VALIDATION_NAME="$ENV_PREFIX-validation"
+VALIDATION_PAGE_NAME="$ENV_PREFIX-validation-page"
 
 # ===  Create topic and subscription ===
 
 TOPIC_ARN_FILE="/tmp/topic_arn_${USER}$$.json"
 trap "rm -f \"$TOPIC_ARN_FILE\"" EXIT
 
-for TOPIC in "$STATUS_NAME" "$PAGE_NAME" "$VALIDATION_NAME"; do
+for TOPIC in "$STATUS_NAME" "$PAGE_NAME" "$VALIDATION_NAME" "$VALIDATION_PAGE_NAME"; do
     aws sns create-topic --name "$TOPIC" | tee "$TOPIC_ARN_FILE"
     TOPIC_ARN=`jq --raw-output < "$TOPIC_ARN_FILE" '.TopicArn'`
     if [[ -z "$TOPIC_ARN" ]]; then

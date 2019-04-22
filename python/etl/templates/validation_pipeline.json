@@ -39,6 +39,13 @@
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
+            "id": "PagerNotification",
+            "type": "SnsAlarm",
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-validation-page",
+            "subject": "ETL Validation Failure: ${object_store.s3.prefix}/validation at #{node.@scheduledStartTime}",
+            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
+        },
+        {
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
@@ -60,7 +67,6 @@
         },
         {
             "id": "Ec2CommandGrandParent",
-            "onFail": {"ref": "FailureNotification"},
             "runsOn": {"ref": "ArthurDriverEC2Resource"}
         },
         {
@@ -126,7 +132,11 @@
             "parent": { "ref": "ArthurCommandParent" },
             "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ validate --prolix --remote-files --prefix ${object_store.s3.prefix}/validation --keep-going --skip-sources-check",
             "dependsOn": { "ref": "ArthurLoad" },
-            "onSuccess": {"ref": "SuccessNotification"}
+            "onSuccess": {"ref": "SuccessNotification"},
+            "onFail": [
+                { "ref": "FailureNotification" },
+                { "ref": "PagerNotification" }
+            ]
         }
     ],
     "parameters": [
