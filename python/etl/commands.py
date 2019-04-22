@@ -308,15 +308,15 @@ def add_standard_arguments(parser, options):
                            action="store_const", const="s3", dest="scheme")
     if "max-concurrency" in options:
         parser.add_argument("-x", "--max-concurrency", metavar="N", type=int,
-                            help="set max number of parallel loads to N "
-                                 "(overrides 'resources.RedshiftCluster.max_concurrency')")
+                            help="set max number of parallel loads to N"
+                                 " (overrides 'resources.RedshiftCluster.max_concurrency')")
     if "wlm-query-slots" in options:
         parser.add_argument("-w", "--wlm-query-slots", metavar="N", type=int,
                             help="set the number of Redshift WLM query slots used for transformations"
-                                 "(overrides 'resources.RedshiftCluster.wlm_query_slots')")
+                                 " (overrides 'resources.RedshiftCluster.wlm_query_slots')")
     if "skip-copy" in options:
         parser.add_argument("-y", "--skip-copy",
-                            help="skip the COPY and INSERT commands (leaves tables empty, for debugging)",
+                            help="skip the COPY and INSERT commands (leaves tables empty, used for validation)",
                             action="store_true")
     if "continue-from" in options:
         parser.add_argument("--continue-from",
