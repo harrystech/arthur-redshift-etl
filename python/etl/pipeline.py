@@ -35,6 +35,10 @@ class DataPipeline:
     def health_status(self):
         return self.fields.get('@healthStatus', '---')
 
+    @property
+    def state(self):
+        return self.fields.get('@pipelineState', '---')
+
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     """
@@ -87,9 +91,9 @@ def show_pipelines(selection: List[str]) -> None:
         else:
             logger.info("Currently active pipelines: %s",
                         join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
-        print(etl.text.format_lines([(pipeline.pipeline_id, pipeline.name, pipeline.health_status)
+        print(etl.text.format_lines([(pipeline.pipeline_id, pipeline.name, pipeline.health_status, pipeline.state)
                                      for pipeline in pipelines],
-                                    header_row=["Pipeline ID", "Name", "Health"], max_column_width=80))
+                                    header_row=["Pipeline ID", "Name", "Health", "State"], max_column_width=80))
     if selection and len(pipelines) == 1:
         pipeline = pipelines[0]
         print()
