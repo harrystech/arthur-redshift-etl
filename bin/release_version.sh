@@ -9,7 +9,7 @@ if [[ $# -gt 0 ]]; then
 
 Usage: `basename $0`
 
-This will write current version information to '$RELEASE_PATH'.
+This will update current version information in '$RELEASE_PATH'.
 
 EOF
     exit 0
@@ -33,5 +33,13 @@ elif GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD); then
 else
     echo "commit=$GIT_COMMIT_HASH" >> "$RELEASE_FILE"
 fi
+# TODO This should be the date of the latest commit to have a stable build.
 echo "date=`date '+%Y-%m-%d %H:%M:%S%z'`" >> "$RELEASE_FILE"
-cat "$RELEASE_FILE" | tee "python/etl/config/release.txt"
+
+if cmp "$RELEASE_FILE" "$RELEASE_PATH" >/dev/null; then
+    echo "Release information is unchanged."
+else
+    echo "Updating release information in $RELEASE_PATH"
+    cp "$RELEASE_FILE" "$RELEASE_PATH"
+fi
+cat "$RELEASE_FILE"
