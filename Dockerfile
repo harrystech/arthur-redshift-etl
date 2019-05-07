@@ -42,7 +42,8 @@ RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
 source /tmp/redshift_etl/etc/arthur_completion.sh\n\
 PATH=$PATH:/tmp/redshift_etl/bin\n\
 cat /tmp/redshift_etl/etc/motd\n\
-echo "arthur.py settings object_store.s3.* version"\n\
+echo \n\
+echo "Environment settings:"\n\
 arthur.py settings object_store.s3.* version' > /root/.bashrc
 
 WORKDIR /data-warehouse
