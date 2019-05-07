@@ -36,7 +36,7 @@ import simplejson as json
 import etl.assets
 import etl.config
 import etl.text
-from etl.errors import ETLRuntimeError
+from etl.errors import ETLRuntimeError, InvalidArgumentError
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds, Timer
 
@@ -616,13 +616,24 @@ def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
     print(etl.text.format_lines(rows, header_row=keys))
 
 
-def scan_etl_events(etl_id) -> None:
+def scan_etl_events(etl_id, comma_separated_columns) -> None:
     """Scan for all events belonging to a specific ETL."""
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
-    keys = ["target", "step", "event", "timestamp", "elapsed", "rowcount"]
+    all_keys = ["target", "step", "event", "timestamp", "elapsed", "rowcount"]
+    if comma_separated_columns:
+        selected_columns = comma_separated_columns.split(',')
+        invalid_columns = [key for key in selected_columns if key not in all_keys]
+        if invalid_columns:
+            raise InvalidArgumentError("invalid column(s): {}".format(','.join(invalid_columns)))
+        # We will always select "target" and "event" to have a meaningful output.
+        selected_columns = frozenset(selected_columns).union(["target", "event"])
+        keys = [key for key in all_keys if key in selected_columns]
+    else:
+        keys = all_keys
 
     # We need to scan here since the events are stored by "target" and not by "etl_id".
+    # TODO Try to find all the "known" relations and query on them with a filter on the etl_id.
     client = boto3.client('dynamodb')
     paginator = client.get_paginator('scan')
     response_iterator = paginator.paginate(
@@ -658,7 +669,10 @@ def scan_etl_events(etl_id) -> None:
         ]
         rows.extend([_format_output_column(key, item[key]) for key in keys] for item in items)
     logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
-    rows.sort(key=itemgetter(keys.index("timestamp")))
+    if "timestamp" in keys:
+        rows.sort(key=itemgetter(keys.index("timestamp")))
+    else:
+        rows.sort(key=itemgetter(keys.index("target")))
     print(etl.text.format_lines(rows, header_row=keys))
 
 
