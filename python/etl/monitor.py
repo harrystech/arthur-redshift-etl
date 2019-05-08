@@ -36,7 +36,7 @@ import simplejson as json
 import etl.assets
 import etl.config
 import etl.text
-from etl.errors import ETLRuntimeError
+from etl.errors import ETLRuntimeError, InvalidArgumentError
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import utc_now, elapsed_seconds, Timer
 
@@ -543,14 +543,40 @@ def start_monitors(environment):
 
 
 def _format_output_column(key: str, value: str) -> str:
-    if key == "timestamp":
+    if value is None:
+        return '---'
+    elif key == "timestamp":
         # Make timestamp readable by turning epoch seconds into a date.
         return datetime.utcfromtimestamp(float(value)).replace(microsecond=0).isoformat()
     elif key == "elapsed":
         # Reduce number of decimals to 2.
         return '{:6.2f}'.format(float(value))
+    elif key == "rowcount":
+        return '{:9d}'.format(int(value))
     else:
         return value
+
+
+def _flatten_scan_result(result: dict) -> dict:
+    """Remove type annotation from a scan result.
+
+    Careful, this only works for a specific subset of types that DynamoDB may send back.
+
+    >>> result = _flatten_scan_result({'step': {'S': 'load'}, 'extra': {'M': {'rowcount': {'N': '100'}}}})
+    >>> sorted(result)
+    ['extra', 'step']
+    >>> result['extra']['rowcount']
+    '100'
+    """
+    flat = {}
+    for key, value in result.items():
+        if 'S' in value:
+            flat[key] = value['S']
+        elif 'N' in value:
+            flat[key] = value['N']
+        elif 'M' in value:
+            flat[key] = _flatten_scan_result(value['M'])
+    return flat
 
 
 def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
@@ -590,13 +616,24 @@ def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
     print(etl.text.format_lines(rows, header_row=keys))
 
 
-def scan_etl_events(etl_id) -> None:
-    """Scan for all events belonging to the specific ETL."""
+def scan_etl_events(etl_id, comma_separated_columns) -> None:
+    """Scan for all events belonging to a specific ETL."""
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
-    keys = ["target", "step", "event", "timestamp", "elapsed"]
+    all_keys = ["target", "step", "event", "timestamp", "elapsed", "rowcount"]
+    if comma_separated_columns:
+        selected_columns = comma_separated_columns.split(',')
+        invalid_columns = [key for key in selected_columns if key not in all_keys]
+        if invalid_columns:
+            raise InvalidArgumentError("invalid column(s): {}".format(','.join(invalid_columns)))
+        # We will always select "target" and "event" to have a meaningful output.
+        selected_columns = frozenset(selected_columns).union(["target", "event"])
+        keys = [key for key in all_keys if key in selected_columns]
+    else:
+        keys = all_keys
 
     # We need to scan here since the events are stored by "target" and not by "etl_id".
+    # TODO Try to find all the "known" relations and query on them with a filter on the etl_id.
     client = boto3.client('dynamodb')
     paginator = client.get_paginator('scan')
     response_iterator = paginator.paginate(
@@ -611,7 +648,7 @@ def scan_etl_events(etl_id) -> None:
             ":start_event": {"S": STEP_START}
         },
         FilterExpression="etl_id = :etl_id and target <> :marker and event <> :start_event",
-        ProjectionExpression="target, step, event, #timestamp, elapsed",
+        ProjectionExpression="target, step, event, #timestamp, elapsed, extra.rowcount",
         ReturnConsumedCapacity="TOTAL",
         # PaginationConfig={
         #     "PageSize": 100
@@ -620,18 +657,22 @@ def scan_etl_events(etl_id) -> None:
     logger.info("Scanning events table for elapsed times")
     consumed_capacity = .0
     scanned_count = 0
-    rows = []
+    rows = []  # type: List[List[str]]
     for response in response_iterator:
         consumed_capacity += response['ConsumedCapacity']['CapacityUnits']
         scanned_count += response['ScannedCount']
-        rows.extend([
-            [
-                _format_output_column(key, item[key].get('S', item[key].get('N'))) for key in keys
-            ]
-            for item in response['Items']
-        ])
+        items = [_flatten_scan_result(item) for item in response['Items']]
+        # Backwards compatibility kludge: Be careful picking out the rowcount which may not be present in older tables.
+        items = [
+            {key: item.get('extra', {'rowcount': None})['rowcount'] if key == 'rowcount' else item[key] for key in keys}
+            for item in items
+        ]
+        rows.extend([_format_output_column(key, item[key]) for key in keys] for item in items)
     logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
-    rows.sort(key=itemgetter(keys.index("timestamp")))
+    if "timestamp" in keys:
+        rows.sort(key=itemgetter(keys.index("timestamp")))
+    else:
+        rows.sort(key=itemgetter(keys.index("target")))
     print(etl.text.format_lines(rows, header_row=keys))
 
 

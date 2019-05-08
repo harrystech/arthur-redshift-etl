@@ -1053,14 +1053,16 @@ class QueryEventsCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
+        parser.add_argument("--columns", help="comma-separated list of output columns")
         parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
     def callback(self, args, config):
+        # TODO This is starting to become awkard: make finding latest ETL a separate command.
         if args.etl_id is None:
             # Going back two days should cover at least one complete and one running rebuild ETL.
             etl.monitor.query_for_etl_ids(days_ago=2)
         else:
-            etl.monitor.scan_etl_events(args.etl_id)
+            etl.monitor.scan_etl_events(args.etl_id, args.columns)
 
 
 class TailEventsCommand(SubCommand):
