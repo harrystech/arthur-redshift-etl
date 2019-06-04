@@ -273,7 +273,7 @@ def insert_from_query(conn: connection, table_name: TableName, column_list: List
         try:
             etl.db.execute(conn, stmt)
         except psycopg2.InternalError as exc:
-            if "S3 Query Exception (Fetch)" in exc.pgerror:
+            if "S3 Query Exception (" in exc.pgerror:
                 # If this error was caused by a table in S3 (see Redshift Spectrum) then we might be able to try again.
                 raise TransientETLError(exc) from exc
             else:
