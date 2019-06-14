@@ -103,7 +103,7 @@ class DatabaseExtractor(Extractor):
         selected_columns = relation.get_columns_with_casts()
         statement = """SELECT {} FROM {}""".format(", ".join(selected_columns), relation.source_table_name)
         if add_sampling_on_column is None:
-            statement += " WHERE TRUE"
+            statement += """ WHERE ("created_at" >= '2019-02-28') """
         else:
             self.logger.info("Adding sampling on column '%s' while extracting '%s.%s'",
                              add_sampling_on_column, relation.source_name, relation.source_table_name.identifier)
