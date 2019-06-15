@@ -147,6 +147,8 @@ class SqoopExtractor(DatabaseExtractor):
         """
         Build the partitioning-related arguments for Sqoop.
         """
+        return ["--split-by", "CAST(TO_CHAR(created_at, 'YYYYMMDDHH24MISS') AS BIGINT)", "--num-mappers", str(16)]
+
         if partition_key:
             quoted_key_arg = '"{}"'.format(partition_key)
 
