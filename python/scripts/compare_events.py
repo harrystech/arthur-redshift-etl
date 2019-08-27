@@ -54,7 +54,7 @@ def parse_file(filename):
 
 def extract_values(filename):
     """Find elapsed time and rowcount for each target relation."""
-    # The "lambda: None" allows use to use '.[]' instead of '.get()'.
+    # The "lambda: None" trick allows us to use '.[]' instead of '.get()'.
     elapsed = defaultdict(lambda: None)
     rowcount = defaultdict(lambda: None)
     for row in parse_file(filename):
