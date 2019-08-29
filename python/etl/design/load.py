@@ -8,6 +8,7 @@ Table designs are dictionaries of dictionaries or lists etc.
 import logging
 from contextlib import closing
 
+import funcy as fy
 import yaml
 import yaml.parser
 
@@ -99,7 +100,7 @@ def validate_table_design_syntax(table_design, table_name):
 
 def validate_identity_as_surrogate_key(table_design):
     """
-    Check whether specification of our identity column is valid and whether it matches surrogate key
+    Check whether specification of our identity column is valid and whether it matches surrogate key.
     """
     identity_columns = []
     for column in table_design["columns"]:
@@ -120,7 +121,7 @@ def validate_identity_as_surrogate_key(table_design):
 
 def validate_column_references(table_design):
     """
-    Make sure that table attributes and constraints only reference columns that actually exist
+    Make sure that table attributes and constraints only reference columns that actually exist.
     """
     column_list_references = [
         ('constraints', 'primary_key'),
@@ -164,7 +165,7 @@ def validate_semantics_of_view(table_design):
 
 def validate_semantics_of_table_or_ctas(table_design):
     """
-    Check for semantics that apply to tables that are in source schemas or are a CTAS
+    Check for semantics that apply to tables that are in source schemas or are a CTAS.
     """
     validate_identity_as_surrogate_key(table_design)
     validate_column_references(table_design)
@@ -181,7 +182,7 @@ def validate_semantics_of_table_or_ctas(table_design):
 
 def validate_semantics_of_ctas(table_design):
     """
-    Check for semantics that apply only to CTAS
+    Check for semantics that apply only to CTAS.
     """
     validate_semantics_of_table_or_ctas(table_design)
     if "extract_settings" in table_design:
@@ -190,7 +191,7 @@ def validate_semantics_of_ctas(table_design):
 
 def validate_semantics_of_table(table_design):
     """
-    Check for semantics that apply to tables in source schemas
+    Check for semantics that apply to tables in source schemas.
     """
     validate_semantics_of_table_or_ctas(table_design)
 
@@ -198,18 +199,27 @@ def validate_semantics_of_table(table_design):
         raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_design["name"])
 
     constraints = table_design.get("constraints", [])
-    constraint_types_in_design = [t for c in constraints for t in c]
-    for constraint_type in ("natural_key", "surrogate_key"):
-        if constraint_type in constraint_types_in_design:
+    constraint_types_in_design = [constraint_type for constraint in constraints for constraint_type in constraint]
+    for constraint_type in constraint_types_in_design:
+        if constraint_type in ("natural_key", "surrogate_key"):
             raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
                                            (table_design["name"], constraint_type))
 
-    split_by_name = table_design.get('extract_settings', {}).get('split_by', [])
+    [split_by_name] = table_design.get("extract_settings", {}).get("split_by", [None])
     if split_by_name:
-        [split_by_column] = [c for c in table_design["columns"] if c['name'] == split_by_name[0]]
-        if split_by_column["type"] not in ("int", "long"):
+        split_by_column = fy.first(fy.where(table_design["columns"], name=split_by_name))
+        if split_by_column.get("skipped", False):
+            raise TableDesignSemanticError("Split-by column type must not be skipped")
+        if not split_by_column.get("not_null", False):
+            raise TableDesignSemanticError("Split-by column type must have not-null constraint")
+        if split_by_column["type"] == "string":
+            if split_by_column["sql_type"].lower() not in ("timestamp", "timestamp without time zone"):
+                raise TableDesignSemanticError(
+                    "Split-by column must be a timestamp when not numeric, not '{}'".format(split_by_column["sql_type"])
+                )
+        elif split_by_column["type"] not in ("int", "long"):
             raise TableDesignSemanticError(
-                "Split-by column type must be numeric (int or long) not '{}'".format(split_by_column["type"])
+                "Split-by column type must be int or long when numeric, not '{}'".format(split_by_column["type"])
             )
 
 
