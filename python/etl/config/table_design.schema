@@ -205,6 +205,10 @@
         "extract_settings":  {
             "type": "object",
             "properties": {
+                "condition": {
+                    "$ref": "#/definitions/expression",
+                    "description": "Condition in SQL that will be part of the WHERE clause during extraction"
+                },
                 "split_by": { "$ref": "#/definitions/one_column_as_list" },
                 "num_partitions": {
                     "type": "integer",

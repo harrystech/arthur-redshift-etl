@@ -1,3 +1,4 @@
+import funcy as fy
 import logging
 import os.path
 import shlex
@@ -139,8 +140,7 @@ class SqoopExtractor(DatabaseExtractor):
             select_statement = self.select_statement(relation, None)
 
         # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
-        select_statement += " AND $CONDITIONS"
-        return select_statement
+        return select_statement + " AND $CONDITIONS"
 
     def build_sqoop_partition_options(self, relation: RelationDescription, partition_key: Optional[str],
                                       table_size: int) -> List[str]:
@@ -148,7 +148,11 @@ class SqoopExtractor(DatabaseExtractor):
         Build the partitioning-related arguments for Sqoop.
         """
         if partition_key:
-            quoted_key_arg = '"{}"'.format(partition_key)
+            column = fy.first(fy.where(relation.table_design["columns"], name=partition_key))
+            if column["sql_type"] in ("timestamp", "timestamp without time zone"):
+                quoted_key_arg = """CAST(TO_CHAR("{}", 'YYYYMMDDHH24MISS') AS BIGINT)""".format(partition_key)
+            else:
+                quoted_key_arg = '"{}"'.format(partition_key)
 
             if relation.num_partitions:
                 # num_partitions explicitly set in the design file overrides the dynamic determination.

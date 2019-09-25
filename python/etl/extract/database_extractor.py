@@ -102,12 +102,16 @@ class DatabaseExtractor(Extractor):
         """
         selected_columns = relation.get_columns_with_casts()
         statement = """SELECT {} FROM {}""".format(", ".join(selected_columns), relation.source_table_name)
+
+        condition = relation.table_design.get("extract_settings", {}).get("condition", "TRUE")
+
         if add_sampling_on_column is None:
-            statement += " WHERE TRUE"
+            statement += """ WHERE ({})""".format(condition)
         else:
             self.logger.info("Adding sampling on column '%s' while extracting '%s.%s'",
                              add_sampling_on_column, relation.source_name, relation.source_table_name.identifier)
-            statement += """ WHERE (("{}" % 10) = 1)""".format(add_sampling_on_column)
+            statement += """ WHERE (({}) AND ("{}" % 10) = 1)""".format(condition, add_sampling_on_column)
+
         return statement
 
     def fetch_source_table_size(self, dsn_dict: Dict[str, str], relation: RelationDescription) -> int:

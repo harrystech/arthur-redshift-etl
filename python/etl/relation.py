@@ -26,6 +26,8 @@ from operator import attrgetter
 from queue import PriorityQueue
 from typing import Any, Dict, FrozenSet, Optional, Union, List
 
+import funcy as fy
+
 import etl.config
 import etl.design.load
 import etl.file_sets
@@ -283,37 +285,42 @@ class RelationDescription:
         Return valid partition key for a relation which fulfills the conditions that
         (1) the column is marked as a primary key
         (2) the table's primary key is a single column
-        (3) the column has a numeric type.
+        (3) the column has a numeric type or can be cast into one (which currently only works for timestamps).
 
-        If the table design provides extract_settings with a split_by column, provide that instead.
+        If the table design provides extract_settings with a split_by column setting, provide that instead.
+        (The column will be numeric (int or long) or a timestamp in this case.)
 
         If no partition key can be found, returns None.
         """
         constraints = self.table_design.get("constraints", [])
         extract_settings = self.table_design.get("extract_settings", {})
-        [split_by_key] = extract_settings.get('split_by', [None])
+        [partition_key] = extract_settings.get('split_by', [None])
 
-        try:
-            [primary_key] = [col for constraint in constraints for col in constraint.get("primary_key", [])]
-            partition_key = split_by_key or primary_key
-        except ValueError:
-            logger.debug("Found no single-column primary key for table '%s'", self.identifier)
-            partition_key = split_by_key
+        if not partition_key:
+            try:
+                # Unpacking will fail here if the list of primary keys hasn't exactly one element.
+                [primary_key] = [col for constraint in constraints for col in constraint.get("primary_key", [])]
+                partition_key = primary_key
+            except ValueError:
+                logger.debug("Found no single-column primary key for table '%s'", self.identifier)
 
         if not partition_key:
             logger.debug("Found no partition key for table '%s'", self.identifier)
             return None
 
-        for column in self.table_design["columns"]:
-            if column["name"] == partition_key:
-                # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
-                if column["type"] in ("int", "long"):
-                    logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
-                    return partition_key
-                logger.warning("Partition key '%s' is not a number and is not usable as a partition key for '%s'",
-                               partition_key, self.identifier)
-                break
+        column = fy.first(fy.where(self.table_design["columns"], name=partition_key))
 
+        # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
+        if column["type"] in ("int", "long"):
+            logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
+            return partition_key
+        # We check the specific case of a timestamp here.
+        if column["type"] == "string" and column["sql_type"] in ("timestamp", "timestamp without time zone"):
+            logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
+            return partition_key
+
+        logger.warning("Column '%s' is not a number or timestamp and is not usable as a partition key for '%s'",
+                       partition_key, self.identifier)
         return None
 
     @contextmanager
