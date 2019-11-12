@@ -103,7 +103,8 @@ class LoadableRelation:
             return getattr(self._relation_description, name)
         raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, name))
 
-    __str__ = RelationDescription.__str__
+    # This works although __str__ will get passed a 'LoadableRelation' object instead of a 'RelationDescription' object.
+    __str__ = RelationDescription.__str__  # type: ignore
 
     def __format__(self, code):
         """
