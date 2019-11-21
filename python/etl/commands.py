@@ -735,7 +735,7 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
         parser.add_argument(
             "--use-sampling",
-            help="use only 10%% of rows in extracted tables that are larger than 1MB",
+            help="use only 10%% of rows in extracted tables that are larger than 100MB",
             default=False,
             action="store_true",
         )
