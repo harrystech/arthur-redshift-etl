@@ -35,6 +35,10 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Creating directory '%s' (with mode 750)", self._sqoop_options_dir)
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
 
+    def _temporary_options_file(self, prefix: Optional[str]=None):
+        # This function is needed to avoid a type error around 'dir' which isn't defined as 'Optional' in the library.
+        return NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
+
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """
         Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
@@ -61,7 +65,7 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Dry-run: Skipping writing of password file")
             password_file_path = "/only/needed/for/type/checking"
         else:
-            with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="pw_", delete=False) as fp:
+            with self._temporary_options_file("pw_") as fp:
                 fp.write(password)  # type: ignore
                 fp.close()
             password_file_path = fp.name
@@ -76,7 +80,7 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Dry-run: Skipping writing of connection params file")
             params_file_path = "/only/needed/for/type/checking"
         else:
-            with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="cp_", delete=False) as fp:
+            with self._temporary_options_file("cp_") as fp:
                 fp.write("ssl = true\n")  # type: ignore
                 fp.write("sslfactory = org.postgresql.ssl.NonValidatingFactory\n")  # type: ignore
                 fp.close()
@@ -174,7 +178,7 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Dry-run: Skipping creation of Sqoop options file")
             options_file_path = "/tmp/never_used"
         else:
-            with NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix="so_", delete=False) as fp:
+            with self._temporary_options_file("so_") as fp:
                 fp.write('\n'.join(args))  # type: ignore
                 fp.write('\n')  # type: ignore
                 fp.close()
