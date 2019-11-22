@@ -271,6 +271,12 @@ def check_select_permission(conn: connection, table_name: TableName):
 def validate_upstream_columns(conn: connection, table: RelationDescription) -> None:
     """
     Compare columns in upstream table to the table design file.
+
+    It is an ERROR if the design lists columns that do not exist in the upstream table. Exceptions
+    here are calculated columns (those starting with etl__) or columns that are marked as skipped.
+
+    It causes a WARNING to have more columns in the upstream table than are defined in the design
+    or to have columns skipped in the design that do not exist upstream.
     """
     source_table_name = table.source_table_name
 
@@ -283,14 +289,24 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     design_columns = frozenset(column["name"]
                                for column in table.table_design["columns"]
                                if not column["name"].startswith("etl__"))
-    if not current_columns.issuperset(design_columns):
-        extra_columns = design_columns.difference(current_columns)
+    design_required_columns = frozenset(column["name"]
+                                        for column in table.table_design["columns"]
+                                        if column["name"] in design_columns and not column.get("skipped", False))
+
+    missing_required_columns = design_required_columns.difference(current_columns)
+    if missing_required_columns:
         raise UpstreamValidationError("design of '%s' has columns that do not exist upstream: %s" %
-                                      (source_table_name.identifier, join_with_quotes(extra_columns)))
-    missing_columns = current_columns.difference(design_columns)
-    if missing_columns:
+                                      (source_table_name.identifier, join_with_quotes(missing_required_columns)))
+
+    extra_design_columns = design_columns.difference(current_columns)
+    if extra_design_columns:
+        logger.warning("Column(s) that are in the design of '%s' but do not exist upstream in '%s': %s",
+                       table.identifier, table.source_name, join_with_quotes(extra_design_columns))
+
+    missing_design_columns = current_columns.difference(design_columns)
+    if missing_design_columns:
         logger.warning("Column(s) that exist upstream in '%s' but not in the design '%s': %s",
-                       table.source_name, table.identifier, join_with_quotes(missing_columns))
+                       table.source_name, table.identifier, join_with_quotes(missing_design_columns))
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
     for column in table.table_design["columns"]:
