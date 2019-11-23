@@ -944,12 +944,16 @@ class ShowDownstreamDependentsCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme", "continue-from"])
+        parser.add_argument("--list-dependencies", help="show list of dependencies after every relation",
+                            action="store_true")
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args,
                                                     required_relation_selector=config.required_in_full_load_selector,
                                                     return_all=True)
-        etl.load.show_downstream_dependents(relations, args.pattern, continue_from=args.continue_from)
+        etl.load.show_downstream_dependents(relations, args.pattern,
+                                            continue_from=args.continue_from,
+                                            list_dependencies=args.list_dependencies)
 
 
 class ShowUpstreamDependenciesCommand(SubCommand):

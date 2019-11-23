@@ -328,7 +328,7 @@ running code in development cluster first should go through a release candidate.
 
 ### Releasing code to master branch
 
-Once code is considered ready for production:
+Once code is considered ready for production (and you've made sure there's an **updated** version number in `setup.py`):
 * Merge `next` into `master`
 ```
 git checkout master
