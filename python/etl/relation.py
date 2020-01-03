@@ -370,12 +370,12 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
     """
     known_tables = frozenset({description.target_table_name for description in descriptions})
     has_unknown_dependencies = set()
-    has_pg_internal_dependencies = set()
+    has_pg_catalog_dependencies = set()
     known_unknowns = set()
 
     for initial_order, description in enumerate(descriptions):
-        unmanaged_dependencies = set(dep for dep in description.dependencies if not dep.is_managed)
-        pg_internal_dependencies = set(dep for dep in description.dependencies if dep.schema == 'pg_catalog')
+        unmanaged_dependencies = frozenset(dep for dep in description.dependencies if not dep.is_managed)
+        pg_catalog_dependencies = frozenset(dep for dep in description.dependencies if dep.schema == 'pg_catalog')
         unknowns = description.dependencies - known_tables - unmanaged_dependencies
         if unknowns:
             known_unknowns.update(unknowns)
@@ -385,8 +385,8 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
         if unmanaged_dependencies:
             logger.info("The following dependencies for relation '%s' are not managed by Arthur: %s",
                         description.identifier, join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))
-        if pg_internal_dependencies:
-            has_pg_internal_dependencies.add(description.target_table_name)
+        if pg_catalog_dependencies:
+            has_pg_catalog_dependencies.add(description.target_table_name)
 
     if has_unknown_dependencies:
         logger.warning("These relations were unknown during dependency ordering: %s",
@@ -395,9 +395,9 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
                        join_with_quotes([dep.identifier for dep in has_unknown_dependencies]))
 
     # Make tables that depend on pg_catalog tables on all our tables (except those depending on pg_catalog tables).
-    has_no_internal_dependencies = known_tables - known_unknowns - has_pg_internal_dependencies
+    has_no_internal_dependencies = known_tables - known_unknowns - has_pg_catalog_dependencies
     for description in descriptions:
-        if description.target_table_name in has_pg_internal_dependencies:
+        if description.target_table_name in has_pg_catalog_dependencies:
             description.dependencies.update(has_no_internal_dependencies)
 
 
@@ -422,7 +422,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
         if minimum > nr_tables:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
 
-        # Note that all([]) is True so this checks: has no dependencies or has all dependencies known.
+        # Note that all([]) is True so following "if" checks: has no dependencies or has all dependencies known.
         if all(relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed):
             latest_order += 1
             description.order = latest_order
