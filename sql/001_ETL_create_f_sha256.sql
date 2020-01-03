@@ -1,3 +1,5 @@
+/* Naming here follows recommenation in https://docs.aws.amazon.com/redshift/latest/dg/udf-naming-udfs.html */
+/* See also: https://docs.aws.amazon.com/redshift/latest/dg/r_CREATE_FUNCTION.html */
 CREATE OR REPLACE FUNCTION dw.f_sha256 (msg VARCHAR)
         returns varchar
 STABLE
