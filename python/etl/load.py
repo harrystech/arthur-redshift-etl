@@ -1084,7 +1084,7 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
                      " flag={flag:9s}"
                      " is_required={relation.is_required}")
 
-    back_reference = {}  # type: Dict[TableName, RelationDescription]
+    relation_map = {relation.target_table_name: relation for relation in selected_relations}
     for i, relation in enumerate(selected_relations):
         if relation.identifier in selected:
             flag = "selected"
@@ -1095,13 +1095,12 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
         print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
         if list_dependencies:
             for dependency in relation.dependencies:
-                if dependency in back_reference:
+                if dependency in relation_map:
                     print("  #> {relation.identifier:{width}s} # level={relation.level:3d}".format(
-                        relation=back_reference[dependency], width=max_len))
+                        relation=relation_map[dependency], width=max_len))
                 else:
                     # Dependencies that are not described as relations are "external" and thus at level = 1.
                     print("  #> {relation.identifier:{width}s} # level=1".format(relation=dependency, width=max_len))
-        back_reference[relation.target_table_name] = relation
 
 
 def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):

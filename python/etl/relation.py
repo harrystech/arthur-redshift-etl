@@ -412,32 +412,33 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
     # The queue has tuples of (min expected order number, original sort order to break ties, relation description).
     queue = PriorityQueue()  # type: PriorityQueue[Tuple[int, int, SortableRelationDescription]]
     for initial_order, description in enumerate(descriptions):
-        queue.put((1, initial_order, description))
+        queue.put((1, initial_order + 1, description))
 
-    table_map = {description.target_table_name: description for description in descriptions}
-    latest = 0
+    relation_map = {description.target_table_name: description for description in descriptions}
+    latest_order = 0
     while not queue.empty():
         minimum, tie_breaker, description = queue.get()
 
-        if minimum > 2 * nr_tables:
+        if minimum > nr_tables:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
 
-        max_preceding_order = max(
-            (table_map[dep].order or 0 for dep in description.dependencies if dep.is_managed),
-            default=latest
-        )
-        max_preceding_level = max(
-            (table_map[dep].level or 0 for dep in description.dependencies if dep.is_managed),
-            default=0
-        )
-        resolved = all(table_map[dep].order is not None for dep in description.dependencies if dep.is_managed)
+        # Note that all([]) is True so this checks: has no dependencies or has all dependencies known.
+        if all(relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed):
+            latest_order += 1
+            description.order = latest_order
 
-        if resolved:
-            latest = max(max_preceding_order, latest) + 1
-            description.order = latest
+            max_preceding_level = max(
+                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed),
+                default=0
+            )
             description.level = max_preceding_level + 1
+
         else:
-            queue.put((max(max_preceding_order, latest, minimum) + 1, tie_breaker, description))
+            max_preceding_order = max(
+                (relation_map[dep].order or 0 for dep in description.dependencies if dep.is_managed),
+                default=0
+            )
+            queue.put((max(max_preceding_order, latest_order, minimum) + 1, tie_breaker, description))
 
 
 def order_by_dependencies(relation_descriptions):
