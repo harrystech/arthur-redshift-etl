@@ -407,23 +407,22 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
 
     This will change the sortable relation in place.
     """
-    nr_tables = len(descriptions)
-
     # The queue has tuples of (min expected order number, original sort order to break ties, relation description).
     queue = PriorityQueue()  # type: PriorityQueue[Tuple[int, int, SortableRelationDescription]]
     for initial_order, description in enumerate(descriptions):
         queue.put((1, initial_order + 1, description))
 
     relation_map = {description.target_table_name: description for description in descriptions}
+    nr_relations = len(descriptions)
     latest_order = 0
     while not queue.empty():
-        minimum, tie_breaker, description = queue.get()
+        minimum_order, tie_breaker, description = queue.get()
 
-        if minimum > nr_tables:
+        if minimum_order > nr_relations:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
 
-        # Note that all([]) is True so following "if" checks: has no dependencies or has all dependencies known.
         if all(relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed):
+            # Relation has no dependencies (all([]) == True !) or has all its dependencies evaluated.
             latest_order += 1
             description.order = latest_order
 
@@ -434,11 +433,8 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
             description.level = max_preceding_level + 1
 
         else:
-            max_preceding_order = max(
-                (relation_map[dep].order or 0 for dep in description.dependencies if dep.is_managed),
-                default=0
-            )
-            queue.put((max(max_preceding_order, latest_order, minimum) + 1, tie_breaker, description))
+            # "Latest" order is only smaller than the "minimum" during the first run through.
+            queue.put((max(latest_order, minimum_order) + 1, tie_breaker, description))
 
 
 def order_by_dependencies(relation_descriptions):
