@@ -1064,6 +1064,7 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
+    relation_map = {relation.target_table_name: relation for relation in relations}
     selected_relations = etl.relation.select_in_execution_order(relations, selector,
                                                                 include_dependents=True, continue_from=continue_from)
     if not selected_relations:
@@ -1084,7 +1085,6 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
                      " flag={flag:9s}"
                      " is_required={relation.is_required}")
 
-    relation_map = {relation.target_table_name: relation for relation in selected_relations}
     for i, relation in enumerate(selected_relations):
         if relation.identifier in selected:
             flag = "selected"
@@ -1094,13 +1094,13 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
             flag = "dependent"
         print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
         if list_dependencies:
-            for dependency in relation.dependencies:
+            for dependency in sorted(relation.dependencies):
                 if dependency in relation_map:
                     print("  #> {relation.identifier:{width}s} # level={relation.level:3d}".format(
                         relation=relation_map[dependency], width=max_len))
                 else:
-                    # Dependencies that are not described as relations are "external" and thus at level = 1.
-                    print("  #> {relation.identifier:{width}s} # level=1".format(relation=dependency, width=max_len))
+                    # Dependencies that are not described as relations are "external".
+                    print("  #> {relation.identifier:{width}s} # level=  0".format(relation=dependency, width=max_len))
 
 
 def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):

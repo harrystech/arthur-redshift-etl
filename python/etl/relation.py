@@ -469,6 +469,8 @@ def set_required_relations(relations: List[RelationDescription], required_select
     """
     Set the required property of the relations if they are directly or indirectly feeding
     into relations selected by the :required_selector.
+
+    Side-effect: relations are sorted to determine dependencies and their order and level is set.
     """
     logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
     ordered_descriptions = order_by_dependencies(relations)
