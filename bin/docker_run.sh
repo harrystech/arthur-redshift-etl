@@ -10,12 +10,12 @@ Usage: `basename $0` [-p aws_profile] [-t tag] [<config_dir> [<target_env>]]
 This will drop you into a shell in a Docker container with Arthur installed and
 configured to use <config_dir>.
 
-The <config_dir> default to \$DATA_WAREHOUSE_CONFIG.
+The <config_dir> defaults to \$DATA_WAREHOUSE_CONFIG.
 The <target_env> defaults to \$ARTHUR_DEFAULT_PREFIX (or \$USER if not set).
 The optional -p flag lets you use the given profile from your AWS CLI config
 within the container. If \$AWS_PROFILE is set, it will be used as a default.
 
-You must build the Docker image with docker_build.sh before using this script.
+You must have built the Docker image with docker_build.sh before using this script.
 
 EOF
     exit ${1-0}

@@ -1056,7 +1056,7 @@ def update_data_warehouse(all_relations: List[RelationDescription], selector: Ta
 
 
 def show_downstream_dependents(relations: List[RelationDescription], selector: TableSelector,
-                               continue_from: Optional[str]=None) -> None:
+                               continue_from: Optional[str]=None, list_dependencies: Optional[bool]=False) -> None:
     """
     List the execution order of loads or updates.
 
@@ -1064,6 +1064,7 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
+    relation_map = {relation.target_table_name: relation for relation in relations}
     selected_relations = etl.relation.select_in_execution_order(relations, selector,
                                                                 include_dependents=True, continue_from=continue_from)
     if not selected_relations:
@@ -1080,8 +1081,10 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
                 len(selected), len(immediate), len(selected_relations) - len(selected) - len(immediate))
 
     max_len = max(len(relation.identifier) for relation in selected_relations)
-    line_template = ("{relation.identifier:{width}s}"
-                     " # index={index:4d}, flag={flag:.9s}, kind={relation.kind}, is_required={relation.is_required}")
+    line_template = ("{relation.identifier:{width}s} # kind={relation.kind} index={index:4d} level={relation.level:3d}"
+                     " flag={flag:9s}"
+                     " is_required={relation.is_required}")
+
     for i, relation in enumerate(selected_relations):
         if relation.identifier in selected:
             flag = "selected"
@@ -1090,6 +1093,14 @@ def show_downstream_dependents(relations: List[RelationDescription], selector: T
         else:
             flag = "dependent"
         print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
+        if list_dependencies:
+            for dependency in sorted(relation.dependencies):
+                if dependency in relation_map:
+                    print("  #> {relation.identifier:{width}s} # level={relation.level:3d}".format(
+                        relation=relation_map[dependency], width=max_len))
+                else:
+                    # Dependencies that are not described as relations are "external".
+                    print("  #> {relation.identifier:{width}s} # level=  0".format(relation=dependency, width=max_len))
 
 
 def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):
@@ -1108,8 +1119,8 @@ def show_upstream_dependencies(relations: List[RelationDescription], selector: T
             dependencies.update(dep.identifier for dep in relation.dependencies)
 
     max_len = max(len(identifier) for identifier in dependencies)
-    line_template = ("{relation.identifier:{width}s}"
-                     " # index={index:4d}, kind={relation.kind}, is_required={relation.is_required}")
+    line_template = ("{relation.identifier:{width}s} # kind={relation.kind} index={index:4d}"
+                     " is_required={relation.is_required}")
     for i, relation in enumerate(execution_order):
         if relation.identifier in dependencies:
             print(line_template.format(index=i + 1, relation=relation, width=max_len))

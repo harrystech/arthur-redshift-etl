@@ -24,7 +24,7 @@ from functools import partial
 from itertools import chain, dropwhile
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, Optional, Union, List
+from typing import Any, Dict, FrozenSet, Optional, Union, List, Tuple
 
 import funcy as fy
 
@@ -358,7 +358,83 @@ class SortableRelationDescription:
         self.identifier = original_description.identifier
         self.dependencies = set(original_description.dependencies)
         self.target_table_name = original_description.target_table_name
-        self.order = None
+        self.order = None  # type: Optional[int]
+        self.level = None  # type: Optional[int]
+
+
+def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> None:
+    """
+    Pass 1 of ordering -- make sure to drop unknown dependencies.
+
+    This will change the sortable relations in place.
+    """
+    known_tables = frozenset({description.target_table_name for description in descriptions})
+    has_unknown_dependencies = set()
+    has_pg_catalog_dependencies = set()
+    known_unknowns = set()
+
+    for initial_order, description in enumerate(descriptions):
+        unmanaged_dependencies = frozenset(dep for dep in description.dependencies if not dep.is_managed)
+        pg_catalog_dependencies = frozenset(dep for dep in description.dependencies if dep.schema == 'pg_catalog')
+        unknowns = description.dependencies - known_tables - unmanaged_dependencies
+        if unknowns:
+            known_unknowns.update(unknowns)
+            has_unknown_dependencies.add(description.target_table_name)
+            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
+            description.dependencies = description.dependencies.difference(unknowns)
+        if unmanaged_dependencies:
+            logger.info("The following dependencies for relation '%s' are not managed by Arthur: %s",
+                        description.identifier, join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))
+        if pg_catalog_dependencies:
+            has_pg_catalog_dependencies.add(description.target_table_name)
+
+    if has_unknown_dependencies:
+        logger.warning("These relations were unknown during dependency ordering: %s",
+                       join_with_quotes([dep.identifier for dep in known_unknowns]))
+        logger.warning('This caused these relations to have dependencies that are not known: %s',
+                       join_with_quotes([dep.identifier for dep in has_unknown_dependencies]))
+
+    # Make tables that depend on pg_catalog tables on all our tables (except those depending on pg_catalog tables).
+    has_no_internal_dependencies = known_tables - known_unknowns - has_pg_catalog_dependencies
+    for description in descriptions:
+        if description.target_table_name in has_pg_catalog_dependencies:
+            description.dependencies.update(has_no_internal_dependencies)
+
+
+def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> None:
+    """
+    Pass 2 of ordering -- sort such that dependencies are built before the relation itself is built.
+
+    This will change the sortable relation in place.
+    """
+    # The queue has tuples of (min expected order number, original sort order to break ties, relation description).
+    queue = PriorityQueue()  # type: PriorityQueue[Tuple[int, int, SortableRelationDescription]]
+    for initial_order, description in enumerate(descriptions):
+        queue.put((1, initial_order + 1, description))
+
+    relation_map = {description.target_table_name: description for description in descriptions}
+    nr_relations = len(descriptions)
+    latest_order = 0
+    while not queue.empty():
+        minimum_order, tie_breaker, description = queue.get()
+
+        if minimum_order > nr_relations:
+            raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
+
+        if all(relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed):
+            # Relation has no dependencies (all([]) == True !) or has all its dependencies evaluated.
+            latest_order += 1
+            description.order = latest_order
+
+            max_preceding_level = max(
+                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed),
+                default=0
+            )
+            description.level = max_preceding_level + 1
+
+        else:
+            # "Latest" order is only smaller than the "minimum" during the first run through.
+            queue.put((max(latest_order, minimum_order) + 1, tie_breaker, description))
 
 
 def order_by_dependencies(relation_descriptions):
@@ -367,7 +443,7 @@ def order_by_dependencies(relation_descriptions):
 
     If a table (or view) depends on other tables, then its order is larger
     than any of its managed dependencies. Ties are resolved based on the initial order
-    of the tables. (This motivates the use of a priority queue.)
+    of the tables.
 
     If a table depends on some system catalogs (living in pg_catalog), then the table
     is treated as if it depended on all other tables.
@@ -379,57 +455,12 @@ def order_by_dependencies(relation_descriptions):
     RelationDescription.load_in_parallel(relation_descriptions)
     descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
-    known_tables = frozenset({description.target_table_name for description in relation_descriptions})
-    nr_tables = len(known_tables)
+    _sanitize_dependencies(descriptions)
+    _sort_by_dependencies(descriptions)
 
-    # Phase 1 -- build up the priority queue all the while making sure we have only dependencies that we know about
-    has_unknown_dependencies = set()
-    has_internal_dependencies = set()
-    known_unknowns = set()
-    queue = PriorityQueue()
-    for initial_order, description in enumerate(descriptions):
-        # superset including internal dependencies
-        unmanaged_dependencies = set(dep for dep in description.dependencies if not dep.is_managed)
-        pg_internal_dependencies = set(dep for dep in description.dependencies if dep.schema == 'pg_catalog')
-        unknowns = description.dependencies - known_tables - unmanaged_dependencies
-        if unknowns:
-            known_unknowns.update(unknowns)
-            has_unknown_dependencies.add(description.target_table_name)
-            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
-            description.dependencies = description.dependencies.difference(unknowns)
-        if unmanaged_dependencies:
-            logger.info("The following dependencies for relation '%s' are not managed by Arthur: %s",
-                        description.identifier, join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))
-        if pg_internal_dependencies:
-            has_internal_dependencies.add(description.target_table_name)
-        queue.put((1, initial_order, description))
-    if has_unknown_dependencies:
-        logger.warning("These relations were unknown during dependency ordering: %s",
-                       join_with_quotes([dep.identifier for dep in known_unknowns]))
-        logger.warning('This caused these relations to have dependencies that are not known: %s',
-                       join_with_quotes([dep.identifier for dep in has_unknown_dependencies]))
-    has_no_internal_dependencies = known_tables - known_unknowns - has_internal_dependencies
+    # TODO Find a better way to back-annotating the relation descriptions. Having "level" reach in here is bad.
     for description in descriptions:
-        if description.target_table_name in has_internal_dependencies:
-            description.dependencies.update(has_no_internal_dependencies)
-
-    # Phase 2 -- keep looping until all relations have their dependencies ordered before them
-    table_map = {description.target_table_name: description for description in descriptions}
-    latest = 0
-    while not queue.empty():
-        minimum, tie_breaker, description = queue.get()
-        if minimum > 2 * nr_tables:
-            raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
-        others = [table_map[dep].order for dep in description.dependencies if dep.is_managed]
-        if not others:
-            latest = description.order = latest + 1
-        elif all(others):
-            latest = description.order = max(max(others), latest) + 1
-        elif any(others):
-            at_least = max(order for order in others if order is not None)
-            queue.put((max(at_least, latest, minimum) + 1, tie_breaker, description))
-        else:
-            queue.put((max(latest, minimum) + 1, tie_breaker, description))
+        description.original_description.level = description.level
 
     return [description.original_description for description in sorted(descriptions, key=attrgetter("order"))]
 
@@ -438,6 +469,8 @@ def set_required_relations(relations: List[RelationDescription], required_select
     """
     Set the required property of the relations if they are directly or indirectly feeding
     into relations selected by the :required_selector.
+
+    Side-effect: relations are sorted to determine dependencies and their order and level is set.
     """
     logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
     ordered_descriptions = order_by_dependencies(relations)
