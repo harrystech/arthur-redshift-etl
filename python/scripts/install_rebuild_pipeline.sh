@@ -67,3 +67,8 @@ aws datapipeline put-pipeline-definition \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
+
+set +x
+echo
+echo "You can check the status of this rebuild pipeline using:"
+echo "  arthur.py show_pipelines -q '$PIPELINE_ID'"
