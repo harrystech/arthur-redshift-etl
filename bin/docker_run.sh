@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -o errexit
 
 show_usage_and_exit () {
     cat <<EOF
@@ -24,6 +24,12 @@ EOF
 profile="${AWS_PROFILE-}"
 tag="latest"
 
+config_arg="$DATA_WAREHOUSE_CONFIG"
+target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
+
+# We delayed checking for unset vars until after we've tried to grab the default values.
+set -o nounset
+
 while getopts ":hp:t:" opt; do
     case "$opt" in
       h)
@@ -46,24 +52,18 @@ shift $((OPTIND -1))
 if [[ $# -gt 2 ]]; then
     echo "Wrong number of arguments!" >&2
     show_usage_and_exit 1
-fi
-
-if [[ $# -eq 2 ]]; then
+elif [[ $# -eq 2 ]]; then
+    # Override both, config directory and target prefix.
     config_arg="$1"
     target_env="$2"
 elif [[ $# -eq 1 ]]; then
+    # Just override target prefix.
     config_arg="$1"
-    target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
-else
-    if [[ -z "$DATA_WAREHOUSE_CONFIG" ]]; then
-        echo "You must set DATA_WAREHOUSE_CONFIG when not specifying the config directory." >&2
-        show_usage_and_exit 1
-    fi
-    config_arg="$DATA_WAREHOUSE_CONFIG"
-    target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
+elif [[ -z "$config_arg" ]]; then
+    echo "You must set DATA_WAREHOUSE_CONFIG when not specifying the config directory." >&2
+    show_usage_and_exit 1
 fi
 
-set -u
 
 if [[ ! -d "$config_arg" ]]; then
     echo "Bad configuration directory: $config_arg"
@@ -79,6 +79,8 @@ else
     profile_arg=""
 fi
 
+set -o xtrace
+
 # This binds the following directories
 #   - the "data warehouse" directory which is the parent of the chosen configuration directory
 #   - the '~/.aws' directory which contains the config and credentials needed
@@ -87,11 +89,13 @@ fi
 #   - DATA_WAREHOUSE_CONFIG so that Arthur finds the configuration files
 #   - ARTHUR_DEFAULT_PREFIX to pick the default "environment" (same as S3 prefix)
 #   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
-set -x
-docker run --rm -it --publish 8086:8086/tcp \
+
+docker run --rm --interactive --tty \
+    --publish 8086:8086/tcp \
     --volume "$data_warehouse_path":/data-warehouse \
     --volume ~/.aws:/root/.aws \
     --volume ~/.ssh:/root/.ssh \
     -e DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
     -e ARTHUR_DEFAULT_PREFIX="$target_env" \
-    $profile_arg "arthur:$tag"
+    $profile_arg \
+    "arthur:$tag"

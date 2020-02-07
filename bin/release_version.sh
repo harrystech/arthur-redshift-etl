@@ -22,7 +22,8 @@ fi
 
 # We add the latest commit hash to the release file which is misleading if we're pulling in modified files.
 if git status --porcelain 2>/dev/null | egrep '^ M|^M' >/dev/null; then
-    echo "Warning: Not all of your changes have been committed!" >&2
+    echo "ERROR Not all of your changes have been committed!" >&2
+    exit 1
 fi
 
 RELEASE_FILE="/tmp/upload_env_release_${USER-nobody}$$.txt"
