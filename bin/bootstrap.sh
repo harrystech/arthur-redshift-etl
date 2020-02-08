@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Setup the environment to run Arthur on an instance.
+# Setup the environment to run Arthur on an EC2 instance.
 # Make sure to keep this in sync with our Dockerfile.
 
 PROJ_NAME="redshift_etl"
