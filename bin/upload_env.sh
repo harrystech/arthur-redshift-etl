@@ -118,5 +118,5 @@ fi
 
 set +x
 echo
-echo "# You should *now* run inside your warehouse repo directory:"
+echo "# You should *now* sync your data warehouse::"
 echo "arthur.py sync --deploy --prefix \"$PROJ_TARGET_ENVIRONMENT\""
