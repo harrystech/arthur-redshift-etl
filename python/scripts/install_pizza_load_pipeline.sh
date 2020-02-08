@@ -76,5 +76,5 @@ aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
 set +x
 echo
-echo "You can monitor the status of this pizza pipeline using:"
-echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"
+echo "You can check the status of this pizza pipeline using:"
+echo "  arthur.py show_pipelines -q '$PIPELINE_ID'"
