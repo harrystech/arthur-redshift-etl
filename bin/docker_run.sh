@@ -14,6 +14,7 @@ case "$0" in
     *)
         echo "Internal Error: unknown script name!" >&2
         exit 1
+        ;;
 esac
 
 
@@ -128,5 +129,9 @@ case "$action" in
             $profile_arg \
             "arthur:$tag" \
             /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && arthur.py sync --force --deploy'
+        ;;
+    *)
+        echo "Internal Error: unknown action '$action'!" >&2
+        exit 1
         ;;
 esac
