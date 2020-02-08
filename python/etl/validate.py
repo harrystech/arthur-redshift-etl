@@ -122,7 +122,7 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
         logger.error("Mismatch in dependencies of '{}': {}".format(relation.identifier, difference))
         raise TableDesignValidationError("mismatched dependencies in '%s'" % relation.identifier)
     else:
-        logger.info('Dependencies listing in design file matches SQL')
+        logger.info("Dependencies listing in design file for '%s' matches SQL", relation.identifier)
 
 
 def validate_column_ordering(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
