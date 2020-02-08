@@ -332,7 +332,7 @@ def make_item_sorter():
     """
     preferred_order = [
         "name", "description",  # always (tables, columns, etc.)
-        "source_name", "unload_target", "depends_on", "columns", "constraints", "attributes",  # only tables
+        "source_name", "unload_target", "depends_on", "constraints", "attributes", "columns",  # only tables
         "sql_type", "type", "expression", "source_sql_type", "not_null", "identity"  # only columns
     ]
     order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
