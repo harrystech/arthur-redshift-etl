@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="redshift_etl",
-    version="1.10.0",
+    version="1.11.0",
     author="Harry's Data Engineering and Analytics Engineering",
     description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
     license="MIT",
@@ -20,6 +20,7 @@ setup(
     },
     scripts=[
         "python/scripts/compare_events.py",
+        "python/scripts/install_extraction_pipeline.sh",
         "python/scripts/install_pizza_load_pipeline.sh",
         "python/scripts/install_rebuild_pipeline.sh",
         "python/scripts/install_refresh_pipeline.sh",
