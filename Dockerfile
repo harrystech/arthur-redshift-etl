@@ -1,7 +1,7 @@
 #
-# This attempts to create an environment as close to what ./bin/bootstrap.sh
-# creates as possible with the images available. TODO: Resolve assumptions
-# from bootstrap.sh so it can be used here to remove code duplication.
+# This attempts to create an environment as close as possible to what ./bin/bootstrap.sh
+# creates with the images available.
+# N.B. Make sure to keep this and the bootstrap script in sync!
 #
 FROM amazonlinux:2017.03
 
