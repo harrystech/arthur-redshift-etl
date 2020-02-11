@@ -83,8 +83,10 @@ set +x +v
 KEYPAIR=$( arthur.py show_value resources.key_name )
 
 cat <<EOF
-# Give the machine a few more seconds to bootstrap before you try logging in with:
+# Give the EC2 instance a few more seconds to bootstrap before you try logging in with:
 
     ssh -i ~/.ssh/$KEYPAIR.pem -l ec2-user $PUBLIC_DNS_NAME
+
+# The output of the bootstrap script is in /var/log/cloud-init-output.log on the EC2 instance.
 
 EOF
