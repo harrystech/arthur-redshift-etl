@@ -13,8 +13,13 @@ set -e -u
 # === Command line args ===
 
 show_usage_and_exit() {
-    echo "Usage: `basename $0` [<environment>]"
-    echo "The environment defaults to \"$DEFAULT_PREFIX\"."
+    cat <<USAGE
+
+Usage: `basename $0` [<environment>]
+
+The environment defaults to "$DEFAULT_PREFIX".
+
+USAGE
     exit ${1-0}
 }
 
@@ -126,5 +131,8 @@ cat <<EOF
 
   export CLUSTER_ID="$CLUSTER_ID"
 
-# * Do not forget to shutdown the cluster as soon as you no longer need it. *
+# *** Do not forget to shutdown the cluster as soon as you no longer need it. ***
+
+  terminate_emr_cluster.sh "$CLUSTER_ID"
+
 EOF
