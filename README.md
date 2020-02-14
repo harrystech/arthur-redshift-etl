@@ -107,8 +107,8 @@ DATA_WAREHOUSE_ADMIN=postgres://admin:<password>@<host>:<port>/<dbname>?sslmode=
 
 ### Starting Arthur in Docker
 
-The will explain how to setup a Docker image to run _Arthur_. Once you have that,
-getting to a prompt is easy:
+The [INSTALL.md](INSTALL.md) file will explain how to setup a Docker image to run _Arthur_.
+Once you have that, getting to a prompt is easy:
 ```bash
 bin/run_arthur.sh ../warehouse-repo/config production
 ```
