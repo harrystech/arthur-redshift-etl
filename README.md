@@ -110,7 +110,7 @@ DATA_WAREHOUSE_ADMIN=postgres://admin:<password>@<host>:<port>/<dbname>?sslmode=
 The will explain how to setup a Docker image to run _Arthur_. Once you have that,
 getting to a prompt is easy:
 ```bash
-bin/docker_run.sh ../warehouse-repo/config production
+bin/run_arthur.sh ../warehouse-repo/config production
 ```
 
 This command will set the path to the configuration files and default environment (_a.k.a._ prefix) for you.
@@ -185,7 +185,7 @@ We prefer to have a short and succinct way to deploy our data warehouse files (c
 transformations) into production. So instead of starting a bash and running `sync`, just do:
 
 ```bash
-bin/docker_deploy.sh -p aws-prod-profile ../repo/config_directory/ production
+bin/deploy_with_arthur.sh -p aws-prod-profile ../repo/config_directory/ production
 ```
 
 ## Loading and updating data

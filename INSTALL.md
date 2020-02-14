@@ -30,7 +30,7 @@ git clone git@github.com:harrystech/arthur-redshift-etl.git
 cd ../arthur-redshift-etl
 git pull
 
-bin/docker_build.sh
+bin/build_arthur.sh
 ```
 
 # Using the container
@@ -38,7 +38,7 @@ bin/docker_build.sh
 This might be as simple as:
 
 ```bash
-bin/docker_run.sh
+bin/run_arthur.sh
 ```
 
 For that to work, set these environment variables:
@@ -50,12 +50,12 @@ export ARTHUR_DEFAULT_PREFIX= ...
 
 Or you can set (or override) the settings on the command line:
 ```bash
-bin/docker_run.sh -p aws_profile ../warehouse-repo/config-dir wip
+bin/run_arthur.sh -p aws_profile ../warehouse-repo/config-dir wip
 ```
 
 When in doubt, ask for help:
 ```bash
-bin/docker_run.sh -h
+bin/run_arthur.sh -h
 ```
 
 # Additional steps for developers
