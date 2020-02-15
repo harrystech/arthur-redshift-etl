@@ -28,15 +28,15 @@ import psycopg2
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
-import etl.design.bootstrap
 import etl.db
+import etl.design.bootstrap
 import etl.relation
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
-from etl.errors import ETLConfigError, ETLDelayedExit, ETLRuntimeError  # Exception classes that we might catch
-from etl.errors import TableDesignValidationError, UpstreamValidationError  # Exception classes that we might raise
+from etl.errors import (ETLConfigError,  # Exception classes that we might catch; Exception classes that we might raise
+                        ETLDelayedExit, ETLRuntimeError, TableDesignValidationError, UpstreamValidationError)
 from etl.names import TableName, TempTableName
-from etl.text import join_with_quotes
 from etl.relation import RelationDescription
+from etl.text import join_with_quotes
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)

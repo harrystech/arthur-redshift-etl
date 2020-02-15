@@ -5,8 +5,8 @@ from contextlib import closing
 from typing import Dict, List, Optional
 
 import etl.db
-from etl.extract.extractor import Extractor
 from etl.config.dw import DataWarehouseSchema
+from etl.extract.extractor import Extractor
 from etl.relation import RelationDescription
 
 

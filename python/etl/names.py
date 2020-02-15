@@ -9,7 +9,7 @@ by a pattern from the command line.
 
 import fnmatch
 import uuid
-from typing import Optional, List
+from typing import List, Optional
 
 import etl.config
 from etl.errors import ETLSystemError

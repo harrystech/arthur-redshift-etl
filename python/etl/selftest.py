@@ -15,13 +15,13 @@ from typing import Optional
 
 import pycodestyle
 
-
 # Skip etl.commands to avoid circular dependency
 import etl.config
+import etl.data_warehouse
+import etl.db
 import etl.design
 import etl.design.bootstrap
 import etl.design.load
-import etl.data_warehouse
 import etl.errors
 import etl.explain
 import etl.extract
@@ -30,7 +30,6 @@ import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.db
 import etl.pipeline
 import etl.relation
 import etl.render_template

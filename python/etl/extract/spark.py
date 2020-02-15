@@ -1,7 +1,7 @@
 import logging
 import os.path
-from typing import List, Dict, Tuple
 from contextlib import closing
+from typing import Dict, List, Tuple
 
 import boto3
 from psycopg2.extensions import connection  # only for type annotation

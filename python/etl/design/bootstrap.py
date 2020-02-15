@@ -9,9 +9,9 @@ import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
+import etl.db
 import etl.design.load
 import etl.file_sets
-import etl.db
 import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema

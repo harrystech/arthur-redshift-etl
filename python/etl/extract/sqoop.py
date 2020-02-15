@@ -1,10 +1,11 @@
-import funcy as fy
 import logging
 import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional
+
+import funcy as fy
 
 import etl.config
 import etl.db

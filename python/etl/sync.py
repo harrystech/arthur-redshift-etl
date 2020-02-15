@@ -20,7 +20,7 @@ from typing import List
 import etl.config
 import etl.file_sets
 import etl.s3
-from etl.errors import MissingQueryError, ETLRuntimeError
+from etl.errors import ETLRuntimeError, MissingQueryError
 from etl.relation import RelationDescription
 from etl.timer import Timer
 

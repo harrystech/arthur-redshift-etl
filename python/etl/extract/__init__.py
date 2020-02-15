@@ -27,7 +27,7 @@ of upstream sources. The data is stored in gzipped CSV form, into a specified ke
 """
 
 import logging
-from typing import List, Dict
+from typing import Dict, List
 
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
@@ -35,8 +35,8 @@ from etl.extract.manifest_only import ManifestOnlyExtractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
-from etl.text import join_with_quotes
 from etl.relation import RelationDescription
+from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

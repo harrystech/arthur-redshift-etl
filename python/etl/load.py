@@ -39,13 +39,13 @@ These are the general pre-requisites:
 
 import concurrent.futures
 import logging
-import re
-import time
-import threading
 import queue
+import re
+import threading
+import time
+from calendar import timegm
 from contextlib import closing
 from datetime import datetime, timedelta
-from calendar import timegm
 from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
@@ -53,17 +53,17 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl
 import etl.data_warehouse
-import etl.monitor
 import etl.db
 import etl.design.redshift
+import etl.monitor
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingManifestError, RelationDataError,
-                        RelationConstructionError, RequiredRelationLoadError, UpdateTableError,
-                        MissingExtractEventError, retry)
+from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingExtractEventError, MissingManifestError,
+                        RelationConstructionError, RelationDataError, RequiredRelationLoadError, UpdateTableError,
+                        retry)
 from etl.names import TableName, TableSelector, TempTableName
-from etl.text import join_column_list, join_with_quotes
 from etl.relation import RelationDescription
+from etl.text import join_column_list, join_with_quotes
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)

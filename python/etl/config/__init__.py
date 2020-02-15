@@ -18,8 +18,8 @@ from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
-import pkg_resources
 import jsonschema
+import pkg_resources
 import simplejson as json
 import yaml
 

@@ -2,20 +2,20 @@
 Common code around interacting with AWS S3
 """
 
-import boto3
-import botocore.exceptions
-import botocore.response
 import logging
-import simplejson as json
 import tempfile
 import threading
 import time
-
-from typing import Iterator, List, Union, Tuple
 from datetime import datetime
+from typing import Iterator, List, Tuple, Union
 
-from etl.json_encoder import FancyJsonEncoder
+import boto3
+import botocore.exceptions
+import botocore.response
+import simplejson as json
+
 from etl.errors import S3ServiceError
+from etl.json_encoder import FancyJsonEncoder
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

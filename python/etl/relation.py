@@ -24,14 +24,14 @@ from functools import partial
 from itertools import chain, dropwhile
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, Optional, Union, List, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 
 import funcy as fy
 
 import etl.config
+import etl.db
 import etl.design.load
 import etl.file_sets
-import etl.db
 import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema

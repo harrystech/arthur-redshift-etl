@@ -23,8 +23,8 @@ from typing import List
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
-import etl.monitor
 import etl.db
+import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError

@@ -21,16 +21,16 @@ import simplejson as json
 
 import etl.config
 import etl.config.env
+import etl.data_warehouse
+import etl.db
 import etl.design.bootstrap
 import etl.explain
 import etl.extract
-import etl.data_warehouse
 import etl.file_sets
 import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.db
 import etl.pipeline
 import etl.relation
 import etl.render_template

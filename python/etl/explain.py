@@ -9,8 +9,8 @@ See http://docs.aws.amazon.com/redshift/latest/dg/c_data_redistribution.html
 
 import logging
 import re
-from contextlib import closing
 from collections import Counter
+from contextlib import closing
 from typing import Dict, List
 
 import etl.db
