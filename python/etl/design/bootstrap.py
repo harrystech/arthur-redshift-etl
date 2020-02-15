@@ -345,20 +345,23 @@ def make_item_sorter():
     If a key is not known, it's sorted alphabetically (ignoring case) after all known ones.
     """
     preferred_order = [
+        # always (tables, columns, etc.)
         "name",
-        "description",  # always (tables, columns, etc.)
+        "description",
+        # only tables
         "source_name",
         "unload_target",
         "depends_on",
         "constraints",
         "attributes",
-        "columns",  # only tables
+        "columns",
+        # only columns
         "sql_type",
         "type",
         "expression",
         "source_sql_type",
         "not_null",
-        "identity",  # only columns
+        "identity",
     ]
     order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
     max_index = len(preferred_order)

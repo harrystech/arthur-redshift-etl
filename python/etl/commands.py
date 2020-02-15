@@ -349,7 +349,7 @@ def add_standard_arguments(parser, options):
             "--max-concurrency",
             metavar="N",
             type=int,
-            help="set max number of parallel loads to N" " (overrides 'resources.RedshiftCluster.max_concurrency')",
+            help="set max number of parallel loads to N (overrides 'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
         parser.add_argument(
@@ -713,7 +713,7 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
         group.add_argument(
             "--use-existing-csv-files",
-            help="skip extraction and go straight to creating manifest files," " implied default for static sources",
+            help="skip extraction and go straight to creating manifest files, implied default for static sources",
             const="manifest-only",
             action="store_const",
             dest="extractor",
@@ -730,7 +730,7 @@ class ExtractToS3Command(MonitoredSubCommand):
             "--max-partitions",
             metavar="N",
             type=int,
-            help="set max number of partitions to write to N " "(overrides 'resources.EMR.max_partitions')",
+            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
         )
         parser.add_argument(
             "--use-sampling",
