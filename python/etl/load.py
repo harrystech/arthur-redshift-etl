@@ -58,9 +58,17 @@ import etl.design.redshift
 import etl.monitor
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import (ETLRuntimeError, FailedConstraintError, MissingExtractEventError, MissingManifestError,
-                        RelationConstructionError, RelationDataError, RequiredRelationLoadError, UpdateTableError,
-                        retry)
+from etl.errors import (
+    ETLRuntimeError,
+    FailedConstraintError,
+    MissingExtractEventError,
+    MissingManifestError,
+    RelationConstructionError,
+    RelationDataError,
+    RequiredRelationLoadError,
+    UpdateTableError,
+    retry,
+)
 from etl.names import TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.text import join_column_list, join_with_quotes

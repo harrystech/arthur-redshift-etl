@@ -33,8 +33,13 @@ import etl.design.bootstrap
 import etl.relation
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 # Exception classes that we might catch: ETL*; exception classes that we might raise: *ValidationError
-from etl.errors import (ETLConfigError, ETLDelayedExit, ETLRuntimeError, TableDesignValidationError,
-                        UpstreamValidationError)
+from etl.errors import (
+    ETLConfigError,
+    ETLDelayedExit,
+    ETLRuntimeError,
+    TableDesignValidationError,
+    UpstreamValidationError,
+)
 from etl.names import TableName, TempTableName
 from etl.relation import RelationDescription
 from etl.text import join_with_quotes
