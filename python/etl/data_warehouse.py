@@ -78,8 +78,12 @@ def _promote_schemas(schemas: List[DataWarehouseSchema], from_where: str, dry_ru
         # Always log the original names
         selected_names = join_with_quotes(from_name_schema_lookup[from_name].name for from_name in need_promotion)
         if dry_run:
-            logger.info("Dry-run: Skipping promotion of %d schema(s) from %s position: %s",
-                        len(need_promotion), from_where, selected_names)
+            logger.info(
+                "Dry-run: Skipping promotion of %d schema(s) from %s position: %s",
+                len(need_promotion),
+                from_where,
+                selected_names,
+            )
             return
 
         logger.info("Promoting %d schema(s) from %s position: %s", len(need_promotion), from_where, selected_names)
@@ -194,9 +198,9 @@ def _create_or_update_cluster_user(conn, user, only_update=False, dry_run=False)
 
 
 def _create_schema_for_user(conn, user, etl_group, dry_run=False):
-    user_schema = etl.config.dw.DataWarehouseSchema({"name": user.schema,
-                                                     "owner": user.name,
-                                                     "readers": [user.group, etl_group]})
+    user_schema = etl.config.dw.DataWarehouseSchema(
+        {"name": user.schema, "owner": user.name, "readers": [user.group, etl_group]}
+    )
     create_schema_and_grant_access(conn, user_schema, owner=user.name, dry_run=dry_run)
 
 
@@ -224,11 +228,11 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
     Optionally use `with_user_creation` flag to create users and groups.
     """
     try:
-        database_name = config.dsn_etl['database']
+        database_name = config.dsn_etl["database"]
     except (KeyError, ValueError) as exc:
         raise ETLConfigError("could not identify database initialization target") from exc
 
-    if database_name.startswith('validation'):
+    if database_name.startswith("validation"):
         logger.info("Initializing validation database '%s'", database_name)
     elif force:
         logger.info("Initializing non-validation database '%s' forcefully as requested", database_name)
@@ -296,8 +300,9 @@ def _create_or_update_user(user_name, group_name=None, add_user_schema=False, on
             if add_user_schema:
                 _create_schema_for_user(conn, user, config.groups[0], dry_run=dry_run)
             elif user.schema is not None:
-                logger.warning("User '%s' has schema '%s' configured but adding that was not requested",
-                               user.name, user.schema)
+                logger.warning(
+                    "User '%s' has schema '%s' configured but adding that was not requested", user.name, user.schema
+                )
             _update_search_path(conn, user, dry_run=dry_run)
 
 

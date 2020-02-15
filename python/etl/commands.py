@@ -53,7 +53,7 @@ def croak(error, exit_code):
     so we call it out here again, on stderr.
     """
     full_tb = "\n".join(traceback.format_exception_only(type(error), error))
-    header = full_tb.split('\n')[0]
+    header = full_tb.split("\n")[0]
     if sys.stderr.isatty():
         message = "Bailing out: \033[01;31m{}\033[0m".format(header)
     else:
@@ -141,10 +141,10 @@ def submit_step(cluster_id, sub_command):
     if not cluster_id:
         raise InvalidArgumentError("cluster id in submit may not be empty")
     # We need to remove --submit and --config to avoid an infinite loop and insert a redirect to the config directory
-    partial_parser = build_basic_parser('arthur.py')
+    partial_parser = build_basic_parser("arthur.py")
     done, remaining = partial_parser.parse_known_args()
     try:
-        client = boto3.client('emr')
+        client = boto3.client("emr")
         response = client.add_job_flow_steps(
             JobFlowId=cluster_id,
             Steps=[
@@ -154,17 +154,20 @@ def submit_step(cluster_id, sub_command):
                     "ActionOnFailure": "CONTINUE",
                     "HadoopJarStep": {
                         "Jar": "command-runner.jar",
-                        "Args": [etl.config.etl_tmp_dir("venv/bin/arthur.py"),
-                                 "--config",
-                                 etl.config.etl_tmp_dir("config")] + remaining
-                    }
+                        "Args": [
+                            etl.config.etl_tmp_dir("venv/bin/arthur.py"),
+                            "--config",
+                            etl.config.etl_tmp_dir("config"),
+                        ]
+                        + remaining,
+                    },
                 }
-            ]
+            ],
         )
-        step_id = response['StepIds'][0]
+        step_id = response["StepIds"][0]
         status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
         json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder)
-        sys.stdout.write('\n')
+        sys.stdout.write("\n")
     except Exception as exc:
         logger.exception("Adding step to job flow failed:")
         croak(exc, 1)
@@ -184,6 +187,7 @@ class FancyArgumentParser(argparse.ArgumentParser):
         EOF
         arthur.py load @tables
     """
+
     def __init__(self, **kwargs) -> None:
         fromfile_prefix_chars = kwargs.pop("fromfile_prefix_chars", "@")
         super().__init__(fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
@@ -224,16 +228,19 @@ def build_basic_parser(prog_name, description=None):
 
     Similarly, '--submit-to-cluster' is shared for all sub-commands.
     """
-    parser = FancyArgumentParser(prog=prog_name, description=description, fromfile_prefix_chars='@')
+    parser = FancyArgumentParser(prog=prog_name, description=description, fromfile_prefix_chars="@")
     group = parser.add_mutually_exclusive_group()
 
     # Show different help message depending on whether user has already set the environment variable.
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
-    group.add_argument("-c", "--config",
-                       help="add configuration path or file (default: '%s')" % default_config,
-                       action="append", default=[default_config])
-    group.add_argument("--submit-to-cluster", help="submit this command to the cluster",
-                       dest="cluster_id")
+    group.add_argument(
+        "-c",
+        "--config",
+        help="add configuration path or file (default: '%s')" % default_config,
+        action="append",
+        default=[default_config],
+    )
+    group.add_argument("--submit-to-cluster", help="submit this command to the cluster", dest="cluster_id")
 
     # Set some defaults (in case no sub-command's add_to_parser is called)
     parser.set_defaults(prolix=None)
@@ -258,28 +265,47 @@ def build_full_parser(prog_name):
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
 
     # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.
-    subparsers = parser.add_subparsers(help="specify one of these sub-commands (which can all provide more help)",
-                                       title="available sub-commands",
-                                       dest='sub_command')
+    subparsers = parser.add_subparsers(
+        help="specify one of these sub-commands (which can all provide more help)",
+        title="available sub-commands",
+        dest="sub_command",
+    )
     for klass in [
-            # Commands to deal with data warehouse as admin:
-            InitializeSetupCommand, CreateUserCommand, UpdateUserCommand,
-            # Commands to help with table designs and uploading them
-            BootstrapSourcesCommand, BootstrapTransformationsCommand, ValidateDesignsCommand, ExplainQueryCommand,
-            SyncWithS3Command,
-            # ETL commands to extract, load (or update), or transform
-            ExtractToS3Command, LoadDataWarehouseCommand, UpgradeDataWarehouseCommand, UpdateDataWarehouseCommand,
-            UnloadDataToS3Command,
-            # Helper commands (database, filesystem)
-            CreateSchemasCommand, PromoteSchemasCommand,
-            PingCommand, TerminateSessionsCommand,
-            ListFilesCommand,
-            ShowDownstreamDependentsCommand, ShowUpstreamDependenciesCommand,
-            # Environment commands
-            RenderTemplateCommand, ShowValueCommand, ShowVarsCommand, ShowPipelinesCommand,
-            QueryEventsCommand, TailEventsCommand,
-            # General and development commands
-            ShowHelpCommand, SelfTestCommand]:
+        # Commands to deal with data warehouse as admin:
+        InitializeSetupCommand,
+        CreateUserCommand,
+        UpdateUserCommand,
+        # Commands to help with table designs and uploading them
+        BootstrapSourcesCommand,
+        BootstrapTransformationsCommand,
+        ValidateDesignsCommand,
+        ExplainQueryCommand,
+        SyncWithS3Command,
+        # ETL commands to extract, load (or update), or transform
+        ExtractToS3Command,
+        LoadDataWarehouseCommand,
+        UpgradeDataWarehouseCommand,
+        UpdateDataWarehouseCommand,
+        UnloadDataToS3Command,
+        # Helper commands (database, filesystem)
+        CreateSchemasCommand,
+        PromoteSchemasCommand,
+        PingCommand,
+        TerminateSessionsCommand,
+        ListFilesCommand,
+        ShowDownstreamDependentsCommand,
+        ShowUpstreamDependenciesCommand,
+        # Environment commands
+        RenderTemplateCommand,
+        ShowValueCommand,
+        ShowVarsCommand,
+        ShowPipelinesCommand,
+        QueryEventsCommand,
+        TailEventsCommand,
+        # General and development commands
+        ShowHelpCommand,
+        SelfTestCommand,
+    ]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
 
@@ -297,35 +323,64 @@ def add_standard_arguments(parser, options):
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
-        parser.add_argument("-p", "--prefix",
-                            help="select prefix in S3 bucket (default unless value is set in settings: '%(default)s')",
-                            default=etl.config.env.get_default_prefix())
+        parser.add_argument(
+            "-p",
+            "--prefix",
+            help="select prefix in S3 bucket (default unless value is set in settings: '%(default)s')",
+            default=etl.config.env.get_default_prefix(),
+        )
     if "scheme" in options:
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-l", "--local-files", help="use files available on local filesystem (default)",
-                           action="store_const", const="file", dest="scheme", default="file")
-        group.add_argument("-r", "--remote-files", help="use files in S3",
-                           action="store_const", const="s3", dest="scheme")
+        group.add_argument(
+            "-l",
+            "--local-files",
+            help="use files available on local filesystem (default)",
+            action="store_const",
+            const="file",
+            dest="scheme",
+            default="file",
+        )
+        group.add_argument(
+            "-r", "--remote-files", help="use files in S3", action="store_const", const="s3", dest="scheme"
+        )
     if "max-concurrency" in options:
-        parser.add_argument("-x", "--max-concurrency", metavar="N", type=int,
-                            help="set max number of parallel loads to N"
-                                 " (overrides 'resources.RedshiftCluster.max_concurrency')")
+        parser.add_argument(
+            "-x",
+            "--max-concurrency",
+            metavar="N",
+            type=int,
+            help="set max number of parallel loads to N" " (overrides 'resources.RedshiftCluster.max_concurrency')",
+        )
     if "wlm-query-slots" in options:
-        parser.add_argument("-w", "--wlm-query-slots", metavar="N", type=int,
-                            help="set the number of Redshift WLM query slots used for transformations"
-                                 " (overrides 'resources.RedshiftCluster.wlm_query_slots')")
+        parser.add_argument(
+            "-w",
+            "--wlm-query-slots",
+            metavar="N",
+            type=int,
+            help="set the number of Redshift WLM query slots used for transformations"
+            " (overrides 'resources.RedshiftCluster.wlm_query_slots')",
+        )
     if "skip-copy" in options:
-        parser.add_argument("-y", "--skip-copy",
-                            help="skip the COPY and INSERT commands (leaves tables empty, used for validation)",
-                            action="store_true")
+        parser.add_argument(
+            "-y",
+            "--skip-copy",
+            help="skip the COPY and INSERT commands (leaves tables empty, used for validation)",
+            action="store_true",
+        )
     if "continue-from" in options:
-        parser.add_argument("--continue-from",
-                            help="skip forward in execution until the specified relation, then work forward from it"
-                            " (the special token '*' is allowed to signify continuing from the first relation;"
-                            " use ':transformations' as the argument to continue from the first transformation)")
+        parser.add_argument(
+            "--continue-from",
+            help="skip forward in execution until the specified relation, then work forward from it"
+            " (the special token '*' is allowed to signify continuing from the first relation;"
+            " use ':transformations' as the argument to continue from the first transformation)",
+        )
     if "pattern" in options:
-        parser.add_argument("pattern", help="glob pattern or identifier to select table(s) or view(s)",
-                            nargs='*', action=StorePatternAsSelector)
+        parser.add_argument(
+            "pattern",
+            help="glob pattern or identifier to select table(s) or view(s)",
+            nargs="*",
+            action=StorePatternAsSelector,
+        )
     # Cannot be set on the command line since changing it is not supported by file sets.
     parser.set_defaults(table_design_dir="./schemas")
 
@@ -334,6 +389,7 @@ class StorePatternAsSelector(argparse.Action):
     """
     Store the list of glob patterns (to pick tables) as a TableSelector instance.
     """
+
     def __call__(self, parser, namespace, values, option_string=None):
         selector = etl.names.TableSelector(values)
         setattr(namespace, "pattern", selector)
@@ -343,7 +399,8 @@ class SubCommand:
     """
     Instances (of child classes) will setup sub-parsers and have callbacks for those.
     """
-    def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]]=None) -> None:
+
+    def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None) -> None:
         self.name = name
         self.help = help_
         self.description = description
@@ -351,8 +408,9 @@ class SubCommand:
 
     def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         if self.aliases is not None:
-            parser = parent_parser.add_parser(self.name, help=self.help, description=self.description,
-                                              aliases=self.aliases)
+            parser = parent_parser.add_parser(
+                self.name, help=self.help, description=self.description, aliases=self.aliases
+            )
         else:
             parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
         parser.set_defaults(func=self.callback)
@@ -361,10 +419,12 @@ class SubCommand:
         # TODO move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
-        group.add_argument("-v", "--verbose", help="increase verbosity",
-                           action="store_const", const="DEBUG", dest="log_level")
-        group.add_argument("-q", "--quiet", help="decrease verbosity",
-                           action="store_const", const="WARNING", dest="log_level")
+        group.add_argument(
+            "-v", "--verbose", help="increase verbosity", action="store_const", const="DEBUG", dest="log_level"
+        )
+        group.add_argument(
+            "-q", "--quiet", help="decrease verbosity", action="store_const", const="WARNING", dest="log_level"
+        )
 
         self.add_arguments(parser)
         return parser
@@ -408,7 +468,8 @@ class SubCommand:
         file_sets = etl.file_sets.find_file_sets(self.location(args, default_scheme), selector)
 
         descriptions = etl.relation.RelationDescription.from_file_sets(
-            file_sets, required_relation_selector=required_relation_selector)
+            file_sets, required_relation_selector=required_relation_selector
+        )
 
         if not return_all and required_relation_selector is not None:
             descriptions = [d for d in descriptions if args.pattern.match(d.target_table_name)]
@@ -424,6 +485,7 @@ class MonitoredSubCommand(SubCommand):
     """
     A sub-command that will also use monitors to update some event table
     """
+
     def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         parser = super().add_to_parser(parent_parser)
         parser.set_defaults(use_monitor=True)
@@ -431,139 +493,184 @@ class MonitoredSubCommand(SubCommand):
 
 
 class InitializeSetupCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("initialize",
-                         "create ETL database",
-                         "(Re)create database referenced in ETL credential, optionally creating users and groups."
-                         " Normally, we expect this to be a validation database (name starts with 'validation')."
-                         " When bringing up your primary production or development database, use the --force option.")
+        super().__init__(
+            "initialize",
+            "create ETL database",
+            "(Re)create database referenced in ETL credential, optionally creating users and groups."
+            " Normally, we expect this to be a validation database (name starts with 'validation')."
+            " When bringing up your primary production or development database, use the --force option.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
-        parser.add_argument("-f", "--force", help="destructively initialize the referenced database regardless"
-                            " of whether it looks like a validation database",
-                            default=False, action="store_true")
-        parser.add_argument("-u", "--with-user-creation", help="create users and groups before (re)creating database",
-                            default=False, action="store_true")
+        parser.add_argument(
+            "-f",
+            "--force",
+            help="destructively initialize the referenced database regardless"
+            " of whether it looks like a validation database",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "-u",
+            "--with-user-creation",
+            help="create users and groups before (re)creating database",
+            default=False,
+            action="store_true",
+        )
 
     def callback(self, args, config):
         with etl.db.log_error():
-            etl.data_warehouse.initial_setup(config, with_user_creation=args.with_user_creation, force=args.force,
-                                             dry_run=args.dry_run)
+            etl.data_warehouse.initial_setup(
+                config, with_user_creation=args.with_user_creation, force=args.force, dry_run=args.dry_run
+            )
 
 
 class CreateUserCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("create_user",
-                         "add new user",
-                         "Add new user and set group membership, optionally create a personal schema."
-                         " Note that you have to set a password for the user in your .pgpass file"
-                         " before invoking this command. The password must be valid in Redshift,"
-                         " so must contain upper case and lower case characters as well as numbers."
-                         " It is ok to re-initialize a user defined in a settings file.")
+        super().__init__(
+            "create_user",
+            "add new user",
+            "Add new user and set group membership, optionally create a personal schema."
+            " Note that you have to set a password for the user in your .pgpass file"
+            " before invoking this command. The password must be valid in Redshift,"
+            " so must contain upper case and lower case characters as well as numbers."
+            " It is ok to re-initialize a user defined in a settings file.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("username", help="name for new user")
         parser.add_argument("-g", "--group", help="add user to specified group")
-        parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
-                            action="store_true")
+        parser.add_argument(
+            "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
+        )
 
     def callback(self, args, config):
         with etl.db.log_error():
-            etl.data_warehouse.create_new_user(args.username, group=args.group, add_user_schema=args.add_user_schema,
-                                               dry_run=args.dry_run)
+            etl.data_warehouse.create_new_user(
+                args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
+            )
 
 
 class UpdateUserCommand(SubCommand):
-
     def __init__(self):
         random_password = uuid.uuid4().hex
         example_password = random_password[:16].upper() + random_password[16:].lower()
-        super().__init__("update_user",
-                         "update user's group, password, and path",
-                         "Update an existing user with group membership, password, and search path."
-                         " Note that you have to have set a password for the user in your .pgpass file"
-                         " before invoking this command. The password must be valid in Redshift,"
-                         " so must contain upper case and lower case characters as well as numbers"
-                         " (for example: %s)" % example_password)
+        super().__init__(
+            "update_user",
+            "update user's group, password, and path",
+            "Update an existing user with group membership, password, and search path."
+            " Note that you have to have set a password for the user in your .pgpass file"
+            " before invoking this command. The password must be valid in Redshift,"
+            " so must contain upper case and lower case characters as well as numbers"
+            " (for example: %s)" % example_password,
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("username", help="name of existing user")
         parser.add_argument("-g", "--group", help="add user to specified group")
-        parser.add_argument("-a", "--add-user-schema", help="add new schema, writable for the user",
-                            action="store_true")
+        parser.add_argument(
+            "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
+        )
 
     def callback(self, args, config):
         with etl.db.log_error():
-            etl.data_warehouse.update_user(args.username, group=args.group, add_user_schema=args.add_user_schema,
-                                           dry_run=args.dry_run)
+            etl.data_warehouse.update_user(
+                args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
+            )
 
 
 class BootstrapSourcesCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("bootstrap_sources",
-                         "bootstrap schema information from sources",
-                         "Download schema information from upstream sources and compare against current table designs."
-                         " If there is no current design file, then create one as a starting point.",
-                         aliases=["design"])
+        super().__init__(
+            "bootstrap_sources",
+            "bootstrap schema information from sources",
+            "Download schema information from upstream sources and compare against current table designs."
+            " If there is no current design file, then create one as a starting point.",
+            aliases=["design"],
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
-        etl.design.bootstrap.bootstrap_sources(config.schemas, args.pattern, args.table_design_dir, local_files,
-                                               dry_run=args.dry_run)
+        etl.design.bootstrap.bootstrap_sources(
+            config.schemas, args.pattern, args.table_design_dir, local_files, dry_run=args.dry_run
+        )
 
 
 class BootstrapTransformationsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("bootstrap_transformations",
-                         "bootstrap schema information from transformations",
-                         "Download schema information as if transformation had been run in data warehouse."
-                         " If there is no local design file, then create one as a starting point.",
-                         aliases=["auto_design"])
+        super().__init__(
+            "bootstrap_transformations",
+            "bootstrap schema information from transformations",
+            "Download schema information as if transformation had been run in data warehouse."
+            " If there is no local design file, then create one as a starting point.",
+            aliases=["auto_design"],
+        )
 
     def add_arguments(self, parser):
-        parser.add_argument("-f", "--force", help="overwrite table design file if it already exists",
-                            default=False, action="store_true")
+        parser.add_argument(
+            "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
+        )
         # FIXME Switch to '[--update|--as-ctas|--as-view]'
-        parser.add_argument("-u", "--update", help="EXPERIMENTAL merge with existing table design if available",
-                            default=False, action="store_true")
-        parser.add_argument('type', choices=['CTAS', 'VIEW'],
-                            help="pick whether to create table designs for 'CTAS' or 'VIEW' relations")
+        parser.add_argument(
+            "-u",
+            "--update",
+            help="EXPERIMENTAL merge with existing table design if available",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "type", choices=["CTAS", "VIEW"], help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+        )
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args, config):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-        etl.design.bootstrap.bootstrap_transformations(config.dsn_etl, config.schemas,
-                                                       args.table_design_dir, local_files, args.type == "VIEW",
-                                                       update=args.update, replace=args.force, dry_run=args.dry_run)
+        etl.design.bootstrap.bootstrap_transformations(
+            config.dsn_etl,
+            config.schemas,
+            args.table_design_dir,
+            local_files,
+            args.type == "VIEW",
+            update=args.update,
+            replace=args.force,
+            dry_run=args.dry_run,
+        )
 
 
 class SyncWithS3Command(SubCommand):
-
     def __init__(self):
-        super().__init__("sync",
-                         "copy table design files to S3",
-                         "Copy table design files from local directory to S3."
-                         " If using the '--force' option, this will delete schema and *data* files."
-                         " If using the '--deploy' option, this will also upload files with warehouse settings"
-                         " (*.yaml or *.sh files in config directories, excluding credentials*.sh).")
+        super().__init__(
+            "sync",
+            "copy table design files to S3",
+            "Copy table design files from local directory to S3."
+            " If using the '--force' option, this will delete schema and *data* files."
+            " If using the '--deploy' option, this will also upload files with warehouse settings"
+            " (*.yaml or *.sh files in config directories, excluding credentials*.sh).",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
-        parser.add_argument("-f", "--force", help="force sync (deletes all matching files first, including data)",
-                            default=False, action="store_true")
-        parser.add_argument("-d", "--deploy-config",
-                            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
-                            default=False, action="store_true")
+        parser.add_argument(
+            "-f",
+            "--force",
+            help="force sync (deletes all matching files first, including data)",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "-d",
+            "--deploy-config",
+            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
+            default=False,
+            action="store_true",
+        )
 
     def callback(self, args, config):
         if args.deploy_config:
@@ -576,35 +683,61 @@ class SyncWithS3Command(SubCommand):
 
 
 class ExtractToS3Command(MonitoredSubCommand):
-
     def __init__(self):
-        super().__init__("extract",
-                         "extract data from upstream sources",
-                         "Extract table contents from upstream databases (unless you decide to use existing"
-                         " CSV files) and then gather references to CSV files in S3 into manifests file."
-                         " (This last step is the only step needed for static sources where data is created"
-                         " outside the ETL.)")
+        super().__init__(
+            "extract",
+            "extract data from upstream sources",
+            "Extract table contents from upstream databases (unless you decide to use existing"
+            " CSV files) and then gather references to CSV files in S3 into manifests file."
+            " (This last step is the only step needed for static sources where data is created"
+            " outside the ETL.)",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("--with-sqoop", help="extract data using Sqoop (using 'sqoop import', this is the default)",
-                           const="sqoop", action="store_const", dest="extractor", default="sqoop")
-        group.add_argument("--with-spark", help="extract data using Spark Dataframe (using submit_arthur.sh)",
-                           const="spark", action="store_const", dest="extractor")
-        group.add_argument("--use-existing-csv-files",
-                           help="skip extraction and go straight to creating manifest files,"
-                           " implied default for static sources",
-                           const="manifest-only", action="store_const", dest="extractor")
-        parser.add_argument("-k", "--keep-going",
-                            help="extract as much data as possible, ignoring errors along the way",
-                            default=False, action="store_true")
-        parser.add_argument("-m", "--max-partitions", metavar="N", type=int,
-                            help="set max number of partitions to write to N "
-                                 "(overrides 'resources.EMR.max_partitions')")
-        parser.add_argument("--use-sampling",
-                            help="use only 10%% of rows in extracted tables that are larger than 1MB",
-                            default=False, action="store_true")
+        group.add_argument(
+            "--with-sqoop",
+            help="extract data using Sqoop (using 'sqoop import', this is the default)",
+            const="sqoop",
+            action="store_const",
+            dest="extractor",
+            default="sqoop",
+        )
+        group.add_argument(
+            "--with-spark",
+            help="extract data using Spark Dataframe (using submit_arthur.sh)",
+            const="spark",
+            action="store_const",
+            dest="extractor",
+        )
+        group.add_argument(
+            "--use-existing-csv-files",
+            help="skip extraction and go straight to creating manifest files," " implied default for static sources",
+            const="manifest-only",
+            action="store_const",
+            dest="extractor",
+        )
+        parser.add_argument(
+            "-k",
+            "--keep-going",
+            help="extract as much data as possible, ignoring errors along the way",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "-m",
+            "--max-partitions",
+            metavar="N",
+            type=int,
+            help="set max number of partitions to write to N " "(overrides 'resources.EMR.max_partitions')",
+        )
+        parser.add_argument(
+            "--use-sampling",
+            help="use only 10%% of rows in extracted tables that are larger than 1MB",
+            default=False,
+            action="store_true",
+        )
 
     def callback(self, args, config):
         max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions", 16)
@@ -625,36 +758,50 @@ class ExtractToS3Command(MonitoredSubCommand):
             os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
             sys.exit(1)
 
-        descriptions = self.find_relation_descriptions(args, default_scheme="s3",
-                                                       required_relation_selector=config.required_in_full_load_selector)
+        descriptions = self.find_relation_descriptions(
+            args, default_scheme="s3", required_relation_selector=config.required_in_full_load_selector
+        )
         etl.monitor.Monitor.marker_payload("extract").emit(dry_run=args.dry_run)
-        etl.extract.extract_upstream_sources(args.extractor, config.schemas, descriptions,
-                                             max_partitions=max_partitions,
-                                             use_sampling=args.use_sampling,
-                                             keep_going=args.keep_going,
-                                             dry_run=args.dry_run)
+        etl.extract.extract_upstream_sources(
+            args.extractor,
+            config.schemas,
+            descriptions,
+            max_partitions=max_partitions,
+            use_sampling=args.use_sampling,
+            keep_going=args.keep_going,
+            dry_run=args.dry_run,
+        )
 
 
 class LoadDataWarehouseCommand(MonitoredSubCommand):
-
     def __init__(self):
-        super().__init__("load",
-                         "load data into source tables and forcefully update all dependencies",
-                         "Load data into the data warehouse from files in S3, which will *rebuild* the data warehouse."
-                         " This will operate on entire schemas at once, which will be backed up as necessary."
-                         " It is an error to try to select tables unless they are all the tables in the schema.")
+        super().__init__(
+            "load",
+            "load data into source tables and forcefully update all dependencies",
+            "Load data into the data warehouse from files in S3, which will *rebuild* the data warehouse."
+            " This will operate on entire schemas at once, which will be backed up as necessary."
+            " It is an error to try to select tables unless they are all the tables in the schema.",
+        )
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser,
-                               ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"])
-        parser.add_argument("--concurrent-extract",
-                            help="watch DynamoDB for extract step completion and load source tables as extracts finish"
-                                 " assuming another Arthur in this prefix is running extract (default: %(default)s)",
-                            default=False, action="store_true")
-        parser.add_argument("--without-staging-schemas",
-                            help="do NOT do all the work in hidden schemas and publish to standard names on completion"
-                                 " (default: use staging schemas)",
-                            default=True, action="store_false", dest='use_staging_schemas')
+        add_standard_arguments(
+            parser, ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"]
+        )
+        parser.add_argument(
+            "--concurrent-extract",
+            help="watch DynamoDB for extract step completion and load source tables as extracts finish"
+            " assuming another Arthur in this prefix is running extract (default: %(default)s)",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "--without-staging-schemas",
+            help="do NOT do all the work in hidden schemas and publish to standard names on completion"
+            " (default: use staging schemas)",
+            default=True,
+            action="store_false",
+            dest="use_staging_schemas",
+        )
 
     def callback(self, args, config):
         try:
@@ -662,135 +809,183 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
         except ValueError as exc:
             raise InvalidArgumentError(exc) from exc
 
-        relations = self.find_relation_descriptions(args, default_scheme="s3",
-                                                    required_relation_selector=config.required_in_full_load_selector,
-                                                    return_all=True)
+        relations = self.find_relation_descriptions(
+            args, default_scheme="s3", required_relation_selector=config.required_in_full_load_selector, return_all=True
+        )
         etl.monitor.Monitor.marker_payload("load").emit(dry_run=args.dry_run)
-        max_concurrency = (args.max_concurrency or
-                           etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
-        wlm_query_slots = (args.wlm_query_slots or
-                           etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
-        etl.load.load_data_warehouse(relations, args.pattern,
-                                     max_concurrency=max_concurrency,
-                                     wlm_query_slots=wlm_query_slots,
-                                     concurrent_extract=args.concurrent_extract,
-                                     skip_copy=args.skip_copy,
-                                     use_staging=args.use_staging_schemas,
-                                     dry_run=args.dry_run)
+        max_concurrency = args.max_concurrency or etl.config.get_config_int(
+            "resources.RedshiftCluster.max_concurrency", 1
+        )
+        wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
+            "resources.RedshiftCluster.wlm_query_slots", 1
+        )
+        etl.load.load_data_warehouse(
+            relations,
+            args.pattern,
+            max_concurrency=max_concurrency,
+            wlm_query_slots=wlm_query_slots,
+            concurrent_extract=args.concurrent_extract,
+            skip_copy=args.skip_copy,
+            use_staging=args.use_staging_schemas,
+            dry_run=args.dry_run,
+        )
 
 
 class UpgradeDataWarehouseCommand(MonitoredSubCommand):
-
     def __init__(self):
-        super().__init__("upgrade",
-                         "load data into source or CTAS tables, create dependent VIEWS along the way",
-                         "Delete selected tables and views, then rebuild them along with all of relations"
-                         " that depend on the selected ones. This is for debugging since the rebuild is"
-                         " visible to users (i.e. outside a transaction).")
+        super().__init__(
+            "upgrade",
+            "load data into source or CTAS tables, create dependent VIEWS along the way",
+            "Delete selected tables and views, then rebuild them along with all of relations"
+            " that depend on the selected ones. This is for debugging since the rebuild is"
+            " visible to users (i.e. outside a transaction).",
+        )
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser,
-                               ["pattern", "prefix", "max-concurrency", "wlm-query-slots",
-                                "continue-from", "skip-copy", "dry-run"])
-        parser.add_argument("--only-selected",
-                            help="skip rebuilding relations that depend on the selected ones"
-                                 " (leaves warehouse in inconsistent state, for debugging only)",
-                            default=False, action="store_true")
-        parser.add_argument("--with-staging-schemas",
-                            help="do all the work in hidden schemas and publish to standard names on completion"
-                                 " (default: do not use staging schemas, note this is the opposite of load command)",
-                            default=False, action="store_true", dest='use_staging_schemas')
+        add_standard_arguments(
+            parser, ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "continue-from", "skip-copy", "dry-run"]
+        )
+        parser.add_argument(
+            "--only-selected",
+            help="skip rebuilding relations that depend on the selected ones"
+            " (leaves warehouse in inconsistent state, for debugging only)",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "--with-staging-schemas",
+            help="do all the work in hidden schemas and publish to standard names on completion"
+            " (default: do not use staging schemas, note this is the opposite of load command)",
+            default=False,
+            action="store_true",
+            dest="use_staging_schemas",
+        )
 
     def callback(self, args, config):
-        relations = self.find_relation_descriptions(args, default_scheme="s3",
-                                                    required_relation_selector=config.required_in_full_load_selector,
-                                                    return_all=True)
+        relations = self.find_relation_descriptions(
+            args, default_scheme="s3", required_relation_selector=config.required_in_full_load_selector, return_all=True
+        )
         etl.monitor.Monitor.marker_payload("upgrade").emit(dry_run=args.dry_run)
-        max_concurrency = (args.max_concurrency or
-                           etl.config.get_config_int("resources.RedshiftCluster.max_concurrency", 1))
-        wlm_query_slots = (args.wlm_query_slots or
-                           etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
-        etl.load.upgrade_data_warehouse(relations, args.pattern,
-                                        max_concurrency=max_concurrency,
-                                        wlm_query_slots=wlm_query_slots,
-                                        only_selected=args.only_selected,
-                                        continue_from=args.continue_from,
-                                        use_staging=args.use_staging_schemas,
-                                        skip_copy=args.skip_copy,
-                                        dry_run=args.dry_run)
+        max_concurrency = args.max_concurrency or etl.config.get_config_int(
+            "resources.RedshiftCluster.max_concurrency", 1
+        )
+        wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
+            "resources.RedshiftCluster.wlm_query_slots", 1
+        )
+        etl.load.upgrade_data_warehouse(
+            relations,
+            args.pattern,
+            max_concurrency=max_concurrency,
+            wlm_query_slots=wlm_query_slots,
+            only_selected=args.only_selected,
+            continue_from=args.continue_from,
+            use_staging=args.use_staging_schemas,
+            skip_copy=args.skip_copy,
+            dry_run=args.dry_run,
+        )
 
 
 class UpdateDataWarehouseCommand(MonitoredSubCommand):
-
     def __init__(self):
-        super().__init__("update",
-                         "update data in the data warehouse from files in S3",
-                         "Load data into data warehouse from files in S3 and then update all dependent CTAS relations"
-                         " (within a transaction).")
+        super().__init__(
+            "update",
+            "update data in the data warehouse from files in S3",
+            "Load data into data warehouse from files in S3 and then update all dependent CTAS relations"
+            " (within a transaction).",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "wlm-query-slots", "dry-run"])
-        parser.add_argument("--only-selected",
-                            help="only load data into selected relations"
-                                 " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
-                            default=False, action="store_true")
-        parser.add_argument("--scheduled-start-time", metavar="TIME", default=None, type=isoformat_datetime_string,
-                            help="require recent successful extract events for all selected source relations "
-                                 "after UTC time TIME (or, by default, don't require extract events)")
-        parser.add_argument("--vacuum", help="run vacuum after the update to tidy up the place (default: %(default)s)",
-                            default=False, action="store_true")
+        parser.add_argument(
+            "--only-selected",
+            help="only load data into selected relations"
+            " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "--scheduled-start-time",
+            metavar="TIME",
+            default=None,
+            type=isoformat_datetime_string,
+            help="require recent successful extract events for all selected source relations "
+            "after UTC time TIME (or, by default, don't require extract events)",
+        )
+        parser.add_argument(
+            "--vacuum",
+            help="run vacuum after the update to tidy up the place (default: %(default)s)",
+            default=False,
+            action="store_true",
+        )
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         etl.monitor.Monitor.marker_payload("update").emit(dry_run=args.dry_run)
-        wlm_query_slots = (args.wlm_query_slots or
-                           etl.config.get_config_int("resources.RedshiftCluster.wlm_query_slots", 1))
-        etl.load.update_data_warehouse(relations, args.pattern,
-                                       wlm_query_slots=wlm_query_slots,
-                                       only_selected=args.only_selected, run_vacuum=args.vacuum,
-                                       start_time=args.scheduled_start_time,
-                                       dry_run=args.dry_run)
+        wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
+            "resources.RedshiftCluster.wlm_query_slots", 1
+        )
+        etl.load.update_data_warehouse(
+            relations,
+            args.pattern,
+            wlm_query_slots=wlm_query_slots,
+            only_selected=args.only_selected,
+            run_vacuum=args.vacuum,
+            start_time=args.scheduled_start_time,
+            dry_run=args.dry_run,
+        )
 
 
 class UnloadDataToS3Command(MonitoredSubCommand):
-
     def __init__(self):
-        super().__init__("unload",
-                         "unload data from data warehouse to files in S3",
-                         "Unload data from data warehouse into CSV files in S3 (along with files of column names).")
+        super().__init__(
+            "unload",
+            "unload data from data warehouse to files in S3",
+            "Unload data from data warehouse into CSV files in S3 (along with files of column names).",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
-        parser.add_argument("-f", "--force",
-                            help="enable ALLOWOVERWRITE option to replace existing data files in S3",
-                            action="store_true")
-        parser.add_argument("-k", "--keep-going",
-                            help="unload as much data as possible, ignoring errors along the way",
-                            default=False, action="store_true")
+        parser.add_argument(
+            "-f",
+            "--force",
+            help="enable ALLOWOVERWRITE option to replace existing data files in S3",
+            action="store_true",
+        )
+        parser.add_argument(
+            "-k",
+            "--keep-going",
+            help="unload as much data as possible, ignoring errors along the way",
+            default=False,
+            action="store_true",
+        )
 
     def callback(self, args, config):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
         etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
-        etl.unload.unload_to_s3(config, descriptions, allow_overwrite=args.force,
-                                keep_going=args.keep_going, dry_run=args.dry_run)
+        etl.unload.unload_to_s3(
+            config, descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
+        )
 
 
 class CreateSchemasCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("create_schemas",
-                         "create schemas from data warehouse config",
-                         "Create schemas as configured and set permissions."
-                         " Optionally move existing schemas to backup or create in staging position."
-                         " (Any patterns must be schema names.)")
+        super().__init__(
+            "create_schemas",
+            "create schemas from data warehouse config",
+            "Create schemas as configured and set permissions."
+            " Optionally move existing schemas to backup or create in staging position."
+            " (Any patterns must be schema names.)",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-b", "--with-backup", help="backup any existing schemas",
-                           default=False, action="store_true")
-        group.add_argument("--with-staging", help="create schemas in staging position",
-                           default=False, action="store_true")
+        group.add_argument(
+            "-b", "--with-backup", help="backup any existing schemas", default=False, action="store_true"
+        )
+        group.add_argument(
+            "--with-staging", help="create schemas in staging position", default=False, action="store_true"
+        )
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
@@ -802,64 +997,87 @@ class CreateSchemasCommand(SubCommand):
 
 
 class PromoteSchemasCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("promote_schemas",
-                         "move staging or backup schemas into standard position",
-                         "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
-                         " When promoting from staging, current standard position schemas are backed up first."
-                         " Promoting (ie, restoring) a backup should only happen after a load finished successfully"
-                         " but left bad data behind.")
+        super().__init__(
+            "promote_schemas",
+            "move staging or backup schemas into standard position",
+            "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
+            " When promoting from staging, current standard position schemas are backed up first."
+            " Promoting (ie, restoring) a backup should only happen after a load finished successfully"
+            " but left bad data behind.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
-        parser.add_argument("--from-position",
-                            help="which hidden schema should be promoted",
-                            choices=["staging", "backup"], required=True)
+        parser.add_argument(
+            "--from-position",
+            help="which hidden schema should be promoted",
+            choices=["staging", "backup"],
+            required=True,
+        )
 
     def callback(self, args, config):
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in config.schemas if schema.name in schema_names]
         with etl.db.log_error():
-            if args.from_position == 'staging':
+            if args.from_position == "staging":
                 etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
-            elif args.from_position == 'backup':
+            elif args.from_position == "backup":
                 etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("validate",
-                         "validate table design files",
-                         "Validate table designs by checking their syntax and compatibility with the database"
-                         " (use '-nskq' to see only errors or warnings, without connecting to a database).")
+        super().__init__(
+            "validate",
+            "validate table design files",
+            "Validate table designs by checking their syntax and compatibility with the database"
+            " (use '-nskq' to see only errors or warnings, without connecting to a database).",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
-        parser.add_argument("-k", "--keep-going", help="ignore errors and test as many files as possible",
-                            default=False, action="store_true")
-        parser.add_argument("-s", "--skip-sources-check",
-                            help="skip check of designs against upstream databases",
-                            default=False, action="store_true")
-        parser.add_argument("-n", "--skip-dependencies-check",
-                            help="skip check of dependencies in designs against data warehouse",
-                            default=False, action="store_true")
+        parser.add_argument(
+            "-k",
+            "--keep-going",
+            help="ignore errors and test as many files as possible",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "-s",
+            "--skip-sources-check",
+            help="skip check of designs against upstream databases",
+            default=False,
+            action="store_true",
+        )
+        parser.add_argument(
+            "-n",
+            "--skip-dependencies-check",
+            help="skip check of dependencies in designs against data warehouse",
+            default=False,
+            action="store_true",
+        )
 
     def callback(self, args, config):
         # NB This does not pick up all designs to speed things up but that may lead to false positives.
         descriptions = self.find_relation_descriptions(args)
-        etl.validate.validate_designs(config, descriptions, keep_going=args.keep_going,
-                                      skip_sources=args.skip_sources_check,
-                                      skip_dependencies=args.skip_dependencies_check)
+        etl.validate.validate_designs(
+            config,
+            descriptions,
+            keep_going=args.keep_going,
+            skip_sources=args.skip_sources_check,
+            skip_dependencies=args.skip_dependencies_check,
+        )
 
 
 class ExplainQueryCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("explain",
-                         "collect explain plans",
-                         "Run EXPLAIN on queries (for CTAS or VIEW), check query plan for distributions.")
+        super().__init__(
+            "explain",
+            "collect explain plans",
+            "Run EXPLAIN on queries (for CTAS or VIEW), check query plan for distributions.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
@@ -868,8 +1086,9 @@ class ExplainQueryCommand(SubCommand):
         if args.scheme == "file":
             # When running locally, we accept that there be only a SQL file.
             local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
-            descriptions = [etl.relation.RelationDescription(file_set) for file_set in local_files
-                            if file_set.sql_file_name]
+            descriptions = [
+                etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.sql_file_name
+            ]
         else:
             # When running with S3, we expect full sets of files (SQL plus table design)
             descriptions = self.find_relation_descriptions(args)
@@ -878,20 +1097,23 @@ class ExplainQueryCommand(SubCommand):
 
 
 class ListFilesCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("ls",
-                         "list files in local directory or in S3",
-                         "List files in local directory or in the S3 bucket and starting with prefix by"
-                         " source, table, and file type."
-                         " (If sorting by timestamp, only print filename and timestamp.)")
+        super().__init__(
+            "ls",
+            "list files in local directory or in S3",
+            "List files in local directory or in the S3 bucket and starting with prefix by"
+            " source, table, and file type."
+            " (If sorting by timestamp, only print filename and timestamp.)",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
-        parser.add_argument("-a", "--long-format", help="add file size and timestamp of last modification",
-                            action="store_true")
-        parser.add_argument("-t", "--sort-by-time", help="sort files by timestamp (and list in single column)",
-                            action="store_true")
+        parser.add_argument(
+            "-a", "--long-format", help="add file size and timestamp of last modification", action="store_true"
+        )
+        parser.add_argument(
+            "-t", "--sort-by-time", help="sort files by timestamp (and list in single column)", action="store_true"
+        )
 
     def callback(self, args, config):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
@@ -899,18 +1121,19 @@ class ListFilesCommand(SubCommand):
 
 
 class PingCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("ping",
-                         "ping data warehouse",
-                         "Try to connect to the data warehouse to test connection settings.")
+        super().__init__(
+            "ping", "ping data warehouse", "Try to connect to the data warehouse to test connection settings."
+        )
 
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-a", "--as-admin-user", help="try to connect as admin user",
-                           action="store_true", dest="use_admin")
-        group.add_argument("-e", "--as-etl-user", help="try to connect as ETL user (default)",
-                           action="store_false", dest="use_admin")
+        group.add_argument(
+            "-a", "--as-admin-user", help="try to connect as admin user", action="store_true", dest="use_admin"
+        )
+        group.add_argument(
+            "-e", "--as-etl-user", help="try to connect as ETL user (default)", action="store_false", dest="use_admin"
+        )
 
     def callback(self, args, config):
         dsn = config.dsn_admin if args.use_admin else config.dsn_etl
@@ -919,12 +1142,13 @@ class PingCommand(SubCommand):
 
 
 class TerminateSessionsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("terminate_sessions",
-                         "terminate sessions holding table locks",
-                         "Terminate sessions that hold table locks and might interfere with the ETL. "
-                         "This is always run as the admin user.")
+        super().__init__(
+            "terminate_sessions",
+            "terminate sessions holding table locks",
+            "Terminate sessions that hold table locks and might interfere with the ETL. "
+            "This is always run as the admin user.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
@@ -935,52 +1159,56 @@ class TerminateSessionsCommand(SubCommand):
 
 
 class ShowDownstreamDependentsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("show_downstream_dependents",
-                         "show dependent relations",
-                         "Show relations that follow in execution order and are selected or depend on them.",
-                         aliases=["show_dependents"])
+        super().__init__(
+            "show_downstream_dependents",
+            "show dependent relations",
+            "Show relations that follow in execution order and are selected or depend on them.",
+            aliases=["show_dependents"],
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme", "continue-from"])
-        parser.add_argument("--list-dependencies", help="show list of dependencies after every relation",
-                            action="store_true")
+        parser.add_argument(
+            "--list-dependencies", help="show list of dependencies after every relation", action="store_true"
+        )
 
     def callback(self, args, config):
-        relations = self.find_relation_descriptions(args,
-                                                    required_relation_selector=config.required_in_full_load_selector,
-                                                    return_all=True)
-        etl.load.show_downstream_dependents(relations, args.pattern,
-                                            continue_from=args.continue_from,
-                                            list_dependencies=args.list_dependencies)
+        relations = self.find_relation_descriptions(
+            args, required_relation_selector=config.required_in_full_load_selector, return_all=True
+        )
+        etl.load.show_downstream_dependents(
+            relations, args.pattern, continue_from=args.continue_from, list_dependencies=args.list_dependencies
+        )
 
 
 class ShowUpstreamDependenciesCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("show_upstream_dependencies",
-                         "show relations that feed the selected relations (including themselves)",
-                         "Follow dependencies upstream to their sources to chain all relations"
-                         " that the selected ones depend on (with the selected ones).")
+        super().__init__(
+            "show_upstream_dependencies",
+            "show relations that feed the selected relations (including themselves)",
+            "Follow dependencies upstream to their sources to chain all relations"
+            " that the selected ones depend on (with the selected ones).",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
     def callback(self, args, config):
-        relations = self.find_relation_descriptions(args,
-                                                    required_relation_selector=config.required_in_full_load_selector,
-                                                    return_all=True)
+        relations = self.find_relation_descriptions(
+            args, required_relation_selector=config.required_in_full_load_selector, return_all=True
+        )
         etl.load.show_upstream_dependencies(relations, args.pattern)
 
 
 class RenderTemplateCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("render_template",
-                         "render selected template by filling in configuration settings",
-                         "Print template after replacing placeholders (like '${resources.VPC.region}') with values"
-                         " from the settings files")
+        super().__init__(
+            "render_template",
+            "render selected template by filling in configuration settings",
+            "Print template after replacing placeholders (like '${resources.VPC.region}') with values"
+            " from the settings files",
+        )
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
@@ -998,11 +1226,10 @@ class RenderTemplateCommand(SubCommand):
 
 
 class ShowValueCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("show_value",
-                         "show variable setting",
-                         "Print value of variable based on the configuration files.")
+        super().__init__(
+            "show_value", "show variable setting", "Print value of variable based on the configuration files."
+        )
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
@@ -1015,13 +1242,14 @@ class ShowValueCommand(SubCommand):
 
 
 class ShowVarsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("show_vars",
-                         "show variables available for template files",
-                         "Print list of variables and their values based on the configuration files."
-                         " These variables can be used with ${name} substitutions in templates.",
-                         aliases=["settings"])
+        super().__init__(
+            "show_vars",
+            "show variables available for template files",
+            "Print list of variables and their values based on the configuration files."
+            " These variables can be used with ${name} substitutions in templates.",
+            aliases=["settings"],
+        )
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
@@ -1033,11 +1261,10 @@ class ShowVarsCommand(SubCommand):
 
 
 class ShowPipelinesCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("show_pipelines",
-                         "show installed pipelines",
-                         "Show information about currently installed pipelines.")
+        super().__init__(
+            "show_pipelines", "show installed pipelines", "Show information about currently installed pipelines."
+        )
 
     def add_arguments(self, parser):
         parser.add_argument("selection", help="pick pipelines to show", nargs="*")
@@ -1047,13 +1274,14 @@ class ShowPipelinesCommand(SubCommand):
 
 
 class QueryEventsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("query_events",
-                         "query the tables of ETL events",
-                         "Query the table of events written during an ETL."
-                         " When an ETL is specified, then it is used as a filter."
-                         " Otherwise ETLs from the last 48 hours are listed.")
+        super().__init__(
+            "query_events",
+            "query the tables of ETL events",
+            "Query the table of events written during an ETL."
+            " When an ETL is specified, then it is used as a filter."
+            " Otherwise ETLs from the last 48 hours are listed.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
@@ -1070,22 +1298,25 @@ class QueryEventsCommand(SubCommand):
 
 
 class TailEventsCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("tail_events",
-                         "show tail of the ETL events and optionally follow for changes",
-                         "Show latest ETL events for the selected tables in a 15-minute window or"
-                         " since the given start time. (Use '-t #{@latestRunTime}' in a Data Pipeline definition.)"
-                         " Optionally keep looking for events in 30s intervals,"
-                         " which automatically quits when no new event arrives within an hour.")
+        super().__init__(
+            "tail_events",
+            "show tail of the ETL events and optionally follow for changes",
+            "Show latest ETL events for the selected tables in a 15-minute window or"
+            " since the given start time. (Use '-t #{@latestRunTime}' in a Data Pipeline definition.)"
+            " Optionally keep looking for events in 30s intervals,"
+            " which automatically quits when no new event arrives within an hour.",
+        )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix"])
-        parser.add_argument("-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"],
-                            help="pick which step to tail")
+        parser.add_argument(
+            "-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"], help="pick which step to tail"
+        )
         now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
-        parser.add_argument("-t", "--start-time", help="beginning of time window, e.g. '%s'" % now,
-                            type=isoformat_datetime_string)
+        parser.add_argument(
+            "-t", "--start-time", help="beginning of time window, e.g. '%s'" % now, type=isoformat_datetime_string
+        )
         parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
 
     def callback(self, args, config):
@@ -1102,17 +1333,18 @@ class TailEventsCommand(SubCommand):
         selected_relations = etl.relation.select_in_execution_order(all_relations, args.pattern)
         if not selected_relations:
             return
-        etl.monitor.tail_events(selected_relations,
-                                start_time=start_time, update_interval=update_interval, idle_time_out=idle_time_out,
-                                step=args.step)
+        etl.monitor.tail_events(
+            selected_relations,
+            start_time=start_time,
+            update_interval=update_interval,
+            idle_time_out=idle_time_out,
+            step=args.step,
+        )
 
 
 class ShowHelpCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("help",
-                         "show help by topic",
-                         "Show helpful information around selected topic.")
+        super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
         self.topics = ["extract", "load", "unload", "sync", "validate"]
 
     def add_arguments(self, parser):
@@ -1120,21 +1352,23 @@ class ShowHelpCommand(SubCommand):
         parser.add_argument("topic", help="select topic", choices=self.topics)
 
     def callback(self, args, config):
-        print(sys.modules['etl.' + args.topic].__doc__.strip())
+        print(sys.modules["etl." + args.topic].__doc__.strip())
 
 
 class SelfTestCommand(SubCommand):
-
     def __init__(self):
-        super().__init__("selftest",
-                         "run code tests of ETL",
-                         "Run self test of the ETL.")
+        super().__init__("selftest", "run code tests of ETL", "Run self test of the ETL.")
 
     def add_arguments(self, parser):
         # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
-        parser.add_argument("test_family", help="select which family of tests to run",
-                            nargs='?', choices=["pep8", "doctest", "type-check", "all"], default="all")
+        parser.add_argument(
+            "test_family",
+            help="select which family of tests to run",
+            nargs="?",
+            choices=["pep8", "doctest", "type-check", "all"],
+            default="all",
+        )
 
     def callback(self, args, config):
         if args.test_family in ("pep8", "all"):

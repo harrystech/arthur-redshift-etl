@@ -109,8 +109,9 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
     Download the dependencies (usually, based on the temporary view) and compare with table design.
     """
     if tmp_view_name.is_late_binding_view:
-        logger.warning("Dependencies of '%s' cannot be verified because it depends on an external table",
-                       relation.identifier)
+        logger.warning(
+            "Dependencies of '%s' cannot be verified because it depends on an external table", relation.identifier
+        )
         return
 
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
@@ -134,26 +135,35 @@ def validate_column_ordering(conn: connection, relation: RelationDescription, tm
 
     if not actual_columns and tmp_view_name.is_late_binding_view:
         # Thanks to late-binding views it is not an error for a view to not be able to resolve its columns.
-        logger.warning("Order of columns in design of '%s' cannot be validated because external table is missing",
-                       relation.identifier)
+        logger.warning(
+            "Order of columns in design of '%s' cannot be validated because external table is missing",
+            relation.identifier,
+        )
         return
 
     # Identity columns are inserted after the query has been run, so skip them here.
-    expected_columns = [column["name"] for column in relation.table_design["columns"]
-                        if not (column.get("skipped") or column.get("identity"))]
+    expected_columns = [
+        column["name"]
+        for column in relation.table_design["columns"]
+        if not (column.get("skipped") or column.get("identity"))
+    ]
 
     diff = get_list_difference(expected_columns, actual_columns)
     if diff:
-        logger.error("Order of columns in design of '%s' does not match result of running its query",
-                     relation.identifier)
-        logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                     relation.identifier, join_with_quotes(diff))
+        logger.error(
+            "Order of columns in design of '%s' does not match result of running its query", relation.identifier
+        )
+        logger.error(
+            "You need to replace, insert and/or delete in '%s' some column(s): %s",
+            relation.identifier,
+            join_with_quotes(diff),
+        )
         raise TableDesignValidationError("invalid columns or column order in '%s'" % relation.identifier)
     else:
         logger.info("Order of columns in design of '%s' matches result of running SQL query", relation.identifier)
 
 
-def validate_single_transform(conn: connection, relation: RelationDescription, keep_going: bool=False) -> None:
+def validate_single_transform(conn: connection, relation: RelationDescription, keep_going: bool = False) -> None:
     """
     Test-run a relation (CTAS or VIEW) by creating a temporary view.
 
@@ -167,13 +177,12 @@ def validate_single_transform(conn: connection, relation: RelationDescription, k
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if keep_going:
             _error_occurred.set()
-            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:",
-                             relation.identifier)
+            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier)
         else:
             raise
 
 
-def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool=False) -> None:
+def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool = False) -> None:
     """
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
     This allows us to check their syntax, their dependencies, etc.
@@ -206,7 +215,7 @@ def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     diff = set()
     matcher = difflib.SequenceMatcher(None, list1, list2)  # None means skip junk detection
     for code, left1, right1, left2, right2 in matcher.get_opcodes():
-        if code != 'equal':
+        if code != "equal":
             diff.update(list1[left1:right1])
             diff.update(list2[left2:right2])
     return sorted(diff)
@@ -229,25 +238,32 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
     for unloaded in unloaded_relations:
         try:
             if unloaded.unload_target not in target_lookup:
-                raise TableDesignValidationError("invalid target '%s' in unloadable relation '%s'" %
-                                                 (unloaded.unload_target, unloaded.identifier))
+                raise TableDesignValidationError(
+                    "invalid target '%s' in unloadable relation '%s'" % (unloaded.unload_target, unloaded.identifier)
+                )
             else:
                 logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
                 reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
                 if reloaded.identifier in relations_lookup:
                     relation = relations_lookup[reloaded.identifier]
-                    logger.info("Checking for consistency between '%s' and '%s'",
-                                unloaded.identifier, relation.identifier)
+                    logger.info(
+                        "Checking for consistency between '%s' and '%s'", unloaded.identifier, relation.identifier
+                    )
                     unloaded_columns = unloaded.unquoted_columns
                     reloaded_columns = relation.unquoted_columns
                     if unloaded_columns != reloaded_columns:
                         diff = get_list_difference(reloaded_columns, unloaded_columns)
-                        logger.error("Column difference detected between '%s' and '%s'",
-                                     unloaded.identifier, relation.identifier)
-                        logger.error("You need to replace, insert and/or delete in '%s' some column(s): %s",
-                                     relation.identifier, join_with_quotes(diff))
-                        raise TableDesignValidationError("unloaded relation '%s' failed to match counterpart" %
-                                                         unloaded.identifier)
+                        logger.error(
+                            "Column difference detected between '%s' and '%s'", unloaded.identifier, relation.identifier
+                        )
+                        logger.error(
+                            "You need to replace, insert and/or delete in '%s' some column(s): %s",
+                            relation.identifier,
+                            join_with_quotes(diff),
+                        )
+                        raise TableDesignValidationError(
+                            "unloaded relation '%s' failed to match counterpart" % unloaded.identifier
+                        )
         except TableDesignValidationError:
             if keep_going:
                 _error_occurred.set()
@@ -286,33 +302,46 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
 
     current_columns = frozenset(column.name for column in columns_info)
-    design_columns = frozenset(column["name"]
-                               for column in table.table_design["columns"]
-                               if not column["name"].startswith("etl__"))
-    design_required_columns = frozenset(column["name"]
-                                        for column in table.table_design["columns"]
-                                        if column["name"] in design_columns and not column.get("skipped", False))
+    design_columns = frozenset(
+        column["name"] for column in table.table_design["columns"] if not column["name"].startswith("etl__")
+    )
+    design_required_columns = frozenset(
+        column["name"]
+        for column in table.table_design["columns"]
+        if column["name"] in design_columns and not column.get("skipped", False)
+    )
 
     missing_required_columns = design_required_columns.difference(current_columns)
     if missing_required_columns:
-        raise UpstreamValidationError("design of '%s' has columns that do not exist upstream: %s" %
-                                      (source_table_name.identifier, join_with_quotes(missing_required_columns)))
+        raise UpstreamValidationError(
+            "design of '%s' has columns that do not exist upstream: %s"
+            % (source_table_name.identifier, join_with_quotes(missing_required_columns))
+        )
 
     extra_design_columns = design_columns.difference(current_columns)
     if extra_design_columns:
-        logger.warning("Column(s) that are in the design of '%s' but do not exist upstream in '%s': %s",
-                       table.identifier, table.source_name, join_with_quotes(extra_design_columns))
+        logger.warning(
+            "Column(s) that are in the design of '%s' but do not exist upstream in '%s': %s",
+            table.identifier,
+            table.source_name,
+            join_with_quotes(extra_design_columns),
+        )
 
     missing_design_columns = current_columns.difference(design_columns)
     if missing_design_columns:
-        logger.warning("Column(s) that exist upstream in '%s' but not in the design '%s': %s",
-                       table.source_name, table.identifier, join_with_quotes(missing_design_columns))
+        logger.warning(
+            "Column(s) that exist upstream in '%s' but not in the design '%s': %s",
+            table.source_name,
+            table.identifier,
+            join_with_quotes(missing_design_columns),
+        )
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
     for column in table.table_design["columns"]:
         if column.get("not_null") and column["name"] not in current_is_not_null:
-            raise TableDesignValidationError("not null constraint of column '%s' in '%s' not enforced upstream" %
-                                             (column["name"], table.identifier))
+            raise TableDesignValidationError(
+                "not null constraint of column '%s' in '%s' not enforced upstream" % (column["name"], table.identifier)
+            )
 
 
 def validate_upstream_constraints(conn: connection, table: RelationDescription) -> None:
@@ -341,13 +370,15 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
                     del not_used[i]
                     break
         elif current_primary_key:
-            raise TableDesignValidationError("the primary_key constraint in '%s' (%s) does not match upstream (%s)" %
-                                             (table.identifier,
-                                              join_with_quotes(design_primary_key),
-                                              join_with_quotes(current_primary_key)))
+            raise TableDesignValidationError(
+                "the primary_key constraint in '%s' (%s) does not match upstream (%s)"
+                % (table.identifier, join_with_quotes(design_primary_key), join_with_quotes(current_primary_key))
+            )
         else:
-            raise TableDesignValidationError("the primary key constraint in '%s' (%s) is not enforced upstream" %
-                                             (table.identifier, join_with_quotes(design_primary_key)))
+            raise TableDesignValidationError(
+                "the primary key constraint in '%s' (%s) is not enforced upstream"
+                % (table.identifier, join_with_quotes(design_primary_key))
+            )
 
     for design_unique in design_uniques:
         if current_primary_key == design_unique:
@@ -361,16 +392,22 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
                     del not_used[i]
                     break
         if current_primary_key != design_unique and design_unique not in current_uniques:
-            raise TableDesignValidationError("the unique constraint in '%s' (%s) is not enforced upstream" %
-                                             (table.identifier, join_with_quotes(design_unique)))
+            raise TableDesignValidationError(
+                "the unique constraint in '%s' (%s) is not enforced upstream"
+                % (table.identifier, join_with_quotes(design_unique))
+            )
 
     for constraint in not_used:
         for constraint_type, columns in constraint.items():
-            logger.warning("Upstream source has additional %s constraint (%s) for '%s'",
-                           constraint_type, join_with_quotes(columns), table.table_design["source_name"])
+            logger.warning(
+                "Upstream source has additional %s constraint (%s) for '%s'",
+                constraint_type,
+                join_with_quotes(columns),
+                table.table_design["source_name"],
+            )
 
 
-def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool=False) -> None:
+def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool = False) -> None:
     """
     Validate table design of an upstream table against its source database.
     """
@@ -388,8 +425,9 @@ def validate_upstream_table(conn: connection, table: RelationDescription, keep_g
             raise
 
 
-def validate_upstream_sources(schemas: List[DataWarehouseSchema], relations: List[RelationDescription],
-                              keep_going: bool=False) -> None:
+def validate_upstream_sources(
+    schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool = False
+) -> None:
     """
     Validate the designs (and the current configuration) in comparison to upstream databases.
 
@@ -435,8 +473,13 @@ def validate_execution_order(relations: List[RelationDescription], keep_going=Fa
     return ordered_relations
 
 
-def validate_designs(config: DataWarehouseConfig, relations: List[RelationDescription], keep_going=False,
-                     skip_sources=False, skip_dependencies=False) -> None:
+def validate_designs(
+    config: DataWarehouseConfig,
+    relations: List[RelationDescription],
+    keep_going=False,
+    skip_sources=False,
+    skip_dependencies=False,
+) -> None:
     """
     Make sure that all table design files pass the validation checks.
 

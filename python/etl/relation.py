@@ -58,9 +58,10 @@ class RelationDescription:
         """
         if hasattr(self._fileset, attr):
             return getattr(self._fileset, attr)
-        raise AttributeError("Neither '%s' nor '%s' has attribute '%s'" % (self.__class__.__name__,
-                                                                           self._fileset.__class__.__name__,
-                                                                           attr))
+        raise AttributeError(
+            "Neither '%s' nor '%s' has attribute '%s'"
+            % (self.__class__.__name__, self._fileset.__class__.__name__, attr)
+        )
 
     def __init__(self, discovered_files: etl.file_sets.TableFileSet) -> None:
         # Basic properties to locate files describing the relation
@@ -106,9 +107,9 @@ class RelationDescription:
         >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
         'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
         """
-        if (not code) or (code == 's'):
+        if (not code) or (code == "s"):
             return str(self.target_table_name)
-        elif code == 'x':
+        elif code == "x":
             return "{:x}".format(self.target_table_name)
         else:
             raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
@@ -168,8 +169,9 @@ class RelationDescription:
     @property
     def is_required(self) -> bool:
         if self._is_required is None:
-            raise ETLRuntimeError("state of 'is_required' unknown for RelationDescription '{0.identifier}'"
-                                  .format(self))
+            raise ETLRuntimeError(
+                "state of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self)
+            )
         return self._is_required
 
     @property
@@ -185,10 +187,10 @@ class RelationDescription:
                 with closing(etl.s3.get_s3_object_content(self.bucket_name, self.sql_file_name)) as content:
                     query_stmt = content.read().decode()
             else:
-                with codecs.open(self.sql_file_name, encoding='utf-8') as f:
+                with codecs.open(self.sql_file_name, encoding="utf-8") as f:
                     query_stmt = f.read()
 
-            self._query_stmt = query_stmt.strip().rstrip(';')
+            self._query_stmt = query_stmt.strip().rstrip(";")
         return str(self._query_stmt)  # The str(...) shuts up the type checker.
 
     @property
@@ -252,8 +254,7 @@ class RelationDescription:
             if file_set.design_file_name is not None:
                 relations.append(cls(file_set))
             else:
-                logger.warning("Found file(s) without matching table design: %s",
-                               join_with_quotes(file_set.files))
+                logger.warning("Found file(s) without matching table design: %s", join_with_quotes(file_set.files))
 
         if required_relation_selector:
             set_required_relations(relations, required_relation_selector)
@@ -294,7 +295,7 @@ class RelationDescription:
         """
         constraints = self.table_design.get("constraints", [])
         extract_settings = self.table_design.get("extract_settings", {})
-        [partition_key] = extract_settings.get('split_by', [None])
+        [partition_key] = extract_settings.get("split_by", [None])
 
         if not partition_key:
             try:
@@ -319,8 +320,11 @@ class RelationDescription:
             logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
             return partition_key
 
-        logger.warning("Column '%s' is not a number or timestamp and is not usable as a partition key for '%s'",
-                       partition_key, self.identifier)
+        logger.warning(
+            "Column '%s' is not a number or timestamp and is not usable as a partition key for '%s'",
+            partition_key,
+            self.identifier,
+        )
         return None
 
     @contextmanager
@@ -375,7 +379,7 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
 
     for initial_order, description in enumerate(descriptions):
         unmanaged_dependencies = frozenset(dep for dep in description.dependencies if not dep.is_managed)
-        pg_catalog_dependencies = frozenset(dep for dep in description.dependencies if dep.schema == 'pg_catalog')
+        pg_catalog_dependencies = frozenset(dep for dep in description.dependencies if dep.schema == "pg_catalog")
         unknowns = description.dependencies - known_tables - unmanaged_dependencies
         if unknowns:
             known_unknowns.update(unknowns)
@@ -383,16 +387,23 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
             # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
             description.dependencies = description.dependencies.difference(unknowns)
         if unmanaged_dependencies:
-            logger.info("The following dependencies for relation '%s' are not managed by Arthur: %s",
-                        description.identifier, join_with_quotes([dep.identifier for dep in unmanaged_dependencies]))
+            logger.info(
+                "The following dependencies for relation '%s' are not managed by Arthur: %s",
+                description.identifier,
+                join_with_quotes([dep.identifier for dep in unmanaged_dependencies]),
+            )
         if pg_catalog_dependencies:
             has_pg_catalog_dependencies.add(description.target_table_name)
 
     if has_unknown_dependencies:
-        logger.warning("These relations were unknown during dependency ordering: %s",
-                       join_with_quotes([dep.identifier for dep in known_unknowns]))
-        logger.warning('This caused these relations to have dependencies that are not known: %s',
-                       join_with_quotes([dep.identifier for dep in has_unknown_dependencies]))
+        logger.warning(
+            "These relations were unknown during dependency ordering: %s",
+            join_with_quotes([dep.identifier for dep in known_unknowns]),
+        )
+        logger.warning(
+            "This caused these relations to have dependencies that are not known: %s",
+            join_with_quotes([dep.identifier for dep in has_unknown_dependencies]),
+        )
 
     # Make tables that depend on pg_catalog tables on all our tables (except those depending on pg_catalog tables).
     has_no_internal_dependencies = known_tables - known_unknowns - has_pg_catalog_dependencies
@@ -427,8 +438,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
             description.order = latest_order
 
             max_preceding_level = max(
-                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed),
-                default=0
+                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed), default=0
             )
             description.level = max_preceding_level + 1
 
@@ -475,8 +485,9 @@ def set_required_relations(relations: List[RelationDescription], required_select
     logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
     ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
-    required_relations = [description for description in ordered_descriptions
-                          if required_selector.match(description.target_table_name)]
+    required_relations = [
+        description for description in ordered_descriptions if required_selector.match(description.target_table_name)
+    ]
     # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
     for description in ordered_descriptions[::-1]:
         if any([description.target_table_name in required.dependencies for required in required_relations]):
@@ -497,8 +508,9 @@ def find_matches(relations: List[RelationDescription], selector: TableSelector):
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
-def find_dependents(relations: List[RelationDescription], seed_relations: List[RelationDescription]
-                    ) -> List[RelationDescription]:
+def find_dependents(
+    relations: List[RelationDescription], seed_relations: List[RelationDescription]
+) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
     For this to really work, the list of relations should be sorted in "execution order"!
@@ -512,8 +524,12 @@ def find_dependents(relations: List[RelationDescription], seed_relations: List[R
     return [relation for relation in relations if relation.identifier in dependents]
 
 
-def select_in_execution_order(relations: List[RelationDescription], selector: TableSelector,
-                              include_dependents=False, continue_from: Optional[str]=None) -> List[RelationDescription]:
+def select_in_execution_order(
+    relations: List[RelationDescription],
+    selector: TableSelector,
+    include_dependents=False,
+    continue_from: Optional[str] = None,
+) -> List[RelationDescription]:
     """
     Return list of relations that were selected, optionally adding dependents and optionally skipping forward.
 
@@ -531,7 +547,7 @@ def select_in_execution_order(relations: List[RelationDescription], selector: Ta
         selected = [relation for relation in execution_order if relation.identifier in combined]
     if not selected:
         logger.warning("Found no relations matching: %s", selector)
-    elif continue_from == '*':
+    elif continue_from == "*":
         logger.info("Continuing from first (selected) relation since '*' was used")
     elif continue_from in (":transformations", ":transformation"):
         selected = list(dropwhile(lambda relation: not relation.is_transformation, selected))

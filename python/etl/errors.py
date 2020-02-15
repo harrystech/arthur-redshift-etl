@@ -175,33 +175,33 @@ class UpdateTableError(RelationDataError):
 
 
 class MissingExtractEventError(RelationDataError):
-
     def __init__(self, source_relations, extracted_targets):
-        missing_relations = [relation for relation in source_relations
-                             if relation.identifier not in extracted_targets]
-        self.message = ("Some source relations did not have extract events after the step start time: " +
-                        join_with_quotes(missing_relations))
+        missing_relations = [relation for relation in source_relations if relation.identifier not in extracted_targets]
+        self.message = (
+            "Some source relations did not have extract events after the step start time: "
+            + join_with_quotes(missing_relations)
+        )
 
     def __str__(self):
         return self.message
 
 
 class FailedConstraintError(RelationDataError):
-
     def __init__(self, relation, constraint_type, columns, examples):
         self.identifier = relation.identifier
         self.constraint_type = constraint_type
         self.columns = columns
-        self.example_string = ',\n  '.join(map(str, examples))
-        self.message = ("relation {0.identifier} violates {0.constraint_type} constraint.\n"
-                        "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self))
+        self.example_string = ",\n  ".join(map(str, examples))
+        self.message = (
+            "relation {0.identifier} violates {0.constraint_type} constraint.\n"
+            "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self)
+        )
 
     def __str__(self):
         return self.message
 
 
 class RequiredRelationLoadError(ETLRuntimeError):
-
     def __init__(self, failed_relations, bad_apple=None):
         self.message = "required relation(s) with failure: " + join_with_quotes(failed_relations)
         if bad_apple:
@@ -251,8 +251,12 @@ def retry(max_retries: int, func: partial, logger):
             remaining_attempts = max_retries - attempt
             if remaining_attempts:
                 sleep_time = 5 ** (attempt + 1)
-                logger.warning("Encountered the following error (retrying %s more time(s) after %s second sleep): %s",
-                               remaining_attempts, sleep_time, str(exc))
+                logger.warning(
+                    "Encountered the following error (retrying %s more time(s) after %s second sleep): %s",
+                    remaining_attempts,
+                    sleep_time,
+                    str(exc),
+                )
                 time.sleep(sleep_time)
             continue
         except Exception:

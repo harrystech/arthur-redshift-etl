@@ -22,9 +22,9 @@ def join_with_quotes(names):
     "'bar', 'foo'"
     """
     if isinstance(names, (set, frozenset)):
-        return ', '.join("'{}'".format(name) for name in sorted(names))
+        return ", ".join("'{}'".format(name) for name in sorted(names))
     else:
-        return ', '.join("'{}'".format(name) for name in names)
+        return ", ".join("'{}'".format(name) for name in names)
 
 
 def join_column_list(columns):
@@ -53,7 +53,7 @@ class ColumnWrapper(textwrap.TextWrapper):
         """
         chunk = text.rstrip()
         if len(chunk) > self.width:
-            return [chunk[:self.width - len(self.placeholder) - 1], ' ', '?' * (len(self.placeholder) + 1)]
+            return [chunk[: self.width - len(self.placeholder) - 1], " ", "?" * (len(self.placeholder) + 1)]
         else:
             return [chunk]
 
@@ -97,8 +97,14 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     if header_row is not None and has_header is True:
         raise ValueError("cannot have separate header row and mark first row as header")
     # Make sure that we are working with a list of lists of strings (and not generators and such).
-    wrapper = ColumnWrapper(width=max_column_width, max_lines=1, placeholder="...",
-                            expand_tabs=True, replace_whitespace=True, drop_whitespace=False)
+    wrapper = ColumnWrapper(
+        width=max_column_width,
+        max_lines=1,
+        placeholder="...",
+        expand_tabs=True,
+        replace_whitespace=True,
+        drop_whitespace=False,
+    )
     matrix = [[wrapper.fill(str(column)) for column in row] for row in value_rows]
     # Add header row as needed, have number of columns depend on header
     if header_row is not None:
@@ -122,9 +128,9 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     # Now rewrite the matrix values to fill the columns
     if header_row or len(matrix) > 2:
         matrix = [["{:{}s}".format(row[i], column_width[i]) for i in range(n_columns)] for row in matrix]
-        rows = [' | '.join(row).rstrip() for row in matrix]
-        rows[1] = rows[1].replace(' | ', '-+-')
+        rows = [" | ".join(row).rstrip() for row in matrix]
+        rows[1] = rows[1].replace(" | ", "-+-")
         rows.append(row_count)
     else:
         rows = [row_count]  # without data, don't even try to print the column headers, like "col #1".
-    return '\n'.join(rows)
+    return "\n".join(rows)
