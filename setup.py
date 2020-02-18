@@ -15,11 +15,12 @@ setup(
         "etl": [
             "assets/*",
             "config/*",
-            "templates/*"
+            "templates/*",
         ]
     },
     scripts=[
         "python/scripts/compare_events.py",
+        "python/scripts/install_extraction_pipeline.sh",
         "python/scripts/install_pizza_load_pipeline.sh",
         "python/scripts/install_rebuild_pipeline.sh",
         "python/scripts/install_refresh_pipeline.sh",
@@ -29,13 +30,14 @@ setup(
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",
         "python/scripts/sns_subscribe.sh",
-        "python/scripts/submit_arthur.sh"
+        "python/scripts/submit_arthur.sh",
+        "python/scripts/terminate_emr_cluster.sh",
     ],
     entry_points={
         "console_scripts": [
             # NB The script must end in ".py" so that spark submit accepts it as a Python script.
             "arthur.py = etl.commands:run_arg_as_command",
-            "run_tests.py = etl.selftest:run_tests"
+            "run_tests.py = etl.selftest:run_tests",
         ]
     }
 )

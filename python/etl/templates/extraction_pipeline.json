@@ -28,14 +28,14 @@
             "id": "SuccessNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
-            "subject": "ETL Upgrade Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Extraction Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
         },
         {
             "id": "FailureNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
-            "subject": "ETL Upgrade Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Extraction Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
@@ -45,54 +45,31 @@
             "terminateAfter": "6 Hours"
         },
         {
-            "id": "ArthurDriverEC2Resource",
-            "type": "Ec2Resource",
+            "id": "ETLCluster",
+            "name": "ETL EMR Cluster",
+            "type": "EmrCluster",
             "parent": { "ref": "ResourceParent" },
-            "actionOnTaskFailure": "terminate",
-            "actionOnResourceFailure": "retryAll",
-            "instanceType": "${resources.EC2.instance_type}",
-            "imageId": "${resources.EC2.image_id}",
-            "securityGroupIds": [
+            "releaseLabel": "${resources.EMR.release_label}",
+            "masterInstanceType": "${resources.EMR.master.instance_type}",
+            "coreInstanceType": "${resources.EMR.core.instance_type}",
+            "coreInstanceCount": "${resources.EMR.core.instance_count}",
+            "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
+            "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
+            "additionalMasterSecurityGroupIds": [
                 "${resources.EC2.public_security_group}",
                 "${resources.VPC.whitelist_security_group}"
             ],
-            "associatePublicIpAddress": "true"
+            "bootstrapAction": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh,${object_store.s3.bucket_name},${object_store.s3.prefix}",
+            "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
+            "configuration": []
         },
         {
-            "id": "Ec2CommandGrandParent",
-            "runsOn": { "ref": "ArthurDriverEC2Resource" }
-        },
-        {
-            "id": "ShellCommandParent",
-            "parent": { "ref": "Ec2CommandGrandParent" }
-        },
-        {
-            "id": "ArthurCommandParent",
-            "parent": { "ref": "Ec2CommandGrandParent" },
+            "id": "EmrActivityUpstreamExtract",
+            "name": "Arthur Extract (EMR Activity)",
+            "type": "EmrActivity",
+            "step": "/var/lib/aws/emr/step-runner/hadoop-jars/command-runner.jar,/tmp/redshift_etl/venv/bin/arthur.py,--config,/tmp/redshift_etl/config/,extract,--keep-going,--prolix,--prefix,${object_store.s3.prefix},#{myExtractArguments}",
+            "runsOn": { "ref": "ETLCluster" },
             "maximumRetries": "0"
-        },
-        {
-            "id": "CopyBootstrap",
-            "name": "Copy Bootstrap (EC2)",
-            "type": "ShellCommandActivity",
-            "parent": { "ref": "ShellCommandParent" },
-            "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh /tmp/bootstrap.sh"
-        },
-        {
-            "id": "Bootstrap",
-            "name": "Bootstrap (EC2)",
-            "type": "ShellCommandActivity",
-            "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
-            "dependsOn": { "ref": "CopyBootstrap" }
-        },
-        {
-            "id": "ArthurUpgrade",
-            "name": "Arthur Upgrade (EC2)",
-            "type": "ShellCommandActivity",
-            "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ upgrade --prolix --prefix ${object_store.s3.prefix} #{myUpgradeArguments}",
-            "dependsOn": { "ref": "Bootstrap" }
         }
     ],
     "parameters": [
@@ -105,16 +82,16 @@
             "helpText": "When should the pipeline start?"
         },
         {
-            "id": "myUpgradeArguments",
+            "id": "myExtractArguments",
             "type": "String",
             "optional": "false",
-            "description": "Arguments for the upgrade command, e.g. relations. Defaults to '--continue-from :transformations'",
+            "description": "Arguments for the extract command (must be comma separated)",
             "watermark": "*",
-            "helpText": "Which table should we continue from?"
+            "helpText": "Which tables should we extract?"
         }
     ],
     "values": {
         "myStartDateTime": "2525-01-01T00:00:00",
-        "myUpgradeArguments": "--continue-from :transformations"
+        "myExtractArguments": ""
     }
 }

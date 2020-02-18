@@ -28,21 +28,21 @@
             "id": "SuccessNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
-            "subject": "ETL Rebuild Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Rebuild Success (Pizza): ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
         },
         {
             "id": "FailureNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
-            "subject": "ETL Rebuild Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Rebuild Failure (Pizza): ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
             "id": "PagerNotification",
             "type": "SnsAlarm",
             "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-page",
-            "subject": "ETL Rebuild Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Rebuild Failure (Pizza): ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
         },
         {
