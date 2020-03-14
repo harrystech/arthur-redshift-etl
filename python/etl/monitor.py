@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
 from operator import itemgetter
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 import boto3
 import botocore.exceptions
@@ -693,7 +693,7 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
 class EventsQuery:
 
     def __init__(self, step: Optional[str]=None) -> None:
-        self._keys = ["target", "step", "event", "timestamp"]
+        self._keys = ["target", "step", "event", "timestamp", "elapsed", "extra.rowcount"]
         values = {
             ":target": None,  # set when called
             ":epoch_seconds": None,  # set when called
@@ -706,8 +706,8 @@ class EventsQuery:
             },
             "ExpressionAttributeValues": values,
             "KeyConditionExpression": "target = :target and #timestamp > :epoch_seconds",
-            "FilterExpression": "event <> :start_event",
-            "ProjectionExpression": "target, step, event, #timestamp"
+            "FilterExpression": "event <> :start_event",  # only look for finish or fail events
+            "ProjectionExpression": "target, step, event, #timestamp, elapsed, extra.rowcount"
         }
         if step is not None:
             values[":step"] = step
@@ -723,13 +723,18 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":target"] = target
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
-        events = [{key: item[key] for key in self.keys} for item in response['Items']]
+        # TODO(tom): translate between hierarchy extra.rowcount and return dict of dict using path
+        events = [
+            {
+                key: item[key] if key != 'extra.rowcount' else item.get('extra', {}).get('rowcount')
+                for key in self.keys
+            } for item in response['Items']
+        ]
         # Return latest event or None
         if events:
             events.sort(key=itemgetter("timestamp"))
             return events[-1]
-        else:
-            return None
+        return None
 
 
 class BackgroundQueriesRunner(threading.Thread):
@@ -809,7 +814,7 @@ def recently_extracted_targets(source_relations, start_time):
     return extracted_targets
 
 
-def summarize_events(relations, step: Optional[str]) -> None:
+def summarize_events(relations, step: Optional[str] = None) -> None:
     """
     Summarize latest ETL step for the given relations by showing elapsed time and row count.
     """
@@ -820,20 +825,46 @@ def summarize_events(relations, step: Optional[str]) -> None:
     latest_start = latest_etl['timestamp']
     logger.info("Latest ETL: %s", latest_etl)
 
-    targets = [relation.identifier for relation in relations]
-    query = EventsQuery(step)
-
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
+    query = EventsQuery(step)
 
     events = []
-    for target in tqdm(targets):
-        event = query(table, target, latest_start)
+    schema_events = dict()  # type: Dict[str, Dict[str, Union[str, Decimal]]]
+    for relation in tqdm(relations):
+        event = query(table, relation.identifier, latest_start)
         if event:
-            events.append(event)
+            event["rowcount"] = event.pop("extra.rowcount")
+            events.append(dict(event, kind=relation.kind))
+            schema = relation.target_table_name.schema
+            if schema not in schema_events:
+                # Note below that it's the same "kind" for all relations within the same schema.
+                schema_events[schema] = {
+                    "target": schema,
+                    "kind": relation.kind,
+                    "step": event["step"],
+                    "timestamp": Decimal(0),
+                    "event": "complete",
+                    "elapsed": Decimal(0),
+                    "rowcount": Decimal(0),
+                }
+            if event["timestamp"] > schema_events[schema]["timestamp"]:
+                schema_events[schema]["timestamp"] = event["timestamp"]
+            schema_events[schema]["elapsed"] += event["elapsed"]
+            schema_events[schema]["rowcount"] += event["rowcount"] if event["rowcount"] else 0
 
-    import pprint
-    pprint.pprint(events)
+    # Add pseudo events to show schemas are done.
+    events.extend(schema_events.values())
+
+    keys = ["target", "kind", "step", "timestamp", "event", "elapsed", "rowcount"]
+    rows = [
+        [
+            _format_output_column(key, info[key]) for key in keys
+        ]
+        for info in events
+    ]
+    rows.sort(key=itemgetter(keys.index("timestamp")))
+    print(etl.text.format_lines(rows, header_row=keys))
 
 
 def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str]=None) -> None:
