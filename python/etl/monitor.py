@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Union
 import boto3
 import botocore.exceptions
 import simplejson as json
+import funcy as fy
 from tqdm import tqdm
 
 import etl.assets
@@ -584,9 +585,6 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
     """Search for ETLs by looking for the "marker" event at the start of an ETL command."""
     start_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago)
     epoch_seconds = timegm(start_time.utctimetuple())
-    filter_exp = "event = :finish_event"
-    if step is not None:
-        filter_exp += " and step = :step"
     attribute_values = {
         ":marker": _DUMMY_TARGET,
         ":epoch_seconds": epoch_seconds,
@@ -594,6 +592,9 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
     }
     if step is not None:
         attribute_values[":step"] = step
+    filter_exp = "event = :finish_event"
+    if step is not None:
+        filter_exp += " and step = :step"
 
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
@@ -676,9 +677,8 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
         consumed_capacity += response['ConsumedCapacity']['CapacityUnits']
         scanned_count += response['ScannedCount']
         items = [_flatten_scan_result(item) for item in response['Items']]
-        # Backwards compatibility kludge: Be careful picking out the rowcount which may not be present in older tables.
         items = [
-            {key: item.get('extra', {'rowcount': None})['rowcount'] if key == 'rowcount' else item[key] for key in keys}
+            {key: fy.get_in(item, key.split(".")) for key in keys}
             for item in items
         ]
         rows.extend([_format_output_column(key, item[key]) for key in keys] for item in items)
@@ -695,10 +695,15 @@ class EventsQuery:
     def __init__(self, step: Optional[str]=None) -> None:
         self._keys = ["target", "step", "event", "timestamp", "elapsed", "extra.rowcount"]
         values = {
-            ":target": None,  # set when called
-            ":epoch_seconds": None,  # set when called
+            ":target": None,  # will be set when called
+            ":epoch_seconds": None,  # will be set when called
             ":start_event": STEP_START
         }
+        # Only look for finish or fail events
+        filter_exp = "event <> :start_event"
+        if step is not None:
+            values[":step"] = step
+            filter_exp += " and step = :step"
         base_query = {
             "ConsistentRead": False,
             "ExpressionAttributeNames": {
@@ -706,12 +711,9 @@ class EventsQuery:
             },
             "ExpressionAttributeValues": values,
             "KeyConditionExpression": "target = :target and #timestamp > :epoch_seconds",
-            "FilterExpression": "event <> :start_event",  # only look for finish or fail events
+            "FilterExpression": filter_exp,
             "ProjectionExpression": "target, step, event, #timestamp, elapsed, extra.rowcount"
         }
-        if step is not None:
-            values[":step"] = step
-            base_query["FilterExpression"] = "event <> :start_event and step = :step"
         self._base_query = base_query
 
     @property
@@ -723,12 +725,9 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":target"] = target
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
-        # TODO(tom): translate between hierarchy extra.rowcount and return dict of dict using path
         events = [
-            {
-                key: item[key] if key != 'extra.rowcount' else item.get('extra', {}).get('rowcount')
-                for key in self.keys
-            } for item in response['Items']
+            {key: fy.get_in(item, key.split(".")) for key in self.keys}
+            for item in response['Items']
         ]
         # Return latest event or None
         if events:
@@ -787,6 +786,7 @@ class BackgroundQueriesRunner(threading.Thread):
 def recently_extracted_targets(source_relations, start_time):
     """
     Query the events table for "extract" events on the provided source_relations after start_time.
+
     Waits for up to an hour, sleeping for 30s between checks.
     Return the set of targets (ie, relation.identifier or event["target"]) with successful extracts
     """
@@ -838,10 +838,9 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
             events.append(dict(event, kind=relation.kind))
             schema = relation.target_table_name.schema
             if schema not in schema_events:
-                # Note below that it's the same "kind" for all relations within the same schema.
                 schema_events[schema] = {
                     "target": schema,
-                    "kind": relation.kind,
+                    "kind": "---",
                     "step": event["step"],
                     "timestamp": Decimal(0),
                     "event": "complete",
