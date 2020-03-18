@@ -135,7 +135,7 @@
         },
         {
             "id": "SendHealthAfterEtl",
-            "name": "Send Health After ETL (EC2)",
+            "name": "Send Health Check After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
             "command": "bash /tmp/redshift_etl/bin/send_health_check.sh",
