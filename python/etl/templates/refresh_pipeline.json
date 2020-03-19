@@ -121,7 +121,7 @@
             "dependsOn": { "ref": "CopyBootstrap" }
         },
         {
-            "id": "SendHealthAfterBootstrap",
+            "id": "SendHealthCheckAfterBootstrap",
             "name": "Send Health Check After Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
@@ -139,7 +139,7 @@
             ]
         },
         {
-            "id": "SendHealthAfterEtl",
+            "id": "SendHealthCheckAfterEtl",
             "name": "Send Health Check After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },

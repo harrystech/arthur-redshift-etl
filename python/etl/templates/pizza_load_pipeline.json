@@ -134,7 +134,7 @@
             "dependsOn": { "ref": "ArthurPromote" }
         },
         {
-            "id": "SendHealthAfterEtl",
+            "id": "SendHealthCheckAfterEtl",
             "name": "Send Health Check After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
