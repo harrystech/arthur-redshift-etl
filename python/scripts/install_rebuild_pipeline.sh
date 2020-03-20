@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 
-if [[ $# -ne 3 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences>"
+if [[ $# -lt 3 || "$1" = "-h" ]]; then
+    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> [timeout]"
     echo "      Start time should be 'now' or take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
+    echo "      Optional timeout should be the number of hours it's allowed to run. Defaults to 8"
     exit 0
 fi
+
+# Optional timeout parameter. Default value set in pipeline template, not here
+TIMEOUT="$4"
 
 set -e -u
 
@@ -59,11 +63,18 @@ if [[ -z "$PIPELINE_ID" ]]; then
     exit 1
 fi
 
+if [[ -n "$TIMEOUT" ]]; then
+    timeout_arg="myTimeout=$TIMEOUT"
+else
+    timeout_arg=""
+fi
+
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
+        $timeout_arg \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
