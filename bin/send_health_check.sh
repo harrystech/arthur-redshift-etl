@@ -24,7 +24,7 @@ if [[ "$1" == "-h" || ("$1" != "" && "$1" != "start" && "$1" != "fail") ]]; then
     exit 1
 fi
 
-set -e
+set -o errexit
 
 FILENAME="/tmp/redshift_etl/config/credentials.sh"
 echo "Attempting to read configuration environment variables from '$FILENAME'"
@@ -44,8 +44,8 @@ if [ -n "$status" ]; then
     HEALTH_CHECK_URI="$HEALTH_CHECK_URI/$status"
 fi
 
-set -x
-set -u
+set -o xtrace
+set -o nounset
 
 curl --connect-timeout 5 --max-time 60 --retry 5 "$HEALTH_CHECK_URI"
 exit $?
