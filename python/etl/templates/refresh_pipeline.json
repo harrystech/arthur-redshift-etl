@@ -49,7 +49,7 @@
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
-            "terminateAfter": "6 Hours"
+            "terminateAfter": "#{myTimeout} Hours"
         },
         {
             "id": "ETLCluster",
@@ -184,12 +184,22 @@
             "description": "Comma separated list of arthur pattern globs (for ArthurExtract)",
             "watermark": "*",
             "helpText": "Which tables should be refreshed?"
+        },
+        {
+            "id": "myTimeout",
+            "type": "Integer",
+            "optional": "true",
+            "description": "How many hours to allow the pipeline to run before terminating it",
+            "watermark": "6",
+            "default": "6",
+            "helpText": "How long can the pipeline run?"
         }
     ],
     "values": {
         "myStartDateTime": "2525-01-01T00:00:00",
         "myOccurrences": "1000",
         "mySelection": "",
-        "myCommaSeparatedSelection": ""
+        "myCommaSeparatedSelection": "",
+        "myTimeout": "6"
     }
 }
