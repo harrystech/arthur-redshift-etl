@@ -121,11 +121,11 @@
             "dependsOn": { "ref": "CopyBootstrap" }
         },
         {
-            "id": "PingCronutAfterBootstrap",
-            "name": "Ping Cronut After Bootstrap (EC2)",
+            "id": "SendHealthCheckAfterBootstrap",
+            "name": "Send Health Check After Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_BOOTSTRAP",
+            "command": "bash /tmp/redshift_etl/bin/send_health_check.sh start",
             "dependsOn": { "ref": "Bootstrap" }
         },
         {
@@ -139,11 +139,11 @@
             ]
         },
         {
-            "id": "PingCronutAfterEtl",
-            "name": "Ping Cronut After ETL (EC2)",
+            "id": "SendHealthCheckAfterEtl",
+            "name": "Send Health Check After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_ETL",
+            "command": "bash /tmp/redshift_etl/bin/send_health_check.sh",
             "dependsOn": { "ref": "ArthurUpdate" },
             "onSuccess": { "ref": "SuccessNotification" },
             "onFail": [
