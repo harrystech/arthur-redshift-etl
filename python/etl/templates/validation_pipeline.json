@@ -161,8 +161,8 @@
             "type": "Integer",
             "optional": "true",
             "description": "How many hours to allow the pipeline to run before terminating it",
-            "watermark": "6",
-            "default": "6",
+            "watermark": "2",
+            "default": "2",
             "helpText": "How long can the pipeline run?"
         }
     ],
