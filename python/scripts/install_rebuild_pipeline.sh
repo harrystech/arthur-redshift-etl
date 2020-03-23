@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 3 || "$1" = "-h" ]]; then
+if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
     echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> [timeout]"
     echo "      Start time should be 'now' or take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
-    echo "      Optional timeout should be the number of hours it's allowed to run. Defaults to 8"
+    echo "      Optional timeout should be the number of hours pipeline is allowed to run. Defaults to 8."
     exit 0
 fi
 
-# Optional timeout parameter. Default value set in pipeline template, not here
+# Optional timeout parameter. Default value set in pipeline template, not here.
 TIMEOUT="$4"
 
 set -e -u
