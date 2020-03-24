@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> [timeout]"
-    echo "      Start time should be 'now' or take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
-    echo "      Optional timeout should be the number of hours pipeline is allowed to run. Defaults to 8."
-    exit 0
-fi
+START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+USER="${USER-nobody}"
+DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
-# Optional timeout parameter. Default value set in pipeline template, not here.
-TIMEOUT="$4"
+if [[ $# -lt 1 || "$1" = "-h" ]]; then
+
+    cat <<EOF
+
+Single-shot extraction pipeline. You get to pick the arguments to 'extract' command.
+
+Usage: `basename $0` extract_arg [extract_arg ...]
+
+The remaining arguments will be passed to 'extract'.
+The environment defaults to "$DEFAULT_PREFIX".
+
+Example: `basename $0` dw
+
+EOF
+    exit 0
+
+fi
 
 set -e -u
 
@@ -20,15 +32,15 @@ if [[ ! -d "$DEFAULT_CONFIG" ]]; then
     exit 1
 fi
 
-PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT="$1"
+function join_by { local IFS="$1"; shift; echo "$*"; }
 
-if [[ "$2" == "now" ]]; then
-    START_DATE_TIME="`date -u +'%Y-%m-%dT%H:%M:%S'`"
-else
-    START_DATE_TIME="$2"
-fi
-OCCURRENCES="$3"
+PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
+PROJ_ENVIRONMENT="$DEFAULT_PREFIX"
+
+# The list of arguments must be comma-separated when passed to a step in an EMR cluster.
+EXTRACT_ARGUMENTS=$(join_by ',' "$@")
+
+START_DATE_TIME="$START_NOW"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -42,15 +54,15 @@ set -x
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
 
-PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+PIPELINE_NAME="Extraction Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" extraction_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 aws datapipeline create-pipeline \
-    --unique-id dw-etl-rebuild-pipeline \
+    --unique-id dw-etl-extraction-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
@@ -63,23 +75,16 @@ if [[ -z "$PIPELINE_ID" ]]; then
     exit 1
 fi
 
-if [[ -n "$TIMEOUT" ]]; then
-    timeout_arg="myTimeout=$TIMEOUT"
-else
-    timeout_arg=""
-fi
-
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myStartDateTime="$START_DATE_TIME" \
-        myOccurrences="$OCCURRENCES" \
-        $timeout_arg \
+        myExtractArguments="$EXTRACT_ARGUMENTS" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
 set +x
 echo
-echo "You can monitor the status of this rebuild pipeline using:"
-echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"
+echo "You can monitor the status of this extraction pipeline using:"
+echo "  watch arthur.py show_pipelines -q '$PIPELINE_ID'"

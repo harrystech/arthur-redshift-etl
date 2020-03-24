@@ -53,6 +53,7 @@
             "description": "Encoding types for columns in Redshift tables, see http://docs.aws.amazon.com/redshift/latest/dg/c_Compression_encodings.html",
             "enum": [
                 "raw",
+                "az64",
                 "bytedict",
                 "delta",
                 "delta32k",

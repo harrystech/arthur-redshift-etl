@@ -1,9 +1,0 @@
-# You need to add the Ping IDs from Cronut here.
-# (Those are the public IDs used to identify a schedule.)
-# Start names with CRONUT_ and end on whatever name
-# you want to use in the pipeline definitions.
-
-# [Polaris] ETL started
-CRONUT_PING_AFTER_BOOTSTRAP="812345678906"
-# [Polaris] ETL completed
-CRONUT_PING_AFTER_ETL="9123456789F9"
