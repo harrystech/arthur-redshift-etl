@@ -3,12 +3,12 @@ Implement commands that interact with AWS Data Pipeline
 """
 
 import fnmatch
-import funcy
 import logging
 from operator import attrgetter
 from typing import List
 
 import boto3
+import funcy
 
 import etl.text
 from etl.text import join_with_quotes

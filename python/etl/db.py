@@ -19,10 +19,10 @@ import textwrap
 from contextlib import closing, contextmanager
 from typing import Dict, List, Optional
 
+import pgpasslib
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-import pgpasslib
 
 import etl.text
 from etl.errors import ETLRuntimeError

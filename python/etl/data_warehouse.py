@@ -23,7 +23,7 @@ import etl.config
 import etl.config.dw
 import etl.db
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import ETLRuntimeError, ETLConfigError
+from etl.errors import ETLConfigError, ETLRuntimeError
 from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)

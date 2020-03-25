@@ -8,8 +8,8 @@ Objects to deal with configuration of our data warehouse, like
 from typing import Dict
 
 import etl.config.env
-import etl.names
 import etl.db
+import etl.names
 import etl.render_template
 from etl.errors import ETLConfigError, InvalidEnvironmentError
 

@@ -5,19 +5,19 @@ Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data fil
 """
 import concurrent.futures
 import logging
-from itertools import groupby
 from functools import partial
+from itertools import groupby
 from operator import attrgetter
 from typing import Dict, List, Set
 
+import etl.config
+import etl.db
 import etl.monitor
 import etl.s3
-import etl.db
-import etl.config
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError, retry
-from etl.text import join_with_quotes
 from etl.relation import RelationDescription
+from etl.text import join_with_quotes
 from etl.timer import Timer
 
 

@@ -1,5 +1,5 @@
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

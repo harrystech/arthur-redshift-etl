@@ -38,7 +38,7 @@ import etl.config
 import etl.text
 from etl.errors import ETLRuntimeError, InvalidArgumentError
 from etl.json_encoder import FancyJsonEncoder
-from etl.timer import utc_now, elapsed_seconds, Timer
+from etl.timer import Timer, elapsed_seconds, utc_now
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
