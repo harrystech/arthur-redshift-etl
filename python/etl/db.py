@@ -19,10 +19,10 @@ import textwrap
 from contextlib import closing, contextmanager
 from typing import Dict, List, Optional
 
+import pgpasslib
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-import pgpasslib
 
 import etl.text
 from etl.errors import ETLRuntimeError
@@ -54,7 +54,8 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
             (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
             (?P<database>\w+)  # database (and not dbname)
             (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
-        re.VERBOSE)
+        re.VERBOSE,
+    )
     dsn_after_expansion = os.path.expandvars(dsn)  # Supports stuff like $USER
     match = dsn_re.match(dsn_after_expansion)
     if match is None:
@@ -82,7 +83,7 @@ def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
     from the connection string, which is not expected by psycopg2.connect().
     """
     dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
-    dsn_values.pop('subprotocol', None)
+    dsn_values.pop("subprotocol", None)
     return dsn_values
 
 
@@ -97,10 +98,14 @@ def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, aut
     dsn_values = _dsn_connection_values(dsn_dict, application_name)
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
     dsn_values.update(keepalives=1, keepalives_idle=30)
-    cx = psycopg2.connect(**dsn_values, )
+    cx = psycopg2.connect(**dsn_values,)
     cx.set_session(autocommit=autocommit, readonly=readonly)
-    logger.debug("Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
-                 cx.get_backend_pid(), cx.server_version, cx.get_parameter_status("is_superuser"))
+    logger.debug(
+        "Connected successfully (backend pid: %d, server version: %s, is_superuser: %s)",
+        cx.get_backend_pid(),
+        cx.server_version,
+        cx.get_parameter_status("is_superuser"),
+    )
     return cx
 
 
@@ -125,11 +130,9 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     string's protocol was postgres or redshift.
     """
     dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
-    dsn_properties.update({
-        "ApplicationName": __name__,
-        "readOnly": "true" if read_only else "false",
-        "driver": "org.postgresql.Driver"
-    })
+    dsn_properties.update(
+        {"ApplicationName": __name__, "readOnly": "true" if read_only else "false", "driver": "org.postgresql.Driver"}
+    )
     if "port" in dsn_properties:
         jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
     else:
@@ -141,7 +144,7 @@ def dbname(cx):
     """
     Return name of database that this connection points to.
     """
-    dsn = dict(kv.split('=') for kv in cx.dsn.split(" "))
+    dsn = dict(kv.split("=") for kv in cx.dsn.split(" "))
     return dsn["dbname"]
 
 
@@ -171,7 +174,7 @@ def mogrify(cursor, stmt, args=()):
     """
     Build the statement by filling in the arguments (and cleaning up whitespace along the way).
     """
-    stripped = textwrap.dedent(stmt).strip('\n')
+    stripped = textwrap.dedent(stmt).strip("\n")
     if len(args):
         actual_stmt = cursor.mogrify(stripped, args)
     else:
@@ -208,7 +211,7 @@ def execute(cx, stmt, args=(), return_result=False):
             logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
             for msg in cx.notices:
-                logger.debug("QUERY " + msg.rstrip('\n'))
+                logger.debug("QUERY " + msg.rstrip("\n"))
             del cx.notices[:]
         if return_result:
             return cursor.fetchall()
@@ -233,7 +236,7 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
     # Figure out caller for better logging
     current_frame = inspect.currentframe()
     caller_globals = current_frame.f_back.f_globals
-    caller_logger = caller_globals.get('logger', logger)
+    caller_logger = caller_globals.get("logger", logger)
     assert isinstance(caller_logger, logging.Logger)
 
     if dry_run:
@@ -302,24 +305,25 @@ def log_sql_error(exc):
     """
     if exc.pgcode is not None:
         logger.error('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())
-    for name in ('severity',
-                 'sqlstate',
-                 'message_primary',
-                 'message_detail',
-                 'message_hint',
-                 'statement_position',
-                 'internal_position',
-                 'internal_query',
-                 'context',
-                 'schema_name',
-                 'table_name',
-                 'column_name',
-                 'datatype_name',
-                 'constraint_name',
-                 # 'source_file',
-                 # 'source_function',
-                 # 'source_line',
-                 ):
+    for name in (
+        "severity",
+        "sqlstate",
+        "message_primary",
+        "message_detail",
+        "message_hint",
+        "statement_position",
+        "internal_position",
+        "internal_query",
+        "context",
+        "schema_name",
+        "table_name",
+        "column_name",
+        "datatype_name",
+        "constraint_name",
+        # 'source_file',
+        # 'source_function',
+        # 'source_line',
+    ):
         value = getattr(exc.diag, name, None)
         if value:
             logger.debug("DIAG %s: %s", name.upper(), value)
@@ -337,6 +341,7 @@ def log_error():
 
 # ---- DATABASE ----
 
+
 def drop_and_create_database(cx, database, owner):
     exists = query(cx, """SELECT 1 FROM pg_catalog.pg_database WHERE datname = '{}'""".format(database))
     if exists:
@@ -346,21 +351,26 @@ def drop_and_create_database(cx, database, owner):
 
 # ---- USERS and GROUPS ----
 
+
 def create_group(cx, group):
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
 
 def group_exists(cx, group) -> bool:
-    rows = query(cx, """
+    rows = query(
+        cx,
+        """
         SELECT groname
           FROM pg_catalog.pg_group
          WHERE groname = %s
-        """, (group,))
+        """,
+        (group,),
+    )
     return len(rows) > 0
 
 
 def _get_encrypted_password(cx, user):
-    dsn_complete = dict(kv.split('=') for kv in cx.dsn.split(" "))
+    dsn_complete = dict(kv.split("=") for kv in cx.dsn.split(" "))
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
     dsn_user = dict(dsn_partial, user=user)
     password = pgpasslib.getpass(**dsn_user)
@@ -387,26 +397,35 @@ def alter_group_add_user(cx, group, user):
 
 
 def alter_search_path(cx, user, schemas):
-    execute(cx, """ALTER USER "{}" SET SEARCH_PATH TO {}""".format(user, ', '.join(schemas)))
+    execute(cx, """ALTER USER "{}" SET SEARCH_PATH TO {}""".format(user, ", ".join(schemas)))
 
 
 def user_exists(cx, user) -> bool:
-    rows = query(cx, """
+    rows = query(
+        cx,
+        """
         SELECT usename
           FROM pg_catalog.pg_user
          WHERE usename = %s
-        """, (user,))
+        """,
+        (user,),
+    )
     return len(rows) > 0
 
 
 # ---- SCHEMAS ----
 
+
 def select_schemas(cx, names) -> List[str]:
-    rows = query(cx, """
+    rows = query(
+        cx,
+        """
         SELECT nspname AS name
           FROM pg_catalog.pg_namespace
          WHERE nspname IN %s
-        """, (tuple(names),))
+        """,
+        (tuple(names),),
+    )
     found = frozenset(row[0] for row in rows)
     # Instead of an ORDER BY clause, keep original order.
     return [name for name in names if name in found]
@@ -448,27 +467,29 @@ def revoke_select_on_all_tables_in_schema(cx, schema, group):
 
 
 def grant_select_and_write_on_all_tables_in_schema(cx, schema, group):
-    execute(cx,
-            """GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(
-                schema, group)
-            )
+    execute(
+        cx, """GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group)
+    )
 
 
 def revoke_select_and_write_on_all_tables_in_schema(cx, schema, group):
-    execute(cx,
-            """REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(
-                schema, group)
-            )
+    execute(
+        cx,
+        """REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group),
+    )
 
 
 # ---- TABLES ----
+
 
 def relation_kind(cx, schema, table) -> Optional[str]:
     """
     Return "kind" of relation, either 'TABLE' or 'VIEW' for relations that actually exist.
     If the relation doesn't exist, None is returned.
     """
-    rows = query(cx, """
+    rows = query(
+        cx,
+        """
         SELECT CASE cls.relkind
                  WHEN 'r' THEN 'TABLE'
                  WHEN 'v' THEN 'VIEW'
@@ -478,7 +499,9 @@ def relation_kind(cx, schema, table) -> Optional[str]:
          WHERE nsp.nspname = %s
            AND cls.relname = %s
            AND cls.relkind IN ('r', 'v')
-        """, (schema, table))
+        """,
+        (schema, table),
+    )
     if rows:
         return rows[0][0]
     else:

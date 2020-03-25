@@ -9,8 +9,8 @@ See http://docs.aws.amazon.com/redshift/latest/dg/c_data_redistribution.html
 
 import logging
 import re
-from contextlib import closing
 from collections import Counter
+from contextlib import closing
 from typing import Dict, List
 
 import etl.db
@@ -23,11 +23,26 @@ bad_distribution_styles = ["DS_DIST_INNER", "DS_BCAST_INNER", "DS_DIST_ALL_INNER
 
 leader_only_functions = [
     # System information functions
-    "CURRENT_SCHEMA", "CURRENT_SCHEMAS", "HAS_DATABASE_PRIVILEGE", "HAS_SCHEMA_PRIVILEGE", "HAS_TABLE_PRIVILEGE",
+    "CURRENT_SCHEMA",
+    "CURRENT_SCHEMAS",
+    "HAS_DATABASE_PRIVILEGE",
+    "HAS_SCHEMA_PRIVILEGE",
+    "HAS_TABLE_PRIVILEGE",
     # The following leader-node only functions are deprecated: Date functions
-    "AGE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "LOCALTIME", "ISFINITE", "NOW",
+    "AGE",
+    "CURRENT_TIME",
+    "CURRENT_TIMESTAMP",
+    "LOCALTIME",
+    "ISFINITE",
+    "NOW",
     # The following leader-node only functions are deprecated: String functions
-    "ASCII", "GET_BIT", "GET_BYTE", "OCTET_LENGTH", "SET_BIT", "SET_BYTE", "TO_ASCII"
+    "ASCII",
+    "GET_BIT",
+    "GET_BYTE",
+    "OCTET_LENGTH",
+    "SET_BIT",
+    "SET_BYTE",
+    "TO_ASCII",
 ]
 
 # the pattern matches while ignoring case if the name (or whatever is in {}) is not preceded by '.' and not in a word.
@@ -72,7 +87,7 @@ def explain_queries(dsn: dict, relations: List[RelationDescription]) -> None:
                 if any(ds in row for row in plan):
                     counter[ds] += 1
             # Poor man's detection of comments ... drop anything after '--' on every line.
-            lines = [line.split('--', 1)[0] for line in relation.query_stmt.split('\n)')]
+            lines = [line.split("--", 1)[0] for line in relation.query_stmt.split("\n)")]
             for name in leader_only_compiled:
                 if any(leader_only_compiled[name].search(line) for line in lines):
                     counter[name] += 1

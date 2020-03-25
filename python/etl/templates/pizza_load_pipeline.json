@@ -49,7 +49,7 @@
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
-            "terminateAfter": "6 Hours"
+            "terminateAfter": "#{myTimeout} Hours"
         },
         {
             "id": "ArthurDriverEC2Resource",
@@ -134,11 +134,11 @@
             "dependsOn": { "ref": "ArthurPromote" }
         },
         {
-            "id": "PingCronutAfterEtl",
-            "name": "Ping Cronut After ETL (EC2)",
+            "id": "SendHealthCheckAfterEtl",
+            "name": "Send Health Check After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/redshift_etl/bin/ping_cronut.sh PING_AFTER_ETL",
+            "command": "bash /tmp/redshift_etl/bin/send_health_check.sh",
             "dependsOn": [
                 { "ref": "PublishAndBackup" },
                 { "ref": "ArthurUnload" }
@@ -166,10 +166,20 @@
             "description": "Relation name to continue from (or *) (for ArthurUpgrade)",
             "watermark": "*",
             "helpText": "Which table should we continue from?"
+        },
+        {
+            "id": "myTimeout",
+            "type": "Integer",
+            "optional": "true",
+            "description": "How many hours to allow the pipeline to run before terminating it",
+            "watermark": "6",
+            "default": "6",
+            "helpText": "How long can the pipeline run?"
         }
     ],
     "values": {
         "myStartDateTime": "2525-01-01T00:00:00",
-        "mySelection": "*"
+        "mySelection": "*",
+        "myTimeout": "6"
     }
 }

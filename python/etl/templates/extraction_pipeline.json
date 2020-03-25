@@ -42,7 +42,7 @@
             "id": "ResourceParent",
             "keyPair": "${resources.key_name}",
             "subnetId": "${resources.VPC.public_subnet}",
-            "terminateAfter": "6 Hours"
+            "terminateAfter": "#{myTimeout} Hours"
         },
         {
             "id": "ETLCluster",
@@ -88,10 +88,20 @@
             "description": "Arguments for the extract command (must be comma separated)",
             "watermark": "*",
             "helpText": "Which tables should we extract?"
+        },
+        {
+            "id": "myTimeout",
+            "type": "Integer",
+            "optional": "true",
+            "description": "How many hours to allow the pipeline to run before terminating it",
+            "watermark": "6",
+            "default": "6",
+            "helpText": "How long can the pipeline run?"
         }
     ],
     "values": {
         "myStartDateTime": "2525-01-01T00:00:00",
-        "myExtractArguments": ""
+        "myExtractArguments": "",
+        "myTimeout": "6"
     }
 }

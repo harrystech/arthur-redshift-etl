@@ -1,10 +1,11 @@
-import funcy as fy
 import logging
 import os.path
 import shlex
 import subprocess
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional
+
+import funcy as fy
 
 import etl.config
 import etl.db
@@ -21,8 +22,15 @@ class SqoopExtractor(DatabaseExtractor):
     using Sqoop (http://sqoop.apache.org/)
     """
 
-    def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+    def __init__(
+        self,
+        schemas: Dict[str, DataWarehouseSchema],
+        relations: List[RelationDescription],
+        max_partitions: int,
+        use_sampling: bool,
+        keep_going: bool,
+        dry_run: bool,
+    ) -> None:
 
         super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
 
@@ -35,9 +43,9 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Creating directory '%s' (with mode 750)", self._sqoop_options_dir)
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
 
-    def _temporary_options_file(self, prefix: Optional[str]=None):
+    def _temporary_options_file(self, prefix: Optional[str] = None):
         # This function is needed to avoid a type error around 'dir' which isn't defined as 'Optional' in the library.
-        return NamedTemporaryFile('w', dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
+        return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """
@@ -47,8 +55,9 @@ class SqoopExtractor(DatabaseExtractor):
 
         connection_params_file_path = self.write_connection_params()
         password_file_path = self.write_password_file(source.dsn["password"])
-        args = self.build_sqoop_options(source.dsn, relation, table_size,
-                                        connection_params_file_path, password_file_path)
+        args = self.build_sqoop_options(
+            source.dsn, relation, table_size, connection_params_file_path, password_file_path
+        )
         options_file = self.write_options_file(args)
         self._delete_directory_before_write(relation)
 
@@ -88,8 +97,14 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Wrote connection params to '%s'", params_file_path)
         return params_file_path
 
-    def build_sqoop_options(self, source_dsn: Dict[str, str], relation: RelationDescription,
-                            table_size: int, connection_param_file_path: str, password_file_path: str) -> List[str]:
+    def build_sqoop_options(
+        self,
+        source_dsn: Dict[str, str],
+        relation: RelationDescription,
+        table_size: int,
+        connection_param_file_path: str,
+        password_file_path: str,
+    ) -> List[str]:
         """
         Create set of Sqoop options.
 
@@ -107,28 +122,41 @@ class SqoopExtractor(DatabaseExtractor):
             # E731 do not assign a lambda expression, use a def -- whatever happened to Python?
             return '"{}"'.format(s)
 
-        args = ["import",
-                "--connect", q(jdbc_url),
-                "--driver", q(dsn_properties["driver"]),
-                "--connection-param-file", q(connection_param_file_path),
-                "--username", q(dsn_properties["user"]),
-                "--password-file", '"file://{}"'.format(password_file_path),
-                "--verbose",
-                "--fields-terminated-by", q(","),
-                "--lines-terminated-by", r"'\n'",
-                "--enclosed-by", "'\"'",
-                "--escaped-by", r"'\\'",
-                "--null-string", r"'\\N'",
-                "--null-non-string", r"'\\N'",
-                # NOTE Does not work with s3n:  "--delete-target-dir",
-                "--target-dir", '"s3n://{}/{}/{}"'.format(relation.bucket_name,
-                                                          relation.prefix,
-                                                          relation.csv_path_name),
-                # NOTE Quoting the select statement (e.g. with shlex.quote) breaks the select in an unSQLy way.
-                "--query", select_statement,
-                # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
-                "--hive-drop-import-delims",
-                "--compress"]  # The default compression codec is gzip.
+        args = [
+            "import",
+            "--connect",
+            q(jdbc_url),
+            "--driver",
+            q(dsn_properties["driver"]),
+            "--connection-param-file",
+            q(connection_param_file_path),
+            "--username",
+            q(dsn_properties["user"]),
+            "--password-file",
+            '"file://{}"'.format(password_file_path),
+            "--verbose",
+            "--fields-terminated-by",
+            q(","),
+            "--lines-terminated-by",
+            r"'\n'",
+            "--enclosed-by",
+            "'\"'",
+            "--escaped-by",
+            r"'\\'",
+            "--null-string",
+            r"'\\N'",
+            "--null-non-string",
+            r"'\\N'",
+            # NOTE Does not work with s3n:  "--delete-target-dir",
+            "--target-dir",
+            '"s3n://{}/{}/{}"'.format(relation.bucket_name, relation.prefix, relation.csv_path_name),
+            # NOTE Quoting the select statement (e.g. with shlex.quote) breaks the select in an unSQLy way.
+            "--query",
+            select_statement,
+            # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
+            "--hive-drop-import-delims",
+            "--compress",
+        ]  # The default compression codec is gzip.
 
         args.extend(partition_options)
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
@@ -146,8 +174,9 @@ class SqoopExtractor(DatabaseExtractor):
         # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
         return select_statement + " AND $CONDITIONS"
 
-    def build_sqoop_partition_options(self, relation: RelationDescription, partition_key: Optional[str],
-                                      table_size: int) -> List[str]:
+    def build_sqoop_partition_options(
+        self, relation: RelationDescription, partition_key: Optional[str], table_size: int
+    ) -> List[str]:
         """
         Build the partitioning-related arguments for Sqoop.
         """
@@ -179,8 +208,8 @@ class SqoopExtractor(DatabaseExtractor):
             options_file_path = "/tmp/never_used"
         else:
             with self._temporary_options_file("so_") as fp:
-                fp.write('\n'.join(args))  # type: ignore
-                fp.write('\n')  # type: ignore
+                fp.write("\n".join(args))  # type: ignore
+                fp.write("\n")  # type: ignore
                 fp.close()
             options_file_path = fp.name
             self.logger.info("Wrote Sqoop options to '%s'", options_file_path)
@@ -194,8 +223,12 @@ class SqoopExtractor(DatabaseExtractor):
         deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
         if deletable:
             if self.dry_run:
-                self.logger.info("Dry-run: Skipping deletion of %d existing CSV file(s) in 's3://%s/%s'",
-                                 len(deletable), relation.bucket_name, csv_prefix)
+                self.logger.info(
+                    "Dry-run: Skipping deletion of %d existing CSV file(s) in 's3://%s/%s'",
+                    len(deletable),
+                    relation.bucket_name,
+                    csv_prefix,
+                )
             else:
                 etl.s3.delete_objects(relation.bucket_name, deletable, wait=True)
 
@@ -209,11 +242,12 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.info("Dry-run: Skipping Sqoop run '%s'", cmdline)
         else:
             self.logger.debug("Starting command: %s", cmdline)
-            sqoop = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     universal_newlines=True)
+            sqoop = subprocess.Popen(
+                args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+            )
             self.logger.info("Sqoop is running with pid %d", sqoop.pid)
             out, err = sqoop.communicate()
-            nice_out, nice_err = ('\n' + str(out)).rstrip(), ('\n' + str(err)).rstrip()  # using str() for type check
+            nice_out, nice_err = ("\n" + str(out)).rstrip(), ("\n" + str(err)).rstrip()  # using str() for type check
             self.logger.debug("Sqoop finished with return code %d", sqoop.returncode)
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
@@ -227,6 +261,7 @@ class FakeSqoopExtractor(SqoopExtractor):
     """
     This extractor runs '/usr/bin/false' which means that extraction fails ... used for testing outside EMR.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.sqoop_executable = "/usr/bin/false"

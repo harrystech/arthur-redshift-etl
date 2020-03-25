@@ -73,10 +73,14 @@ def build_table_constraints(table_design: dict) -> List[str]:
     ['PRIMARY KEY ( "id" )', 'UNIQUE ( "name", "email" )']
     """
     table_constraints = table_design.get("constraints", [])
-    type_lookup = dict([("primary_key", "PRIMARY KEY"),
-                        ("surrogate_key", "PRIMARY KEY"),
-                        ("unique", "UNIQUE"),
-                        ("natural_key", "UNIQUE")])
+    type_lookup = dict(
+        [
+            ("primary_key", "PRIMARY KEY"),
+            ("surrogate_key", "PRIMARY KEY"),
+            ("unique", "UNIQUE"),
+            ("natural_key", "UNIQUE"),
+        ]
+    )
     ddl_for_constraints = []
     for constraint in table_constraints:
         [[constraint_type, column_list]] = constraint.items()
@@ -130,9 +134,11 @@ def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) ->
             {columns_and_constraints}
         )
         {attributes}
-        """.format(table_name=table_name,
-                   columns_and_constraints=",\n            ".join(chain(columns, constraints)),
-                   attributes="\n        ".join(attributes))
+        """.format(
+        table_name=table_name,
+        columns_and_constraints=",\n            ".join(chain(columns, constraints)),
+        attributes="\n        ".join(attributes),
+    )
     return ddl
 
 
@@ -145,7 +151,9 @@ def log_load_error(cx):
         if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
             logger.warning("Cannot retrieve error information from stl_load_errors within failed transaction")
         else:
-            rows = etl.db.query(cx, """
+            rows = etl.db.query(
+                cx,
+                """
                         SELECT session
                              , query
                              , starttime
@@ -157,7 +165,8 @@ def log_load_error(cx):
                           FROM stl_load_errors
                          WHERE session = pg_backend_pid()
                          ORDER BY starttime DESC
-                         LIMIT 1""")
+                         LIMIT 1""",
+            )
             if rows:
                 row0 = rows.pop()
                 max_len = max(len(k) for k in row0.keys())
@@ -168,8 +177,15 @@ def log_load_error(cx):
         raise
 
 
-def copy_using_manifest(conn: connection, table_name: TableName, column_list: List[str], s3_uri: str,
-                        aws_iam_role: str, need_compupdate=False, dry_run=False) -> None:
+def copy_using_manifest(
+    conn: connection,
+    table_name: TableName,
+    column_list: List[str],
+    s3_uri: str,
+    aws_iam_role: str,
+    need_compupdate=False,
+    dry_run=False,
+) -> None:
     credentials = "aws_iam_role={}".format(aws_iam_role)
 
     copy_stmt = """
@@ -183,8 +199,9 @@ def copy_using_manifest(conn: connection, table_name: TableName, column_list: Li
         TRUNCATECOLUMNS
         STATUPDATE OFF
         COMPUPDATE {compupdate}
-        """.format(table=table_name, columns=join_column_list(column_list),
-                   compupdate="ON" if need_compupdate else "OFF")
+        """.format(
+        table=table_name, columns=join_column_list(column_list), compupdate="ON" if need_compupdate else "OFF"
+    )
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
         etl.db.skip_query(conn, copy_stmt, (s3_uri, credentials))
@@ -209,9 +226,10 @@ def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry
         etl.db.skip_query(conn, stmt)
     else:
         rows = etl.db.query(conn, stmt)
-        summary = '    ' + '\n    '.join("'{filename}' ({lines_scanned} line(s))".format(**row) for row in rows)
-        logger.debug("Copied %d file(s) into '%s' using manifest '%s':\n%s",
-                     len(rows), table_name.identifier, s3_uri, summary)
+        summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format(**row) for row in rows)
+        logger.debug(
+            "Copied %d file(s) into '%s' using manifest '%s':\n%s", len(rows), table_name.identifier, s3_uri, summary
+        )
 
 
 def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -> None:
@@ -237,14 +255,22 @@ def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -
         [row] = etl.db.query(conn, stmt, (copy_id,))
         logger.info(
             (
-                'Copied {copy_count:d} rows into {table_name:x} '
-                '(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, slots: {slot_count:d}, '
-                'elapsed: {elapsed}s ({elapsed_queued}s queued), size: {total_mb}MB)'
-            ).format(copy_count=copy_count, table_name=table_name, **row))
+                "Copied {copy_count:d} rows into {table_name:x} "
+                "(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, slots: {slot_count:d}, "
+                "elapsed: {elapsed}s ({elapsed_queued}s queued), size: {total_mb}MB)"
+            ).format(copy_count=copy_count, table_name=table_name, **row)
+        )
 
 
-def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str], s3_uri: str, aws_iam_role: str,
-                  need_compupdate=False, dry_run=False) -> None:
+def copy_from_uri(
+    conn: connection,
+    table_name: TableName,
+    column_list: List[str],
+    s3_uri: str,
+    aws_iam_role: str,
+    need_compupdate=False,
+    dry_run=False,
+) -> None:
     """
     Load data into table in the data warehouse using the COPY command.
     """
@@ -253,8 +279,9 @@ def copy_from_uri(conn: connection, table_name: TableName, column_list: List[str
     query_load_summary(conn, table_name, dry_run)
 
 
-def insert_from_query(conn: connection, table_name: TableName, column_list: List[str], query_stmt: str,
-                      dry_run=False) -> None:
+def insert_from_query(
+    conn: connection, table_name: TableName, column_list: List[str], query_stmt: str, dry_run=False
+) -> None:
     """
     Load data into table in the data warehouse using the INSERT INTO command.
     """
@@ -263,7 +290,9 @@ def insert_from_query(conn: connection, table_name: TableName, column_list: List
             {columns}
         )
         {query}
-        """.format(table=table_name, columns=join_column_list(column_list), query=query_stmt)
+        """.format(
+        table=table_name, columns=join_column_list(column_list), query=query_stmt
+    )
 
     if dry_run:
         logger.info("Dry-run: Skipping inserting data into '%s' from query", table_name.identifier)

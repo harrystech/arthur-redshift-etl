@@ -15,13 +15,13 @@ from typing import Optional
 
 import pycodestyle
 
-
 # Skip etl.commands to avoid circular dependency
 import etl.config
+import etl.data_warehouse
+import etl.db
 import etl.design
 import etl.design.bootstrap
 import etl.design.load
-import etl.data_warehouse
 import etl.errors
 import etl.explain
 import etl.extract
@@ -30,7 +30,6 @@ import etl.json_encoder
 import etl.load
 import etl.monitor
 import etl.names
-import etl.db
 import etl.pipeline
 import etl.relation
 import etl.render_template
@@ -45,16 +44,17 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def run_pep8(module_: Optional[str]=None, log_level: str= "INFO") -> None:
+def run_pep8(module_: Optional[str] = None, log_level: str = "INFO") -> None:
     print("Running PEP8 check...", flush=True)
     if module_ is None:
         module_ = __name__
     quiet = log_level not in ("DEBUG", "INFO")
     style_guide = pycodestyle.StyleGuide(parse_argv=False, config_file="setup.cfg", quiet=quiet)
-    report = style_guide.check_files(['python'])
+    report = style_guide.check_files(["python"])
     if report.total_errors > 0:
-        raise etl.errors.SelfTestError("Unsuccessful (warning=%d, errors=%d)" %
-                                       (report.get_count('W'), report.get_count('E')))
+        raise etl.errors.SelfTestError(
+            "Unsuccessful (warning=%d, errors=%d)" % (report.get_count("W"), report.get_count("E"))
+        )
     print("OK")
 
 
@@ -71,7 +71,7 @@ def load_tests(loader, tests, pattern):
     return tests
 
 
-def run_doctest(module_: Optional[str]=None, log_level: str= "INFO") -> None:
+def run_doctest(module_: Optional[str] = None, log_level: str = "INFO") -> None:
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
@@ -79,12 +79,15 @@ def run_doctest(module_: Optional[str]=None, log_level: str= "INFO") -> None:
     if module_ is None:
         module_ = __name__
     test_runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=verbosity)
-    test_program = unittest.main(module=module_, exit=False, testRunner=test_runner, verbosity=verbosity,
-                                 argv=sys.argv[:2])
+    test_program = unittest.main(
+        module=module_, exit=False, testRunner=test_runner, verbosity=verbosity, argv=sys.argv[:2]
+    )
     test_result = test_program.result
     if not test_result.wasSuccessful():
-        raise etl.errors.SelfTestError("Unsuccessful (run=%d, errors=%d, failures=%d)" %
-                                       (test_result.testsRun, len(test_result.errors), len(test_result.failures)))
+        raise etl.errors.SelfTestError(
+            "Unsuccessful (run=%d, errors=%d, failures=%d)"
+            % (test_result.testsRun, len(test_result.errors), len(test_result.failures))
+        )
 
 
 def run_type_checker() -> None:
@@ -94,11 +97,10 @@ def run_type_checker() -> None:
 
     # We wait with this import so that commands can be invoked in an environment where mypy is not installed.
     import mypy.api
-    normal_report, error_report, exit_status = mypy.api.run([
-        "python",  # Should match setup.py's package_dir
-        "--strict-optional",
-        "--ignore-missing-imports",
-    ])
+
+    normal_report, error_report, exit_status = mypy.api.run(
+        ["python", "--strict-optional", "--ignore-missing-imports"]  # Should match setup.py's package_dir
+    )
     if normal_report:
         print("Type checking report:\n")
         print(normal_report)

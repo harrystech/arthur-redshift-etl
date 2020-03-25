@@ -18,8 +18,8 @@ from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
-import pkg_resources
 import jsonschema
+import pkg_resources
 import simplejson as json
 import yaml
 
@@ -48,7 +48,7 @@ def get_dw_config():
     return _dw_config
 
 
-def get_config_value(name: str, default: Optional[str]=None) -> Optional[str]:
+def get_config_value(name: str, default: Optional[str] = None) -> Optional[str]:
     """
     Lookup configuration value in known and flattened settings -- pass in a fully-qualified name
 
@@ -61,7 +61,7 @@ def get_config_value(name: str, default: Optional[str]=None) -> Optional[str]:
         return _mapped_config.setdefault(name, default)
 
 
-def get_config_int(name: str, default: Optional[int]=None) -> int:
+def get_config_int(name: str, default: Optional[int] = None) -> int:
     """
     Lookup a configuration value that is an integer.
     It is an error if the value (even when using the default) is None.
@@ -93,7 +93,7 @@ def set_safe_config_value(name: str, value: str) -> None:
     >>> get_config_value("test_value")
     'something-unsafe'
     """
-    set_config_value(name, '-'.join(re.findall('[a-zA-Z0-9_.-]+', value)))
+    set_config_value(name, "-".join(re.findall("[a-zA-Z0-9_.-]+", value)))
 
 
 def get_config_map() -> Dict[str, str]:
@@ -131,7 +131,7 @@ def etl_tmp_dir(path: str) -> str:
     return os.path.join(ETL_TMP_DIR, path)
 
 
-def configure_logging(full_format: bool=False, log_level: str=None) -> None:
+def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     """
     Setup logging to go to console and application log file
 
@@ -139,7 +139,7 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     the application log file also for the console.  And log at the DEBUG level.
     Otherwise, you can choose the log level by passing one in.
     """
-    config = load_json('logging.json')
+    config = load_json("logging.json")
     if full_format:
         config["formatters"]["console"] = dict(config["formatters"]["file"])
         config["handlers"]["console"]["level"] = logging.DEBUG
@@ -149,7 +149,7 @@ def configure_logging(full_format: bool=False, log_level: str=None) -> None:
     # Ignored due to lack of stub in type checking library
     logging.captureWarnings(True)  # type: ignore
     logger.info("Starting log for %s with ETL ID %s", package_version(), etl.monitor.Monitor.etl_id)
-    logger.info('Command line: "%s"', ' '.join(sys.argv))
+    logger.info('Command line: "%s"', " ".join(sys.argv))
     logger.debug("Current working directory: '%s'", os.getcwd())
     logger.info(get_release_info())
 
@@ -164,8 +164,8 @@ def load_environ_file(filename: str) -> None:
     logger.info("Loading environment variables from '%s'", filename)
     with open(filename) as f:
         for line in f:
-            tokens = [token.strip() for token in line.split('=', 1)]
-            if len(tokens) == 2 and not tokens[0].startswith('#'):
+            tokens = [token.strip() for token in line.split("=", 1)]
+            if len(tokens) == 2 and not tokens[0].startswith("#"):
                 name = tokens[0].replace("export", "").strip()
                 value = tokens[1]
                 os.environ[name] = value
@@ -194,15 +194,15 @@ def get_release_info() -> str:
     """
     if pkg_resources.resource_exists(__name__, "release.txt"):
         content = pkg_resources.resource_string(__name__, "release.txt")
-        text = content.decode(errors='ignore').strip()
-        lines = [line.strip() for line in text.split('\n')]
+        text = content.decode(errors="ignore").strip()
+        lines = [line.strip() for line in text.split("\n")]
         release_info = ", ".join(lines)
     else:
         release_info = "Not available. Hint: release info will be created by upload_env.sh"
     return "Release information: " + release_info
 
 
-def yield_config_files(config_files: Sequence[str], default_file: str=None) -> Iterable[str]:
+def yield_config_files(config_files: Sequence[str], default_file: str = None) -> Iterable[str]:
     """
     Generate filenames from the list of files or directories in :config_files and :default_file
 
@@ -223,7 +223,7 @@ def yield_config_files(config_files: Sequence[str], default_file: str=None) -> I
             yield filename
 
 
-def load_config(config_files: Sequence[str], default_file: str="default_settings.yaml") -> None:
+def load_config(config_files: Sequence[str], default_file: str = "default_settings.yaml") -> None:
     """
     Load settings and environment from config files (starting with the default if provided),
     set our global settings.
@@ -272,7 +272,8 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
     validation_internal_errors = (
         jsonschema.exceptions.ValidationError,
         jsonschema.exceptions.SchemaError,
-        json.scanner.JSONDecodeError)
+        json.scanner.JSONDecodeError,
+    )
     try:
         schema = etl.config.load_json(schema_name)
         jsonschema.Draft4Validator.check_schema(schema)

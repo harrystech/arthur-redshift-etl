@@ -80,7 +80,7 @@ class TableFileSet:
             extensions.append(".manifest")
         if self._data_files:
             extensions.append("/csv/*")
-        return "{}('{}{{{}}}')".format(self.__class__.__name__, self.source_path_name, ','.join(extensions))
+        return "{}('{}{{{}}}')".format(self.__class__.__name__, self.source_path_name, ",".join(extensions))
 
     def bind_to_uri(self, scheme, netloc, path):
         self.scheme = scheme
@@ -115,9 +115,9 @@ class TableFileSet:
 
     @property
     def source_path_name(self):
-        return "{}/{}-{}".format(self.target_table_name.schema,
-                                 self.source_table_name.schema,
-                                 self.source_table_name.table)
+        return "{}/{}-{}".format(
+            self.target_table_name.schema, self.source_table_name.schema, self.source_table_name.table
+        )
 
     @property
     def csv_path_name(self):
@@ -163,7 +163,7 @@ def local_file_stat(filename):
     """
     Return size in bytes and last modification timestamp from local file.
     """
-    return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(' ')
+    return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(" ")
 
 
 def list_local_files(directory):
@@ -179,7 +179,7 @@ def list_local_files(directory):
     logger.info("Looking for files locally in '%s'", normed_directory)
     for root, dirs, files in os.walk(os.path.normpath(normed_directory)):
         for filename in sorted(files):
-            if not filename.endswith(('.swp', '~', '.DS_Store')):
+            if not filename.endswith((".swp", "~", ".DS_Store")):
                 yield os.path.join(root, filename)
 
 
@@ -194,8 +194,9 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
     """
     scheme, netloc, path = uri_parts[:3]
     if scheme == "s3":
-        file_sets = _find_file_sets_from(etl.s3.list_objects_for_prefix(netloc, path + '/data', path + '/schemas'),
-                                         selector)
+        file_sets = _find_file_sets_from(
+            etl.s3.list_objects_for_prefix(netloc, path + "/data", path + "/schemas"), selector
+        )
         if not file_sets:
             raise FileNotFoundError("Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector))
     else:
@@ -228,17 +229,20 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
 
     Files ending in '_SUCCESS' or '_$folder$' are ignored (which are created by some Spark jobs).
     """
-    file_names_re = re.compile(r"""(?:^schemas|/schemas|^data|/data)
+    file_names_re = re.compile(
+        r"""(?:^schemas|/schemas|^data|/data)
                                    /(?P<source_name>\w+)
                                    /(?P<schema_name>\w+)-(?P<table_name>\w+)
                                    (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
-                               """, re.VERBOSE)
+                               """,
+        re.VERBOSE,
+    )
 
     for filename in iterable:
         match = file_names_re.search(filename)
         if match:
             values = match.groupdict()
-            target_table_name = TableName(values['source_name'], values['table_name'])
+            target_table_name = TableName(values["source_name"], values["table_name"])
             if pattern.match(target_table_name):
                 file_ext = values["file_ext"]
                 if file_ext in [".yaml", ".sql", ".manifest"]:
@@ -274,14 +278,14 @@ def _find_file_sets_from(iterable, selector):
             target_map[target_table_name.identifier] = TableFileSet(source_table_name, target_table_name, natural_order)
 
         file_set = target_map[target_table_name.identifier]
-        file_type = values['file_type']
-        if file_type == 'yaml':
+        file_type = values["file_type"]
+        if file_type == "yaml":
             file_set.design_file_name = filename
-        elif file_type == 'sql':
+        elif file_type == "sql":
             file_set.sql_file_name = filename
-        elif file_type == 'manifest':
+        elif file_type == "manifest":
             file_set.manifest_file_name = filename
-        elif file_type == 'data':
+        elif file_type == "data":
             file_set.add_data_file(filename)
 
     file_sets = sorted(target_map.values())
@@ -289,11 +293,11 @@ def _find_file_sets_from(iterable, selector):
     return file_sets
 
 
-def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool=False) -> None:
+def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
     """
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """
-    iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + '/data', prefix + '/schemas')
+    iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data", prefix + "/schemas")
     deletable = [filename for filename, v in _find_matching_files_from(iterable, selector, return_success_file=True)]
     if dry_run:
         for key in deletable:
@@ -329,14 +333,14 @@ def approx_pretty_size(total_bytes) -> str:
     """
     if total_bytes < 0:
         raise ValueError("total_bytes may not be negative")
-    for scale, unit in ((1024 * 1024 * 1024, 'GB'), (1024 * 1024, 'MB'), (1024, 'KB')):
+    for scale, unit in ((1024 * 1024 * 1024, "GB"), (1024 * 1024, "MB"), (1024, "KB")):
         div, rem = divmod(total_bytes, scale)
         if div > 0:
             if rem > 0:
                 div += 1  # always round up
             break
     else:
-        div, unit = 1, 'KB'
+        div, unit = 1, "KB"
     return "{:d}{}".format(div, unit)
 
 
@@ -353,8 +357,13 @@ def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
             for filename in file_set.files:
                 _, last_modified = file_set.stat(filename)
                 found.append((last_modified, file_set.uri(filename)))
-        print(etl.text.format_lines([(uri, last_modified) for last_modified, uri in sorted(found)],
-                                    header_row=["File", "Last modified"], max_column_width=120))
+        print(
+            etl.text.format_lines(
+                [(uri, last_modified) for last_modified, uri in sorted(found)],
+                header_row=["File", "Last modified"],
+                max_column_width=120,
+            )
+        )
     else:
         total_length = 0
         for schema_name, file_group in groupby(file_sets, attrgetter("source_name")):
@@ -363,8 +372,11 @@ def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
                 if file_set.manifest_file_name is None:
                     print("    Table: '{}'".format(file_set.target_table_name.identifier))
                 else:
-                    print("    Table: '{}' (with data from '{}')".format(file_set.target_table_name.identifier,
-                                                                         file_set.source_table_name.identifier))
+                    print(
+                        "    Table: '{}' (with data from '{}')".format(
+                            file_set.target_table_name.identifier, file_set.source_table_name.identifier
+                        )
+                    )
                 for filename in file_set.files:
                     if long_format:
                         content_length, last_modified = file_set.stat(filename)
