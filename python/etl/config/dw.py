@@ -21,6 +21,7 @@ class DataWarehouseUser:
     This is useful for system users, mostly, since end users should treat the
     data warehouse as read-only.
     """
+
     def __init__(self, user_info):
         self.name = user_info["name"]
         self.group = user_info["group"]
@@ -43,6 +44,7 @@ class DataWarehouseSchema:
     Although there is a (logical) distinction between "sources" and "schemas" in the settings file
     those are really all the same here ...
     """
+
     def __init__(self, schema_info, etl_access=None):
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
@@ -78,8 +80,9 @@ class DataWarehouseSchema:
         """
         Renders S3 Bucket name (if it references Arthur configuration, for instance, the data lake)
         """
-        return etl.render_template.render_from_config(self._s3_bucket_template,
-                                                      context="s3_bucket of schema '{}'".format(self.name))
+        return etl.render_template.render_from_config(
+            self._s3_bucket_template, context="s3_bucket of schema '{}'".format(self.name)
+        )
 
     @property
     def s3_path_prefix(self) -> str:
@@ -87,7 +90,8 @@ class DataWarehouseSchema:
         Render S3 path prefix in particular wrt. prefix (environment) and dates.
         """
         return etl.render_template.render_from_config(
-            self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name))
+            self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name)
+        )
 
     @property
     def s3_unload_path_prefix(self) -> str:
@@ -95,7 +99,8 @@ class DataWarehouseSchema:
         Render S3 unload path prefix in particular wrt. prefix (environment) and dates.
         """
         return etl.render_template.render_from_config(
-            self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name))
+            self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name)
+        )
 
     @property
     def dsn(self):
@@ -128,6 +133,7 @@ class DataWarehouseConfig:
     """
     Pretty interface to create objects from the settings files.
     """
+
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]
         schema_settings = settings.get("sources", []) + dw_settings.get("transformations", [])
@@ -146,9 +152,7 @@ class DataWarehouseConfig:
 
         # Schemas (upstream sources followed by transformations, keeps order of settings file)
         self.schemas = [
-            DataWarehouseSchema(
-                dict(info, owner=schema_owner_map.get(info["name"], root.name)),
-                self._etl_access)
+            DataWarehouseSchema(dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access)
             for info in schema_settings
             if not info.get("external", False)
         ]
@@ -206,7 +210,7 @@ class DataWarehouseConfig:
     @property
     def dsn_admin_on_etl_db(self) -> Dict[str, str]:
         # To connect as a superuser, but on the same database on which you would ETL
-        return dict(self.dsn_admin, database=self.dsn_etl['database'])
+        return dict(self.dsn_admin, database=self.dsn_etl["database"])
 
     def schema_lookup(self, schema_name) -> DataWarehouseSchema:
         return self._schema_lookup[schema_name]

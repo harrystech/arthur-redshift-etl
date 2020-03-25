@@ -34,21 +34,21 @@ def read_file(filename):
     """Read output from query_events command, which must contain "elapsed" and "rowcount" columns."""
     # The file is expected to be formatted such that there's a header line, a separator, then the data.
     # And Arthur prints a summary after the table, like "(100 rows)" which will be skipped if present.
-    _column_spacing = re.compile(r'\s+\|\s+')
-    _row_count_re = re.compile(r'\(\d+\s*rows\)')
+    _column_spacing = re.compile(r"\s+\|\s+")
+    _row_count_re = re.compile(r"\(\d+\s*rows\)")
 
     print("Reading events from {filename}".format(filename=filename))
     with open(filename) as f:
         for i, line in enumerate(f.readlines()):
             if i == 1 or _row_count_re.match(line):
                 continue
-            yield _column_spacing.sub('|', line).strip()
+            yield _column_spacing.sub("|", line).strip()
 
 
 def parse_file(filename):
     """Parse the input as |-delimited columns."""
     lines = read_file(filename)
-    for row in csv.DictReader(lines, delimiter='|'):
+    for row in csv.DictReader(lines, delimiter="|"):
         yield row
 
 
@@ -58,9 +58,9 @@ def extract_values(filename):
     elapsed = defaultdict(lambda: None)
     rowcount = defaultdict(lambda: None)
     for row in parse_file(filename):
-        elapsed[(row['step'], row['target'])] = float(row['elapsed']) if row['elapsed'] != '---' else None
-        rowcount[(row['step'], row['target'])] = int(row['rowcount']) if row['rowcount'] != '---' else None
-    return {'elapsed': elapsed, 'rowcount': rowcount}
+        elapsed[(row["step"], row["target"])] = float(row["elapsed"]) if row["elapsed"] != "---" else None
+        rowcount[(row["step"], row["target"])] = int(row["rowcount"]) if row["rowcount"] != "---" else None
+    return {"elapsed": elapsed, "rowcount": rowcount}
 
 
 def delta(a, b):
@@ -70,9 +70,9 @@ def delta(a, b):
     """
     if a is None or b is None:
         return None
-    if a == .0 and b == .0:
-        return .0
-    assert a != .0 and b != .0
+    if a == 0.0 and b == 0.0:
+        return 0.0
+    assert a != 0.0 and b != 0.0
     return round((b - a) * 1000.0 / a) / 10.0
 
 
@@ -88,7 +88,7 @@ def show_delta(previous_value, current_value, column):
     if previous_value == current_value:
         return False
 
-    if column == 'elapsed':
+    if column == "elapsed":
         # Decrease trigger-happiness for quick loads:
         if previous_value < 10.0 and current_value < 10.0:
             return False
@@ -99,7 +99,7 @@ def show_delta(previous_value, current_value, column):
         if previous_value < 300.0 or current_value < 300.0:
             return not isclose(previous_value, current_value, rel_tol=0.2)
 
-    if column == 'rowcount':
+    if column == "rowcount":
         # We expect to move forward with growing tables so smaller row counts are suspect.
         if previous_value > current_value:
             return True
@@ -129,7 +129,7 @@ def print_table(previous_values, current_values, column):
         ],
         key=lambda row: row[:2],  # Avoid comparison with None values in the columns
     )
-    print(tabulate(table, headers=('target', 'step', 'prev. ' + column, 'cur. ' + column, 'delta %'), tablefmt='psql'))
+    print(tabulate(table, headers=("target", "step", "prev. " + column, "cur. " + column, "delta %"), tablefmt="psql"))
 
 
 def main():
@@ -144,9 +144,9 @@ def main():
     previous_events = extract_values(previous_events_file)
     current_events = extract_values(current_events_file)
 
-    print_table(previous_events['elapsed'], current_events['elapsed'], 'elapsed')
+    print_table(previous_events["elapsed"], current_events["elapsed"], "elapsed")
     print()
-    print_table(previous_events['rowcount'], current_events['rowcount'], 'rowcount')
+    print_table(previous_events["rowcount"], current_events["rowcount"], "rowcount")
 
 
 if __name__ == "__main__":

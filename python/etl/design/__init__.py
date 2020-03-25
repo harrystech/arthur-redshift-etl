@@ -11,6 +11,7 @@ class Attribute:
 
     Attributes are purely based on information that we find in upstream databases.
     """
+
     __slots__ = ("name", "sql_type", "not_null")
 
     def __init__(self, name, sql_type, not_null):
@@ -25,6 +26,7 @@ class ColumnDefinition:
 
     These are ready to be sent to a table design or come from a table design file.
     """
+
     __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null")
 
     def __init__(self, name, source_sql_type, sql_type, expression, type_, not_null):
@@ -52,7 +54,7 @@ class ColumnDefinition:
         possibly a cast into a supported type.
         """
         for re_att_type, generic_type in as_is_att_type.items():
-            if re.match('^' + re_att_type + '$', attribute.sql_type):
+            if re.match("^" + re_att_type + "$", attribute.sql_type):
                 # Keep the type, use no expression, and pick generic type from map.
                 mapping_sql_type, mapping_expression, mapping_type = attribute.sql_type, None, generic_type
                 break
@@ -62,15 +64,18 @@ class ColumnDefinition:
                     # Found tuple with new SQL type, expression and generic type.  Rejoice.
                     break
             else:
-                logger.warning("Unknown type '{}' of column '{}' (using default)".format(attribute.sql_type,
-                                                                                         attribute.name))
+                logger.warning(
+                    "Unknown type '{}' of column '{}' (using default)".format(attribute.sql_type, attribute.name)
+                )
                 mapping_sql_type, mapping_expression, mapping_type = default_att_type
 
         delimited_name = '"{}"'.format(attribute.name)
-        return ColumnDefinition(attribute.name,
-                                attribute.sql_type,
-                                mapping_sql_type,
-                                # Replace %s in the column expression by the column name.
-                                (mapping_expression % delimited_name if mapping_expression else None),
-                                mapping_type,
-                                attribute.not_null)
+        return ColumnDefinition(
+            attribute.name,
+            attribute.sql_type,
+            mapping_sql_type,
+            # Replace %s in the column expression by the column name.
+            (mapping_expression % delimited_name if mapping_expression else None),
+            mapping_type,
+            attribute.not_null,
+        )

@@ -21,7 +21,8 @@ class DottedNameTemplate(string.Template):
     """
     Support ${name} substitutions where name may be any identifier (including dotted or hyphenated names).
     """
-    idpattern = r'[_a-z][-._a-z0-9]*'
+
+    idpattern = r"[_a-z][-._a-z0-9]*"
 
 
 def _find_templates() -> Dict[str, str]:
@@ -56,11 +57,13 @@ def render_from_config(template_string, context=None):
     try:
         config_mapping = etl.config.get_config_map()
         # FIXME Remove code that serves backwards-compatibility once new settings files have been deployed
-        config_mapping.update({
-            "prefix": config_mapping["object_store.s3.prefix"],
-            "today": config_mapping["date.today"],
-            "yesterday": config_mapping["date.yesterday"]
-        })
+        config_mapping.update(
+            {
+                "prefix": config_mapping["object_store.s3.prefix"],
+                "today": config_mapping["date.today"],
+                "yesterday": config_mapping["date.yesterday"],
+            }
+        )
         template = DottedNameTemplate(template_string)
         return template.substitute(config_mapping)
     except (KeyError, ValueError) as exc:
@@ -85,11 +88,11 @@ def render(template_name: str, compact=False) -> None:
         obj = yaml.safe_load(rendered)
         # But since we don't support anything that couldn't be done in JSON, dump the (prettier) JSON format.
         if compact:
-            print(simplejson.dumps(obj, separators=(',', ':'), sort_keys=True))
+            print(simplejson.dumps(obj, separators=(",", ":"), sort_keys=True))
         else:
             print(simplejson.dumps(obj, indent="    ", sort_keys=True))
     else:
-        print(rendered, end='')
+        print(rendered, end="")
 
 
 def show_value(name: str, default: Optional[str]) -> None:

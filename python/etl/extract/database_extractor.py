@@ -15,8 +15,16 @@ class DatabaseExtractor(Extractor):
     Special super class for database extractors that stores parameters and helps with partitioning and sampling.
     """
 
-    def __init__(self, name: str, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+    def __init__(
+        self,
+        name: str,
+        schemas: Dict[str, DataWarehouseSchema],
+        relations: List[RelationDescription],
+        max_partitions: int,
+        use_sampling: bool,
+        keep_going: bool,
+        dry_run: bool,
+    ) -> None:
         super().__init__(name, schemas, relations, keep_going, needs_to_wait=True, dry_run=dry_run)
         self.max_partitions = max_partitions
         self.use_sampling = use_sampling
@@ -89,8 +97,14 @@ class DatabaseExtractor(Extractor):
             partitions -= 1
             partition_size = table_size / partitions
 
-        self.logger.debug("Number of partitions: %d (max: %d), partition size: %d (table size: %d, min size: %d)",
-                          partitions, self.max_partitions, int(partition_size), table_size, min_partition_size)
+        self.logger.debug(
+            "Number of partitions: %d (max: %d), partition size: %d (table size: %d, min size: %d)",
+            partitions,
+            self.max_partitions,
+            int(partition_size),
+            table_size,
+            min_partition_size,
+        )
         return partitions
 
     def select_statement(self, relation: RelationDescription, add_sampling_on_column: Optional[str]) -> str:
@@ -108,8 +122,12 @@ class DatabaseExtractor(Extractor):
         if add_sampling_on_column is None:
             statement += """ WHERE ({})""".format(condition)
         else:
-            self.logger.info("Adding sampling on column '%s' while extracting '%s.%s'",
-                             add_sampling_on_column, relation.source_name, relation.source_table_name.identifier)
+            self.logger.info(
+                "Adding sampling on column '%s' while extracting '%s.%s'",
+                add_sampling_on_column,
+                relation.source_name,
+                relation.source_table_name.identifier,
+            )
             statement += """ WHERE (({}) AND ("{}" % 10) = 1)""".format(condition, add_sampling_on_column)
 
         return statement
@@ -126,16 +144,22 @@ class DatabaseExtractor(Extractor):
                  , pg_catalog.pg_size_pretty(pg_catalog.pg_table_size(%s)) AS pretty_size
             """
         table = relation.source_table_name
-        subprotocol = dsn_dict['subprotocol']
-        if subprotocol.startswith('postgres'):
+        subprotocol = dsn_dict["subprotocol"]
+        if subprotocol.startswith("postgres"):
             with closing(etl.db.connection(dsn_dict, readonly=True)) as conn:
                 rows = etl.db.query(conn, stmt, (str(table), str(table)))
             bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
-            self.logger.info("Size of table '%s.%s': %s (%s)",
-                             relation.source_name, table.identifier, bytes_size, pretty_size)
+            self.logger.info(
+                "Size of table '%s.%s': %s (%s)", relation.source_name, table.identifier, bytes_size, pretty_size
+            )
         else:
-            bytes_size, pretty_size = 671088640, '671 Mb'
-            self.logger.info("Pessimistic size estimate for non-postgres table '%s.%s': %s (%s)",
-                             relation.source_name, table.identifier, bytes_size, pretty_size)
+            bytes_size, pretty_size = 671088640, "671 Mb"
+            self.logger.info(
+                "Pessimistic size estimate for non-postgres table '%s.%s': %s (%s)",
+                relation.source_name,
+                table.identifier,
+                bytes_size,
+                pretty_size,
+            )
 
         return bytes_size

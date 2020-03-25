@@ -33,7 +33,9 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     down by the pattern in :selector.
     """
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
-    result = etl.db.query(cx, """
+    result = etl.db.query(
+        cx,
+        """
         SELECT nsp.nspname AS "schema"
              , cls.relname AS "table"
           FROM pg_catalog.pg_class AS cls
@@ -43,11 +45,12 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
            AND cls.relkind IN ('r', 'm', 'v')
          ORDER BY nsp.nspname
                 , cls.relname
-         """)
+         """,
+    )
     found = []
     for row in result:
-        source_table_name = TableName(row['schema'], row['table'])
-        target_table_name = TableName(source.name, row['table'])
+        source_table_name = TableName(row["schema"], row["table"])
+        target_table_name = TableName(source.name, row["table"])
         for reject_pattern in source.exclude_tables:
             if source_table_name.match_pattern(reject_pattern):
                 logger.debug("Table '%s' matches blacklist", source_table_name.identifier)
@@ -61,8 +64,13 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
                         break
                     else:
                         logger.debug("Table '%s' matches whitelist but is not selected", source_table_name.identifier)
-    logger.info("Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
-                len(found), source.include_tables, source.exclude_tables, selector)
+    logger.info(
+        "Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
+        len(found),
+        source.include_tables,
+        source.exclude_tables,
+        selector,
+    )
     return found
 
 
@@ -141,13 +149,14 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
           ORDER BY a.attname"""
     found = []
     for index_id, index_name, constraint_type, nr_atts in indices:
-        cond = ' OR '.join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
+        cond = " OR ".join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
         attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
             constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
-            logger.info("Index '%s' of '%s' adds constraint %s",
-                        index_name, table_name.identifier, json.dumps(constraint))
+            logger.info(
+                "Index '%s' of '%s' adds constraint %s", index_name, table_name.identifier, json.dumps(constraint)
+            )
             found.append(constraint)
     return found
 
@@ -191,14 +200,16 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     source_attributes = fetch_attributes(conn, source_table_name)
     if not source_attributes:
         raise RuntimeError("failed to find attributes (check your query)")
-    target_columns = [ColumnDefinition.from_attribute(attribute,
-                                                      as_is_attribute_type,
-                                                      cast_needed_attribute_type,
-                                                      default_attribute_type) for attribute in source_attributes]
+    target_columns = [
+        ColumnDefinition.from_attribute(
+            attribute, as_is_attribute_type, cast_needed_attribute_type, default_attribute_type
+        )
+        for attribute in source_attributes
+    ]
     table_design = {
         "name": "%s" % target_table_name.identifier,
         "description": "Automatically generated on {0:%Y-%m-%d} at {0:%H:%M:%S}".format(datetime.utcnow()),
-        "columns": [column.to_dict() for column in target_columns]
+        "columns": [column.to_dict() for column in target_columns],
     }
     return table_design
 
@@ -217,8 +228,9 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
     return table_design
 
 
-def create_partial_table_design_for_transformation(conn: connection, tmp_view_name: TableName,
-                                                   relation: RelationDescription, update_keys: Union[List, None]=None):
+def create_partial_table_design_for_transformation(
+    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update_keys: Union[List, None] = None
+):
     """
     Create a partial design that's applicable to transformations, which
         - cleans up the column information (dropping accidental expressions)
@@ -283,16 +295,17 @@ def update_column_definition(new_column: dict, old_column: dict):
         old_text = varchar_re.search(old_sql_type)
         new_text = varchar_re.search(new_sql_type)
         if old_text and new_text:
-            new_column["sql_type"] = "character varying({})".format(old_text.group('size'))
+            new_column["sql_type"] = "character varying({})".format(old_text.group("size"))
         numeric_re = re.compile(r"(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
         old_numeric = numeric_re.search(old_sql_type)
         new_numeric = numeric_re.search(new_sql_type)
         if old_numeric and new_numeric:
-            new_column["sql_type"] = "numeric({},{})".format(old_numeric.group('precision'), old_numeric.group('scale'))
+            new_column["sql_type"] = "numeric({},{})".format(old_numeric.group("precision"), old_numeric.group("scale"))
 
 
-def create_table_design_for_ctas(conn: connection, tmp_view_name: TableName, relation: RelationDescription,
-                                 update: bool):
+def create_table_design_for_ctas(
+    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
+):
     """
     Create new table design for a CTAS.
     If tables are referenced, they are added in the dependencies list.
@@ -305,8 +318,9 @@ def create_table_design_for_ctas(conn: connection, tmp_view_name: TableName, rel
     return table_design
 
 
-def create_table_design_for_view(conn: connection, tmp_view_name: TableName, relation: RelationDescription,
-                                 update: bool):
+def create_table_design_for_view(
+    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
+):
     """
     Create (and return) new table design suited for a view. Views are expected to always depend on some
     other relations. (Also, we only keep the names for columns.)
@@ -331,9 +345,23 @@ def make_item_sorter():
     If a key is not known, it's sorted alphabetically (ignoring case) after all known ones.
     """
     preferred_order = [
-        "name", "description",  # always (tables, columns, etc.)
-        "source_name", "unload_target", "depends_on", "constraints", "attributes", "columns",  # only tables
-        "sql_type", "type", "expression", "source_sql_type", "not_null", "identity"  # only columns
+        # always (tables, columns, etc.)
+        "name",
+        "description",
+        # only tables
+        "source_name",
+        "unload_target",
+        "depends_on",
+        "constraints",
+        "attributes",
+        "columns",
+        # only columns
+        "sql_type",
+        "type",
+        "expression",
+        "source_sql_type",
+        "not_null",
+        "identity",
     ]
     order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
     max_index = len(preferred_order)
@@ -345,8 +373,14 @@ def make_item_sorter():
     return sort_key
 
 
-def save_table_design(source_dir: str, source_table_name: TableName, target_table_name: TableName,
-                      table_design: dict, overwrite=False, dry_run=False) -> None:
+def save_table_design(
+    source_dir: str,
+    source_table_name: TableName,
+    target_table_name: TableName,
+    table_design: dict,
+    overwrite=False,
+    dry_run=False,
+) -> None:
     """
     Write new table design file to disk.
 
@@ -367,9 +401,9 @@ def save_table_design(source_dir: str, source_table_name: TableName, target_tabl
     else:
         logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
         # We use JSON pretty printing because it is prettier than YAML printing.
-        with open(filename, 'w') as o:
+        with open(filename, "w") as o:
             json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
-            o.write('\n')
+            o.write("\n")
         logger.debug("Completed writing '%s'", filename)
 
 
@@ -397,18 +431,23 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
     source_dir = os.path.join(local_dir, source.name)
     normalize_and_create(source_dir, dry_run=dry_run)
 
-    source_files = {file_set.source_table_name: file_set
-                    for file_set in local_files
-                    if file_set.source_name == source.name and file_set.design_file_name}
+    source_files = {
+        file_set.source_table_name: file_set
+        for file_set in local_files
+        if file_set.source_name == source.name and file_set.design_file_name
+    }
     try:
         logger.info("Connecting to database source '%s' to look for tables", source.name)
         with closing(etl.db.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in source_tables:
                 if source_table_name in source_files:
-                    logger.info("Skipping '%s' from source '%s' because table design file exists: '%s'",
-                                source_table_name.identifier, source.name,
-                                source_files[source_table_name].design_file_name)
+                    logger.info(
+                        "Skipping '%s' from source '%s' because table design file exists: '%s'",
+                        source_table_name.identifier,
+                        source.name,
+                        source_files[source_table_name].design_file_name,
+                    )
                 else:
                     target_table_name = TableName(source.name, source_table_name.table)
                     table_design = create_table_design_for_source(conn, source_table_name, target_table_name)
@@ -442,14 +481,16 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=
             if not schema.is_database_source:
                 logger.info("Skipping schema which is not an upstream database source: '%s'", schema.name)
             else:
-                total += create_table_designs_from_source(schema, selector, table_design_dir, local_files,
-                                                          dry_run=dry_run)
+                total += create_table_designs_from_source(
+                    schema, selector, table_design_dir, local_files, dry_run=dry_run
+                )
     if not total:
         logger.warning("Found no matching tables in any upstream source for '%s'", selector)
 
 
-def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
-                              update=False, replace=False, dry_run=False):
+def bootstrap_transformations(
+    dsn_etl, schemas, local_dir, local_files, as_view, update=False, replace=False, dry_run=False
+):
     """
     Download design information for transformations by test-running them in the data warehouse.
     """
@@ -480,5 +521,11 @@ def bootstrap_transformations(dsn_etl, schemas, local_dir, local_files, as_view,
             with relation.matching_temporary_view(conn, assume_external_schema=not update) as tmp_view_name:
                 table_design = create_func(conn, tmp_view_name, relation, update)
                 source_dir = os.path.join(local_dir, relation.source_name)
-                save_table_design(source_dir, relation.target_table_name, relation.target_table_name, table_design,
-                                  overwrite=update or replace, dry_run=dry_run)
+                save_table_design(
+                    source_dir,
+                    relation.target_table_name,
+                    relation.target_table_name,
+                    table_design,
+                    overwrite=update or replace,
+                    dry_run=dry_run,
+                )
