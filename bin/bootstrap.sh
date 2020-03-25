@@ -59,7 +59,7 @@ cd "$PROJ_TEMP"
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
 aws s3 cp --only-show-errors --recursive \
-    --exclude '*' --include bootstrap.sh --include ping_cronut.sh --include sync_env.sh \
+    --exclude '*' --include bootstrap.sh --include send_health_check.sh --include sync_env.sh \
     "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh
 

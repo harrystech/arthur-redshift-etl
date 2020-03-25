@@ -23,8 +23,8 @@ from typing import List
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
-import etl.monitor
 import etl.db
+import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
 from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def run_redshift_unload(conn: connection, relation: RelationDescription, unload_path: str, aws_iam_role: str,
-                        allow_overwrite=False) -> None:
+def run_redshift_unload(
+    conn: connection, relation: RelationDescription, unload_path: str, aws_iam_role: str, allow_overwrite=False
+) -> None:
     """
     Execute the UNLOAD command for the given :relation (via a select statement).
     Optionally allow users to overwrite previously unloaded data within the same keyspace.
@@ -52,7 +53,9 @@ def run_redshift_unload(conn: connection, relation: RelationDescription, unload_
         TO '{}'
         CREDENTIALS '{}' MANIFEST
         DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS '{}'
-        """.format(columns, relation, unload_path, credentials, null_string)
+        """.format(
+        columns, relation, unload_path, credentials, null_string
+    )
     if allow_overwrite:
         unload_statement += "ALLOWOVERWRITE"
 
@@ -87,8 +90,14 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
         etl.s3.upload_empty_object(bucket_name, object_key)
 
 
-def unload_relation(conn: connection, relation: RelationDescription, schema: DataWarehouseSchema,
-                    index: dict, allow_overwrite=False, dry_run=False) -> None:
+def unload_relation(
+    conn: connection,
+    relation: RelationDescription,
+    schema: DataWarehouseSchema,
+    index: dict,
+    allow_overwrite=False,
+    dry_run=False,
+) -> None:
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
@@ -99,15 +108,14 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
 
-    with etl.monitor.Monitor(relation.identifier,
-                             "unload",
-                             source={'schema': relation.target_table_name.schema,
-                                     'table': relation.target_table_name.table},
-                             destination={'name': schema.name,
-                                          'bucket_name': schema.s3_bucket,
-                                          'prefix': s3_key_prefix},
-                             index=index,
-                             dry_run=dry_run):
+    with etl.monitor.Monitor(
+        relation.identifier,
+        "unload",
+        source={"schema": relation.target_table_name.schema, "table": relation.target_table_name.table},
+        destination={"name": schema.name, "bucket_name": schema.s3_bucket, "prefix": s3_key_prefix},
+        index=index,
+        dry_run=dry_run,
+    ):
         if dry_run:
             logger.info("Dry-run: Skipping unload of '%s' to '%s'", relation.identifier, unload_path)
         else:
@@ -116,8 +124,13 @@ def unload_relation(conn: connection, relation: RelationDescription, schema: Dat
             write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
-def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescription],
-                 allow_overwrite: bool, keep_going: bool, dry_run: bool) -> None:
+def unload_to_s3(
+    config: DataWarehouseConfig,
+    relations: List[RelationDescription],
+    allow_overwrite: bool,
+    keep_going: bool,
+    dry_run: bool,
+) -> None:
     """
     Create CSV files for selected tables based on the S3 path in an "unload" source.
     """
@@ -143,8 +156,7 @@ def unload_to_s3(config: DataWarehouseConfig, relations: List[RelationDescriptio
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
                 index = {"current": i + 1, "final": len(relation_target_tuples)}
-                unload_relation(conn, relation, unload_schema, index,
-                                allow_overwrite=allow_overwrite, dry_run=dry_run)
+                unload_relation(conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run)
             except Exception as exc:
                 if keep_going:
                     error_occurred = True

@@ -9,7 +9,7 @@ by a pattern from the command line.
 
 import fnmatch
 import uuid
-from typing import Optional, List
+from typing import List, Optional
 
 import etl.config
 from etl.errors import ETLSystemError
@@ -20,14 +20,14 @@ def as_staging_name(name):
     """
     The canonical transformation of a schema name to its staging position
     """
-    return '$'.join(("etl_staging", name))
+    return "$".join(("etl_staging", name))
 
 
 def as_backup_name(name):
     """
     The canonical transformation of a schema name to its backup position
     """
-    return '$'.join(("etl_backup", name))
+    return "$".join(("etl_backup", name))
 
 
 class TableName:
@@ -175,7 +175,7 @@ class TableName:
         >>> identifier == tn.identifier
         True
         """
-        schema, table = identifier.split('.', 1)
+        schema, table = identifier.split(".", 1)
         return cls(schema, table)
 
     def __str__(self):
@@ -214,9 +214,9 @@ class TableName:
         Traceback (most recent call last):
         ValueError: unknown format code 'y' for TableName
         """
-        if (not code) or (code == 's'):
+        if (not code) or (code == "s"):
             return str(self)
-        elif code == 'x':
+        elif code == "x":
             return "'{:s}'".format(self.identifier)
         else:
             raise ValueError("unknown format code '{}' for {}".format(code, self.__class__.__name__))
@@ -295,8 +295,9 @@ class TempTableName(TableName):
     >>> temp.schema
     'pg_temp%'
     """
+
     def __init__(self, table) -> None:
-        if not table.startswith('#'):
+        if not table.startswith("#"):
             raise ValueError("name of temporary table must start with '#'")
         super().__init__(None, table)
         # Enable remembering whether this is a temporary view with late schema binding.
@@ -408,11 +409,11 @@ class TableSelector:
 
         split_patterns = []
         for pattern in patterns:
-            if '.' in pattern:
-                schema, table = pattern.split('.', 1)
+            if "." in pattern:
+                schema, table = pattern.split(".", 1)
                 split_patterns.append(TableName(schema, table))
             else:
-                split_patterns.append(TableName(pattern, '*'))
+                split_patterns.append(TableName(pattern, "*"))
         self._patterns = tuple(sorted(split_patterns))
 
         self._base_schemas = ()
@@ -482,7 +483,7 @@ class TableSelector:
         ValueError: pattern selects table, not schema: '"www"."orders"'
         """
         for pattern in self._patterns:
-            if pattern.table != '*':
+            if pattern.table != "*":
                 raise ValueError("pattern selects table, not schema: '%s'" % pattern)
         return [schema for schema in self._base_schemas if self.match_schema(schema)]
 

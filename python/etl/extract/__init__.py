@@ -27,7 +27,7 @@ of upstream sources. The data is stored in gzipped CSV form, into a specified ke
 """
 
 import logging
-from typing import List, Dict
+from typing import Dict, List
 
 from etl.config.dw import DataWarehouseSchema
 from etl.extract.extractor import Extractor
@@ -35,17 +35,22 @@ from etl.extract.manifest_only import ManifestOnlyExtractor
 from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
-from etl.text import join_with_quotes
 from etl.relation import RelationDescription
+from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def extract_upstream_sources(extract_type: str,
-                             schemas: List[DataWarehouseSchema], relations: List[RelationDescription],
-                             max_partitions: int, use_sampling=False, keep_going=False,
-                             dry_run=False) -> None:
+def extract_upstream_sources(
+    extract_type: str,
+    schemas: List[DataWarehouseSchema],
+    relations: List[RelationDescription],
+    max_partitions: int,
+    use_sampling=False,
+    keep_going=False,
+    dry_run=False,
+) -> None:
     """
     Extract data from upstream sources to S3.
 
@@ -73,22 +78,29 @@ def extract_upstream_sources(extract_type: str,
     if extract_type == "manifest-only":
         database_extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
     elif extract_type == "spark":
-        database_extractor = SparkExtractor(database_sources, applicable,
-                                            max_partitions=max_partitions,
-                                            use_sampling=use_sampling,
-                                            keep_going=keep_going,
-                                            dry_run=dry_run)
+        database_extractor = SparkExtractor(
+            database_sources,
+            applicable,
+            max_partitions=max_partitions,
+            use_sampling=use_sampling,
+            keep_going=keep_going,
+            dry_run=dry_run,
+        )
     else:
-        database_extractor = SqoopExtractor(database_sources, applicable,
-                                            max_partitions=max_partitions,
-                                            use_sampling=use_sampling,
-                                            keep_going=keep_going,
-                                            dry_run=dry_run)
+        database_extractor = SqoopExtractor(
+            database_sources,
+            applicable,
+            max_partitions=max_partitions,
+            use_sampling=use_sampling,
+            keep_going=keep_going,
+            dry_run=dry_run,
+        )
     database_extractor.extract_sources()
 
 
-def filter_relations_for_sources(source_lookup: Dict[str, DataWarehouseSchema],
-                                 relations: List[RelationDescription]) -> List[RelationDescription]:
+def filter_relations_for_sources(
+    source_lookup: Dict[str, DataWarehouseSchema], relations: List[RelationDescription]
+) -> List[RelationDescription]:
     """
     Filter for the relations that a given "extract" stage cares about.
     """
