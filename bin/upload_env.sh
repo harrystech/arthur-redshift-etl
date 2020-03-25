@@ -8,7 +8,7 @@
 # Example:
 #   AWS_PROFILE=my-prof bin/upload_env.sh my-warehouse-bucket my-env
 
-set -e
+set -o errexit
 
 USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
@@ -45,7 +45,7 @@ else
     PROJ_TARGET_ENVIRONMENT=$( arthur.py show_value --prefix "$DEFAULT_PREFIX" object_store.s3.prefix )
 fi
 
-set -u
+set -o nounset
 
 ask_to_confirm () {
     while true; do
@@ -94,7 +94,7 @@ bin/release_version.sh || echo "File with release information was not updated!"
 
 echo "Creating Python dist file, then uploading files (including configuration, excluding credentials) to S3"
 
-set -x
+set -o xtrace
 
 python3 setup.py sdist
 LATEST_TAR_FILE=`ls -1t dist/redshift_etl*tar.gz | head -1`
@@ -116,7 +116,7 @@ if [[ -d "jars" ]]; then
         jars "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars"
 fi
 
-set +x
+set +o xtrace
 echo
 echo "# You should *now* sync your data warehouse::"
 echo "arthur.py sync --deploy --prefix \"$PROJ_TARGET_ENVIRONMENT\""
