@@ -831,6 +831,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     etl_info = _query_for_etls(step=step, days_ago=7)
     if not len(etl_info):
         logger.warning("Found no ETLs within the last 7 days")
+        return
     latest_etl = sorted(etl_info, key=itemgetter("timestamp"))[-1]
     latest_start = latest_etl["timestamp"]
     logger.info("Latest ETL: %s", latest_etl)
