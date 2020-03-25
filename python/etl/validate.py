@@ -32,8 +32,6 @@ import etl.db
 import etl.design.bootstrap
 import etl.relation
 from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
-# Exception classes that we might catch: ETL*
-# Exception classes that we might raise: *ValidationError
 from etl.errors import (
     ETLConfigError,
     ETLDelayedExit,
