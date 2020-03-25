@@ -18,14 +18,13 @@ logger.addHandler(logging.NullHandler())
 
 
 class DataPipeline:
-
     def __init__(self, description):
-        self.pipeline_id = description['pipelineId']
-        self.name = description['name']
+        self.pipeline_id = description["pipelineId"]
+        self.name = description["name"]
         self.fields = {
-            field['key']: field['stringValue']
-            for field in description['fields']
-            if field['key'] != '*tags'  # tags are an ugly list of dicts
+            field["key"]: field["stringValue"]
+            for field in description["fields"]
+            if field["key"] != "*tags"  # tags are an ugly list of dicts
         }
 
     def __str__(self):
@@ -33,11 +32,11 @@ class DataPipeline:
 
     @property
     def health_status(self):
-        return self.fields.get('@healthStatus', '---')
+        return self.fields.get("@healthStatus", "---")
 
     @property
     def state(self):
-        return self.fields.get('@pipelineState', '---')
+        return self.fields.get("@pipelineState", "---")
 
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
@@ -47,15 +46,14 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     The :selection should be a list of glob patterns to select specific pipelines by their ID.
     If the selection is an empty list, then all pipelines are used.
     """
-    client = boto3.client('datapipeline')
-    paginator = client.get_paginator('list_pipelines')
+    client = boto3.client("datapipeline")
+    paginator = client.get_paginator("list_pipelines")
     response_iterator = paginator.paginate()
     all_pipeline_ids = response_iterator.search("pipelineIdList[].id")
     if selection:
-        selected_pipeline_ids = [pipeline_id
-                                 for pipeline_id in all_pipeline_ids
-                                 for glob in selection
-                                 if fnmatch.fnmatch(pipeline_id, glob)]
+        selected_pipeline_ids = [
+            pipeline_id for pipeline_id in all_pipeline_ids for glob in selection if fnmatch.fnmatch(pipeline_id, glob)
+        ]
     else:
         selected_pipeline_ids = list(all_pipeline_ids)
 
@@ -63,9 +61,9 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
     for ids_chunk in funcy.chunks(chunk_size, selected_pipeline_ids):
         resp = client.describe_pipelines(pipelineIds=ids_chunk)
-        for description in resp['pipelineDescriptionList']:
-            for tag in description['tags']:
-                if tag['key'] == 'user:project' and tag['value'] == 'data-warehouse':
+        for description in resp["pipelineDescriptionList"]:
+            for tag in description["tags"]:
+                if tag["key"] == "user:project" and tag["value"] == "data-warehouse":
                     dw_pipelines.append(DataPipeline(description))
     return sorted(dw_pipelines, key=attrgetter("name"))
 
@@ -86,16 +84,29 @@ def show_pipelines(selection: List[str]) -> None:
         logger.warning("Selection matches more than one pipeline")
     if pipelines:
         if selection:
-            logger.info("Currently active and selected pipelines: %s",
-                        join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
+            logger.info(
+                "Currently active and selected pipelines: %s",
+                join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
+            )
         else:
-            logger.info("Currently active pipelines: %s",
-                        join_with_quotes(pipeline.pipeline_id for pipeline in pipelines))
-        print(etl.text.format_lines([(pipeline.pipeline_id, pipeline.name, pipeline.health_status, pipeline.state)
-                                     for pipeline in pipelines],
-                                    header_row=["Pipeline ID", "Name", "Health", "State"], max_column_width=80))
+            logger.info(
+                "Currently active pipelines: %s", join_with_quotes(pipeline.pipeline_id for pipeline in pipelines)
+            )
+        print(
+            etl.text.format_lines(
+                [
+                    (pipeline.pipeline_id, pipeline.name, pipeline.health_status, pipeline.state)
+                    for pipeline in pipelines
+                ],
+                header_row=["Pipeline ID", "Name", "Health", "State"],
+                max_column_width=80,
+            )
+        )
     if selection and len(pipelines) == 1:
         pipeline = pipelines[0]
         print()
-        print(etl.text.format_lines([[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
-                                    header_row=["Key", "Value"]))
+        print(
+            etl.text.format_lines(
+                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)], header_row=["Key", "Value"]
+            )
+        )
