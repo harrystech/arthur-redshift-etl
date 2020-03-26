@@ -315,20 +315,31 @@ Pull requests are welcome!
 Development takes place on the `next` branch. So go ahead, and create a branch off `next` and work
 on the next ETL feature.
 
+### Formatting code
+
 * Please run code through [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg)):
 ```bash
 pycodestyle python
 ```
 
-* Even better, set up the git pre-commit hook to prevent you from accidentally breaking conventions
+* Please sort your imports using [isort](https://github.com/timothycrosley/isort):
+```bash
+isort --settings-path ./etc --recursive python/
+```
+
+* Please format your code using [black](https://github.com/psf/black):
+```bash
+black --config ./etc/pyproject.toml python/
+```
+
+### Adding a pre-commit hook
+
+Use the the git pre-commit hook to run a PEP8 check automatically:
 ```bash
 ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 ```
 
-* Run the unit tests (including doc tests) and type checker before submitting a PR.
-```
-run_tests.py
-```
+### References
 
 * Please have meaningful comments and git commit messages
 (See [Chris's blog](http://chris.beams.io/posts/git-commit/))
