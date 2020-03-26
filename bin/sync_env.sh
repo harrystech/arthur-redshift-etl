@@ -73,12 +73,12 @@ fi
 set -o xtrace
 
 for FOLDER in bin config jars schemas data; do
-    aws s3 sync --delete --exclude 'credentials*.sh' \
+    aws s3 sync --delete --exclude 'credentials*.sh' --exclude 'environment.sh' \
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
 done
 
-# Copying credentials will succeed when called within a data pipeline
+# Copying credentials will succeed when called within a data pipeline (e.g. for validation pipeline)
 # but may fail when trying to do so on the command line.
 if ! aws s3 sync --exclude '*' --include 'credentials*.sh' \
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config" \

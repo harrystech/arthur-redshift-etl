@@ -11,7 +11,7 @@
 # The script expects this environment variable to be set:
 #   HEALTH_CHECK_URI - URI to the job-specific endpoint for monitoring
 #
-# The environment variable is usually set in the credentials.sh file. It may
+# The environment variable is usually set in the environment.sh file. It may
 # also be simply exported from the current shell, as an alternative.
 #
 # The HTTP endpoint is expected to handle requests to these three resources:
@@ -26,7 +26,7 @@ fi
 
 set -o errexit
 
-FILENAME="/tmp/redshift_etl/config/credentials.sh"
+FILENAME="/tmp/redshift_etl/config/environment.sh"
 echo "Attempting to read configuration environment variables from '$FILENAME'"
 if [ -r "$FILENAME" ]; then
     source "$FILENAME"
@@ -38,7 +38,7 @@ if [ -z "$HEALTH_CHECK_URI" ]; then
     exit 0
 fi
 
-# Status should be only one of: "", "start", or "fail"
+# Status will be only one of: "", "start", or "fail"
 status="$1"
 if [ -n "$status" ]; then
     HEALTH_CHECK_URI="$HEALTH_CHECK_URI/$status"
