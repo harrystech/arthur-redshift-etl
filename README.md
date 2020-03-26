@@ -9,14 +9,19 @@
  /_/    \_\_|   \__|_| |_|\__,_|_|    |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
 ```
 
-Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem. Arthur is designed to manage a warehouse in full-rebuild mode where the entire warehouse is rebuilt, from scratch, every night. Arthur is *not* designed to support streaming or micro-batch ETL. Arthur is best suited for organizations whose data are managed in a stateful transactional database and have lots of complicated business logic for their data transformations that they want to be able to manage effectively.
+Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem.
+Arthur is designed to manage a warehouse in full-rebuild mode where the entire warehouse is rebuilt,
+from scratch, every night. Arthur is not designed to support streaming or micro-batch ETLs.
+Arthur is best suited for organizations whose data are managed in a stateful transactional database and have
+lots of complicated business logic for their data transformations that they want to be able to manage effectively.
 
-If you’re interested in this approach or are in a similar situation, then we’d like to talk to you.  Please reach out and let’s have a data & analytics meetup.
+_If you’re interested in this approach or are in a similar situation, then we’d like to talk to you._
+_Please reach out and let’s have a data & analytics meetup._
 
-This README outlines how to get started with the ETL.
+This README outlines how to get started with the ETL'ing and basic principles.
 This includes information about setting up _Arthur_ which is the driver for ETL activities.
 
-You are probably (also) looking for the [Wiki](https://github.com/harrystech/arthur-redshift-etl/wiki) pages,
+You are probably (also) looking for the [wiki pages](https://github.com/harrystech/arthur-redshift-etl/wiki),
 which include a lot more information about the ETL and what it does (and why it does what it does).
 And if something appears amiss, check out the [issues page](https://github.com/harrystech/arthur-redshift-etl/issues).
 
@@ -27,16 +32,16 @@ See the separate [INSTALL.md](./INSTALL.md) file.
 # Documentation
 
 See also our [wiki pages](https://github.com/harrystech/arthur-redshift-etl/wiki).
-And here's a [presentation about Arthur](https://www.youtube.com/watch?v=iVL-lNEKOm4), given at the Startup booth during the AWS Summit in New York.
-
+And here's a [presentation about Arthur](https://www.youtube.com/watch?v=iVL-lNEKOm4),
+given at the Startup booth during the AWS Summit in New York.
 
 # Configuring the ETL (and upstream sources)
 
-The best approach is to have a separate repo for your data warehouse that contains the configuration files
-and all the table design files and transformations.  The documentation will in many places assume
-that you have a "*sibling*" repo so that when within the repo for your local data warehouse (with
-configuration, credentials, and table designs), you can simply use `../arthur-redshift-etl/` to find
-your way back to this ETL code.
+The best approach is to have a separate repo for your data warehouse that contains
+the configuration files and all the table design files and transformation code in SQL.
+The documentation will in many places assume that you have a "*sibling*" repo so that when within the repo for your
+local data warehouse (with configuration, credentials, and table designs),
+you can simply use `../arthur-redshift-etl/` to find your way back to this ETL code.
 
 ## Redshift cluster and users
 
@@ -51,23 +56,28 @@ folder in S3.
 
 ## Sources
 
-See the [Wiki](https://github.com/harrystech/arthur-redshift-etl/wiki) pages about
+See the [wiki pages](https://github.com/harrystech/arthur-redshift-etl/wiki) about
 a description of configurations.
 
 # Running the ETL (`arthur.py`)
 
 ## General notes about the CLI
 
-* Commands expect a config file and will start by picking up all files in a local `./config` directory.
-* Commands accept `--dry-run` command line flag to test without modifying the environment.
-* Most commands allow to specify glob patterns to select specific schema(s) or table(s).
-* Most commands use `--prefix` to select a folder in the S3 bucket (but you may also have to use the `--remote` option).
+* Commands will provide usage information when you use `-h`.
+    - There is also a `help` command that provides introductions to various topics.
+* Commands need configuration files. They will pick up all files in a local `./config` directory
+    or from whatever directory to which `DATA_WAREHOUSE_CONFIG` points.
+* Commands accept a `--dry-run` command line flag to test without modifying the environment.
+* Most commands allow the use of glob patterns to select specific schema(s) or table(s).
+* Most commands use `--prefix` to select a folder in the S3 bucket.
+     - A few development commands normally pick up local files first and you need to add `--remote` to go to S3.
 * To pick a prefix without specifying it every time, set the environment variable `ARTHUR_DEFAULT_PREFIX`.
 * Log files are by default in `arthur.log`.  They are rotated and deleted so that your disk doesn't fill up too much.
+* Logs that are collected from data pipelines are in `stderr.gz` or `StdErr.gz` files since _Arthur_ logs to stderr.
 * To see more log information, use `--verbose`. To see less, use `--quiet`.
 * To see them formatted in the console the same way as they are formatted in the log files, use `--prolix`.
 * You could copy data manually, but you probably shouldn't and let `arthur.py sync` manage files.
-* You can use environment variables to pass in credentials for database access, but you should probably use a file for that.
+* You can use environment variables to pass in credentials for database access, but you should use a file for that.
 
 ## Prerequisites for running the ETL in a cluster
 
@@ -76,7 +86,7 @@ a description of configurations.
 All credentials can be picked up from environment variables by the ETL. Instead of setting these
 variables before starting the ETL, you can also add a file with credentials to the `config` directory
 where the ETL will pick them up for you. The credentials file should be formatted just like a shell
-file used to setting variables, meaning lines should have the forms:
+file would be to set variables, meaning lines should have the form:
 ```
 # Lines with '#' are ignored.
 NAME=value
@@ -84,26 +94,41 @@ NAME=value
 export NAME=value
 ```
 
-The minimal credentials file contains the login information for the ETL user that Arthur will use
+The minimal credentials file contains the login information for the ETL user that _Arthur_ will use
 to execute in Redshift.  Make sure this file exists in your data warehouse repo as `config/credentials.sh`:
 ```
 DATA_WAREHOUSE_ETL=postgres://etl:<password>@<host>:<port>/<dbname>?sslmode=require
 ```
 
+If you need to make changes in the cluster beyond schema changes, you will also need an admin:
+```
+DATA_WAREHOUSE_ADMIN=postgres://admin:<password>@<host>:<port>/<dbname>?sslmode=require
+```
+
+### Starting Arthur in Docker
+
+The [INSTALL.md](INSTALL.md) file will explain how to setup a Docker image to run _Arthur_.
+Once you have that, getting to a prompt is easy:
+```bash
+bin/run_arthur.sh ../warehouse-repo/config production
+```
+
+This command will set the path to the configuration files and default environment (_a.k.a._ prefix) for you.
+
 ### Copying code into the S3 bucket
 
-Copy the ETL code (including bootstrap scripts and configuration):
-```shell
-export DATA_WAREHOUSE_CONFIG="<path to directory with config files and credentials>"
-# export DATA_WAREHOUSE_CONFIG="\cd ./config && \pwd`
-bin/upload_env.sh "<your S3 bucket>"
+Copy the ETL code (including bootstrap scripts and configuration) is as simple as:
+```bash
+upload_env.sh
 ```
+
+For this to work, you have to set the `object_store` in one of your configuration files.
 
 ### Starting a cluster and submitting commands
 
 Start a cluster:
-```shell
-bin/launch_emr_cluster.sh
+```bash
+launch_emr_cluster.sh
 ```
 
 Now check for the output and pick up the cluster ID. There will be a line that looks something like this:
@@ -113,9 +138,11 @@ Now check for the output and pick up the cluster ID. There will be a line that l
 
 You can then use `arthur.py --submit "<cluster ID>"` instead of `arthur.py` in the examples below.
 Note that the `--submit` option must be between `arthur.py` and the sub-command in use, e.g.
-```shell
+```bash
 arthur.py --submit "<cluster ID>" load --prolix --prefix $USER
 ```
+
+Don't worry -- the script `launch_emr_cluster.sh` will show this information before it exits.
 
 ## Initializing the Redshift cluster
 
@@ -124,9 +151,9 @@ arthur.py --submit "<cluster ID>" load --prolix --prefix $USER
 | `initialize`  | Create schemas, groups and users |
 | `create_user`    | Create (or configure) users that are not mentioned in the configuration file |
 
-```shell
+```bash
 # The commands to setup the data warehouse users and groups or any database is by ADMIN (connected to `dev`)
-arthur.py initialize  # NOP but errors out
+arthur.py initialize
 arthur.py initialize development --with-user-creation  # Must create users and groups on first call
 ```
 
@@ -134,27 +161,43 @@ arthur.py initialize development --with-user-creation  # Must create users and g
 
 | Sub-command   | Goal |
 | ---- | ---- |
-| `design`  | Download schemas from upstream sources and bootstrap design files |
-| `auto_design`  | Bootstrap design files for transformations based on new SQL queries |
+| `bootstrap_sources`  | Download schemas from upstream sources and bootstrap design files |
+| `bootstrap_transformations`  | Bootstrap (or update) design files for transformations based on new SQL queries |
 | `explain`  | Review query plan for transformations |
 | `validate`  | After making changes to the design files, validate that changes are consistent with the expected format and with respect to each other |
 | `sync` | Upload your local files to your data lake |
 
-```shell
-arthur.py sync "<schema>"  # This will upload local files related to one schema into your folder inside the S3 bucket
-arthur.py sync "<schema>.<table>"  # This will upload local files for just one table
+```bash
+# This will upload local files related to one schema into your folder inside the S3 bucket:
+arthur.py sync "<schema>"
+# This will upload local files for just one table
+arthur.py sync "<schema>.<table>"
+```
+
+Note that when running sync that involved changes of source schemas or configurations, you must use:
+```bash
+arthur.py sync --force --deploy "<schema>.<table>"
+```
+
+### Deploying into production
+
+We prefer to have a short and succinct way to deploy our data warehouse files (configuration, design files and
+transformations) into production. So instead of starting a bash and running `sync`, just do:
+
+```bash
+bin/deploy_with_arthur.sh -p aws-prod-profile ../repo/config_directory/ production
 ```
 
 ## Loading and updating data
 
 | Sub-command   | Goal |
 | ---- | ---- |
-| `extract`  | Get data from upstream sources |
+| `extract`  | Get data from upstream sources (databases or S3) |
 | `load`, `upgrade` | Make data warehouse "structural" changes and let data percolate through |
 | `update` | Move data from upstream sources and let it percolate through |
 | `unload` | Take data from a relation in the data warehouse and extract as CSVs into S3 |
 
-```shell
+```bash
 arthur.py extract
 arthur.py load  # This will automatically create schemas and tables as necessary
 ```
@@ -165,6 +208,8 @@ the load after fixing any query errors or input data, using:
 arthur.py upgrade --with-staging-schemas --continue-from failed_relation.in_load_step
 ```
 
+Within a production environment, check out `install_pizza_pipeline.sh` which provides a consistent interface.
+
 ## Dealing with schemas (create, restore)
 
 | Sub-command   | Goal |
@@ -172,7 +217,7 @@ arthur.py upgrade --with-staging-schemas --continue-from failed_relation.in_load
 | `create_schemas`  | Create schemas; normally `load` will do that for you |
 | `promote_schemas`  | Bring back schemas from backup if `load` was aborted or promote staging after fixing any issues |
 
-To test permisions (granting and revoking), use for any schema:
+To test permissions (granting and revoking), use this for any schema:
 ```
 arthur.py create_schemas schema_name
 arthur.py create_schemas --with-staging schema_name
@@ -194,7 +239,7 @@ opportunities to work on a "sub-tree" of the data warehouse.
 
 At the beginning it might be worthwhile to focus just on tables in source schemas -- those
 tables that get loaded using CSV files after `extract`.
-```shell
+```bash
 arthur.py show_downstream_dependents -q | grep 'kind=DATA' | tee sources.txt
 
 # List CSV files and manifests, then continue with upgrade etc.
@@ -205,7 +250,7 @@ Note that you should use the special value `:transformations` when you're intere
 to work with transformations.
 
 Example:
-```shell
+```bash
 arthur.py show_downstream_dependents -q --continue-from=:transformations | tee transformations.txt
 
 arthur.py sync @transformations.txt
@@ -221,7 +266,7 @@ While working on transformations or constraints, it might be useful to focus on 
 set of of tables that feed data into it.
 
 Example:
-```shell
+```bash
 arthur.py show_upstream_dependencies -q www.users | tee www_users.txt
 
 arthur.py sync www.users
@@ -234,14 +279,14 @@ AWS service templates can be filled out based on configuration in the ETL.
 
 | Sub-command   | Goal |
 | ---- | ---- |
-| `render_template` | Return a JSON document that has values like `${resources.vpc.id}` filled in |
-| `show_value` | Show value of a single variable based on current configuration|
+| `render_template` | Return a JSON document that has values (like `${resources.vpc.id}`) filled in |
+| `show_value` | Show value of a single variable based on current configuration |
 | `show_vars` | Show variables and their values based on current configuration |
 
-Note this leaves references like `#{parameter}` used by AWS tools in place.
+Note this leaves references like `#{parameter}`, which are used by AWS tools, in place.
 
 Example:
-```shell
+```bash
 arthur.py render_template ec2_instance
 arthur.py show_value object_store.s3.bucket_name
 arthur.py show_vars object_store.s3.*
@@ -251,14 +296,14 @@ arthur.py show_vars object_store.s3.*
 
 A staging environment can help with deploying data that you'll be confident to release into production.
 
-```shell
+```bash
 arthur.py initialize staging
 arthur.py initialize staging --dry-run  # In case you want to see what happeens but not lose all schemas.
 ```
 
 Once everything is working fine in staging, you can promote the code into production.
-```shell
-./bin/sync_env.sh "<your S3 bucket>" staging production
+```bash
+sync_env.sh "<your S3 bucket>" staging production
 ```
 
 # Contributing and Releases
@@ -271,12 +316,12 @@ Development takes place on the `next` branch. So go ahead, and create a branch o
 on the next ETL feature.
 
 * Please run code through [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg)):
-```shell
+```bash
 pycodestyle python
 ```
 
-* Even better, set up the git pre-commit hook to prevent you from accidentally breaking convention
-```shell
+* Even better, set up the git pre-commit hook to prevent you from accidentally breaking conventions
+```bash
 ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
 ```
 
@@ -351,26 +396,20 @@ git push
 ### Using command completion in the shell
 
 For the bash shell, there is a file to add command completion that allows to tab-complete schemas and table names.
-```shell
+```bash
 source etc/arthur_completion.sh
 ```
-
-If you are normally in the repo for your data warehouse configuration, then this might be better:
-```shell
-source ../arthur-redshift-etl/etc/arthur_completion.sh
-```
-
-And if you're using `virtualenv-wrapper`, then you should make this part of the activation sequence.
+(Within a Docker image, that happens automatically.)
 
 ### iPython and q
 
 Consider installing [iPython](https://ipython.org/index.html):
-```shell
+```bash
 pip3 install ipython
 ```
 
 Also, [q](https://github.com/zestyping/q) comes in handy for debugging:
-```shell
+```bash
 pip3 install q
 ```
 

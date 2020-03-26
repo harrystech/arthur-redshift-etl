@@ -3,11 +3,11 @@
 set -o errexit
 
 case "$0" in
-    *docker_run.sh)
+    *docker_run.sh|*run_arthur.sh)
         action="run"
         action_description="drop you into a shell"
         ;;
-    *docker_deploy.sh)
+    *docker_deploy.sh|*deploy_with_arthur.sh)
         action="deploy"
         action_description="deploy your data warehouse from a shell"
         ;;
@@ -35,7 +35,7 @@ The <target_env> defaults to \$ARTHUR_DEFAULT_PREFIX (or \$USER if not set).
 The optional -p flag lets you use the given profile from your AWS CLI config
 within the container. If \$AWS_PROFILE is set, it will be used as a default.
 
-You must have built the Docker image with docker_build.sh before using this script!
+You must have built the Docker image with build_arthur.sh before using this script!
 
 EOF
     exit ${1-0}

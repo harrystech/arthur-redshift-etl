@@ -1,203 +1,69 @@
 This file describes the steps necessary to run ETLs using this codebase.
 
-# Just the facts...
+There's first a set of commands to run to start working on and with the ETL.
+The following sections simply add more explanations (or variations).
 
-## ... for installing the ETL code
+# Pre-requisites
 
-Here's a set of commands to run to start working on and with the ETL.
-The paragraphs below simply add more explanations and variations.
-The only pre-requisite here is that you have `homebrew` installed for your (macOS) laptop.
-
-```
-# Setup repo
-git clone git@github.com:harrystech/arthur-redshift-etl.git
-cd arthur-redshift-etl
-
-# Setup tools -- initial
-brew install awscli jq
-
-# Setup tools -- later
-brew upgrade awscli jq
-
-# Setup python3 with virtualenv and wrapper
-brew install python3
-pip3 install virtualenv
-pip3 install pip --upgrade --disable-pip-version-check
-pip3 install virtualenvwrapper
-
-# Run (and also add these lines to your ~/.bashrc file)
-export WORKON_HOME=~/Envs
-export VIRTUALENVWRAPPER_PYTHON=/usr/local/bin/python3
-source /usr/local/bin/virtualenvwrapper.sh
-
-# Finally  create the virtual environment to work on the ETL
-mkvirtualenv --python=python3 arthur-redshift-etl
-workon .
-pip3 install --requirement ./requirements-dev.txt
-python3 setup.py develop
-```
-
-The next step is to setup your AWS credentials, organized in profiles probably.
-But if you're brave enough to skip the explanations and just run the above commands,
-you (hopefully?) know what this entails.
-
-## ... for updating the ETL code
-
-After you pull a new version of Arthur, you should re-install the ETL code.
-This is especially important to pick up changes in the scripts!
-```shell
-# Make sure the virtual environment is active, then
-python3 setup.py develop
-```
-
-If packages changed, make sure to install those using `pip3`, e.g.
-```
-pip3 install --upgrade --requirement requirements-dev.txt
-```
-
-# Getting ready to run ETLs
-
-What all you need in order to use this ETL tool depends on where you'd like run it and whether you anticipate
-making changes to the ETL code.
-
-## Pre-requisites for "end users"
-
-Let's go through your setup steps in order to run the CLI, `arthur.py`, assuming that you will not work on the code base.
-
-### Clone this project
-
-Should be obvious ... but you need to `git clone` this repo using the handy link in Github.
-
-### AWS CLI
-
-We are using some shell scripts that use the AWS CLI and so this must be installed. We strongly suggest
-that you use a packaging tool, like [Homebrew](https://brew.sh/) on macOS.
-```shell
-brew install awscli
-aws --version
-# Should be better than 1.10
-```
-
-In order to interact with the S3 bucket with ETL data, a.k.a. your object store, you will need
-to set up AWS credentials.
-```shell
+* You will need a way to clone this repo, _e.g._ the `git` command line tool.
+* _Arthur_ runs inside a Docker container. So make sure to have [Docker](https://docs.docker.com/install/) installed.
+    The software _can_ be installed directly into a virtual environment. But we no longer recommend that.
+* You will also need an account with AWS and access using a profile. Be sure to have configured access:
+    * If you have to work with multiple access keys, check out the support of profiles in the CLI.
+    * It is important to setup a **default region** since the start scripts do not specify one.
+    * Leave the `output` alone or set it to `json`.
+```bash
 aws configure
 ```
 
-* If you have to work with multiple access keys, check out the support of profiles in the CLI.
-* It is important to setup a **default region** since the start scripts do not specify one.
-* Leave the `output` alone or set it to `json`.
-* To test, try to list the contents of your company's object store:
-```shell
-aws s3 ls 's3://<your s3 bucket>'
+# Installation
+
+## Cloning the repo
+
+```bash
+git clone git@github.com:harrystech/arthur-redshift-etl.git
 ```
 
-### Other commands
+# Building the Docker image
 
-We also use a tool called [jq](https://stedolan.github.io/jq/manual/v1.5/) to help parse responses
-from AWS CLI commands.
-```shell
-brew install jq
+```bash
+cd ../arthur-redshift-etl
+git pull
+
+bin/build_arthur.sh
 ```
 
-### Python and virtual environment
+# Using the container
 
-Our ETL code is using [Python3](https://docs.python.org/3/) so you may have to install that first.
-On a Mac, simply use [Homebrew](http://brew.sh/) for an easy installation.
-We strongly suggest that you always work within a virtual environment.
-```shell
-brew install python3
-# Using the newly installed pip3
-pip3 install virtualenv
+This might be as simple as:
+
+```bash
+bin/run_arthur.sh
 ```
 
-For new versions of pip, make sure to run this **outside** the virtual environment:
-```
-pip3 install pip --upgrade --disable-pip-version-check
-```
-
-To run code locally, you'll need to create a virtual environment with additional packages.
-These packages are listed (with their expected versions) in the `requirements.txt` file.
-The most prominent packages are:
-* [Psycopg2](http://initd.org/psycopg/docs/) to connect to PostgreSQL and Redshift easily
-* [boto3](https://boto3.readthedocs.org/en/latest/) to interact with AWS
-* [PyYAML](http://pyyaml.org/wiki/PyYAML) for configuration files
-* [simplejson](https://pypi.python.org/pypi/simplejson/) for dealing with YAML files that are really just JSON
-* [jsonschema](https://github.com/Julian/jsonschema) for validating configurations and table design files
-And in development:
-* [mypy](http://mypy-lang.org/) for static type checking
-
-The packages listed in `requirements-dev.txt` should be loaded into development environments
-and include the others. While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
-you should always use `requirements-dev.txt` for local development.
-
-#### Using vanilla virtualenv
-
-**Note** this assumes you are in the **top-level** directory of the Redshift ETL.
-
-```shell
-mkdir venv
-virtualenv --python=python3 venv
-source venv/bin/activate
-pip3 install --requirement ./requirements-dev.txt
-python3 setup.py develop
+For that to work, set these environment variables:
+```bash
+export AWS_PROFILE= ...
+export DATA_WAREHOUSE_CONFIG= ...
+export ARTHUR_DEFAULT_PREFIX= ...
 ```
 
-_Hint_: Don't worry if you get assertion violations while building a wheel for PyYAML.
-
-#### Using virtualenv wrapper
-
-Feel free to use [`virtualenv-wrapper`](https://virtualenvwrapper.readthedocs.io/en/latest/) to make
-your life switching in and out of virtual environments easier.
-
-Assuming you already have setup your environment to take advantage of the virtualenv wrapper tool
-by
-* setting the environment variable `WORKON_HOME`
-* setting the environment variable `VIRTUALENVWRAPPER_PYTHON` to `/usr/local/bin/python3`
-* making sure that `/usr/local/bin/virtualenvwrapper.sh` is _source_d in your shell profile.
-
-**Creating virtual env if you don't plan on changing the ETL code**
-
-First, change into the directory where your data warehouse setup will live, then:
-```shell
-mkvirtualenv --python=python3 -a `pwd` dw
-```
-The option `-a` will send you into this directory everytime you run:
-```
-workon dw
+Or you can set (or override) the settings on the command line:
+```bash
+bin/run_arthur.sh -p aws_profile ../warehouse-repo/config-dir wip
 ```
 
-**Creating virtual env as an ETL developer**
-
-Use the same name for the virtual env that is the name of the repo:
-```shell
-mkvirtualenv --python=python3 arthur-redshift-etl
-```
-This will make it easier later when you're in the directory to say:
-```
-workon .
+When in doubt, ask for help:
+```bash
+bin/run_arthur.sh -h
 ```
 
-**Updating the environment (under either scenario)**
-```
-pip3 install --requirement ./requirements-dev.txt
-python3 setup.py develop
-
-# Make sure to check the path below
-echo "source `\cd ../arthur-redshift-etl/etc && \pwd`/arthur_completion.sh" >> $VIRTUAL_ENV/bin/postactivate
-```
-
-Jumping ahead bit, if you want to use a default environment other than your login name, use something like this:
-```
-echo "export ARTHUR_DEFAULT_PREFIX=experimental" >> $VIRTUAL_ENV/bin/postactivate
-```
-
-(This is different from something you will set for the `AWS_PROFILE`.)
-
-## Additional pre-requisites for developers
+# Additional steps for developers
 
 Ok, so even if you want to work on the ETL code, you should *first* follow the steps above to get to a running setup.
 This section describes what *else* you should do when you want to develop here.
+
+## Installing other requirements
 
 ### Spark
 
@@ -243,21 +109,27 @@ might be to just add a pointer in the virtual environment.
 First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set.
 
 Then, with Spark 2.1.1, try this for example:
-```shell
+```bash
 cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
 /usr/local/Cellar/apache-spark/2.1.1/libexec/python
 /usr/local/Cellar/apache-spark/2.1.1/libexec/python/lib/py4j-0.10.4-src.zip
 EOF
 ```
 
+### Additional packages
+
+The packages listed in `requirements-dev.txt` should be loaded into development environments
+and include the others. While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
+you should always use `requirements-dev.txt` for local development.
+
 ## Running unit tests and type checker
 
 Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
-```shell
+```bash
 run_tests.py
 
 # And in case you have a config file handy
 arthur.py selftest
 ```
 
-Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by.
+Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by for help with types etc.
