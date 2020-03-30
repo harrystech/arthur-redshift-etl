@@ -306,6 +306,8 @@ Once everything is working fine in staging, you can promote the code into produc
 sync_env.sh "<your S3 bucket>" staging production
 ```
 
+Don't forget to upload any `credentials_*.sh` or `environment.sh` files as needed for production.
+
 # Contributing and Releases
 
 ## Creating pull requests
