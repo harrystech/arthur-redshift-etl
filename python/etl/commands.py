@@ -301,6 +301,7 @@ def build_full_parser(prog_name):
         ShowVarsCommand,
         ShowPipelinesCommand,
         QueryEventsCommand,
+        SummarizeEventsCommand,
         TailEventsCommand,
         # General and development commands
         ShowHelpCommand,
@@ -1289,12 +1290,34 @@ class QueryEventsCommand(SubCommand):
         parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
     def callback(self, args, config):
-        # TODO This is starting to become awkard: make finding latest ETL a separate command.
+        # TODO(tom): This is starting to become awkard: make finding latest ETL a separate command.
         if args.etl_id is None:
             # Going back two days should cover at least one complete and one running rebuild ETL.
             etl.monitor.query_for_etl_ids(days_ago=2)
         else:
             etl.monitor.scan_etl_events(args.etl_id, args.columns)
+
+
+class SummarizeEventsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "summarize_events",
+            "summarize events from the latest ETL (for given step)",
+            "For selected (or all) relations, show events from ETL, " "grouped by schema.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
+        parser.add_argument(
+            "-s",
+            "--step",
+            choices=["extract", "load", "upgrade", "update", "unload"],
+            help="pick which step to summarize",
+        )
+
+    def callback(self, args, config):
+        relations = self.find_relation_descriptions(args)
+        etl.monitor.summarize_events(relations, args.step)
 
 
 class TailEventsCommand(SubCommand):
