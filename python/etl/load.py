@@ -25,9 +25,10 @@ This is used during the validation pipeline. See the "skip copy" options.
 
 These are the general pre-requisites:
 
-    * "Tables" that have upstream sources must have CSV files and a manifest file from the "extract".
+    * "Tables" that have upstream sources must have data files and a manifest file from a prior
+      extract.
 
-    * "CTAS" tables are derived from queries so must have a SQL file. (Think of them as materialized views.)
+    * "CTAS" tables are derived from queries so must have a SQL file.
 
         * For every derived table (CTAS) a SQL file must exist in S3 with a valid
           expression to create the content of the table (meaning: just the select without
@@ -35,6 +36,8 @@ These are the general pre-requisites:
           attributes / constraints are added from the matching table design file.
 
     * "VIEWS" are views and so must have a SQL file in S3.
+
+Currently data files that are CSV or JSON-formatted are supported.
 """
 
 import concurrent.futures

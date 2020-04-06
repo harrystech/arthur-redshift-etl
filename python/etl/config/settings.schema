@@ -68,6 +68,7 @@
                 "description": { "type": "string" },
                 "s3_bucket": { "$ref": "#/definitions/bucket_template" },
                 "s3_path_template": { "$ref": "#/definitions/path_template" },
+                "s3_data_format": { "$ref": "#/definitions/s3_data_format" },
                 "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
                 "include_tables": { "$ref": "#/definitions/glob_pattern_list" },
                 "readers": { "$ref": "#/definitions/identifier_list" },
@@ -89,6 +90,24 @@
                 "description": { "type": "string" },
                 "external": { "enum": [ true ] }
             },
+            "additionalProperties": false
+        },
+        "s3_data_format": {
+            "description": "Description of data format found in S3 objects to be COPY'ed",
+            "type": "object",
+            "properties": {
+                "format": {
+                    "enum": [ "AVRO", "CSV", "JSON" ]
+                },
+                "format_option": {
+                    "description": "For CSV, that's the quotechar, for others it the json paths file",
+                    "type": "string"
+                },
+                "compression": {
+                    "enum": [ "BZIP2", "GZIP" ]
+                }
+            },
+            "required": [ "format" ],
             "additionalProperties": false
         },
         "cluster_group": {
@@ -175,7 +194,7 @@
         },
         "sources": {
             "type": "array",
-            "description": "List of upstream sources (databases or S3)",
+            "description": "List of upstream sources (databases or files in S3)",
             "items": {
                 "oneOf": [
                     { "$ref": "#/definitions/upstream_database" },
