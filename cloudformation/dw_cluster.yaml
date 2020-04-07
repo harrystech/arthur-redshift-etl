@@ -127,7 +127,7 @@ Resources:
             PubliclyAccessible:
                 true
             PreferredMaintenanceWindow:
-                "mon:14:10-mon:14:40"
+                "sun:18:30-sun:19:00"
             VpcSecurityGroupIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
             SnapshotIdentifier:
@@ -148,11 +148,13 @@ Resources:
             AlarmDescription: "Disk space usage too high"
             AlarmActions:
                 - !Ref ClusterAlertTopic
+            OKActions:
+                - !Ref ClusterAlertTopic
             MetricName: PercentageDiskSpaceUsed
             Namespace: AWS/Redshift
             Statistic: Average
             ComparisonOperator: GreaterThanThreshold
-            Threshold: 60
+            Threshold: 65
             Period: 300
             EvaluationPeriods: 3
             Dimensions:
@@ -164,6 +166,8 @@ Resources:
         Properties:
             AlarmDescription: "Cluster unhealthy"
             AlarmActions:
+                - !Ref ClusterAlertTopic
+            OKActions:
                 - !Ref ClusterAlertTopic
             MetricName: HealthStatus
             Namespace: AWS/Redshift
