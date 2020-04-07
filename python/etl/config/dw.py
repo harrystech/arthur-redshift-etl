@@ -71,6 +71,8 @@ class DataWarehouseSchema:
         self._s3_bucket_template = schema_info.get("s3_bucket")
         self._s3_path_template = schema_info.get("s3_path_template")
         self._s3_unload_path_template = schema_info.get("s3_unload_path_template")
+        # Additional attributes used for specifying data formats for files in S3
+        self._s3_data_format = schema_info.get("s3_data_format", {})
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])

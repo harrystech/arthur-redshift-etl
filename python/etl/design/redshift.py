@@ -294,13 +294,27 @@ def copy_from_uri(
     column_list: List[str],
     s3_uri: str,
     aws_iam_role: str,
+    data_format: Optional[str] = None,
+    format_option: Optional[str] = None,
+    file_compression: Optional[str] = None,
     need_compupdate=False,
     dry_run=False,
 ) -> None:
     """
     Load data into table in the data warehouse using the COPY command.
     """
-    copy_using_manifest(conn, table_name, column_list, s3_uri, aws_iam_role, need_compupdate, dry_run)
+    copy_using_manifest(
+        conn,
+        table_name,
+        column_list,
+        s3_uri,
+        aws_iam_role,
+        data_format,
+        format_option,
+        file_compression,
+        need_compupdate,
+        dry_run,
+    )
     query_load_commits(conn, table_name, s3_uri, dry_run)
     query_load_summary(conn, table_name, dry_run)
 
