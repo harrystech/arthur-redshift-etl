@@ -40,7 +40,7 @@
         "bucket_template" : {
             "description": "'Templates' used in static sources to configure their bucket",
             "type": "string",
-            "pattern": "^(([a-zA-Z0-9_$-]+)|(\\${[.\\w]+}))+$"
+            "pattern": "^(([a-zA-Z0-9._$-]+)|(\\${[.\\w]+}))+$"
         },
         "path_template" : {
             "description": "'Templates' used in static sources to configure their effective prefix",
