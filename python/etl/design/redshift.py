@@ -1,5 +1,8 @@
 """
 This module contains functions to maintain relations in Redshift.
+
+Note that overall we try to have this minimally depend on other data structures -- actually
+we use only TableName which is handy to get a qualified and quoted name as needed.
 """
 
 import logging
@@ -192,8 +195,8 @@ def copy_using_manifest(
 
     credentials = "aws_iam_role={}".format(aws_iam_role)
 
-    # This is our original data format (which mirrors settings in unload)
     if data_format is None:
+        # This is our original data format (which mirrors settings in unload).
         data_format_parameters = "DELIMITER ',' ESCAPE REMOVEQUOTES GZIP"
     else:
         if data_format == "CSV":

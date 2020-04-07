@@ -100,7 +100,7 @@
                     "enum": [ "AVRO", "CSV", "JSON" ]
                 },
                 "format_option": {
-                    "description": "For CSV, that's the quotechar, for others it the json paths file",
+                    "description": "For CSV, that's the quotechar, for others it the jsonpaths file",
                     "type": "string"
                 },
                 "compression": {

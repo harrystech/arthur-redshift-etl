@@ -404,10 +404,9 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         relation.unquoted_columns,
         s3_uri,
         aws_iam_role,
-        # TODO(tom): Create model for s3 data format
-        data_format=relation.schema_config._s3_data_format.get("data_format"),
-        format_option=relation.schema_config._s3_data_format.get("format_option"),
-        file_compression=relation.schema_config._s3_data_format.get("file_compression"),
+        data_format=relation.schema_config.s3_data_format.data_format,
+        format_option=relation.schema_config.s3_data_format.format_option,
+        file_compression=relation.schema_config.s3_data_format.file_compression,
         need_compupdate=relation.is_missing_encoding,
         dry_run=dry_run,
     )

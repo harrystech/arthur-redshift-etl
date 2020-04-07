@@ -28,6 +28,23 @@ class DataWarehouseUser:
         self.schema = user_info.get("schema")
 
 
+class S3DataFormat:
+    """
+    Enable specifying a data format (and options) for all source tables from one schema.
+
+    The expected format in the configuration file is something like this:
+        "s3_data_format": {
+            "format": "JSON",
+            "compression": "GZIP"
+        }
+    """
+
+    def __init__(self, s3_data_format) -> None:
+        self.data_format = s3_data_format.get("data_format")
+        self.format_option = s3_data_format.get("format_option")
+        self.file_compression = s3_data_format.get("file_compression")
+
+
 class DataWarehouseSchema:
     """
     Schemas in the data warehouse fall into one of four buckets:
@@ -72,7 +89,7 @@ class DataWarehouseSchema:
         self._s3_path_template = schema_info.get("s3_path_template")
         self._s3_unload_path_template = schema_info.get("s3_unload_path_template")
         # Additional attributes used for specifying data formats for files in S3
-        self._s3_data_format = schema_info.get("s3_data_format", {})
+        self.s3_data_format = S3DataFormat(schema_info.get("s3_data_format", {}))
         # When dealing with this schema of some upstream source, which tables should be used? skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
