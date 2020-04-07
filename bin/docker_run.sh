@@ -116,6 +116,7 @@ case "$action" in
         docker run --rm --interactive --tty \
             --publish 8086:8086/tcp \
             --volume "$data_warehouse_path":/data-warehouse \
+            --volume `pwd`:/arthur-redshift-etl \
             --volume ~/.aws:/root/.aws \
             --volume ~/.ssh:/root/.ssh \
             --volume `pwd`:/arthur-redshift-etl \
