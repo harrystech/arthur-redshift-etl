@@ -40,8 +40,9 @@ def load_table_design(stream, table_name):
     # an array of objects (with v0.24.0). This rewrites the constraints into the new format as needed.
     constraints = table_design.get("constraints")
     if isinstance(constraints, dict):
-        table_design["constraints"] = [{constraint_type: constraints[constraint_type]}
-                                       for constraint_type in sorted(constraints)]
+        table_design["constraints"] = [
+            {constraint_type: constraints[constraint_type]} for constraint_type in sorted(constraints)
+        ]
 
     return validate_table_design(table_design, table_name)
 
@@ -113,7 +114,7 @@ def validate_identity_as_surrogate_key(table_design):
             identity_columns.append(column["name"])
 
     constraints = table_design.get("constraints", [])
-    surrogate_keys = [col for constraint in constraints for col in constraint.get('surrogate_key', [])]
+    surrogate_keys = [col for constraint in constraints for col in constraint.get("surrogate_key", [])]
     if len(surrogate_keys) and not surrogate_keys == identity_columns:
         raise TableDesignSemanticError("surrogate key must be identity column")
     # TODO Complain if surrogate_key is missing but identity is present
@@ -124,18 +125,18 @@ def validate_column_references(table_design):
     Make sure that table attributes and constraints only reference columns that actually exist.
     """
     column_list_references = [
-        ('constraints', 'primary_key'),
-        ('constraints', 'natural_key'),
-        ('constraints', 'surrogate_key'),
-        ('constraints', 'unique'),
-        ('attributes', 'interleaved_sort'),
-        ('attributes', 'compound_sort')
+        ("constraints", "primary_key"),
+        ("constraints", "natural_key"),
+        ("constraints", "surrogate_key"),
+        ("constraints", "unique"),
+        ("attributes", "interleaved_sort"),
+        ("attributes", "compound_sort"),
     ]
     valid_columns = frozenset(column["name"] for column in table_design["columns"] if not column.get("skipped"))
 
     constraints = table_design.get("constraints", [])
     for obj, key in column_list_references:
-        if obj == 'constraints':
+        if obj == "constraints":
             # This evaluates all unique constraints at once by concatenating all of the columns.
             cols = [col for constraint in constraints for col in constraint.get(key, [])]
         else:  # 'attributes'
@@ -143,8 +144,8 @@ def validate_column_references(table_design):
         unknown = join_with_quotes(frozenset(cols).difference(valid_columns))
         if unknown:
             raise TableDesignSemanticError(
-                "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key,
-                                                                                     unknown=unknown))
+                "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key, unknown=unknown)
+            )
 
 
 def validate_semantics_of_view(table_design):
@@ -202,8 +203,9 @@ def validate_semantics_of_table(table_design):
     constraint_types_in_design = [constraint_type for constraint in constraints for constraint_type in constraint]
     for constraint_type in constraint_types_in_design:
         if constraint_type in ("natural_key", "surrogate_key"):
-            raise TableDesignSemanticError("upstream table '%s' has unexpected %s constraint" %
-                                           (table_design["name"], constraint_type))
+            raise TableDesignSemanticError(
+                "upstream table '%s' has unexpected %s constraint" % (table_design["name"], constraint_type)
+            )
 
     [split_by_name] = table_design.get("extract_settings", {}).get("split_by", [None])
     if split_by_name:
@@ -236,15 +238,18 @@ def validate_table_design_semantics(table_design, table_name):
     if table_design["source_name"] == "VIEW":
         validate_semantics_of_view(table_design)
         if schema.is_upstream_source:
-            raise TableDesignSemanticError("invalid upstream source '%s' in view '%s'" %
-                                           (table_name.schema, table_name.identifier))
+            raise TableDesignSemanticError(
+                "invalid upstream source '%s' in view '%s'" % (table_name.schema, table_name.identifier)
+            )
     elif table_design["source_name"] == "CTAS":
         validate_semantics_of_ctas(table_design)
         if schema.is_upstream_source:
-            raise TableDesignSemanticError("invalid source name '%s' in upstream table '%s'" %
-                                           (table_design["source_name"], table_name.identifier))
+            raise TableDesignSemanticError(
+                "invalid source name '%s' in upstream table '%s'" % (table_design["source_name"], table_name.identifier)
+            )
     else:
         validate_semantics_of_table(table_design)
         if not schema.is_upstream_source:
-            raise TableDesignSemanticError("invalid source name '%s' in transformation '%s'" %
-                                           (table_design["source_name"], table_name.identifier))
+            raise TableDesignSemanticError(
+                "invalid source name '%s' in transformation '%s'" % (table_design["source_name"], table_name.identifier)
+            )

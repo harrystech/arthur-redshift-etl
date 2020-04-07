@@ -1,7 +1,7 @@
 import logging
 import os.path
-from typing import List, Dict, Tuple
 from contextlib import closing
+from typing import Dict, List, Tuple
 
 import boto3
 from psycopg2.extensions import connection  # only for type annotation
@@ -19,8 +19,15 @@ class SparkExtractor(DatabaseExtractor):
     Use Apache Spark to download data from upstream databases.
     """
 
-    def __init__(self, schemas: Dict[str, DataWarehouseSchema], relations: List[RelationDescription],
-                 max_partitions: int, use_sampling: bool, keep_going: bool, dry_run: bool) -> None:
+    def __init__(
+        self,
+        schemas: Dict[str, DataWarehouseSchema],
+        relations: List[RelationDescription],
+        max_partitions: int,
+        use_sampling: bool,
+        keep_going: bool,
+        dry_run: bool,
+    ) -> None:
         super().__init__("spark", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
         self.logger = logging.getLogger(__name__)
         self._sql_context = None
@@ -48,9 +55,7 @@ class SparkExtractor(DatabaseExtractor):
             self.logger.warning("SPARK_ENV_LOADED is not set")
 
         self.logger.info("Starting SparkSQL context")
-        conf = (SparkConf()
-                .setAppName(__name__)
-                .set("spark.logConf", "true"))
+        conf = SparkConf().setAppName(__name__).set("spark.logConf", "true")
         sc = SparkContext(conf=conf)
 
         # Copy the credentials from the session into hadoop for access to S3
@@ -95,30 +100,39 @@ class SparkExtractor(DatabaseExtractor):
         self.logger.debug("Table query: SELECT * FROM %s", select_statement)
 
         jdbc_url, dsn_properties = etl.db.extract_dsn(source.dsn, read_only=True)
-        df = self.sql_context.read.jdbc(url=jdbc_url,
-                                        properties=dsn_properties,
-                                        table=select_statement,
-                                        predicates=predicates)
+        df = self.sql_context.read.jdbc(
+            url=jdbc_url, properties=dsn_properties, table=select_statement, predicates=predicates
+        )
         return df
 
-    def determine_partitioning(self, conn: connection, relation: RelationDescription,
-                               partition_key: str, num_partitions: int) -> List[str]:
+    def determine_partitioning(
+        self, conn: connection, relation: RelationDescription, partition_key: str, num_partitions: int
+    ) -> List[str]:
         """
         Create list of predicates to split up table into that number of partitions.
         This requires for one numeric column to be marked as the primary key.
         """
-        self.logger.info("Decided on using %d partition(s) for table '%s.%s' with partition key: '%s'",
-                         num_partitions, relation.source_name, relation.source_table_name.identifier, partition_key)
+        self.logger.info(
+            "Decided on using %d partition(s) for table '%s.%s' with partition key: '%s'",
+            num_partitions,
+            relation.source_name,
+            relation.source_table_name.identifier,
+            partition_key,
+        )
         boundaries = self.fetch_partition_boundaries(conn, relation.source_table_name, partition_key, num_partitions)
         predicates = []
         for low, high in boundaries:
             predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
-        self.logger.debug("Predicates to split '%s':\n    %s", relation.source_table_name.identifier,
-                          "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)))
+        self.logger.debug(
+            "Predicates to split '%s':\n    %s",
+            relation.source_table_name.identifier,
+            "\n    ".join("{:3d}: {}".format(i + 1, p) for i, p in enumerate(predicates)),
+        )
         return predicates
 
-    def fetch_partition_boundaries(self, conn: connection, table_name: TableName, partition_key: str,
-                                   num_partitions: int) -> List[Tuple[int, int]]:
+    def fetch_partition_boundaries(
+        self, conn: connection, table_name: TableName, partition_key: str, num_partitions: int
+    ) -> List[Tuple[int, int]]:
         """
         Fetch ranges for the partition key that partitions the table nicely.
         """
@@ -135,11 +149,18 @@ class SparkExtractor(DatabaseExtractor):
              ORDER BY part
         """
         with Timer() as timer:
-            rows = etl.db.query(conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions,
-                                                  table_name=table_name))
+            rows = etl.db.query(
+                conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions, table_name=table_name)
+            )
         row_count = sum(row["count"] for row in rows)
-        self.logger.info("Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",
-                         num_partitions, row_count, table_name.identifier, partition_key, timer)
+        self.logger.info(
+            "Calculated %d partition boundaries for %d rows in '%s' using partition key '%s' (%s)",
+            num_partitions,
+            row_count,
+            table_name.identifier,
+            partition_key,
+            timer,
+        )
         lower_bounds = (row["lower_bound"] for row in rows)
         upper_bounds = (row["upper_bound"] for row in rows)
         return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
@@ -156,13 +177,5 @@ class SparkExtractor(DatabaseExtractor):
             # N.B. This must match the Sqoop (import) and Redshift (COPY) options
             # BROKEN Uses double quotes to escape double quotes ("Hello" becomes """Hello""")
             # BROKEN Does not escape newlines ('\n' does not become '\\n' so is read as 'n' in Redshift)
-            write_options = {
-                "header": "false",
-                "nullValue": r"\N",
-                "quoteAll": "true",
-                "codec": "gzip"
-            }
-            df.write \
-                .mode('overwrite') \
-                .options(**write_options) \
-                .csv(s3_uri)
+            write_options = {"header": "false", "nullValue": r"\N", "quoteAll": "true", "codec": "gzip"}
+            df.write.mode("overwrite").options(**write_options).csv(s3_uri)

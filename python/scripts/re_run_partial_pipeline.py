@@ -12,11 +12,9 @@ def get_etl_pipeline_ids(client):
     """
     Return a dict mapping pipeline ids to their names, filtering on ETL pipelines.
     """
-    paginator = client.get_paginator('list_pipelines')
+    paginator = client.get_paginator("list_pipelines")
     response_iterator = paginator.paginate()
-    filtered_iterator = response_iterator.search(
-        "pipelineIdList[?contains(@.name, 'ETL') == `true`].id"
-    )
+    filtered_iterator = response_iterator.search("pipelineIdList[?contains(@.name, 'ETL') == `true`].id")
     return list(filtered_iterator)
 
 
@@ -24,7 +22,8 @@ def get_pipeline_status(client, pipeline_ids):
     """
     Return dicts describing the current status of the pipelines.
     """
-    extract_fields = jmespath.compile("""
+    extract_fields = jmespath.compile(
+        """
         pipelineDescriptionList[].{
             pipelineId: pipelineId,
             name: name,
@@ -32,7 +31,8 @@ def get_pipeline_status(client, pipeline_ids):
             healthStatus: fields[?key == '@healthStatus'].stringValue|[0],
             latestRunTime: fields[?key == '@latestRunTime'].stringValue|[0]
         }
-        """)
+        """
+    )
     chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
     for ids_chunk in funcy.chunks(chunk_size, pipeline_ids):
         response = client.describe_pipelines(pipelineIds=ids_chunk)
@@ -45,15 +45,11 @@ def get_scheduled_component_ids(client, pipeline_id):
     """
     Return ids of component objects of the pipeline which are in "SCHEDULED" state.
     """
-    paginator = client.get_paginator('query_objects')
+    paginator = client.get_paginator("query_objects")
     response_iterator = paginator.paginate(
         pipelineId=pipeline_id,
-        query={
-            "selectors": [
-                {"fieldName": "@status", "operator": {"type": "EQ", "values": ["SCHEDULED"]}}
-            ]
-        },
-        sphere="COMPONENT"
+        query={"selectors": [{"fieldName": "@status", "operator": {"type": "EQ", "values": ["SCHEDULED"]}}]},
+        sphere="COMPONENT",
     )
     return list(funcy.cat(response["ids"] for response in response_iterator))
 
@@ -62,28 +58,28 @@ def get_shell_activity_status(client, pipeline_id, object_ids):
     """
     Return generator for status of objects which are ShellCommandActivity objects.
     """
-    paginator = client.get_paginator('describe_objects')
+    paginator = client.get_paginator("describe_objects")
     response_iterator = paginator.paginate(pipelineId=pipeline_id, objectIds=object_ids)
     filtered_iterator = response_iterator.search(
         "pipelineObjects[?fields[?key == 'type'].stringValue|[0] == 'ShellCommandActivity']"
     )
-    extract_fields = jmespath.compile("""
+    extract_fields = jmespath.compile(
+        """
         {
             id: id,
             name: name,
             healthStatus: fields[?key == '@healthStatus'].stringValue|[0],
             healthStatusFromInstanceId: fields[?key == '@healthStatusFromInstanceId'].stringValue|[0]
         }
-        """)
+        """
+    )
     for response in filtered_iterator:
         yield extract_fields.search(response)
 
 
 def set_status_to_rerun(client, pipeline_id, object_ids):
-    response = client.set_status(pipelineId=pipeline_id,
-                                 objectIds=object_ids,
-                                 status="RERUN")
-    print(response['ResponseMetadata']['HTTPStatusCode'])
+    response = client.set_status(pipelineId=pipeline_id, objectIds=object_ids, status="RERUN")
+    print(response["ResponseMetadata"]["HTTPStatusCode"])
 
 
 def change_status_to_rerun(pipeline_id):
@@ -111,7 +107,7 @@ def change_status_to_rerun(pipeline_id):
         print()
 
     ans = input("Do you want to continue and set status of theses objects to 'RERUN'? [y/N] ")
-    if ans.lower() == 'y':
+    if ans.lower() == "y":
         print("Ok, proceeding")
         instance_ids = [status["healthStatusFromInstanceId"] for status in object_statuses]
         set_status_to_rerun(client, pipeline_id, instance_ids)
@@ -123,9 +119,9 @@ def list_pipelines():
     """
     client = boto3.client("datapipeline")
     pipeline_ids = get_etl_pipeline_ids(client)
-    statuses = [status
-                for status in get_pipeline_status(client, pipeline_ids)
-                if status["pipelineState"] == "SCHEDULED"]
+    statuses = [
+        status for status in get_pipeline_status(client, pipeline_ids) if status["pipelineState"] == "SCHEDULED"
+    ]
 
     if not statuses:
         print("Found no scheduled ETL pipelines")

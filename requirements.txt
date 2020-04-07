@@ -9,3 +9,4 @@ pycodestyle>=2.5.0
 pyyaml~=5.1
 simplejson~=3.8
 tabulate~=0.8,>=0.8.3
+tqdm~=4.43.0

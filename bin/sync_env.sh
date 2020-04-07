@@ -2,7 +2,7 @@
 
 # Sync (meaning: overwrite) one environment with another.
 
-set -eu
+set -o errexit -o nounset
 
 show_usage_and_exit () {
     cat <<EOF
@@ -70,20 +70,20 @@ if [[ "$CONFIRMED_YES" != "yes" ]]; then
     ask_to_confirm "Are you sure you want to overwrite '$CLUSTER_TARGET_ENVIRONMENT'?"
 fi
 
-set -x
+set -o xtrace
 
 for FOLDER in bin config jars schemas data; do
-    aws s3 sync --delete --exclude 'credentials*.sh' \
+    aws s3 sync --delete --exclude 'credentials*.sh' --exclude 'environment.sh' \
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/$FOLDER" \
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/$FOLDER"
 done
 
-# Copying credentials will succeed when called within a data pipeline
+# Copying credentials will succeed when called within a data pipeline (e.g. for validation pipeline)
 # but may fail when trying to do so on the command line.
 if ! aws s3 sync --exclude '*' --include 'credentials*.sh' \
         "s3://$CLUSTER_BUCKET/$CLUSTER_SOURCE_ENVIRONMENT/config" \
         "s3://$CLUSTER_BUCKET/$CLUSTER_TARGET_ENVIRONMENT/config"
 then
-    set +x
+    set +o xtrace
     echo "You will have to copy your credentials manually!"
 fi

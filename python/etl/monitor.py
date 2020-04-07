@@ -27,18 +27,20 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
 from operator import itemgetter
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 import boto3
 import botocore.exceptions
+import funcy as fy
 import simplejson as json
+from tqdm import tqdm
 
 import etl.assets
 import etl.config
 import etl.text
 from etl.errors import ETLRuntimeError, InvalidArgumentError
 from etl.json_encoder import FancyJsonEncoder
-from etl.timer import utc_now, elapsed_seconds, Timer
+from etl.timer import Timer, elapsed_seconds, utc_now
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -69,6 +71,7 @@ class MetaMonitor(type):
 
     Behind the scenes, some properties actually do a lazy evaluation.
     """
+
     @property
     def etl_id(cls):
         if cls._trace_key is None:
@@ -88,14 +91,11 @@ class MetaMonitor(type):
     @property
     def cluster_info(cls):
         if cls._cluster_info is None:
-            job_flow = '/mnt/var/lib/info/job-flow.json'
+            job_flow = "/mnt/var/lib/info/job-flow.json"
             if os.path.exists(job_flow):
                 with open(job_flow) as f:
                     data = json.load(f)
-                cluster_info = {
-                    'cluster_id': data['jobFlowId'],
-                    'instance_id': data['masterInstanceId']
-                }
+                cluster_info = {"cluster_id": data["jobFlowId"], "instance_id": data["masterInstanceId"]}
                 parent_dir, current_dir = os.path.split(os.getcwd())
                 if parent_dir == "/mnt/var/lib/hadoop/steps":
                     cluster_info["step_id"] = current_dir
@@ -150,12 +150,13 @@ class Monitor(metaclass=MetaMonitor):
     >>> with Monitor('schema.table', 'frobnicate', dry_run=True):
     ...     pass
     """
+
     # See MetaMonitor class for getters and setters
     _trace_key = None
     _environment = None
     _cluster_info = None
 
-    def __init__(self, target: str, step: str, dry_run: bool=False, **kwargs) -> None:
+    def __init__(self, target: str, step: str, dry_run: bool = False, **kwargs) -> None:
         self._monitor_id = trace_key()
         self._target = target
         self._step = step
@@ -192,8 +193,13 @@ class Monitor(metaclass=MetaMonitor):
 
     def __enter__(self):
         if self._index:
-            logger.info("Starting %s step for '%s' (%d/%d)",
-                        self.step, self.target, self._index["current"], self._index["final"])
+            logger.info(
+                "Starting %s step for '%s' (%d/%d)",
+                self.step,
+                self.target,
+                self._index["current"],
+                self._index["final"],
+            )
         else:
             logger.info("Starting %s step for '%s'", self.step, self.target)
         self._start_time = utc_now()
@@ -210,8 +216,12 @@ class Monitor(metaclass=MetaMonitor):
             logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
         else:
             event = STEP_FAIL
-            errors = [{'code': (exc_type.__module__ + '.' + exc_type.__qualname__).upper(),
-                       'message': traceback.format_exception_only(exc_type, exc_value)[0].strip()}]
+            errors = [
+                {
+                    "code": (exc_type.__module__ + "." + exc_type.__qualname__).upper(),
+                    "message": traceback.format_exception_only(exc_type, exc_value)[0].strip(),
+                }
+            ]
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
 
         payload = MonitorPayload(self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra)
@@ -257,11 +267,11 @@ class MonitorPayload:
     def emit(self, dry_run=False):
         payload = vars(self)
         # Delete entries that are often not present:
-        for key in ['cluster_info', 'elapsed', 'extra', 'errors']:
+        for key in ["cluster_info", "elapsed", "extra", "errors"]:
             if not payload[key]:
                 del payload[key]
 
-        compact_text = json.dumps(payload, sort_keys=True, separators=(',', ':'), cls=FancyJsonEncoder)
+        compact_text = json.dumps(payload, sort_keys=True, separators=(",", ":"), cls=FancyJsonEncoder)
         if dry_run:
             logger.debug("Dry-run: payload = %s", compact_text)
         else:
@@ -271,7 +281,6 @@ class MonitorPayload:
 
 
 class PayloadDispatcher:
-
     def store(self, payload):
         """
         Send payload to persistence layer
@@ -289,10 +298,12 @@ class DynamoDBStorage(PayloadDispatcher):
     @staticmethod
     def factory() -> "DynamoDBStorage":
         table_name = "{}-{}".format(etl.config.get_config_value("resource_prefix"), "events")
-        return DynamoDBStorage(table_name,
-                               etl.config.get_config_value("etl_events.read_capacity"),
-                               etl.config.get_config_value("etl_events.write_capacity"),
-                               etl.config.get_config_value("resources.VPC.region"))
+        return DynamoDBStorage(
+            table_name,
+            etl.config.get_config_value("etl_events.read_capacity"),
+            etl.config.get_config_value("etl_events.write_capacity"),
+            etl.config.get_config_value("resources.VPC.region"),
+        )
 
     def __init__(self, table_name, read_capacity, write_capacity, region_name):
         self.table_name = table_name
@@ -307,7 +318,7 @@ class DynamoDBStorage(PayloadDispatcher):
         Get table reference from DynamoDB or create it (within a new session)
         """
         session = boto3.session.Session(region_name=self.region_name)
-        dynamodb = session.resource('dynamodb')
+        dynamodb = session.resource("dynamodb")
         try:
             table = dynamodb.Table(self.table_name)
             status = table.table_status
@@ -326,15 +337,17 @@ class DynamoDBStorage(PayloadDispatcher):
             table = dynamodb.create_table(
                 TableName=self.table_name,
                 KeySchema=[
-                    {'AttributeName': 'target', 'KeyType': 'HASH'},
-                    {'AttributeName': 'timestamp', 'KeyType': 'RANGE'}
+                    {"AttributeName": "target", "KeyType": "HASH"},
+                    {"AttributeName": "timestamp", "KeyType": "RANGE"},
                 ],
                 AttributeDefinitions=[
-                    {'AttributeName': 'target', 'AttributeType': 'S'},
-                    {'AttributeName': 'timestamp', 'AttributeType': 'N'}
+                    {"AttributeName": "target", "AttributeType": "S"},
+                    {"AttributeName": "timestamp", "AttributeType": "N"},
                 ],
-                ProvisionedThroughput={'ReadCapacityUnits': self.initial_read_capacity,
-                                       'WriteCapacityUnits': self.initial_write_capacity}
+                ProvisionedThroughput={
+                    "ReadCapacityUnits": self.initial_read_capacity,
+                    "WriteCapacityUnits": self.initial_write_capacity,
+                },
             )
             status = table.table_status
         if status != "ACTIVE":
@@ -343,7 +356,7 @@ class DynamoDBStorage(PayloadDispatcher):
             logger.debug("Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn)
         return table
 
-    def store(self, payload: dict, _retry: bool=True):
+    def store(self, payload: dict, _retry: bool = True):
         """
         Actually send the payload to the DynamoDB table.
         If this is the first call at all, then get a reference to the table,
@@ -352,16 +365,16 @@ class DynamoDBStorage(PayloadDispatcher):
         error in the first attempt.
         """
         try:
-            table = getattr(self._thread_local_table, 'table', None)
+            table = getattr(self._thread_local_table, "table", None)
             if not table:
                 table = self.get_table()
-                setattr(self._thread_local_table, 'table', table)
+                setattr(self._thread_local_table, "table", table)
             item = dict(payload)
             # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
             # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
-            item["timestamp"] = Decimal("%.6f" % item['timestamp'].timestamp())
+            item["timestamp"] = Decimal("%.6f" % item["timestamp"].timestamp())
             if "elapsed" in item:
-                item["elapsed"] = Decimal("%.6f" % item['elapsed'])
+                item["elapsed"] = Decimal("%.6f" % item["elapsed"])
             table.put_item(Item=item)
         except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time
@@ -370,7 +383,7 @@ class DynamoDBStorage(PayloadDispatcher):
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
                 time.sleep(delay)
-                setattr(self._thread_local_table, 'table', None)
+                setattr(self._thread_local_table, "table", None)
                 self.store(payload, _retry=False)
             else:
                 raise
@@ -392,7 +405,8 @@ class MemoryStorage(PayloadDispatcher):
 
     The output should pass validator at https://validator.w3.org/#validate_by_input+with_options
     """
-    SERVER_HOST = ''  # meaning: all that we can bind to locally
+
+    SERVER_HOST = ""  # meaning: all that we can bind to locally
     SERVER_PORT = 8086
 
     def __init__(self):
@@ -434,9 +448,11 @@ class MemoryStorage(PayloadDispatcher):
     def get_events(self, event_id: Optional[str]):
         self._drain_queue()
         if event_id is None:
-            events_as_list = sorted((self.events[key] for key in self.events),
-                                    key=lambda p: (2 if p["event"] == STEP_START else 1, p["timestamp"]),
-                                    reverse=True)
+            events_as_list = sorted(
+                (self.events[key] for key in self.events),
+                key=lambda p: (2 if p["event"] == STEP_START else 1, p["timestamp"]),
+                reverse=True,
+            )
         else:
             events_as_list = [event for event in self.events.values() if event["monitor_id"] == event_id]
         return etl.assets.Content(json=events_as_list)
@@ -461,23 +477,23 @@ class MemoryStorage(PayloadDispatcher):
                 We serve assets or JSON via the API.
                 If the command is HEAD (and not GET), only the header is sent. Duh.
                 """
-                parts = urllib.parse.urlparse(self.path.rstrip('/'))
-                path = (parts.path or "/index.html").lstrip('/')
+                parts = urllib.parse.urlparse(self.path.rstrip("/"))
+                path = (parts.path or "/index.html").lstrip("/")
                 if path == "api/etl-id":
                     result = etl.assets.Content(json={"id": Monitor.etl_id})
                 elif path == "api/indices":
                     result = storage.get_indices()
                 elif path.startswith("api/events"):
-                    segment = path.replace("api/events", "").strip('/')
+                    segment = path.replace("api/events", "").strip("/")
                     result = storage.get_events(segment or None)
                 elif path == "api/command-line":
-                    result = etl.assets.Content(json={"args": ' '.join(sys.argv)})
+                    result = etl.assets.Content(json={"args": " ".join(sys.argv)})
                 elif etl.assets.asset_exists(path):
                     result = etl.assets.get_asset(path)
                 else:
                     # self.send_response(HTTPStatus.NOT_FOUND)
                     self.send_response(HTTPStatus.MOVED_PERMANENTLY)
-                    new_parts = (parts.scheme, parts.netloc, '/', None, None)
+                    new_parts = (parts.scheme, parts.netloc, "/", None, None)
                     new_url = urllib.parse.urlunsplit(new_parts)
                     self.send_header("Location", new_url)
                     self.end_headers()
@@ -494,6 +510,7 @@ class MemoryStorage(PayloadDispatcher):
                 self.end_headers()
                 if self.command == "GET":
                     self.wfile.write(result.content)
+
             do_HEAD = do_GET
 
         return MonitorHTTPHandler
@@ -508,8 +525,9 @@ class MemoryStorage(PayloadDispatcher):
             def run(self):
                 logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_PORT)
                 try:
-                    httpd = _ThreadingSimpleServer((MemoryStorage.SERVER_HOST, MemoryStorage.SERVER_PORT),
-                                                   handler_class)
+                    httpd = _ThreadingSimpleServer(
+                        (MemoryStorage.SERVER_HOST, MemoryStorage.SERVER_PORT), handler_class
+                    )
                     httpd.serve_forever()
                 except Exception as exc:
                     logger.info("Background server stopped: %s", str(exc))
@@ -525,6 +543,7 @@ class InsertTraceKey(logging.Filter):
     """
     Called as a logging filter, insert the ETL id into the logging record for the log's trace key.
     """
+
     def filter(self, record):
         record.trace_key = Monitor.etl_id
         return True
@@ -544,15 +563,15 @@ def start_monitors(environment):
 
 def _format_output_column(key: str, value: str) -> str:
     if value is None:
-        return '---'
+        return "---"
     elif key == "timestamp":
         # Make timestamp readable by turning epoch seconds into a date.
         return datetime.utcfromtimestamp(float(value)).replace(microsecond=0).isoformat()
     elif key == "elapsed":
         # Reduce number of decimals to 2.
-        return '{:6.2f}'.format(float(value))
+        return "{:6.2f}".format(float(value))
     elif key == "rowcount":
-        return '{:9d}'.format(int(value))
+        return "{:9d}".format(int(value))
     else:
         return value
 
@@ -570,48 +589,58 @@ def _flatten_scan_result(result: dict) -> dict:
     """
     flat = {}
     for key, value in result.items():
-        if 'S' in value:
-            flat[key] = value['S']
-        elif 'N' in value:
-            flat[key] = value['N']
-        elif 'M' in value:
-            flat[key] = _flatten_scan_result(value['M'])
+        if "S" in value:
+            flat[key] = value["S"]
+        elif "N" in value:
+            flat[key] = value["N"]
+        elif "M" in value:
+            flat[key] = _flatten_scan_result(value["M"])
     return flat
 
 
-def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
+def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
     """Search for ETLs by looking for the "marker" event at the start of an ETL command."""
     start_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago)
     epoch_seconds = timegm(start_time.utctimetuple())
+    attribute_values = {
+        ":marker": _DUMMY_TARGET,
+        ":epoch_seconds": epoch_seconds,
+        ":finish_event": STEP_FINISH,
+    }
+    if step is not None:
+        attribute_values[":step"] = step
+    filter_exp = "event = :finish_event"
+    if step is not None:
+        filter_exp += " and step = :step"
+
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
-    keys = ["etl_id", "step", "timestamp"]
     response = table.query(
         ConsistentRead=True,
-        ExpressionAttributeNames={
-            "#timestamp": "timestamp"  # "timestamp" is a reserved word. You're welcome.
-        },
-        ExpressionAttributeValues={
-            ":marker": _DUMMY_TARGET,
-            ":epoch_seconds": epoch_seconds,
-            ":start_event": STEP_START
-        },
+        ExpressionAttributeNames={"#timestamp": "timestamp"},  # "timestamp" is a reserved word. You're welcome.
+        ExpressionAttributeValues=attribute_values,
         KeyConditionExpression="target = :marker and #timestamp > :epoch_seconds",
-        FilterExpression="event <> :start_event",
-        ProjectionExpression="etl_id, step, #timestamp",  # matches keys with substitution of keywords
-        ReturnConsumedCapacity="TOTAL"
+        FilterExpression=filter_exp,
+        ProjectionExpression="etl_id, step, #timestamp",
+        ReturnConsumedCapacity="TOTAL",
     )
-    if 'LastEvaluatedKey' in response:
-        logger.warning("This is is a partial result! Last evaluated key: '%s'", response['LastEvaluatedKey'])
+    if "LastEvaluatedKey" in response:
+        logger.warning("This is is a partial result! Last evaluated key: '%s'", response["LastEvaluatedKey"])
 
-    logger.info("Query result: count = %d, scanned count = %d, consumed capacity = %f",
-                response['Count'], response['ScannedCount'], response['ConsumedCapacity']['CapacityUnits'])
-    rows = [
-        [
-            _format_output_column(key, item[key]) for key in keys
-        ]
-        for item in response['Items']
-    ]
+    logger.info(
+        "Query result: count = %d, scanned count = %d, consumed capacity = %f",
+        response["Count"],
+        response["ScannedCount"],
+        response["ConsumedCapacity"]["CapacityUnits"],
+    )
+    return response["Items"]
+
+
+def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
+    """Show recent ETLs with their step and execution start."""
+    etl_info = _query_for_etls(hours_ago=hours_ago, days_ago=days_ago)
+    keys = ["etl_id", "step", "timestamp"]
+    rows = [[_format_output_column(key, info[key]) for key in keys] for info in etl_info]
     rows.sort(key=itemgetter(keys.index("timestamp")))
     print(etl.text.format_lines(rows, header_row=keys))
 
@@ -622,10 +651,10 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
     table = ddb.get_table(create_if_not_exists=False)
     all_keys = ["target", "step", "event", "timestamp", "elapsed", "rowcount"]
     if comma_separated_columns:
-        selected_columns = comma_separated_columns.split(',')
+        selected_columns = comma_separated_columns.split(",")
         invalid_columns = [key for key in selected_columns if key not in all_keys]
         if invalid_columns:
-            raise InvalidArgumentError("invalid column(s): {}".format(','.join(invalid_columns)))
+            raise InvalidArgumentError("invalid column(s): {}".format(",".join(invalid_columns)))
         # We will always select "target" and "event" to have a meaningful output.
         selected_columns = frozenset(selected_columns).union(["target", "event"])
         keys = [key for key in all_keys if key in selected_columns]
@@ -634,18 +663,16 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
 
     # We need to scan here since the events are stored by "target" and not by "etl_id".
     # TODO Try to find all the "known" relations and query on them with a filter on the etl_id.
-    client = boto3.client('dynamodb')
-    paginator = client.get_paginator('scan')
+    client = boto3.client("dynamodb")
+    paginator = client.get_paginator("scan")
     response_iterator = paginator.paginate(
         TableName=table.name,
         ConsistentRead=False,
-        ExpressionAttributeNames={
-            "#timestamp": "timestamp"
-        },
+        ExpressionAttributeNames={"#timestamp": "timestamp"},
         ExpressionAttributeValues={
             ":etl_id": {"S": etl_id},
             ":marker": {"S": _DUMMY_TARGET},
-            ":start_event": {"S": STEP_START}
+            ":start_event": {"S": STEP_START},
         },
         FilterExpression="etl_id = :etl_id and target <> :marker and event <> :start_event",
         ProjectionExpression="target, step, event, #timestamp, elapsed, extra.rowcount",
@@ -655,18 +682,14 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
         # }
     )
     logger.info("Scanning events table for elapsed times")
-    consumed_capacity = .0
+    consumed_capacity = 0.0
     scanned_count = 0
     rows = []  # type: List[List[str]]
     for response in response_iterator:
-        consumed_capacity += response['ConsumedCapacity']['CapacityUnits']
-        scanned_count += response['ScannedCount']
-        items = [_flatten_scan_result(item) for item in response['Items']]
-        # Backwards compatibility kludge: Be careful picking out the rowcount which may not be present in older tables.
-        items = [
-            {key: item.get('extra', {'rowcount': None})['rowcount'] if key == 'rowcount' else item[key] for key in keys}
-            for item in items
-        ]
+        consumed_capacity += response["ConsumedCapacity"]["CapacityUnits"]
+        scanned_count += response["ScannedCount"]
+        items = [_flatten_scan_result(item) for item in response["Items"]]
+        items = [{key: fy.get_in(item, key.split(".")) for key in keys} for item in items]
         rows.extend([_format_output_column(key, item[key]) for key in keys] for item in items)
     logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
     if "timestamp" in keys:
@@ -677,27 +700,26 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
 
 
 class EventsQuery:
-
-    def __init__(self, step: Optional[str]=None) -> None:
-        self._keys = ["target", "step", "event", "timestamp"]
+    def __init__(self, step: Optional[str] = None) -> None:
+        self._keys = ["target", "step", "event", "timestamp", "elapsed", "extra.rowcount"]
         values = {
-            ":target": None,  # set when called
-            ":epoch_seconds": None,  # set when called
-            ":start_event": STEP_START
+            ":target": None,  # will be set when called
+            ":epoch_seconds": None,  # will be set when called
+            ":start_event": STEP_START,
         }
-        base_query = {
-            "ConsistentRead": False,
-            "ExpressionAttributeNames": {
-                "#timestamp": "timestamp"
-            },
-            "ExpressionAttributeValues": values,
-            "KeyConditionExpression": "target = :target and #timestamp > :epoch_seconds",
-            "FilterExpression": "event <> :start_event",
-            "ProjectionExpression": "target, step, event, #timestamp"
-        }
+        # Only look for finish or fail events
+        filter_exp = "event <> :start_event"
         if step is not None:
             values[":step"] = step
-            base_query["FilterExpression"] = "event <> :start_event and step = :step"
+            filter_exp += " and step = :step"
+        base_query = {
+            "ConsistentRead": False,
+            "ExpressionAttributeNames": {"#timestamp": "timestamp"},
+            "ExpressionAttributeValues": values,
+            "KeyConditionExpression": "target = :target and #timestamp > :epoch_seconds",
+            "FilterExpression": filter_exp,
+            "ProjectionExpression": "target, step, event, #timestamp, elapsed, extra.rowcount",
+        }
         self._base_query = base_query
 
     @property
@@ -709,13 +731,12 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":target"] = target
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
-        events = [{key: item[key] for key in self.keys} for item in response['Items']]
+        events = [{key: fy.get_in(item, key.split(".")) for key in self.keys} for item in response["Items"]]
         # Return latest event or None
         if events:
             events.sort(key=itemgetter("timestamp"))
             return events[-1]
-        else:
-            return None
+        return None
 
 
 class BackgroundQueriesRunner(threading.Thread):
@@ -723,6 +744,7 @@ class BackgroundQueriesRunner(threading.Thread):
     An instance of this thread will repeatedly try to run queries on a DynamoDB table.
     Every time a query returns a result, this result is sent to a queue and the query will no longer be tried.
     """
+
     def __init__(self, targets, query, consumer_queue, start_time, update_interval, idle_time_out, **kwargs) -> None:
         super().__init__(**kwargs)
         self.targets = list(targets)
@@ -739,8 +761,11 @@ class BackgroundQueriesRunner(threading.Thread):
         start_time = self.start_time
         idle = Timer()
         while targets:
-            logger.debug("Waiting for events for %d target(s), start time = '%s'",
-                         len(targets), datetime.utcfromtimestamp(start_time).isoformat())
+            logger.debug(
+                "Waiting for events for %d target(s), start time = '%s'",
+                len(targets),
+                datetime.utcfromtimestamp(start_time).isoformat(),
+            )
             new_start_time = datetime.utcnow() - timedelta(seconds=1)  # avoid rounding errors
             query_loop = Timer()
             retired = set()
@@ -756,8 +781,11 @@ class BackgroundQueriesRunner(threading.Thread):
             if retired:
                 idle = Timer()
             elif self.idle_time_out and idle.elapsed > self.idle_time_out:
-                logger.info("Idle time-out: Waited for %d seconds but no events arrived, %d target(s) remaining",
-                            self.idle_time_out, len(targets))
+                logger.info(
+                    "Idle time-out: Waited for %d seconds but no events arrived, %d target(s) remaining",
+                    self.idle_time_out,
+                    len(targets),
+                )
                 break
             if query_loop.elapsed < self.update_interval:
                 time.sleep(self.update_interval - query_loop.elapsed)
@@ -768,18 +796,19 @@ class BackgroundQueriesRunner(threading.Thread):
 def recently_extracted_targets(source_relations, start_time):
     """
     Query the events table for "extract" events on the provided source_relations after start_time.
+
     Waits for up to an hour, sleeping for 30s between checks.
     Return the set of targets (ie, relation.identifier or event["target"]) with successful extracts
     """
     targets = [relation.identifier for relation in source_relations]
 
-    query = EventsQuery('extract')
+    query = EventsQuery("extract")
     consumer_queue = queue.Queue()  # type: ignore
     start_as_epoch = timegm(start_time.utctimetuple())
     timeout = 60 * 60
     extract_querying_thread = BackgroundQueriesRunner(
-        targets, query, consumer_queue, start_as_epoch,
-        update_interval=30, idle_time_out=timeout, daemon=True)
+        targets, query, consumer_queue, start_as_epoch, update_interval=30, idle_time_out=timeout, daemon=True
+    )
     extract_querying_thread.start()
     extracted_targets = set()
 
@@ -789,13 +818,61 @@ def recently_extracted_targets(source_relations, start_time):
             if event is None:
                 break
             if event["event"] == STEP_FINISH:
-                extracted_targets.add(event['target'])
+                extracted_targets.add(event["target"])
         except queue.Empty:
             break
     return extracted_targets
 
 
-def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str]=None) -> None:
+def summarize_events(relations, step: Optional[str] = None) -> None:
+    """
+    Summarize latest ETL step for the given relations by showing elapsed time and row count.
+    """
+    etl_info = _query_for_etls(step=step, days_ago=7)
+    if not len(etl_info):
+        logger.warning("Found no ETLs within the last 7 days")
+        return
+    latest_etl = sorted(etl_info, key=itemgetter("timestamp"))[-1]
+    latest_start = latest_etl["timestamp"]
+    logger.info("Latest ETL: %s", latest_etl)
+
+    ddb = DynamoDBStorage.factory()
+    table = ddb.get_table(create_if_not_exists=False)
+    query = EventsQuery(step)
+
+    events = []
+    schema_events = dict()  # type: Dict[str, Dict[str, Union[str, Decimal]]]
+    for relation in tqdm(relations):
+        event = query(table, relation.identifier, latest_start)
+        if event:
+            event["rowcount"] = event.pop("extra.rowcount")
+            events.append(dict(event, kind=relation.kind))
+            schema = relation.target_table_name.schema
+            if schema not in schema_events:
+                schema_events[schema] = {
+                    "target": schema,
+                    "kind": "---",
+                    "step": event["step"],
+                    "timestamp": Decimal(0),
+                    "event": "complete",
+                    "elapsed": Decimal(0),
+                    "rowcount": Decimal(0),
+                }
+            if event["timestamp"] > schema_events[schema]["timestamp"]:
+                schema_events[schema]["timestamp"] = event["timestamp"]
+            schema_events[schema]["elapsed"] += event["elapsed"]
+            schema_events[schema]["rowcount"] += event["rowcount"] if event["rowcount"] else 0
+
+    # Add pseudo events to show schemas are done.
+    events.extend(schema_events.values())
+
+    keys = ["target", "kind", "step", "timestamp", "event", "elapsed", "rowcount"]
+    rows = [[_format_output_column(key, info[key]) for key in keys] for info in events]
+    rows.sort(key=itemgetter(keys.index("timestamp")))
+    print(etl.text.format_lines(rows, header_row=keys))
+
+
+def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str] = None) -> None:
     """
     Tail the events table and show latest events coming in (which are not start events, just fail or finish).
     """
@@ -804,8 +881,9 @@ def tail_events(relations, start_time, update_interval=None, idle_time_out=None,
     consumer_queue = queue.Queue()  # type: ignore
     epoch_seconds = timegm(start_time.utctimetuple())
 
-    thread = BackgroundQueriesRunner(targets, query, consumer_queue, epoch_seconds, update_interval, idle_time_out,
-                                     daemon=True)
+    thread = BackgroundQueriesRunner(
+        targets, query, consumer_queue, epoch_seconds, update_interval, idle_time_out, daemon=True
+    )
     thread.start()
 
     events = []
@@ -826,11 +904,12 @@ def tail_events(relations, start_time, update_interval=None, idle_time_out=None,
         # Keep printing tail of table that accumulates the events.
         if len(events) > n_printed:
             lines = etl.text.format_lines(
-                [[event[header] for header in query.keys] for event in events], header_row=query.keys).split('\n')
+                [[event[header] for header in query.keys] for event in events], header_row=query.keys
+            ).split("\n")
             if n_printed:
-                print('\n'.join(lines[n_printed + 2:-1]))  # skip header and final "(x rows)" line
+                print("\n".join(lines[n_printed + 2 : -1]))  # skip header and final "(x rows)" line
             else:
-                print('\n'.join(lines[:-1]))  # only skip the "(x rows)" line
+                print("\n".join(lines[:-1]))  # only skip the "(x rows)" line
             n_printed = len(lines) - 3  # header, separator, final = 3 extra rows
             if done:
                 print(lines[-1])
@@ -851,7 +930,7 @@ def test_run():
     with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
         for i, names in enumerate(itertools.product(schema_names, table_names)):
             try:
-                with Monitor('.'.join(names), "test", index=dict(index, current=i + 1)):
+                with Monitor(".".join(names), "test", index=dict(index, current=i + 1)):
                     time.sleep(random.uniform(0.5, 2.0))
                     # Create an error on one "table" so that highlighting of errors can be tested:
                     if i == 9:

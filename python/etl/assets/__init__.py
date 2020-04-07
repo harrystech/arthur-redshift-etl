@@ -10,14 +10,14 @@ from etl.json_encoder import FancyJsonEncoder
 
 
 class Content:
-    def __init__(self, name: str=None, json: Union[List, Dict]=None) -> None:
+    def __init__(self, name: str = None, json: Union[List, Dict] = None) -> None:
         if name is not None:
             self.content = pkg_resources.resource_string(__name__, name)
             self.content_type, self.content_encoding = mimetypes.guess_type(name)
             self.cache_control = None
         elif json is not None:
             json_text = simplejson.dumps(json, sort_keys=True, cls=FancyJsonEncoder)
-            self.content = (json_text + '\n').encode("utf-8")
+            self.content = (json_text + "\n").encode("utf-8")
             self.content_type, self.content_encoding = "application/json", "UTF-8"
             self.cache_control = "no-cache, no-store, must-revalidate"
         self.content_length = len(self.content)

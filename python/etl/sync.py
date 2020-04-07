@@ -20,7 +20,7 @@ from typing import List
 import etl.config
 import etl.file_sets
 import etl.s3
-from etl.errors import MissingQueryError, ETLRuntimeError
+from etl.errors import ETLRuntimeError, MissingQueryError
 from etl.relation import RelationDescription
 from etl.timer import Timer
 
@@ -39,11 +39,11 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False) -> None:
 
     uploader = etl.s3.S3Uploader(bucket_name, dry_run=dry_run)
     for fullname in settings_files:
-        object_key = os.path.join(prefix, 'config', os.path.basename(fullname))
+        object_key = os.path.join(prefix, "config", os.path.basename(fullname))
         uploader(fullname, object_key)
 
 
-def sync_with_s3(relations: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool=False) -> None:
+def sync_with_s3(relations: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool = False) -> None:
     """
     Copy (validated) table design and SQL files from local directory to S3 bucket.
     """
@@ -77,7 +77,8 @@ def sync_with_s3(relations: List[RelationDescription], bucket_name: str, prefix:
                 logger.error("Failed to upload file: %s", exception)
                 errors += 1
     if not dry_run:
-        logger.info("Uploaded %d of %d file(s) to 's3://%s/%s (%s)",
-                    len(files) - errors, len(files), bucket_name, prefix, timer)
+        logger.info(
+            "Uploaded %d of %d file(s) to 's3://%s/%s (%s)", len(files) - errors, len(files), bucket_name, prefix, timer
+        )
     if errors:
         raise ETLRuntimeError("There were {:d} error(s) during upload".format(errors))
