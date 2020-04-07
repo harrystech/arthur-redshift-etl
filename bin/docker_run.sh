@@ -117,6 +117,7 @@ case "$action" in
             --volume "$data_warehouse_path":/data-warehouse \
             --volume ~/.aws:/root/.aws \
             --volume ~/.ssh:/root/.ssh \
+            --volume `pwd`:/arthur-redshift-etl \
             -e DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
             -e ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
