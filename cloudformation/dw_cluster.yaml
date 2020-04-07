@@ -173,7 +173,7 @@ Resources:
             Namespace: AWS/Redshift
             Statistic: Minimum
             ComparisonOperator: LessThanThreshold
-            Threshold: 2
+            Threshold: 1
             Period: 60
             EvaluationPeriods: 3
             Dimensions:
