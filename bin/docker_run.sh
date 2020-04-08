@@ -11,7 +11,7 @@ case "$0" in
         action="deploy"
         action_description="deploy your data warehouse from a shell"
         ;;
-    *docker_upload.sh)
+    *docker_upload.sh|*deploy_arthur.sh)
         action="upload"
         action_description="upload your ELT code from a shell"
         ;;
@@ -144,7 +144,7 @@ case "$action" in
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
-            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && /tmp/redshift_etl/bin/upload_env.sh'
+            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && cd /arthur-redshift-etl && ./bin/upload_env.sh'
         ;;
     *)
         echo "Internal Error: unknown action '$action'!" >&2
