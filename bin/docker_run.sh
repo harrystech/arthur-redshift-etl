@@ -29,7 +29,7 @@ esac
 show_usage_and_exit () {
     cat <<EOF
 
-Usage: `basename $0` [-p aws_profile] [-t tag] [<config_dir> [<target_env>]]
+Usage: `basename $0` [-p aws_profile] [-t image_tag] [<config_dir> [<target_env>]]
 
 This will $action_description inside a Docker container with Arthur installed and
 configured to use <config_dir>.
