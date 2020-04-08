@@ -30,6 +30,8 @@ RUN virtualenv --python=python3 venv && \
     pip3 install --upgrade pip --disable-pip-version-check && \
     pip3 install --requirement ./requirements-dev.txt
 
+COPY bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh bin/
+
 WORKDIR /arthur-redshift-etl
 
 # Note that at runtime we (can or may) mount the local directory here.

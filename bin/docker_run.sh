@@ -11,9 +11,13 @@ case "$0" in
         action="deploy"
         action_description="deploy your data warehouse from a shell"
         ;;
-    *docker_upload.sh)
+    *docker_upload.sh|*deploy_arthur.sh)
         action="upload"
         action_description="upload your ELT code from a shell"
+        ;;
+    *run_validation.sh)
+        action="validate"
+        action_description="install a validation pipeline to run immediately"
         ;;
     *)
         echo "Internal Error: unknown script name!" >&2
@@ -144,7 +148,18 @@ case "$action" in
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
-            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && /tmp/redshift_etl/bin/upload_env.sh'
+            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && cd /arthur-redshift-etl && ./bin/upload_env.sh'
+        ;;
+    validate)
+        set -o xtrace
+        docker run --rm --interactive --tty \
+            --volume "$data_warehouse_path":/data-warehouse \
+            --volume ~/.aws:/root/.aws \
+            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            $profile_arg \
+            "arthur:$tag" \
+            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && install_validation_pipeline.sh'
         ;;
     *)
         echo "Internal Error: unknown action '$action'!" >&2
