@@ -232,7 +232,7 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
     file_names_re = re.compile(
         r"""(?:^schemas|/schemas|^data|/data)
             /(?P<source_name>\w+)
-            /((?P<schema_name>\w+)-)?(?P<table_name>\w+)
+            /(?:(?P<schema_name>\w+)-)?(?P<table_name>\w+)
             (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
         """,
         re.VERBOSE,
