@@ -231,10 +231,10 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
     """
     file_names_re = re.compile(
         r"""(?:^schemas|/schemas|^data|/data)
-                                   /(?P<source_name>\w+)
-                                   /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
-                               """,
+            /(?P<source_name>\w+)
+            /((?P<schema_name>\w+)-)?(?P<table_name>\w+)
+            (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
+        """,
         re.VERBOSE,
     )
 
@@ -242,6 +242,8 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
         match = file_names_re.search(filename)
         if match:
             values = match.groupdict()
+            if not values["schema_name"]:
+                values["schema_name"] = values["source_name"]
             target_table_name = TableName(values["source_name"], values["table_name"])
             if pattern.match(target_table_name):
                 file_ext = values["file_ext"]
