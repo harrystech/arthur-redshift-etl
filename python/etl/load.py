@@ -664,13 +664,15 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if not (relation.in_transaction or relation.is_view_relation or relation.failed):
             rows = etl.db.run(
                 conn,
-                "Calculating row count",
+                "Calculating row count for {:x}".format(relation),
                 "SELECT COUNT(*) AS rowcount FROM {}".format(relation),
                 return_result=True,
                 dry_run=dry_run,
             )
             if rows:
-                monitor.add_extra("rowcount", rows[0]["rowcount"])
+                rowcount = rows[0]["rowcount"]
+                logger.info("Found {:d} row(s) in {:x}".format(rowcount, relation))
+                monitor.add_extra("rowcount", rowcount)
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:

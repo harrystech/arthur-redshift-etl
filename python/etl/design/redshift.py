@@ -255,7 +255,7 @@ def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -
         [row] = etl.db.query(conn, stmt, (copy_id,))
         logger.info(
             (
-                "Copied {copy_count:d} rows into {table_name:x} "
+                "Copied {copy_count:d} row(s) into {table_name:x} "
                 "(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, slots: {slot_count:d}, "
                 "elapsed: {elapsed}s ({elapsed_queued}s queued), size: {total_mb}MB)"
             ).format(copy_count=copy_count, table_name=table_name, **row)
