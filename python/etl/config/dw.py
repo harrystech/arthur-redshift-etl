@@ -42,7 +42,7 @@ class S3DataFormat:
     def __init__(self, s3_data_format) -> None:
         self.data_format = s3_data_format.get("format")
         self.format_option = s3_data_format.get("format_option")
-        self.file_compression = s3_data_format.get("file_compression")
+        self.file_compression = s3_data_format.get("compression")
 
 
 class DataWarehouseSchema:
