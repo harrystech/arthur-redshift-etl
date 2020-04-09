@@ -1,14 +1,16 @@
+# Building and running the Docker image
+
 This file describes the steps necessary to run ETLs using this codebase.
 
 There's first a set of commands to run to start working on and with the ETL.
 The following sections simply add more explanations (or variations).
 
-# Pre-requisites
+## Pre-requisites
 
 * You will need a way to clone this repo, _e.g._ the `git` command line tool.
 * _Arthur_ runs inside a Docker container. So make sure to have [Docker](https://docs.docker.com/install/) installed.
     The software _can_ be installed directly into a virtual environment. But we no longer recommend that.
-* You will also need an account with AWS and access using a profile. Be sure to have configured access:
+* You will also need an account with AWS and access using a profile. Be sure to have your access already configured:
     * If you have to work with multiple access keys, check out the support of profiles in the CLI.
     * It is important to setup a **default region** since the start scripts do not specify one.
     * Leave the `output` alone or set it to `json`.
@@ -16,15 +18,15 @@ The following sections simply add more explanations (or variations).
 aws configure
 ```
 
-# Installation
+## Installation
 
-## Cloning the repo
+### Cloning the repo
 
 ```bash
 git clone git@github.com:harrystech/arthur-redshift-etl.git
 ```
 
-# Building the Docker image
+## Building the Docker image
 
 ```bash
 cd ../arthur-redshift-etl
@@ -33,7 +35,7 @@ git pull
 bin/build_arthur.sh
 ```
 
-# Using the container
+## Using the container
 
 This might be as simple as:
 
@@ -58,14 +60,16 @@ When in doubt, ask for help:
 bin/run_arthur.sh -h
 ```
 
-# Additional steps for developers
+## Additional steps for developers
 
 Ok, so even if you want to work on the ETL code, you should *first* follow the steps above to get to a running setup.
 This section describes what *else* you should do when you want to develop here.
 
-## Installing other requirements
+### Installing other requirements
 
-### Spark
+#### Spark
+
+**NOTE** Using Spark to extract data has been deprecated -- use Sqoop in an EMR cluster instead.
 
 Install Spark if you'd like to be able to test jobs on your local machine.
 On a Mac, simply use `brew install apache-spark`.
@@ -75,7 +79,7 @@ using [Amazon EMR](https://aws.amazon.com/elasticmapreduce/) so that local testi
 Running it locally offers shorter development cycles while running it in AWS means less network activity (going in
 and out of your VPC).
 
-### JAR files
+#### Drivers (JAR files)
 
 Download the JAR files for the following software before deployment into an AWS Spark Cluster in order
 to be able to connect to PostgreSQL databases and write CSV files for a Dataframe:
@@ -99,9 +103,9 @@ environment (see below).  A bootstrap action will copy them from S3 to the EMR c
 
 _Hint_: There is a download script in `bin/download_jars.sh` to pull the versions with which the ETL was tested.
 
-The EMR releases 4.5 and later include python3 so there's no need to install Python 3 using a bootstrap action.
+The EMR releases 4.5 and later include `python3` so there's no need to install Python 3 using a bootstrap action.
 
-#### Adding PySpark to your IDE
+##### Adding PySpark to your IDE
 
 The easiest way to add PySpark so that code completion and type checking works while working on ETL code
 might be to just add a pointer in the virtual environment.
@@ -116,20 +120,20 @@ cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
 EOF
 ```
 
-### Additional packages
+#### Additional packages
 
-The packages listed in `requirements-dev.txt` should be loaded into development environments
-and include the others. While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
-you should always use `requirements-dev.txt` for local development.
+While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
+you should always use `requirements-dev.txt` for local development. The packages listed in that
+file are installed when building the Docker image.
 
-## Running unit tests and type checker
+### Running unit tests and type checker
 
 Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
 ```bash
 run_tests.py
-
-# And in case you have a config file handy
-arthur.py selftest
 ```
 
 Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by for help with types etc.
+
+See also the [Formatting code](https://github.com/harrystech/arthur-redshift-etl/blob/next/README.md#formatting-code)
+section in the README file.

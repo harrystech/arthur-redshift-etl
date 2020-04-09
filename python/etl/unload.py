@@ -66,9 +66,12 @@ def run_redshift_unload(
 
 def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
     """
-    Write out a YAML file into the same folder as the CSV files to document the columns of the relation
+    Write out a YAML file into the same folder as the CSV files to document the relation's columns.
     """
-    data = {"columns": relation.unquoted_columns}
+    data = {
+        "columns": relation.unquoted_columns,
+        "columns_with_types": relation.get_columns_with_types(),
+    }
     object_key = os.path.join(prefix, "columns.yaml")
     if dry_run:
         logger.info("Dry-run: Skipping writing columns file to 's3://%s/%s'", bucket_name, object_key)

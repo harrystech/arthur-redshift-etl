@@ -277,6 +277,16 @@ class RelationDescription:
                     selected_columns.append('"{name}"'.format(**column))
         return selected_columns
 
+    def get_columns_with_types(self) -> List[Dict[str, str]]:
+        """
+        Return list of dicts that describe non-skipped columns with their name and type.
+        """
+        return [
+            fy.project(column, ["name", "type"])
+            for column in self.table_design["columns"]
+            if not column.get("skipped")
+        ]
+
     @property
     def num_partitions(self):
         return self.table_design.get("extract_settings", {}).get("num_partitions")
