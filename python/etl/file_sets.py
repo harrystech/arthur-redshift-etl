@@ -227,14 +227,16 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
     is up to the consumer to ensure consistency (e.g. that a design
     file exists or that a SQL file is not present along with a manifest).
 
-    Files ending in '_SUCCESS' or '_$folder$' are ignored (which are created by some Spark jobs).
+    Files ending in '_SUCCESS' are only returned if so specified.
+
+    Files ending in '_$folder$' are ignored. (They are created by some Spark jobs).
     """
     file_names_re = re.compile(
         r"""(?:^schemas|/schemas|^data|/data)
-                                   /(?P<source_name>\w+)
-                                   /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
-                               """,
+            /(?P<source_name>\w+)
+            /(?P<schema_name>\w+)-(?P<table_name>\w+)
+            (?:.(?P<file_ext>yaml|sql|manifest)|/(?P<data_type>avro|csv|json)/(:?part-.*(:?\.gz)?|_SUCCESS)))$
+        """,
         re.VERBOSE,
     )
 
@@ -242,16 +244,18 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
         match = file_names_re.search(filename)
         if match:
             values = match.groupdict()
+            # FIXME
+            print("{}: {}".format(filename, values))
             target_table_name = TableName(values["source_name"], values["table_name"])
             if pattern.match(target_table_name):
                 file_ext = values["file_ext"]
-                if file_ext in [".yaml", ".sql", ".manifest"]:
-                    values["file_type"] = file_ext[1:]
+                if file_ext is not None:
+                    values["file_type"] = file_ext
                 elif file_ext.endswith("_SUCCESS"):
                     values["file_type"] = "success"
-                elif file_ext.startswith("/csv"):
+                else:
                     values["file_type"] = "data"
-                # E.g. when deleting files out of a folder we want to know about the /csv/_SUCCESS file.
+                # E.g. when deleting files out of a folder we want to know about the _SUCCESS file.
                 if return_success_file or values["file_type"] != "success":
                     yield (filename, values)
         elif not filename.endswith("_$folder$"):
