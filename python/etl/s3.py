@@ -189,10 +189,11 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
         raise
 
     logger.debug(
-        "Received response from S3: last modified: %s, content length: %s, content type: %s",
+        "Received object: 's3://%s/%s', last modified: %s, content length: %s",
+        bucket_name,
+        object_key,
         response["LastModified"],
         response["ContentLength"],
-        response["ContentType"],
     )
     return response["Body"]
 
