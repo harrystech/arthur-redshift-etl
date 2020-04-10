@@ -101,12 +101,12 @@ class RelationFileSet:
 
     def stat(self, filename):
         """
-        Return file size (in bytes) and timestamp of last modification for the file which should be one from this set.
+        Return file size (in bytes) and timestamp of last modification for this file.
         """
         if self.scheme == "s3":
             return etl.s3.object_stat(self.netloc, filename)
         elif self.scheme == "file":
-            return local_file_stat(filename)
+            return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(" ")
         else:
             raise ETLSystemError("illegal scheme in file set")
 
@@ -158,13 +158,6 @@ class RelationFileSet:
 
     def __len__(self):
         return len(self.files)
-
-
-def local_file_stat(filename):
-    """
-    Return size in bytes and last modification timestamp from local file.
-    """
-    return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(" ")
 
 
 def list_local_files(directory):
