@@ -25,9 +25,10 @@ This is used during the validation pipeline. See the "skip copy" options.
 
 These are the general pre-requisites:
 
-    * "Tables" that have upstream sources must have CSV files and a manifest file from the "extract".
+    * "Tables" that have upstream sources must have data files and a manifest file from a prior
+      extract.
 
-    * "CTAS" tables are derived from queries so must have a SQL file. (Think of them as materialized views.)
+    * "CTAS" tables are derived from queries so must have a SQL file.
 
         * For every derived table (CTAS) a SQL file must exist in S3 with a valid
           expression to create the content of the table (meaning: just the select without
@@ -35,6 +36,8 @@ These are the general pre-requisites:
           attributes / constraints are added from the matching table design file.
 
     * "VIEWS" are views and so must have a SQL file in S3.
+
+Currently data files that are CSV, Avro or JSON-formatted are supported.
 """
 
 import concurrent.futures
@@ -128,7 +131,7 @@ class LoadableRelation:
         >>> MockDWConfig = namedtuple('MockDWConfig', ['schemas'])
         >>> MockSchema = namedtuple('MockSchema', ['name'])
         >>> etl.config._dw_config = MockDWConfig(schemas=[MockSchema(name='c')])
-        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
+        >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
         'As delimited identifier: "c"."b", as string: \\'c.b\\''
@@ -401,6 +404,9 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         relation.unquoted_columns,
         s3_uri,
         aws_iam_role,
+        data_format=relation.schema_config.s3_data_format.format,
+        format_option=relation.schema_config.s3_data_format.format_option,
+        file_compression=relation.schema_config.s3_data_format.compression,
         need_compupdate=relation.is_missing_encoding,
         dry_run=dry_run,
     )

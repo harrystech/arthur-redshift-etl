@@ -1,18 +1,21 @@
 """
 This module contains functions to maintain relations in Redshift.
+
+Note that overall we try to have this minimally depend on other data structures -- actually
+we use only TableName which is handy to get a qualified and quoted name as needed.
 """
 
 import logging
 from contextlib import contextmanager
 from itertools import chain
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import psycopg2
 import psycopg2.extensions
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.db
-from etl.errors import TransientETLError
+from etl.errors import ETLSystemError, TransientETLError
 from etl.names import TableName
 from etl.text import join_column_list
 
@@ -183,10 +186,32 @@ def copy_using_manifest(
     column_list: List[str],
     s3_uri: str,
     aws_iam_role: str,
+    data_format: Optional[str] = None,
+    format_option: Optional[str] = None,
+    file_compression: Optional[str] = None,
     need_compupdate=False,
     dry_run=False,
 ) -> None:
+
     credentials = "aws_iam_role={}".format(aws_iam_role)
+
+    if data_format is None:
+        # This is our original data format (which mirrors settings in unload).
+        data_format_parameters = "DELIMITER ',' ESCAPE REMOVEQUOTES GZIP"
+    else:
+        if data_format == "CSV":
+            if format_option is None:
+                data_format_parameters = "CSV"
+            else:
+                data_format_parameters = "CSV QUOTE AS '{}'".format(format_option)
+        elif data_format in ["AVRO", "JSON"]:
+            if format_option is None:
+                format_option = "auto"
+            data_format_parameters = "{} AS '{}'".format(data_format, format_option)
+        else:
+            raise ETLSystemError("found unexpected data format: {}".format(data_format))
+        if file_compression is not None:
+            data_format_parameters += " {}".format(file_compression)
 
     copy_stmt = """
         COPY {table} (
@@ -194,13 +219,17 @@ def copy_using_manifest(
         )
         FROM %s
         CREDENTIALS %s MANIFEST
-        DELIMITER ',' ESCAPE REMOVEQUOTES GZIP
-        TIMEFORMAT AS 'auto' DATEFORMAT AS 'auto'
+        {data_format_parameters}
+        TIMEFORMAT AS 'auto'
+        DATEFORMAT AS 'auto'
         TRUNCATECOLUMNS
         STATUPDATE OFF
         COMPUPDATE {compupdate}
         """.format(
-        table=table_name, columns=join_column_list(column_list), compupdate="ON" if need_compupdate else "OFF"
+        table=table_name,
+        columns=join_column_list(column_list),
+        data_format_parameters=data_format_parameters,
+        compupdate="ON" if need_compupdate else "OFF",
     )
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
@@ -268,13 +297,27 @@ def copy_from_uri(
     column_list: List[str],
     s3_uri: str,
     aws_iam_role: str,
+    data_format: Optional[str] = None,
+    format_option: Optional[str] = None,
+    file_compression: Optional[str] = None,
     need_compupdate=False,
     dry_run=False,
 ) -> None:
     """
     Load data into table in the data warehouse using the COPY command.
     """
-    copy_using_manifest(conn, table_name, column_list, s3_uri, aws_iam_role, need_compupdate, dry_run)
+    copy_using_manifest(
+        conn,
+        table_name,
+        column_list,
+        s3_uri,
+        aws_iam_role,
+        data_format,
+        format_option,
+        file_compression,
+        need_compupdate,
+        dry_run,
+    )
     query_load_commits(conn, table_name, s3_uri, dry_run)
     query_load_summary(conn, table_name, dry_run)
 
