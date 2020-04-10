@@ -174,9 +174,9 @@ class Extractor:
         )
         if have_success is None:
             if self.dry_run:
-                self.logger.warning("No valid CSV files (_SUCCESS is missing)")
+                self.logger.warning("No valid data files (_SUCCESS is missing)")
             else:
-                raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
+                raise MissingCsvFilesError("No valid data files (_SUCCESS is missing)")
 
         data_files = sorted(etl.file_sets.find_data_files_in_s3(source_bucket, source_prefix))
         remote_paths = ["s3://{}/{}".format(source_bucket, filename) for filename in data_files]
@@ -184,20 +184,20 @@ class Extractor:
 
         if self.dry_run:
             if not remote_paths:
-                self.logger.warning("Dry-run: Found no CSV files to add to manifest")
+                self.logger.warning("Dry-run: Found no data files to add to manifest")
             else:
                 self.logger.info(
-                    "Dry-run: Skipping writing manifest file 's3://%s/%s' for %d CSV file(s)",
+                    "Dry-run: Skipping writing manifest file 's3://%s/%s' for %d data file(s)",
                     relation.bucket_name,
                     relation.manifest_file_name,
                     len(data_files),
                 )
         else:
             if not remote_paths:
-                raise MissingCsvFilesError("found no CSV files to add to manifest")
+                raise MissingCsvFilesError("found no data files to add to manifest")
 
             self.logger.info(
-                "Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
+                "Writing manifest file to 's3://%s/%s' for %d data file(s)",
                 relation.bucket_name,
                 relation.manifest_file_name,
                 len(data_files),
