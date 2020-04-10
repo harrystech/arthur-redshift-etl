@@ -689,7 +689,7 @@ class ExtractToS3Command(MonitoredSubCommand):
             "extract",
             "extract data from upstream sources",
             "Extract table contents from upstream databases (unless you decide to use existing"
-            " CSV files) and then gather references to CSV files in S3 into manifests file."
+            " data files) and then gather references to data files in S3 into manifests file."
             " (This last step is the only step needed for static sources where data is created"
             " outside the ETL.)",
         )
@@ -713,11 +713,12 @@ class ExtractToS3Command(MonitoredSubCommand):
             dest="extractor",
         )
         group.add_argument(
-            "--use-existing-csv-files",
+            "--use-existing-data-files",
             help="skip extraction and go straight to creating manifest files, implied default for static sources",
             const="manifest-only",
             action="store_const",
             dest="extractor",
+            aliases=["--use-existing-csv-files"],
         )
         parser.add_argument(
             "-k",

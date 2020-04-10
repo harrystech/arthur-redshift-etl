@@ -2,17 +2,20 @@
 Unload data from data warehouse to S3.
 
 A "unload" refers to the wholesale dumping of data from any schema or table involved into
-some number of gzipped CSV files to a given S3 destination.
+some number of gzipped CSV files to a given S3 destination. The resulting data files
+can be loaded back into the data warehouse using the "load" step.
 
-(1) CSV files must have fields delimited by commas, quotes around fields if they
-contain a comma, and have doubled-up quotes if there's a quote within the field.
+(1) CSV files will have fields delimited by commas, quotes around fields if they
+    contain a comma, and have doubled-up quotes if there's a quote within the field.
 
-Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP ALLOWOVERWRITE
+    Data format parameters: DELIMITER ',' ESCAPE REMOVEQUOTES GZIP ALLOWOVERWRITE
 
-(2) Every unload must be accompanied by a manifest containing a complete list of CSVs
+(2) Every unload will be accompanied by a manifest containing a complete list of CSVs.
 
-(3) Every unload must contain a YAML file containing a completely list of all columns from the
-schema or table from which the data was dumped to CSV.
+(3) Every unload will write a "_SUCCESS" file to mark successful completion.
+
+(4) Every unload will also write a YAML file containing a complete list of all columns from the
+    relation from which the data was dumped to CSV.
 """
 
 import logging
@@ -38,7 +41,8 @@ def run_redshift_unload(
     conn: connection, relation: RelationDescription, unload_path: str, aws_iam_role: str, allow_overwrite=False
 ) -> None:
     """
-    Execute the UNLOAD command for the given :relation (via a select statement).
+    Execute the UNLOAD command for the given relation (via a select statement).
+
     Optionally allow users to overwrite previously unloaded data within the same keyspace.
     """
     credentials = "aws_iam_role={}".format(aws_iam_role)
