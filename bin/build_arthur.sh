@@ -5,7 +5,7 @@ set -o errexit -o nounset
 show_usage_and_exit () {
     cat <<EOF
 
-Usage: `basename $0` [-t tag_name]
+Usage: `basename $0` [-t image_tag]
 
 This builds the Docker image to run Arthur locally. Docker itself must already be installed.
 The script 'bin/release_version.sh' is run to update version information for the build.
