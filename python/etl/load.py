@@ -37,7 +37,7 @@ These are the general pre-requisites:
 
     * "VIEWS" are views and so must have a SQL file in S3.
 
-Currently data files that are CSV or JSON-formatted are supported.
+Currently data files that are CSV, Avro or JSON-formatted are supported.
 """
 
 import concurrent.futures

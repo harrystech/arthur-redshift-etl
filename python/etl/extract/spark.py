@@ -168,8 +168,7 @@ class SparkExtractor(DatabaseExtractor):
         """
         Write (partitioned) dataframe to CSV file(s)
         """
-        prefix = relation.data_directory()
-        s3_uri = "s3a://{bucket_name}/{prefix}".format(bucket_name=relation.bucket_name, prefix=prefix)
+        s3_uri = "s3a://{}/{}".format(relation.bucket_name, relation.data_directory())
         if self.dry_run:
             self.logger.info("Dry-run: Skipping upload to '%s'", s3_uri)
         else:

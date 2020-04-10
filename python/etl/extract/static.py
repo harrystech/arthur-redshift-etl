@@ -37,6 +37,5 @@ class StaticExtractor(Extractor):
         Render the S3 path template for a given source to check for data files before writing
         out a manifest file
         """
-        bucket = source.s3_bucket
-        prefix = relation.data_directory(source.s3_path_prefix)
-        self.write_manifest_file(relation, bucket, prefix)
+        prefix_for_table = relation.data_directory(source.s3_path_prefix)
+        self.write_manifest_file(relation, source.s3_bucket, prefix_for_table)

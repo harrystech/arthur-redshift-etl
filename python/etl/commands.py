@@ -713,12 +713,11 @@ class ExtractToS3Command(MonitoredSubCommand):
             dest="extractor",
         )
         group.add_argument(
-            "--use-existing-data-files",
+            "--use-existing-csv-files",
             help="skip extraction and go straight to creating manifest files, implied default for static sources",
             const="manifest-only",
             action="store_const",
             dest="extractor",
-            aliases=["--use-existing-csv-files"],
         )
         parser.add_argument(
             "-k",
