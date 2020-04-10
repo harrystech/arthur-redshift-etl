@@ -29,7 +29,7 @@ esac
 show_usage_and_exit () {
     cat <<EOF
 
-Usage: `basename $0` [-p aws_profile] [-t tag] [<config_dir> [<target_env>]]
+Usage: `basename $0` [-p aws_profile] [-t tag] [-w] [<config_dir> [<target_env>]]
 
 This will $action_description inside a Docker container with Arthur installed and
 configured to use <config_dir>.
@@ -38,6 +38,7 @@ The <config_dir> defaults to \$DATA_WAREHOUSE_CONFIG.
 The <target_env> defaults to \$ARTHUR_DEFAULT_PREFIX (or \$USER if not set).
 The optional -p flag lets you use the given profile from your AWS CLI config
 within the container. If \$AWS_PROFILE is set, it will be used as a default.
+With the -w flag, port 8086 is published to access the HTTP server in the ETL.
 
 You must have built the Docker image with build_arthur.sh before using this script!
 
@@ -47,6 +48,7 @@ EOF
 
 profile="${AWS_PROFILE-}"
 tag="latest"
+publish_arg=""
 
 config_arg="$DATA_WAREHOUSE_CONFIG"
 target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
@@ -54,7 +56,7 @@ target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
 # We delayed checking for unset vars until after we've tried to grab the default values.
 set -o nounset
 
-while getopts ":hp:t:" opt; do
+while getopts ":hp:t:w" opt; do
     case "$opt" in
       h)
         show_usage_and_exit
@@ -64,6 +66,9 @@ while getopts ":hp:t:" opt; do
         ;;
       t)
         tag="$OPTARG"
+        ;;
+      w)
+        publish_arg="--publish 8086:8086/tcp"
         ;;
       \?)
         echo "Invalid option: -$OPTARG" >&2
@@ -118,7 +123,7 @@ case "$action" in
     run)
         set -o xtrace
         docker run --rm --interactive --tty \
-            --publish 8086:8086/tcp \
+            $publish_arg \
             --volume "$data_warehouse_path":/data-warehouse \
             --volume `pwd`:/arthur-redshift-etl \
             --volume ~/.aws:/root/.aws \
