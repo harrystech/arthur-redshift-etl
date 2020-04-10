@@ -45,7 +45,7 @@
         "path_template" : {
             "description": "'Templates' used in static sources to configure their effective prefix",
             "type": "string",
-            "pattern": "^(([a-zA-Z0-9_$-]+/?)|(\\${[.\\w]+})/?)+$"
+            "pattern": "^(([a-zA-Z0-9._$-]+/?)|(\\${[.\\w]+})/?)+$"
         },
         "upstream_database": {
             "type": "object",
