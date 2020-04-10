@@ -1,7 +1,7 @@
 # Release of ETL code as open-source project
 
 Some files crept into the private repo that had some of our AWS setup hard-coded,
-like account number of security groups.
+like account number or security groups.
 Although these settings should not be useful for folks outside our organization,
 we still dropped all files related to AWS settings.
 This file outlines the steps taken from our private repo to a public repo.

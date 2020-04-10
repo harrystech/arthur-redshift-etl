@@ -52,11 +52,13 @@ echo \n\
 echo "Environment settings:"\n\
 arthur.py settings object_store.s3.* version' > /root/.bashrc
 
-WORKDIR /data-warehouse
-
 # Whenever there is an ETL running, it offers progress information on port 8086.
 EXPOSE 8086
 
+WORKDIR /data-warehouse
 # From here, bind-mount your data warehouse code directory to /data-warehouse.
 # All of the normal Arthur configuration for accessing and managing the data
 # warehouse is assumed to have already been set up in that directory.
+
+ENTRYPOINT ["/arthur-redshift-etl/bin/entrypoint.sh"]
+CMD ["/bin/bash"]
