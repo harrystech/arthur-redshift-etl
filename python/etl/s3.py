@@ -177,16 +177,9 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
     You must close the stream when you're done with it.
     """
     bucket = _get_s3_bucket(bucket_name)
+    s3_object = bucket.Object(object_key)
     try:
-        s3_object = bucket.Object(object_key)
         response = s3_object.get()
-        logger.debug(
-            "Received response from S3: last modified: %s, content length: %s, content type: %s",
-            response["LastModified"],
-            response["ContentLength"],
-            response["ContentType"],
-        )
-        return response["Body"]
     except botocore.exceptions.ClientError as exc:
         error_code = exc.response["Error"]["Code"]
         logger.error("Error code %s for object 's3://%s/%s'", error_code, bucket_name, object_key)
@@ -194,6 +187,14 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
     except Exception:
         logger.error("Failed to download 's3://%s/%s'", bucket_name, object_key)
         raise
+
+    logger.debug(
+        "Received response from S3: last modified: %s, content length: %s, content type: %s",
+        response["LastModified"],
+        response["ContentLength"],
+        response["ContentType"],
+    )
+    return response["Body"]
 
 
 def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> Iterator[str]:
