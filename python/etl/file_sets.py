@@ -26,7 +26,7 @@ import re
 from datetime import datetime
 from itertools import groupby
 from operator import attrgetter
-from typing import Optional
+from typing import Iterator, Optional
 
 import etl.config
 import etl.s3
@@ -358,7 +358,15 @@ def _find_file_sets_from(iterable, selector):
     return file_sets
 
 
-def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
+def find_data_files_in_s3(bucket_name: str, prefix: str) -> Iterator[str]:
+    """Return paths of data files."""
+    iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix)
+    for file_info in _find_matching_files_from(iterable, TableSelector()):
+        if file_info.file_type == "data":
+            yield file_info.filename
+
+
+def delete_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
     """
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """

@@ -211,6 +211,7 @@ class RelationDescription:
 
     def data_directory(self, from_prefix=None):
         """"Full path to data files (in the schema's data format)."""
+        # TODO(tom): Split between source data and static data
         # Either somewhere in S3 for static sources, in S3 for extracted sources or locally.
         return os.path.join(
             from_prefix or self.prefix or ".",
@@ -292,9 +293,7 @@ class RelationDescription:
         Return list of dicts that describe non-skipped columns with their name and type.
         """
         return [
-            fy.project(column, ["name", "type"])
-            for column in self.table_design["columns"]
-            if not column.get("skipped")
+            fy.project(column, ["name", "type"]) for column in self.table_design["columns"] if not column.get("skipped")
         ]
 
     @property

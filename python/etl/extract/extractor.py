@@ -12,6 +12,7 @@ from typing import Dict, List, Set
 
 import etl.config
 import etl.db
+import etl.file_sets
 import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
@@ -177,16 +178,12 @@ class Extractor:
             else:
                 raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-        data_files = sorted(
-            key
-            for key in etl.s3.list_objects_for_prefix(source_bucket, source_prefix)
-            if key.endswith(".gz")
-        )
-        remote_files = ["s3://{}/{}".format(source_bucket, filename) for filename in data_files]
-        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+        data_files = sorted(etl.file_sets.find_data_files_in_s3(source_bucket, source_prefix))
+        remote_paths = ["s3://{}/{}".format(source_bucket, filename) for filename in data_files]
+        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_paths]}
 
         if self.dry_run:
-            if not remote_files:
+            if not remote_paths:
                 self.logger.warning("Dry-run: Found no CSV files to add to manifest")
             else:
                 self.logger.info(
@@ -196,7 +193,7 @@ class Extractor:
                     len(data_files),
                 )
         else:
-            if not remote_files:
+            if not remote_paths:
                 raise MissingCsvFilesError("found no CSV files to add to manifest")
 
             self.logger.info(

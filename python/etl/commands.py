@@ -677,7 +677,7 @@ class SyncWithS3Command(SubCommand):
         if args.deploy_config:
             etl.sync.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
         if args.force:
-            etl.file_sets.delete_files_in_bucket(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
+            etl.file_sets.delete_files_in_s3(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
 
         relations = self.find_relation_descriptions(args, default_scheme="file")
         etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
