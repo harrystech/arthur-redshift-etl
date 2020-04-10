@@ -219,7 +219,7 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
     return file_sets
 
 
-def _find_matching_files_from(iterable, pattern, return_success_file=False):
+def _find_matching_files_from(iterable, pattern):
     """
     Match file names against the target pattern and expected path format,
     return file information based on source name, source schema, table name and file type.
@@ -239,7 +239,7 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
     ...     "/schemas/dw/orders.yaml",
     ...     "/data/events/kinesis-stream/json/part-0.gz",
     ...     "/schemas/store/not-selected.yaml",
-    ... ], pattern=TableSelector(["store.orders", "events", "dw"]), return_success_file=True)
+    ... ], pattern=TableSelector(["store.orders", "events", "dw"]))
     >>> files = dict(found)
     >>> len(files)
     7
@@ -298,9 +298,7 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
                 elif values["data_dir"] is not None:
                     values["file_type"] = "data"
                     values["data_format"] = values["data_dir"]
-                # E.g. when deleting files out of a folder we want to know about the /csv/_SUCCESS file.
-                if return_success_file or values["file_type"] != "success":
-                    yield (filename, values)
+                yield (filename, values)
         elif not filename.endswith("_$folder$"):
             logger.warning("Found file not matching expected format: '%s'", filename)
 
@@ -317,6 +315,8 @@ def _find_file_sets_from(iterable, selector):
     schema_index = {name: index for index, name in enumerate(selector.base_schemas)}
 
     for filename, values in _find_matching_files_from(iterable, selector):
+        if values["file_type"] == "success":
+            continue
         source_table_name = TableName(values["schema_name"], values["table_name"])
         target_table_name = TableName(values["source_name"], values["table_name"])
 
@@ -347,7 +347,7 @@ def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelecto
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """
     iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data", prefix + "/schemas")
-    deletable = [filename for filename, v in _find_matching_files_from(iterable, selector, return_success_file=True)]
+    deletable = [filename for filename, v in _find_matching_files_from(iterable, selector)]
     if dry_run:
         for key in deletable:
             logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
