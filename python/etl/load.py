@@ -664,7 +664,8 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if not (relation.in_transaction or relation.is_view_relation or relation.failed):
             rows = etl.db.run(
                 conn,
-                "Calculating row count for {:x}".format(relation),
+                # TODO(tom): This should be logged at the DEBUG level.
+                "(Calculating row count for {:x})".format(relation),
                 "SELECT COUNT(*) AS rowcount FROM {}".format(relation),
                 return_result=True,
                 dry_run=dry_run,
