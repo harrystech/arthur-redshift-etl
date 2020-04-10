@@ -156,9 +156,9 @@ class Extractor:
 
     def write_manifest_file(self, relation: RelationDescription, source_bucket: str, source_prefix: str) -> None:
         """
-        Create manifest file to load all the CSV files for the given relation.
-        The manifest file will be created in the folder ABOVE the CSV files.
+        Create manifest file to load all the data files for the given relation.
 
+        The manifest file will be created in the folder ABOVE the data files.
         If the data files are in 'data/foo/bar/csv/part-r*', then the manifest is 'data/foo/bar.manifest'.
 
         Note that for static sources, we need to check the bucket of that source, not the
@@ -177,12 +177,12 @@ class Extractor:
             else:
                 raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
 
-        csv_files = sorted(
+        data_files = sorted(
             key
             for key in etl.s3.list_objects_for_prefix(source_bucket, source_prefix)
-            if "part" in key and key.endswith(".gz")
+            if key.endswith(".gz")
         )
-        remote_files = ["s3://{}/{}".format(source_bucket, filename) for filename in csv_files]
+        remote_files = ["s3://{}/{}".format(source_bucket, filename) for filename in data_files]
         manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
 
         if self.dry_run:
@@ -193,7 +193,7 @@ class Extractor:
                     "Dry-run: Skipping writing manifest file 's3://%s/%s' for %d CSV file(s)",
                     relation.bucket_name,
                     relation.manifest_file_name,
-                    len(csv_files),
+                    len(data_files),
                 )
         else:
             if not remote_files:
@@ -203,7 +203,7 @@ class Extractor:
                 "Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
                 relation.bucket_name,
                 relation.manifest_file_name,
-                len(csv_files),
+                len(data_files),
             )
             etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
 
