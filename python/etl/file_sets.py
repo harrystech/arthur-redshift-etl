@@ -228,13 +228,49 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
     file exists or that a SQL file is not present along with a manifest).
 
     Files ending in '_SUCCESS' or '_$folder$' are ignored (which are created by some Spark jobs).
+
+    >>> found = _find_matching_files_from([
+    ...     "/schemas/store/public-orders.yaml",
+    ...     "/data/store/public-orders.manifest",
+    ...     "/data/store/public-orders/csv/_SUCCESS",
+    ...     "/data/store/public-orders/csv/part-0.gz",
+    ...     "/schemas/dw/orders.sql",
+    ...     "/schemas/dw/orders.yaml",
+    ... ], pattern=TableSelector(["store.orders", "dw"]), return_success_file=True)
+    >>> files = dict(found)
+    >>> files["/schemas/store/public-orders.yaml"]["file_type"]
+    'yaml'
+    >>> files["/schemas/store/public-orders.yaml"]["source_name"]
+    'store'
+    >>> files["/schemas/store/public-orders.yaml"]["schema_name"]
+    'public'
+    >>> files["/schemas/store/public-orders.yaml"]["table_name"]
+    'orders'
+    >>> files["/data/store/public-orders.manifest"]["file_type"]
+    'manifest'
+    >>> files["/data/store/public-orders/csv/_SUCCESS"]["file_type"]
+    'success'
+    >>> files["/data/store/public-orders/csv/part-0.gz"]["file_type"]
+    'data'
+    >>> sorted(files["/data/store/public-orders/csv/part-0.gz"])
+    ['data_format', 'file_type', 'schema_name', 'source_name', 'table_name']
+    >>> files["/schemas/dw/orders.sql"]["source_name"]
+    'dw'
+    >>> files["/schemas/dw/orders.sql"]["schema_name"]
+    'dw'
+    >>> files["/schemas/dw/orders.sql"]["table_name"]
+    'orders'
+    >>> files["/schemas/dw/orders.sql"]["file_type"]
+    'sql'
+    >>> files["/schemas/dw/orders.yaml"]["file_type"]
+    'yaml'
     """
     file_names_re = re.compile(
         r"""(?:^schemas|/schemas|^data|/data)
-                                   /(?P<source_name>\w+)
-                                   /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
-                               """,
+            /(?P<source_name>\w+)
+            /(?:(?P<schema_name>\w+)-)?(?P<table_name>\w+)
+            (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
+        """,
         re.VERBOSE,
     )
 
@@ -242,15 +278,18 @@ def _find_matching_files_from(iterable, pattern, return_success_file=False):
         match = file_names_re.search(filename)
         if match:
             values = match.groupdict()
+            if not values["schema_name"]:
+                values["schema_name"] = values["source_name"]
             target_table_name = TableName(values["source_name"], values["table_name"])
             if pattern.match(target_table_name):
-                file_ext = values["file_ext"]
+                file_ext = values.pop("file_ext")
                 if file_ext in [".yaml", ".sql", ".manifest"]:
                     values["file_type"] = file_ext[1:]
                 elif file_ext.endswith("_SUCCESS"):
                     values["file_type"] = "success"
                 elif file_ext.startswith("/csv"):
                     values["file_type"] = "data"
+                    values["data_format"] = "csv"
                 # E.g. when deleting files out of a folder we want to know about the /csv/_SUCCESS file.
                 if return_success_file or values["file_type"] != "success":
                     yield (filename, values)
