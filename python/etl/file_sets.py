@@ -231,10 +231,6 @@ class RelationFileSet:
             self.target_table_name.schema, self.source_table_name.schema, self.source_table_name.table
         )
 
-    @property
-    def csv_path_name(self):
-        return os.path.join("data", self.source_path_name, "csv")
-
     def norm_path(self, filename: str) -> str:
         """
         Return "normalized" path based on filename of design file or SQL file.

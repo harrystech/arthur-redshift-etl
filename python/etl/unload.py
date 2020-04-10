@@ -104,8 +104,8 @@ def unload_relation(
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
-    s3_key_prefix = "{prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
-        prefix=schema.s3_unload_path_prefix, schema=schema, source=relation.target_table_name,
+    s3_key_prefix = "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
+        schema=schema, source=relation.target_table_name,
     )
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))

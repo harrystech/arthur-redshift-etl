@@ -1,5 +1,4 @@
 import logging
-import os.path
 from typing import Dict, List
 
 from etl.config.dw import DataWarehouseSchema
@@ -28,5 +27,4 @@ class ManifestOnlyExtractor(Extractor):
         """
         Build a manifest file for the given table and write it to S3
         """
-        csv_prefix = os.path.join(relation.prefix, relation.csv_path_name)
-        self.write_manifest_file(relation, relation.bucket_name, csv_prefix)
+        self.write_manifest_file(relation, relation.bucket_name, relation.data_directory())

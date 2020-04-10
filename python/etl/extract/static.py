@@ -1,5 +1,4 @@
 import logging
-import os.path
 from typing import Dict, List
 
 from etl.config.dw import DataWarehouseSchema
@@ -8,7 +7,6 @@ from etl.relation import RelationDescription
 
 
 class StaticExtractor(Extractor):
-
     """
     Enable using files in S3 as an upstream data source.
     """
@@ -27,15 +25,11 @@ class StaticExtractor(Extractor):
         self.logger = logging.getLogger(__name__)
 
     @staticmethod
-    def _current_location(source: DataWarehouseSchema, relation: RelationDescription):
-        return os.path.join(source.s3_path_prefix, relation.csv_path_name)
-
-    @staticmethod
     def source_info(source: DataWarehouseSchema, relation: RelationDescription):
         return {
             "name": source.name,
             "bucket_name": source.s3_bucket,
-            "object_prefix": StaticExtractor._current_location(source, relation),
+            "object_prefix": relation.data_directory(source.s3_path_prefix),
         }
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
@@ -44,5 +38,5 @@ class StaticExtractor(Extractor):
         out a manifest file
         """
         bucket = source.s3_bucket
-        prefix = self._current_location(source, relation)
+        prefix = relation.data_directory(source.s3_path_prefix)
         self.write_manifest_file(relation, bucket, prefix)

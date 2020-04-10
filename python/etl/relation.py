@@ -209,6 +209,16 @@ class RelationDescription:
         dw_config = etl.config.get_dw_config()
         return dw_config.schema_lookup(self.source_name)
 
+    def data_directory(self, from_prefix=None):
+        """"Full path to data files (in the schema's data format)."""
+        # Either somewhere in S3 for static sources, in S3 for extracted sources or locally.
+        return os.path.join(
+            from_prefix or self.prefix or ".",
+            "data",
+            self.source_path_name,
+            (self.schema_config.s3_data_format.format or "CSV").lower(),
+        )
+
     @property
     def unquoted_columns(self) -> List[str]:
         """
