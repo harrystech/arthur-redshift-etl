@@ -63,8 +63,7 @@ class SqoopExtractor(DatabaseExtractor):
 
         self.run_sqoop(options_file)
 
-        prefix = os.path.join(relation.prefix, relation.csv_path_name)
-        self.write_manifest_file(relation, relation.bucket_name, prefix)
+        self.write_manifest_file(relation, relation.bucket_name, relation.data_directory())
 
     def write_password_file(self, password: str) -> str:
         """
@@ -149,7 +148,7 @@ class SqoopExtractor(DatabaseExtractor):
             r"'\\N'",
             # NOTE Does not work with s3n:  "--delete-target-dir",
             "--target-dir",
-            '"s3n://{}/{}/{}"'.format(relation.bucket_name, relation.prefix, relation.csv_path_name),
+            '"s3n://{}/{}"'.format(relation.bucket_name, relation.data_directory()),
             # NOTE Quoting the select statement (e.g. with shlex.quote) breaks the select in an unSQLy way.
             "--query",
             select_statement,
@@ -219,7 +218,7 @@ class SqoopExtractor(DatabaseExtractor):
         """
         Need to first delete data directory since Sqoop won't overwrite (and can't delete).
         """
-        csv_prefix = os.path.join(relation.prefix, relation.csv_path_name)
+        csv_prefix = relation.data_directory()
         deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
         if deletable:
             if self.dry_run:

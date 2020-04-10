@@ -13,7 +13,7 @@ case "$0" in
         ;;
     *docker_upload.sh|*deploy_arthur.sh)
         action="upload"
-        action_description="upload your ELT code from a shell"
+        action_description="upload your ELT code from a shell (after building the image)"
         ;;
     *run_validation.sh)
         action="validate"
@@ -29,7 +29,7 @@ esac
 show_usage_and_exit () {
     cat <<EOF
 
-Usage: `basename $0` [-p aws_profile] [-t tag] [-w] [<config_dir> [<target_env>]]
+Usage: `basename $0` [-p aws_profile] [-t image_tag] [-w] [<config_dir> [<target_env>]]
 
 This will $action_description inside a Docker container with Arthur installed and
 configured to use <config_dir>.
@@ -146,6 +146,9 @@ case "$action" in
         ;;
     upload)
         set -o xtrace
+        bin/release_version.sh
+        docker build --tag "arthur:$tag" .
+        # TODO(tom): This needs to be interactive because of the y/n-question from the upload script.
         docker run --rm --interactive --tty \
             --volume "$data_warehouse_path":/data-warehouse \
             --volume ~/.aws:/root/.aws \

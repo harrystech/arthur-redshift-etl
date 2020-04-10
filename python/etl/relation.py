@@ -63,7 +63,7 @@ class RelationDescription:
             % (self.__class__.__name__, self._fileset.__class__.__name__, attr)
         )
 
-    def __init__(self, discovered_files: etl.file_sets.TableFileSet) -> None:
+    def __init__(self, discovered_files: etl.file_sets.RelationFileSet) -> None:
         # Basic properties to locate files describing the relation
         self._fileset = discovered_files
         if discovered_files.scheme == "s3":
@@ -72,7 +72,7 @@ class RelationDescription:
         else:
             self.bucket_name = None
             self.prefix = None
-        # Note the subtle difference to TableFileSet--here the manifest_file_name is always present since it's computed
+        # Note the subtle difference to RelationFileSet: the manifest_file_name is always present since it's computed
         self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
         # Lazy-loading of table design and query statement and any derived information from the table design
         self._table_design = None  # type: Optional[Dict[str, Any]]
@@ -102,7 +102,7 @@ class RelationDescription:
         """
         Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
 
-        >>> fs = etl.file_sets.TableFileSet(TableName("a", "b"), TableName("c", "b"), None)
+        >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
         >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
         'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
@@ -209,6 +209,17 @@ class RelationDescription:
         dw_config = etl.config.get_dw_config()
         return dw_config.schema_lookup(self.source_name)
 
+    def data_directory(self, from_prefix=None):
+        """"Full path to data files (in the schema's data format)."""
+        # TODO(tom): Split between source data and static data
+        # Either somewhere in S3 for static sources, in S3 for extracted sources or locally.
+        return os.path.join(
+            from_prefix or self.prefix or ".",
+            "data",
+            self.source_path_name,
+            (self.schema_config.s3_data_format.format or "CSV").lower(),
+        )
+
     @property
     def unquoted_columns(self) -> List[str]:
         """
@@ -282,9 +293,7 @@ class RelationDescription:
         Return list of dicts that describe non-skipped columns with their name and type.
         """
         return [
-            fy.project(column, ["name", "type"])
-            for column in self.table_design["columns"]
-            if not column.get("skipped")
+            fy.project(column, ["name", "type"]) for column in self.table_design["columns"] if not column.get("skipped")
         ]
 
     @property

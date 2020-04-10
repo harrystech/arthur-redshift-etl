@@ -8,14 +8,15 @@ The basic location of a file depends on the data source and can be one of:
 .../data/{source_name}/{source_schema_name}-{table_name}/csv/part-*.gz -- for the data files themselves.
 
 If the files are in S3, then the start of the path is always s3://{bucket_name}/{prefix}/...
-
 If the files are stored locally, then the start of the path is probably simply the current directory ('.').
 
 For tables that are backed by upstream sources, the directory after 'schemas' or 'data' will be the
 name of the source in the configuration file.
 
 For CTAS or views, the directory after 'schemas' is the name of the schema in the data warehouse
-configuration.  The 'source_schema_name' is only used for sorting.
+configuration. The 'source_schema_name' is only used for sorting.
+
+Files are logically grouped by the target relation that they describe (or help fill with data).
 """
 
 import logging
@@ -25,6 +26,7 @@ import re
 from datetime import datetime
 from itertools import groupby
 from operator import attrgetter
+from typing import Iterator, Optional
 
 import etl.config
 import etl.s3
@@ -36,13 +38,123 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-class TableFileSet:
-    """
-    Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
+class FileInfo:
+    """Store file path along with information such as file type, related schema and table names."""
 
-    TableFileSets have a :natural_order based on their schema's position in the DataWarehouseConfig's
-    schema list and their :source_table_name.  (So we try to sort sources by their order
-    in the configuration and not alphabetically.)
+    filename_re = re.compile(
+        r"""(?:^schemas|/schemas|^data|/data)
+            /(?P<schema_name>\w+)
+            /(?:(?P<source_schema_name>\w+)-)?(?P<table_name>\w+)
+            (?:[.](?P<file_ext>yaml|sql|manifest)|
+                /(?P<data_dir>avro|csv|json)/(?P<data_file>[^/]+))$
+        """,
+        re.VERBOSE,
+    )
+
+    def __init__(self, filename, schema_name, source_schema_name, table_name, file_type, file_format) -> None:
+        self.filename = filename
+        self.schema_name = schema_name
+        self.source_schema_name = source_schema_name
+        self.table_name = table_name
+        self.file_type = file_type
+        self.file_format = file_format
+
+    @classmethod
+    def from_filename(cls, filename: str) -> Optional["FileInfo"]:
+        match = cls.filename_re.search(filename)
+        if not match:
+            return None
+
+        values = match.groupdict()
+        schema_name = values["schema_name"]
+        source_schema_name = values["source_schema_name"] or schema_name
+        table_name = values["table_name"]
+
+        file_ext = values["file_ext"]
+        if file_ext in ("yaml", "sql", "manifest"):
+            file_format = None
+            file_type = file_ext
+        else:
+            file_format = values["data_dir"].upper()
+            if values["data_file"] == "_SUCCESS":
+                file_type = "success"
+            else:
+                file_type = "data"
+
+        return cls(filename, schema_name, source_schema_name, table_name, file_type, file_format)
+
+
+def _find_matching_files_from(iterable, pattern):
+    """
+    Return file information based on source name, source schema, table name and file type.
+
+    This generator provides all files that are relevant and match the pattern. It
+    is up to the consumer to ensure consistency (e.g. that a design
+    file exists or that a SQL file is not present along with a manifest).
+
+    Files ending in '_$folder$' are ignored. (They are created by some Spark jobs.)
+
+    >>> found = list(_find_matching_files_from([
+    ...     "/schemas/store/public-orders.yaml",
+    ...     "/data/store/public-orders.manifest",
+    ...     "/data/store/public-orders/csv/_SUCCESS",
+    ...     "/data/store/public-orders/csv/part-0.gz",
+    ...     "/schemas/dw/orders.sql",
+    ...     "/schemas/dw/orders.yaml",
+    ...     "/data/events/kinesis-stream/json/part-0.gz",
+    ...     "/schemas/store/not-selected.yaml",
+    ... ], pattern=TableSelector(["dw.*", "events", "store.orders"])))
+    >>> files = {file_info.filename: file_info for file_info in found}
+    >>> len(files)
+    7
+    >>> files["/schemas/store/public-orders.yaml"].file_type
+    'yaml'
+    >>> files["/schemas/store/public-orders.yaml"].schema_name
+    'store'
+    >>> files["/schemas/store/public-orders.yaml"].source_schema_name
+    'public'
+    >>> files["/schemas/store/public-orders.yaml"].table_name
+    'orders'
+    >>> files["/data/store/public-orders.manifest"].file_type
+    'manifest'
+    >>> files["/data/store/public-orders/csv/_SUCCESS"].file_type
+    'success'
+    >>> files["/data/store/public-orders/csv/part-0.gz"].file_type
+    'data'
+    >>> files["/data/store/public-orders/csv/part-0.gz"].file_format
+    'CSV'
+    >>> files["/schemas/dw/orders.sql"].schema_name
+    'dw'
+    >>> files["/schemas/dw/orders.sql"].source_schema_name
+    'dw'
+    >>> files["/schemas/dw/orders.sql"].table_name
+    'orders'
+    >>> files["/schemas/dw/orders.sql"].file_type
+    'sql'
+    >>> files["/schemas/dw/orders.yaml"].file_type
+    'yaml'
+    >>> files["/data/events/kinesis-stream/json/part-0.gz"].file_format
+    'JSON'
+    """
+    for filename in iterable:
+        file_info = FileInfo.from_filename(filename)
+        if file_info is None:
+            if not filename.endswith("_$folder$"):
+                logger.warning("Found file not matching expected format: '%s'", filename)
+            continue
+
+        target_table_name = TableName(file_info.schema_name, file_info.table_name)
+        if pattern.match(target_table_name):
+            yield file_info
+
+
+class RelationFileSet:
+    """
+    Class to hold a relation's design file, SQL file and data files (including their manifest).
+
+    RelationFileSet instances have a natural_order based on their schema's position in the
+    DataWarehouseConfig's schema list and their source_table_name. (So we try to sort sources
+    by their order in the configuration and not alphabetically.)
 
     Note that all tables are addressed using their "target name" within the data warehouse, where
     the schema name is equal to the source name and the table name is the same as in the upstream
@@ -100,12 +212,12 @@ class TableFileSet:
 
     def stat(self, filename):
         """
-        Return file size (in bytes) and timestamp of last modification for the file which should be one from this set.
+        Return file size (in bytes) and timestamp of last modification for this file.
         """
         if self.scheme == "s3":
             return etl.s3.object_stat(self.netloc, filename)
         elif self.scheme == "file":
-            return local_file_stat(filename)
+            return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(" ")
         else:
             raise ETLSystemError("illegal scheme in file set")
 
@@ -119,10 +231,6 @@ class TableFileSet:
             self.target_table_name.schema, self.source_table_name.schema, self.source_table_name.table
         )
 
-    @property
-    def csv_path_name(self):
-        return os.path.join("data", self.source_path_name, "csv")
-
     def norm_path(self, filename: str) -> str:
         """
         Return "normalized" path based on filename of design file or SQL file.
@@ -130,7 +238,7 @@ class TableFileSet:
         Assumption: If the filename ends with .yaml or .sql, then the file belongs under "schemas".
         Else the file belongs under "data".
         """
-        if filename.endswith((".yaml", ".yml", ".sql")):
+        if filename.endswith((".yaml", ".sql")):
             return "schemas/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
         else:
             return "data/{}/{}".format(self.target_table_name.schema, os.path.basename(filename))
@@ -157,13 +265,6 @@ class TableFileSet:
 
     def __len__(self):
         return len(self.files)
-
-
-def local_file_stat(filename):
-    """
-    Return size in bytes and last modification timestamp from local file.
-    """
-    return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(" ")
 
 
 def list_local_files(directory):
@@ -218,46 +319,6 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
     return file_sets
 
 
-def _find_matching_files_from(iterable, pattern, return_success_file=False):
-    """
-    Match file names against the target pattern and expected path format,
-    return file information based on source name, source schema, table name and file type.
-
-    This generator provides all files that are possibly relevant and it
-    is up to the consumer to ensure consistency (e.g. that a design
-    file exists or that a SQL file is not present along with a manifest).
-
-    Files ending in '_SUCCESS' or '_$folder$' are ignored (which are created by some Spark jobs).
-    """
-    file_names_re = re.compile(
-        r"""(?:^schemas|/schemas|^data|/data)
-                                   /(?P<source_name>\w+)
-                                   /(?P<schema_name>\w+)-(?P<table_name>\w+)
-                                   (?:(?P<file_ext>.yaml|.sql|.manifest|/csv/(:?part-.*(:?\.gz)?|_SUCCESS)))$
-                               """,
-        re.VERBOSE,
-    )
-
-    for filename in iterable:
-        match = file_names_re.search(filename)
-        if match:
-            values = match.groupdict()
-            target_table_name = TableName(values["source_name"], values["table_name"])
-            if pattern.match(target_table_name):
-                file_ext = values["file_ext"]
-                if file_ext in [".yaml", ".sql", ".manifest"]:
-                    values["file_type"] = file_ext[1:]
-                elif file_ext.endswith("_SUCCESS"):
-                    values["file_type"] = "success"
-                elif file_ext.startswith("/csv"):
-                    values["file_type"] = "data"
-                # E.g. when deleting files out of a folder we want to know about the /csv/_SUCCESS file.
-                if return_success_file or values["file_type"] != "success":
-                    yield (filename, values)
-        elif not filename.endswith("_$folder$"):
-            logger.warning("Found file not matching expected format: '%s'", filename)
-
-
 def _find_file_sets_from(iterable, selector):
     """
     Return list of file sets ordered by (target) schema name, (source) schema_name and (source) table_name.
@@ -269,36 +330,48 @@ def _find_file_sets_from(iterable, selector):
     # Always return files sorted by sources (in original order) and target name.
     schema_index = {name: index for index, name in enumerate(selector.base_schemas)}
 
-    for filename, values in _find_matching_files_from(iterable, selector):
-        source_table_name = TableName(values["schema_name"], values["table_name"])
-        target_table_name = TableName(values["source_name"], values["table_name"])
+    for file_info in _find_matching_files_from(iterable, selector):
+        if file_info.file_type == "success":
+            continue
+
+        source_table_name = TableName(file_info.source_schema_name, file_info.table_name)
+        target_table_name = TableName(file_info.schema_name, file_info.table_name)
 
         if target_table_name.identifier not in target_map:
-            natural_order = schema_index.get(values["source_name"]), source_table_name.identifier
-            target_map[target_table_name.identifier] = TableFileSet(source_table_name, target_table_name, natural_order)
+            natural_order = schema_index.get(file_info.schema_name), source_table_name.identifier
+            target_map[target_table_name.identifier] = RelationFileSet(
+                source_table_name, target_table_name, natural_order
+            )
 
         file_set = target_map[target_table_name.identifier]
-        file_type = values["file_type"]
-        if file_type == "yaml":
-            file_set.design_file_name = filename
-        elif file_type == "sql":
-            file_set.sql_file_name = filename
-        elif file_type == "manifest":
-            file_set.manifest_file_name = filename
-        elif file_type == "data":
-            file_set.add_data_file(filename)
+        if file_info.file_type == "yaml":
+            file_set.design_file_name = file_info.filename
+        elif file_info.file_type == "sql":
+            file_set.sql_file_name = file_info.filename
+        elif file_info.file_type == "manifest":
+            file_set.manifest_file_name = file_info.filename
+        elif file_info.file_type == "data":
+            file_set.add_data_file(file_info.filename)
 
     file_sets = sorted(target_map.values())
     logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
     return file_sets
 
 
-def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
+def find_data_files_in_s3(bucket_name: str, prefix: str) -> Iterator[str]:
+    """Return paths of data files."""
+    iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix)
+    for file_info in _find_matching_files_from(iterable, TableSelector()):
+        if file_info.file_type == "data":
+            yield file_info.filename
+
+
+def delete_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
     """
     Delete all files that might be relevant given the choice of schemas and the target selection.
     """
     iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data", prefix + "/schemas")
-    deletable = [filename for filename, v in _find_matching_files_from(iterable, selector, return_success_file=True)]
+    deletable = [file_info.filename for file_info in _find_matching_files_from(iterable, selector)]
     if dry_run:
         for key in deletable:
             logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
@@ -307,41 +380,6 @@ def delete_files_in_bucket(bucket_name: str, prefix: str, selector: TableSelecto
             etl.s3.delete_objects(bucket_name, deletable)
         else:
             logger.info("Found no matching files in 's3://%s/%s' to delete", bucket_name, prefix)
-
-
-def approx_pretty_size(total_bytes) -> str:
-    """
-    Return a humane and pretty size approximation.
-
-    This looks silly bellow 1KB but I'm OK with that.
-    Don't call this with negative total_bytes or your pet hamster will go bald.
-
-    >>> approx_pretty_size(50)
-    '1KB'
-    >>> approx_pretty_size(2000)
-    '2KB'
-    >>> approx_pretty_size(2048)
-    '2KB'
-    >>> approx_pretty_size(3000000)
-    '3MB'
-    >>> approx_pretty_size(4000000000)
-    '4GB'
-    >>> approx_pretty_size(-314)
-    Traceback (most recent call last):
-        ...
-    ValueError: total_bytes may not be negative
-    """
-    if total_bytes < 0:
-        raise ValueError("total_bytes may not be negative")
-    for scale, unit in ((1024 * 1024 * 1024, "GB"), (1024 * 1024, "MB"), (1024, "KB")):
-        div, rem = divmod(total_bytes, scale)
-        if div > 0:
-            if rem > 0:
-                div += 1  # always round up
-            break
-    else:
-        div, unit = 1, "KB"
-    return "{:d}{}".format(div, unit)
 
 
 def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
@@ -385,4 +423,4 @@ def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
                     else:
                         print("        {}".format(file_set.uri(filename)))
         if total_length > 0:
-            print("Total size in bytes: {:d} ({})".format(total_length, approx_pretty_size(total_length)))
+            print("Total size in bytes: {:d} ({})".format(total_length, etl.text.approx_pretty_size(total_length)))

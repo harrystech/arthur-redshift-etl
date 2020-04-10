@@ -12,6 +12,7 @@ from typing import Dict, List, Set
 
 import etl.config
 import etl.db
+import etl.file_sets
 import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
@@ -156,9 +157,9 @@ class Extractor:
 
     def write_manifest_file(self, relation: RelationDescription, source_bucket: str, source_prefix: str) -> None:
         """
-        Create manifest file to load all the CSV files for the given relation.
-        The manifest file will be created in the folder ABOVE the CSV files.
+        Create manifest file to load all the data files for the given relation.
 
+        The manifest file will be created in the folder ABOVE the data files.
         If the data files are in 'data/foo/bar/csv/part-r*', then the manifest is 'data/foo/bar.manifest'.
 
         Note that for static sources, we need to check the bucket of that source, not the
@@ -173,37 +174,33 @@ class Extractor:
         )
         if have_success is None:
             if self.dry_run:
-                self.logger.warning("No valid CSV files (_SUCCESS is missing)")
+                self.logger.warning("No valid data files (_SUCCESS is missing)")
             else:
-                raise MissingCsvFilesError("No valid CSV files (_SUCCESS is missing)")
+                raise MissingCsvFilesError("No valid data files (_SUCCESS is missing)")
 
-        csv_files = sorted(
-            key
-            for key in etl.s3.list_objects_for_prefix(source_bucket, source_prefix)
-            if "part" in key and key.endswith(".gz")
-        )
-        remote_files = ["s3://{}/{}".format(source_bucket, filename) for filename in csv_files]
-        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_files]}
+        data_files = sorted(etl.file_sets.find_data_files_in_s3(source_bucket, source_prefix))
+        remote_paths = ["s3://{}/{}".format(source_bucket, filename) for filename in data_files]
+        manifest = {"entries": [{"url": name, "mandatory": True} for name in remote_paths]}
 
         if self.dry_run:
-            if not remote_files:
-                self.logger.warning("Dry-run: Found no CSV files to add to manifest")
+            if not remote_paths:
+                self.logger.warning("Dry-run: Found no data files to add to manifest")
             else:
                 self.logger.info(
-                    "Dry-run: Skipping writing manifest file 's3://%s/%s' for %d CSV file(s)",
+                    "Dry-run: Skipping writing manifest file 's3://%s/%s' for %d data file(s)",
                     relation.bucket_name,
                     relation.manifest_file_name,
-                    len(csv_files),
+                    len(data_files),
                 )
         else:
-            if not remote_files:
-                raise MissingCsvFilesError("found no CSV files to add to manifest")
+            if not remote_paths:
+                raise MissingCsvFilesError("found no data files to add to manifest")
 
             self.logger.info(
-                "Writing manifest file to 's3://%s/%s' for %d CSV file(s)",
+                "Writing manifest file to 's3://%s/%s' for %d data file(s)",
                 relation.bucket_name,
                 relation.manifest_file_name,
-                len(csv_files),
+                len(data_files),
             )
             etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
 

@@ -74,8 +74,7 @@ class SparkExtractor(DatabaseExtractor):
         with etl.db.log_error():
             df = self.read_table_as_dataframe(source, relation)
             self.write_dataframe_as_csv(df, relation)
-            prefix = os.path.join(relation.prefix, relation.csv_path_name)
-            self.write_manifest_file(relation, relation.bucket_name, prefix)
+            self.write_manifest_file(relation, relation.bucket_name, relation.data_directory())
 
     def read_table_as_dataframe(self, source: DataWarehouseSchema, relation: RelationDescription):
         """
@@ -169,7 +168,7 @@ class SparkExtractor(DatabaseExtractor):
         """
         Write (partitioned) dataframe to CSV file(s)
         """
-        s3_uri = "s3a://{0.bucket_name}/{0.prefix}/{0.csv_path_name}".format(relation)
+        s3_uri = "s3a://{}/{}".format(relation.bucket_name, relation.data_directory())
         if self.dry_run:
             self.logger.info("Dry-run: Skipping upload to '%s'", s3_uri)
         else:
