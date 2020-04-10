@@ -8,14 +8,15 @@ The basic location of a file depends on the data source and can be one of:
 .../data/{source_name}/{source_schema_name}-{table_name}/csv/part-*.gz -- for the data files themselves.
 
 If the files are in S3, then the start of the path is always s3://{bucket_name}/{prefix}/...
-
 If the files are stored locally, then the start of the path is probably simply the current directory ('.').
 
 For tables that are backed by upstream sources, the directory after 'schemas' or 'data' will be the
 name of the source in the configuration file.
 
 For CTAS or views, the directory after 'schemas' is the name of the schema in the data warehouse
-configuration.  The 'source_schema_name' is only used for sorting.
+configuration. The 'source_schema_name' is only used for sorting.
+
+Files are logically grouped by the target relation that they describe (or help fill with data).
 """
 
 import logging
@@ -36,13 +37,13 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-class TableFileSet:
+class RelationFileSet:
     """
-    Class to hold design file, SQL file and data files (CSV and manifest) belonging to a table.
+    Class to hold a relation's design file, SQL file and data files (including their manifest).
 
-    TableFileSets have a :natural_order based on their schema's position in the DataWarehouseConfig's
-    schema list and their :source_table_name.  (So we try to sort sources by their order
-    in the configuration and not alphabetically.)
+    RelationFileSet instances have a natural_order based on their schema's position in the
+    DataWarehouseConfig's schema list and their source_table_name. (So we try to sort sources
+    by their order in the configuration and not alphabetically.)
 
     Note that all tables are addressed using their "target name" within the data warehouse, where
     the schema name is equal to the source name and the table name is the same as in the upstream
@@ -321,7 +322,9 @@ def _find_file_sets_from(iterable, selector):
 
         if target_table_name.identifier not in target_map:
             natural_order = schema_index.get(values["source_name"]), source_table_name.identifier
-            target_map[target_table_name.identifier] = TableFileSet(source_table_name, target_table_name, natural_order)
+            target_map[target_table_name.identifier] = RelationFileSet(
+                source_table_name, target_table_name, natural_order
+            )
 
         file_set = target_map[target_table_name.identifier]
         file_type = values["file_type"]

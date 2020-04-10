@@ -104,7 +104,7 @@ def unload_relation(
     """
     Unload data from table in the data warehouse using the UNLOAD command of Redshift.
     """
-    # TODO Move the "{}-{}" logic into the TableFileSet
+    # TODO Move the "{}-{}" logic into the RelationFileSet
     rendered_prefix = schema.s3_unload_path_prefix
     schema_table_name = "{0.schema}-{0.table}".format(relation.target_table_name)
     s3_key_prefix = os.path.join(rendered_prefix, "data", schema.name, schema_table_name, "csv")
