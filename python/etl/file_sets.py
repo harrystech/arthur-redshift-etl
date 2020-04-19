@@ -39,7 +39,21 @@ logger.addHandler(logging.NullHandler())
 
 
 class FileInfo:
-    """Store file path along with information such as file type, related schema and table names."""
+    """Store file path along with information such as file type, related schema and table names.
+
+    Known file types:
+      - yaml: Table design file
+      - sql: Query for CTAS or VIEW
+      - manifest: Manifest of data files
+      - success: Sentinel file to mark complete data
+      - columns: Meta-info about columns in data files
+      - data: Data file in Avro, CSV, or JSON format (see data_format property).
+
+    Note that manifest files can occur twice, once from the extract as:
+        .../data/{source_name}/{source_schema_name}-{table_name}.manifest
+    and once after unload:
+        .../data/{unload_target}/{unloading_schema_name}-{table_name}/csv/manifest
+    """
 
     filename_re = re.compile(
         r"""(?:^schemas|/schemas|^data|/data)
@@ -61,6 +75,10 @@ class FileInfo:
 
     @classmethod
     def from_filename(cls, filename: str) -> Optional["FileInfo"]:
+        """Return a FileInfo instance with properties derived from the filename.
+
+        If the filename doesn't appear to match a file that we can use, return None.
+        """
         match = cls.filename_re.search(filename)
         if not match:
             return None
@@ -70,16 +88,19 @@ class FileInfo:
         source_schema_name = values["source_schema_name"] or schema_name
         table_name = values["table_name"]
 
+        file_format = None
         file_ext = values["file_ext"]
         if file_ext in ("yaml", "sql", "manifest"):
-            file_format = None
             file_type = file_ext
+        elif values["data_file"] == "_SUCCESS":
+            file_type = "success"
+        elif values["data_file"] == "columns.yaml":
+            file_type = "columns"
+        elif values["data_file"] == "manifest":
+            file_type = "manifest"
         else:
             file_format = values["data_dir"].upper()
-            if values["data_file"] == "_SUCCESS":
-                file_type = "success"
-            else:
-                file_type = "data"
+            file_type = "data"
 
         return cls(filename, schema_name, source_schema_name, table_name, file_type, file_format)
 
