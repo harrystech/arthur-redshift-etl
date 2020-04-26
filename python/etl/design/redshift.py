@@ -113,10 +113,8 @@ def build_table_attributes(table_design: dict) -> List[str]:
         if isinstance(distribution, list):
             ddl_attributes.append("DISTSTYLE KEY")
             ddl_attributes.append("DISTKEY ( {} )".format(join_column_list(distribution)))
-        elif distribution == "all":
-            ddl_attributes.append("DISTSTYLE ALL")
-        elif distribution == "even":
-            ddl_attributes.append("DISTSTYLE EVEN")
+        else:
+            ddl_attributes.append("DISTSTYLE {}".format(distribution.upper()))
     if compound_sort:
         ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_column_list(compound_sort)))
     elif interleaved_sort:
