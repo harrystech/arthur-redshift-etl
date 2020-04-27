@@ -190,8 +190,7 @@
             "properties": {
                 "distribution": {
                     "oneOf": [
-                        { "enum": [ "all" ] },
-                        { "enum": [ "even" ] },
+                        { "enum": [ "all", "even", "auto" ] },
                         { "$ref": "#/definitions/one_column_as_list" }
                     ]
                 },
