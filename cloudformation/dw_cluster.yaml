@@ -49,6 +49,31 @@ Parameters:
         Type: String
         Default: ""
 
+    AdditionalClusterIAMRole1:
+        Description: (optional) ARN of an additional IAM role to associate with the Redshift cluster
+        Type: String
+        Default: ""
+
+    AdditionalClusterIAMRole2:
+        Description: (optional) ARN of an additional IAM role to associate with the Redshift cluster
+        Type: String
+        Default: ""
+
+    AdditionalClusterIAMRole3:
+        Description: (optional) ARN of an additional IAM role to associate with the Redshift cluster
+        Type: String
+        Default: ""
+
+    AdditionalClusterIAMRole4:
+        Description: (optional) ARN of an additional IAM role to associate with the Redshift cluster
+        Type: String
+        Default: ""
+
+    AdditionalClusterIAMRole5:
+        Description: (optional) ARN of an additional IAM role to associate with the Redshift cluster
+        Type: String
+        Default: ""
+
 
 Conditions:
 
@@ -57,6 +82,21 @@ Conditions:
 
     HasSnapshotIdentifier:
         !Not [ !Equals [ !Ref "SnapshotIdentifier", "" ] ]
+
+    HasAdditionalRole1:
+        !Not [ !Equals [ !Ref "AdditionalClusterIAMRole1", "" ] ]
+
+    HasAdditionalRole2:
+        !Not [ !Equals [ !Ref "AdditionalClusterIAMRole2", "" ] ]
+
+    HasAdditionalRole3:
+        !Not [ !Equals [ !Ref "AdditionalClusterIAMRole3", "" ] ]
+
+    HasAdditionalRole4:
+        !Not [ !Equals [ !Ref "AdditionalClusterIAMRole4", "" ] ]
+
+    HasAdditionalRole5:
+        !Not [ !Equals [ !Ref "AdditionalClusterIAMRole5", "" ] ]
 
 
 Resources:
@@ -114,6 +154,11 @@ Resources:
             IamRoles:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-iam-role"
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-copy-role"
+                - !If [ HasAdditionalRole1, !Ref "AdditionalClusterIAMRole1", !Ref "AWS::NoValue" ]
+                - !If [ HasAdditionalRole2, !Ref "AdditionalClusterIAMRole2", !Ref "AWS::NoValue" ]
+                - !If [ HasAdditionalRole3, !Ref "AdditionalClusterIAMRole3", !Ref "AWS::NoValue" ]
+                - !If [ HasAdditionalRole4, !Ref "AdditionalClusterIAMRole4", !Ref "AWS::NoValue" ]
+                - !If [ HasAdditionalRole5, !Ref "AdditionalClusterIAMRole5", !Ref "AWS::NoValue" ]
             MasterUsername:
                 !Ref MasterUsername
             MasterUserPassword:
