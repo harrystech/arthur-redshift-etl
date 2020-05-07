@@ -119,6 +119,7 @@
                     "type": "integer",
                     "minimum": 1
                 },
+                "bid_price": { "type": "number" },
                 "managed_security_group": { "type": "string" }
             },
             "required": [ "instance_type", "managed_security_group" ],
