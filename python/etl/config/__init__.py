@@ -117,7 +117,7 @@ def _flatten_hierarchy(prefix, props):
 
 def _build_config_map(settings):
     mapping = OrderedDict()
-    # Load everything that is not explicitly handled by the data warehouse configuration
+    # Load everything that is not explicitly handled by the data warehouse configuration.
     for section in frozenset(settings).difference({"data_warehouse", "sources", "type_maps"}):
         for name, value in _flatten_hierarchy(section, settings[section]):
             mapping[name] = value
@@ -156,19 +156,21 @@ def configure_logging(full_format: bool = False, log_level: str = None) -> None:
 
 def load_environ_file(filename: str) -> None:
     """
-    Load additional environment variables from file.
+    Set environment variables based on file contents.
 
     Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
     other lines are silently dropped.
     """
     logger.info("Loading environment variables from '%s'", filename)
-    with open(filename) as f:
-        for line in f:
-            tokens = [token.strip() for token in line.split("=", 1)]
-            if len(tokens) == 2 and not tokens[0].startswith("#"):
-                name = tokens[0].replace("export", "").strip()
-                value = tokens[1]
-                os.environ[name] = value
+    assignment_re = re.compile(r"\s*(?:export\s+)?(\w+)=(\S+)")
+    with open(filename) as content:
+        settings = [
+            match.groups()
+            for match in map(assignment_re.match, content)
+            if match is not None
+        ]
+    for name, value in settings:
+        os.environ[name] = value
 
 
 def load_settings_file(filename: str, settings: dict) -> None:
