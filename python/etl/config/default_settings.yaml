@@ -33,6 +33,9 @@
         "read_capacity": 3,
         "write_capacity": 3
     },
+    # AWS resource configuration
+    "resources": {
+    },
     # Type information from source (PostgreSQL) to target (Redshift)
     "type_maps": {
         # Types that may be used "as-is", see also
@@ -78,8 +81,5 @@
         },
         # Default type as a fallback solution. Example use case is for enumeration types.
         "default_att_type": ["varchar(10000)", "%s::varchar(10000)", "string"],
-    },
-    # AWS resource configuration
-    "resources": {
     }
 }
