@@ -203,7 +203,7 @@ def load_settings_file(filename: str, settings: dict) -> None:
     logger.info("Loading settings from '%s'", filename)
     with open(filename) as content:
         new_settings = yaml.safe_load(content)
-        _deep_update(settings, new_settings)
+    _deep_update(settings, new_settings)
 
 
 def get_release_info() -> str:
