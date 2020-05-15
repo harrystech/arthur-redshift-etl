@@ -78,5 +78,8 @@
         },
         # Default type as a fallback solution. Example use case is for enumeration types.
         "default_att_type": ["varchar(10000)", "%s::varchar(10000)", "string"],
+    },
+    # AWS resource configuration
+    "resources": {
     }
 }

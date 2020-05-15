@@ -175,20 +175,35 @@ def load_environ_file(filename: str) -> None:
         os.environ[name] = value
 
 
+def _deep_update(old: dict, new: dict) -> None:
+    """
+    Update "old" dict with values found in "new" dict at the right hierarchy level.
+
+    Examples:
+    >>> old = {'l1': {'l2': {'a': 'A', 'b': 'B'}}, 'c': 'CC'}
+    >>> new = {'l1': {'l2': {'a': 'AA', 'b': 'BB'}, 'd': 'DD'}}
+    >>> _deep_update(old, new)
+    >>> old['l1']['l2']['a'], old['l1']['l2']['b'], old['c'], old['l1']['d']
+    ('AA', 'BB', 'CC', 'DD')
+    """
+    for key, value in new.items():
+        if key in old:
+            if isinstance(value, dict):
+                _deep_update(old[key], value)
+            else:
+                old[key] = value
+        else:
+            old[key] = value
+
+
 def load_settings_file(filename: str, settings: dict) -> None:
     """
-    Load new settings from config file or a directory of config files
-    and UPDATE settings (old settings merged with new).
+    Load new settings from config file and merge with given settings.
     """
     logger.info("Loading settings from '%s'", filename)
-    with open(filename) as f:
-        new_settings = yaml.safe_load(f)
-        for key in new_settings:
-            # Try to update only update-able settings
-            if key in settings and isinstance(settings[key], dict):
-                settings[key].update(new_settings[key])
-            else:
-                settings[key] = new_settings[key]
+    with open(filename) as content:
+        new_settings = yaml.safe_load(content)
+        _deep_update(settings, new_settings)
 
 
 def get_release_info() -> str:
@@ -253,10 +268,11 @@ def load_config(config_files: Sequence[str], default_file: str = "default_settin
 
     validate_with_schema(settings, "settings.schema")
 
-    # If 'today' and 'yesterday' are not set already, pick the actual values of "today" and "yesterday" (wrt UTC).
+    # Set values for 'date.today' and 'date.yesterday' (in case they aren't set already.)
+    # The values are wrt current UTC and look like a path, e.g. '2017/05/16'.
     today = datetime.datetime.utcnow().date()
     date_settings = settings.setdefault("date", {})
-    date_settings.setdefault("today", today.strftime("%Y/%m/%d"))  # Render date to look like part of a path
+    date_settings.setdefault("today", today.strftime("%Y/%m/%d"))
     date_settings.setdefault("yesterday", (today - datetime.timedelta(days=1)).strftime("%Y/%m/%d"))
 
     global _mapped_config
