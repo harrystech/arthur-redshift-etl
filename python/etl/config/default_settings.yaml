@@ -33,9 +33,10 @@
         "read_capacity": 3,
         "write_capacity": 3
     },
-    # Set a default value for spot instances that is high enough that engineers do not need
-    # to think about it for most use cases.
+    # AWS resource configuration
     "resources": {
+        # Set a default value for spot instances that is high enough that engineers do not need
+        # to think about it for most use cases.
         "EMR": {
             "core": {
                 "bid_price": 10.0
