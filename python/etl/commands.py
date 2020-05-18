@@ -741,7 +741,7 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
 
     def callback(self, args, config):
-        max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions", 16)
+        max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
         if max_partitions < 1:
             raise InvalidArgumentError("Option for max partitions must be >= 1")
         if args.extractor not in ("sqoop", "spark", "manifest-only"):
