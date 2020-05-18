@@ -1,7 +1,7 @@
 """
-We use "config" files to refer to all files that may reside in the "config" directory:
-* "Settings" files (ending in '.yaml') which drive the data warehouse settings
-* Environment files (with variables)
+We use the term "config" files to refer to all files that may reside in the "config" directory:
+* "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
+* Environment files (with variables used in connections)
 * Other files (like release notes)
 
 This module provides global access to settings.  Always treat them nicely and read-only.
@@ -50,9 +50,10 @@ def get_dw_config():
 
 def get_config_value(name: str, default: Optional[str] = None) -> Optional[str]:
     """
-    Lookup configuration value in known and flattened settings -- pass in a fully-qualified name
+    Lookup configuration value in known and flattened settings -- pass in a fully-qualified name.
 
-    Note the side effect here: once accessed, the settings remember the default if it wasn't set before.
+    Note the side effect here: once accessed, the settings remember the default if it wasn't set
+    before.
     """
     assert _mapped_config is not None, "attempted to get config value before reading config map"
     if default is None:
@@ -64,6 +65,7 @@ def get_config_value(name: str, default: Optional[str] = None) -> Optional[str]:
 def get_config_int(name: str, default: Optional[int] = None) -> int:
     """
     Lookup a configuration value that is an integer.
+
     It is an error if the value (even when using the default) is None.
     """
     if default is None:
@@ -117,7 +119,7 @@ def _flatten_hierarchy(prefix, props):
 
 def _build_config_map(settings):
     mapping = OrderedDict()
-    # Load everything that is not explicitly handled by the data warehouse configuration
+    # Load everything that is not explicitly handled by the data warehouse configuration.
     for section in frozenset(settings).difference({"data_warehouse", "sources", "type_maps"}):
         for name, value in _flatten_hierarchy(section, settings[section]):
             mapping[name] = value
@@ -133,7 +135,7 @@ def etl_tmp_dir(path: str) -> str:
 
 def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     """
-    Setup logging to go to console and application log file
+    Setup logging to go to console and application log file.
 
     If full_format is True, then use the terribly verbose format of
     the application log file also for the console.  And log at the DEBUG level.
@@ -156,35 +158,52 @@ def configure_logging(full_format: bool = False, log_level: str = None) -> None:
 
 def load_environ_file(filename: str) -> None:
     """
-    Load additional environment variables from file.
+    Set environment variables based on file contents.
 
     Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
     other lines are silently dropped.
     """
     logger.info("Loading environment variables from '%s'", filename)
-    with open(filename) as f:
-        for line in f:
-            tokens = [token.strip() for token in line.split("=", 1)]
-            if len(tokens) == 2 and not tokens[0].startswith("#"):
-                name = tokens[0].replace("export", "").strip()
-                value = tokens[1]
-                os.environ[name] = value
+    assignment_re = re.compile(r"\s*(?:export\s+)?(\w+)=(\S+)")
+    with open(filename) as content:
+        settings = [
+            match.groups()
+            for match in map(assignment_re.match, content)
+            if match is not None
+        ]
+    for name, value in settings:
+        os.environ[name] = value
+
+
+def _deep_update(old: dict, new: dict) -> None:
+    """
+    Update "old" dict with values found in "new" dict at the right hierarchy level.
+
+    Examples:
+    >>> old = {'l1': {'l2': {'a': 'A', 'b': 'B'}}, 'c': 'CC'}
+    >>> new = {'l1': {'l2': {'a': 'AA', 'b': 'BB'}, 'd': 'DD'}}
+    >>> _deep_update(old, new)
+    >>> old['l1']['l2']['a'], old['l1']['l2']['b'], old['c'], old['l1']['d']
+    ('AA', 'BB', 'CC', 'DD')
+    """
+    for key, value in new.items():
+        if key in old:
+            if isinstance(value, dict):
+                _deep_update(old[key], value)
+            else:
+                old[key] = value
+        else:
+            old[key] = value
 
 
 def load_settings_file(filename: str, settings: dict) -> None:
     """
-    Load new settings from config file or a directory of config files
-    and UPDATE settings (old settings merged with new).
+    Load new settings from config file and merge with given settings.
     """
     logger.info("Loading settings from '%s'", filename)
-    with open(filename) as f:
-        new_settings = yaml.safe_load(f)
-        for key in new_settings:
-            # Try to update only update-able settings
-            if key in settings and isinstance(settings[key], dict):
-                settings[key].update(new_settings[key])
-            else:
-                settings[key] = new_settings[key]
+    with open(filename) as content:
+        new_settings = yaml.safe_load(content)
+    _deep_update(settings, new_settings)
 
 
 def get_release_info() -> str:
@@ -204,10 +223,10 @@ def get_release_info() -> str:
 
 def yield_config_files(config_files: Sequence[str], default_file: str = None) -> Iterable[str]:
     """
-    Generate filenames from the list of files or directories in :config_files and :default_file
+    Generate filenames from the list of files or directories in config_files and default_file.
 
     If the default_file is not None, then it is always prepended to the list of files.
-    (It is an error (sadly, at runtime) if the default file is not a file that's part of the package.)
+    It is an error (sadly, at runtime) if the default file is not a file that's part of the package.
 
     Note that files in directories are always sorted by their name.
     """
@@ -216,7 +235,7 @@ def yield_config_files(config_files: Sequence[str], default_file: str = None) ->
 
     for name in config_files:
         if os.path.isdir(name):
-            files = sorted(os.path.join(name, n) for n in os.listdir(name))
+            files = sorted(os.path.join(name, child) for child in os.listdir(name))
         else:
             files = [name]
         for filename in files:
@@ -225,11 +244,12 @@ def yield_config_files(config_files: Sequence[str], default_file: str = None) ->
 
 def load_config(config_files: Sequence[str], default_file: str = "default_settings.yaml") -> None:
     """
-    Load settings and environment from config files (starting with the default if provided),
-    set our global settings.
+    Load settings and environment from config files and set our global settings.
+
+    The default, if provided, is always the first file to be loaded.
+    If the config "file" is actually a directory, (try to) read all the files in that directory.
 
     The settings are validated against their schema.
-    If the config "file" is actually a directory, (try to) read all the files in that directory.
     """
     settings = dict()  # type: Dict[str, Any]
     count_settings = 0
@@ -248,10 +268,11 @@ def load_config(config_files: Sequence[str], default_file: str = "default_settin
 
     validate_with_schema(settings, "settings.schema")
 
-    # If 'today' and 'yesterday' are not set already, pick the actual values of "today" and "yesterday" (wrt UTC).
+    # Set values for 'date.today' and 'date.yesterday' (in case they aren't set already.)
+    # The values are wrt current UTC and look like a path, e.g. '2017/05/16'.
     today = datetime.datetime.utcnow().date()
     date_settings = settings.setdefault("date", {})
-    date_settings.setdefault("today", today.strftime("%Y/%m/%d"))  # Render date to look like part of a path
+    date_settings.setdefault("today", today.strftime("%Y/%m/%d"))
     date_settings.setdefault("yesterday", (today - datetime.timedelta(days=1)).strftime("%Y/%m/%d"))
 
     global _mapped_config
@@ -287,9 +308,10 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
 
 def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     """
-    Gather all settings files (*.yaml and *.sh files) -- this drops any hierarchy in the config files (!).
+    Gather all settings files (*.yaml and *.sh files) that should be deployed together.
 
-    It is an error if we detect that there are settings files in separate directories that have the same filename.
+    NOTE This drops any hierarchy in the config files. It is an error if we detect that there are
+    settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
     settings_found = set()  # type: Set[str]
