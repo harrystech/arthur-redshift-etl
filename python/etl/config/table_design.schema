@@ -125,7 +125,8 @@
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": { "$ref": "#/definitions/identifier" }
+                            "name": { "$ref": "#/definitions/identifier" },
+                            "description": { "type": "string" }
                         },
                         "required": [ "name" ],
                         "additionalProperties": false
