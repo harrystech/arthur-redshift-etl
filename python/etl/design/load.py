@@ -152,13 +152,16 @@ def validate_semantics_of_view(table_design):
     """
     Check for semantics that only apply to views.
 
-    Basically, definitions of views may only contain column names.
+    Basically, definitions of views may only contain column names or descriptions.
+    Note that validation doesn't catch this since we didn't completely separate
+    the schema for CTAS and VIEW but have that distinction only on the source_name.
     """
-    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra information
-    # for the columns, like type or sql_type.
+    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra
+    # information for the columns, like type or sql_type.
     for column in table_design["columns"]:
-        if len(column) != 1:
-            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(list(column)))
+        unwanted_fields = set(column).difference(("name", "description"))
+        if unwanted_fields:
+            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(unwanted_fields))
     for obj in ("constraints", "attributes", "extract_settings"):
         if obj in table_design:
             raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
