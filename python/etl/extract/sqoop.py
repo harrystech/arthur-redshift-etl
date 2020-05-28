@@ -181,8 +181,8 @@ class SqoopExtractor(DatabaseExtractor):
         """
         if partition_key:
             column = fy.first(fy.where(relation.table_design["columns"], name=partition_key))
-            if column["sql_type"] in ("timestamp", "timestamp without time zone"):
-                quoted_key_arg = """CAST(TO_CHAR("{}", 'YYYYMMDDHH24MISS') AS BIGINT)""".format(partition_key)
+            if column["type"] in ("date", "timestamp"):
+                quoted_key_arg = """CAST(DATE_PART('epoch', "{}") AS BIGINT)""".format(partition_key)
             else:
                 quoted_key_arg = '"{}"'.format(partition_key)
 
