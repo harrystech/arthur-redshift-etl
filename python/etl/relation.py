@@ -330,17 +330,13 @@ class RelationDescription:
 
         column = fy.first(fy.where(self.table_design["columns"], name=partition_key))
 
-        # We check here the "generic" type which abstracts the SQL types like smallint, int4, bigint, ...
-        if column["type"] in ("int", "long"):
-            logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
-            return partition_key
-        # We check the specific case of a timestamp here.
-        if column["type"] == "string" and column["sql_type"] in ("timestamp", "timestamp without time zone"):
+        # We check here the "generic" type which abstracts the SQL types like smallint, int4, etc.
+        if column["type"] in ("int", "long", "date", "timestamp"):
             logger.debug("Partition key for table '%s' is '%s'", self.identifier, partition_key)
             return partition_key
 
         logger.warning(
-            "Column '%s' is not a number or timestamp and is not usable as a partition key for '%s'",
+            "Column '%s' is not int, long, date or timestamp so is not usable as a partition key for '%s'",
             partition_key,
             self.identifier,
         )

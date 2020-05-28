@@ -211,17 +211,12 @@ def validate_semantics_of_table(table_design):
     if split_by_name:
         split_by_column = fy.first(fy.where(table_design["columns"], name=split_by_name))
         if split_by_column.get("skipped", False):
-            raise TableDesignSemanticError("Split-by column type must not be skipped")
+            raise TableDesignSemanticError("split-by column must not be skipped")
         if not split_by_column.get("not_null", False):
-            raise TableDesignSemanticError("Split-by column type must have not-null constraint")
-        if split_by_column["type"] == "string":
-            if split_by_column["sql_type"].lower() not in ("timestamp", "timestamp without time zone"):
-                raise TableDesignSemanticError(
-                    "Split-by column must be a timestamp when not numeric, not '{}'".format(split_by_column["sql_type"])
-                )
-        elif split_by_column["type"] not in ("int", "long"):
+            raise TableDesignSemanticError("split-by column must have not-null constraint")
+        if split_by_column["type"] not in ("int", "long", "date", "timestamp"):
             raise TableDesignSemanticError(
-                "Split-by column type must be int or long when numeric, not '{}'".format(split_by_column["type"])
+                "type of split-by column must be int, long, date or timestamp, not '{}'".format(split_by_column["type"])
             )
 
 
