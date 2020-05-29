@@ -22,8 +22,8 @@ Parameters:
         MinLength: 3
         MaxLength: 63
 
-    DataCopySource:
-        Description: (Optional) A bucket name from where data is copied to Redshift
+    SecondaryDataLake:
+        Description: (Optional) A bucket name for the secondary data lake
         Type: String
         Default: ""
         MinLength: 0
@@ -91,8 +91,8 @@ Parameters:
 
 Conditions:
 
-    ValidNotEmptyDataCopySource:
-        !Not [ !Equals [ !Ref DataCopySource, "" ] ]
+    ValidNotEmptySecondaryDataLake:
+        !Not [ !Equals [ !Ref SecondaryDataLake, "" ] ]
 
     ValidNotAnythingWhitelistCIDR1:
         !Not [ !Equals [ !Ref WhitelistCIDR1, "0.0.0.0/0" ] ]
@@ -242,7 +242,7 @@ Resources:
                         "Resource": [
                             !Sub "arn:aws:s3:::${ObjectStore}/*" ,
                             !Sub "arn:aws:s3:::${DataLake}/*" ,
-                            !If [ "ValidNotEmptyDataCopySource",  !Sub "arn:aws:s3:::${DataCopySource}/*", !Ref "AWS::NoValue" ]
+                            !If [ "ValidNotEmptySecondaryDataLake",  !Sub "arn:aws:s3:::${SecondaryDataLake}/*", !Ref "AWS::NoValue" ]
                         ]
                     }
                 ]
@@ -784,7 +784,7 @@ Resources:
                             Resource:
                                 - !Sub "arn:aws:s3:::${ObjectStore}/*"
                                 - !Sub "arn:aws:s3:::${DataLake}/*"
-                                - !If [ "ValidNotEmptyDataCopySource",  !Sub "arn:aws:s3:::${DataCopySource}/*", !Ref "AWS::NoValue" ]
+                                - !If [ "ValidNotEmptySecondaryDataLake",  !Sub "arn:aws:s3:::${SecondaryDataLake}/*", !Ref "AWS::NoValue" ]
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
@@ -825,7 +825,7 @@ Resources:
                             Resource:
                                 - !Sub "arn:aws:s3:::${ObjectStore}/*"
                                 - !Sub "arn:aws:s3:::${DataLake}/*"
-                                - !If [ "ValidNotEmptyDataCopySource",  !Sub "arn:aws:s3:::${DataCopySource}/*",  !Ref "AWS::NoValue" ]
+                                - !If [ "ValidNotEmptySecondaryDataLake",  !Sub "arn:aws:s3:::${SecondaryDataLake}/*",  !Ref "AWS::NoValue" ]
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
@@ -910,11 +910,11 @@ Outputs:
         Export:
             Name: !Sub "${AWS::StackName}::data-lake"
 
-    DataCopySource:
-        Description: (data_copy_source.s3.bucket_name) Name of the bucket for the data copy source
-        Value: !Ref DataCopySource
+    SecondaryDataLake:
+        Description: (secondary_data_lake.s3.bucket_name) Name of the bucket for the secondary data lake
+        Value: !Ref SecondaryDataLake
         Export:
-            Name: !Sub "${AWS::StackName}::data-copy-source"
+            Name: !Sub "${AWS::StackName}::secondary-data-lake"
 
     RedshiftCopyCole:
         Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
