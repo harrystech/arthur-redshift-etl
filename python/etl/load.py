@@ -463,7 +463,6 @@ def create_missing_dimension_row(columns: List[dict]) -> List[str]:
         elif column.get("identity", False):
             na_values_row.append("0")
         else:
-            # Use NULL for all null-able columns:
             if not column.get("not_null", False):
                 # Use NULL for any nullable column and use type cast (for UNION ALL to succeed)
                 na_values_row.append("NULL::{}".format(column["sql_type"]))
