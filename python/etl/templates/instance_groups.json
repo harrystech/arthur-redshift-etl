@@ -3,14 +3,12 @@
         "Name": "Master instance group - 1",
         "InstanceGroupType": "MASTER",
         "InstanceCount": ${resources.EMR.master.instance_count},
-        "InstanceType": "${resources.EMR.master.instance_type}",
-        "BidPrice": "${resources.EMR.master.bid_price}"
+        "InstanceType": "${resources.EMR.master.instance_type}"
     },
     {
         "Name": "Core instance group - 2",
         "InstanceGroupType": "CORE",
         "InstanceCount": ${resources.EMR.core.instance_count},
-        "InstanceType": "${resources.EMR.core.instance_type}",
-        "BidPrice": "${resources.EMR.core.bid_price}"
+        "InstanceType": "${resources.EMR.core.instance_type}"
     }
 ]
