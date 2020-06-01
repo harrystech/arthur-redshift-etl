@@ -58,8 +58,10 @@
             "parent": { "ref": "ResourceParent" },
             "releaseLabel": "${resources.EMR.release_label}",
             "masterInstanceType": "${resources.EMR.master.instance_type}",
+            "masterInstanceBidPrice": "${resources.EMR.master.bid_price}",
             "coreInstanceType": "${resources.EMR.core.instance_type}",
             "coreInstanceCount": "${resources.EMR.core.instance_count}",
+            "coreInstanceBidPrice": "${resources.EMR.core.bid_price}",
             "emrManagedMasterSecurityGroupId": "${resources.EMR.master.managed_security_group}",
             "emrManagedSlaveSecurityGroupId": "${resources.EMR.core.managed_security_group}",
             "additionalMasterSecurityGroupIds": [
