@@ -37,9 +37,9 @@ class DatabaseExtractor(Extractor):
 
     def use_sampling_with_table(self, size: int) -> bool:
         """
-        Return True iff option `--use-sampling` appeared and table is large enough (> 1MB).
+        Return True iff option `--use-sampling` appeared and table is large enough (> 100MB).
         """
-        return self.use_sampling and (size > 1024 ** 2)
+        return self.use_sampling and (size > 100 * 1024 ** 2)
 
     def select_min_partition_size(self, size: int) -> int:
         """

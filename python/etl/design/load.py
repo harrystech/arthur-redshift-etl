@@ -152,13 +152,16 @@ def validate_semantics_of_view(table_design):
     """
     Check for semantics that only apply to views.
 
-    Basically, definitions of views may only contain column names.
+    Basically, definitions of views may only contain column names or descriptions.
+    Note that validation doesn't catch this since we didn't completely separate
+    the schema for CTAS and VIEW but have that distinction only on the source_name.
     """
-    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra information
-    # for the columns, like type or sql_type.
+    # This error occurs when you change from CTAS to VIEW and then forget to remove the extra
+    # information for the columns, like type or sql_type.
     for column in table_design["columns"]:
-        if len(column) != 1:
-            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(list(column)))
+        unwanted_fields = set(column).difference(("name", "description"))
+        if unwanted_fields:
+            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(unwanted_fields))
     for obj in ("constraints", "attributes", "extract_settings"):
         if obj in table_design:
             raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
@@ -211,17 +214,12 @@ def validate_semantics_of_table(table_design):
     if split_by_name:
         split_by_column = fy.first(fy.where(table_design["columns"], name=split_by_name))
         if split_by_column.get("skipped", False):
-            raise TableDesignSemanticError("Split-by column type must not be skipped")
+            raise TableDesignSemanticError("split-by column must not be skipped")
         if not split_by_column.get("not_null", False):
-            raise TableDesignSemanticError("Split-by column type must have not-null constraint")
-        if split_by_column["type"] == "string":
-            if split_by_column["sql_type"].lower() not in ("timestamp", "timestamp without time zone"):
-                raise TableDesignSemanticError(
-                    "Split-by column must be a timestamp when not numeric, not '{}'".format(split_by_column["sql_type"])
-                )
-        elif split_by_column["type"] not in ("int", "long"):
+            raise TableDesignSemanticError("split-by column must have not-null constraint")
+        if split_by_column["type"] not in ("int", "long", "date", "timestamp"):
             raise TableDesignSemanticError(
-                "Split-by column type must be int or long when numeric, not '{}'".format(split_by_column["type"])
+                "type of split-by column must be int, long, date or timestamp, not '{}'".format(split_by_column["type"])
             )
 
 
