@@ -66,15 +66,24 @@ ask_to_confirm () {
 DIR_NAME=`dirname $0`
 BIN_PATH=$(\cd "$DIR_NAME" && \pwd)
 TOP_PATH=`dirname "$BIN_PATH"`
+DOCKER_IMAGE_PATH=/arthur-redshift-etl
 
 if [[ ! -r ./setup.py ]]; then
     echo "Failed to find 'setup.py' file in the local directory."
     if [[ ! -r "$TOP_PATH/setup.py" ]]; then
         echo "Failed to find '$TOP_PATH/setup.py' file."
-        exit 2
+        if [[ ! -r "$DOCKER_IMAGE_PATH/setup.py" ]]; then
+            echo "Failed to find '$DOCKER_IMAGE_PATH/setup.py' file."
+            echo "Bailing out: Cannot find distribution."
+            exit 2
+        else
+            echo "OK, found '$DOCKER_IMAGE_PATH/setup.py' instead."
+            cd "$DOCKER_IMAGE_PATH"
+        fi
+    else
+        echo "OK, found '$TOP_PATH/setup.py' instead."
+        cd "$TOP_PATH"
     fi
-    echo "OK, found '$TOP_PATH/setup.py' instead."
-    cd "$TOP_PATH"
 fi
 
 if ! aws s3 ls "s3://$PROJ_BUCKET/" > /dev/null; then
