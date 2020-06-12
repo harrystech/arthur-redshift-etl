@@ -29,7 +29,7 @@
             "level": "DEBUG",
             "filename": "arthur.log",
             "mode": "a",
-            "maxBytes": 5000000,
+            "maxBytes": 8388608,
             "backupCount": 5,
             "filters": [ "insert_trace_key" ],
             "encoding": "UTF-8"
