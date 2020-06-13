@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
+START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
 
-    cat <<EOF
+if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
+    cat <<USAGE
 
 Pizza delivery! Right on time or it's free! Runs once, starting now.
 Expects S3 folder under prefix to already have all necessary manifests for source data.
 
 Usage: `basename $0` <environment> [<continue-from>]
 
-The loader will pick up from the "continue-from" relation if specified.
+If no relation is specified, this will run the loader for all relations.
+If a "continue-from" relation is specified, then the loader will start from that relation.
+(Use this option when the ETL just failed and you've fixed the reason for the failure.)
+If you specify ":transformations", then sources will be skipped and all transformations will be loaded.
 
-EOF
+Example: `basename $0` development :transformations
+
+USAGE
     exit 0
-
 fi
 
-set -e -u
+set -o errexit -o nounset
 
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
@@ -29,8 +34,7 @@ fi
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 CONTINUE_FROM_RELATION="${2:-*}"
-
-START_DATE_TIME=`date -u +"%Y-%m-%dT%H:%M:%S"`
+START_DATE_TIME="$START_NOW"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -39,7 +43,7 @@ if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     exit 1
 fi
 
-set -x
+set -o xtrace
 
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"

@@ -5,8 +5,7 @@ USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 if [[ $# -lt 1 || "$1" = "-h" ]]; then
-
-    cat <<EOF
+    cat <<USAGE
 
 Single-shot upgrade pipeline. You get to pick the arguments to 'upgrade' command.
 
@@ -17,12 +16,11 @@ The environment defaults to "$DEFAULT_PREFIX".
 
 Example: `basename $0` --continue-from :transformations
 
-EOF
+USAGE
     exit 0
-
 fi
 
-set -e -u
+set -o errexit -o nounset
 
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
@@ -34,7 +32,6 @@ fi
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$DEFAULT_PREFIX"
-
 UPGRADE_ARGUMENTS="$@"
 
 START_DATE_TIME="$START_NOW"
@@ -46,7 +43,7 @@ if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     exit 1
 fi
 
-set -x
+set -o xtrace
 
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"

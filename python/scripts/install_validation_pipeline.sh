@@ -5,8 +5,7 @@ USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 if [[ $# -gt 3 || "$1" = "-h" ]]; then
-
-    cat <<EOF
+    cat <<USAGE
 
 Usage: `basename $0` [<environment> [<startdatetime> [<occurrences>]]]
 
@@ -14,11 +13,11 @@ The environment defaults to "$DEFAULT_PREFIX".
 Start time should take the ISO8601 format, defaults to "$START_NOW" (now).
 The number of occurrences defaults to 1.
 
-EOF
+USAGE
     exit 0
 fi
 
-set -e -u
+set -o errexit -o nounset
 
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
@@ -30,7 +29,6 @@ fi
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="${1:-$DEFAULT_PREFIX}"
-
 START_DATE_TIME="${2:-$START_NOW}"
 OCCURRENCES="${3:-1}"
 
@@ -42,7 +40,7 @@ if ! aws s3 ls "$VALIDATION_CREDENTIALS" > /dev/null; then
     exit 1
 fi
 
-set -x
+set -o xtrace
 
 # N.B. This assumes you are in the directory with your warehouse definition (schemas, config, ...)
 GIT_BRANCH=$(git symbolic-ref --short --quiet HEAD 2>/dev/null || true)

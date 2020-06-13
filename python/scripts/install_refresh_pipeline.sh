@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 
+START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+
 if [[ $# -lt 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]"
-    echo "      Start time should be 'now' or take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
-    echo "      Specify source tables using space-delimited arthur pattern globs."
+    cat <<USAGE
+
+Refresh ETL to extract and update data.
+
+Usage: `basename $0` <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]
+
+Start time should be 'now' or take the ISO8601 format like: $START_NOW
+Specify source tables using space-delimited arthur pattern globs.
+
+USAGE
     exit 0
 fi
 
-set -e -u
+set -o errexit -o nounset
 
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
@@ -23,7 +32,7 @@ PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 
 if [[ "$2" == "now" ]]; then
-    START_DATE_TIME="`date -u +'%Y-%m-%dT%H:%M:%S'`"
+    START_DATE_TIME="$START_NOW"
 else
     START_DATE_TIME="$2"
 fi
@@ -40,7 +49,7 @@ if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     exit 1
 fi
 
-set -x
+set -o xtrace
 
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"

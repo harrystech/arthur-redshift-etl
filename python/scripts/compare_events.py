@@ -1,5 +1,5 @@
 """
-This script enables comparing events from different ETL runs to highlight differences in elapsed times or row counts.
+This script compares events from two ETLs to highlight differences in elapsed times or row counts.
 
 * Pre-requisites
 
