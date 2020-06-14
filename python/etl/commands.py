@@ -260,7 +260,7 @@ class FancyArgumentParser(argparse.ArgumentParser):
         >>> parser.convert_arg_line_to_args(" schema.table ")
         ['schema.table']
         >>> parser.convert_arg_line_to_args(
-        ...     "show_dependents.output_compatible # index=1, kind=CTAS, is_required=true")
+        ...     "show_dependents.output_compatible # CTAS index=1 is_required=true")
         ['show_dependents.output_compatible']
         >>> parser.convert_arg_line_to_args(" # single-line comment")
         []
@@ -356,6 +356,7 @@ def build_full_parser(prog_name):
         UpdateDataWarehouseCommand,
         UnloadDataToS3Command,
         # Helper commands (database, filesystem)
+        CreateExternalSchemasCommand,
         CreateSchemasCommand,
         PromoteSchemasCommand,
         PingCommand,
@@ -452,16 +453,16 @@ def add_standard_arguments(parser, options):
     if "pattern" in options:
         parser.add_argument(
             "pattern",
+            action=StorePatternAsSelector,
             help="glob pattern or identifier to select table(s) or view(s)",
             nargs="*",
-            action=StorePatternAsSelector,
         )
     if "one-pattern" in options:
         parser.add_argument(
             "pattern",
+            action=StorePatternAsSelector,
             help="glob pattern or identifier to select table or view",
             nargs=1,
-            action=StorePatternAsSelector,
         )
 
 
@@ -1245,6 +1246,36 @@ class UnloadDataToS3Command(MonitoredSubCommand):
         )
 
 
+class CreateExternalSchemasCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "create_external_schemas",
+            "create external schemas from data warehouse config",
+            "Create external schemas with configured database and IAM role, then set permissions."
+            " (Any patterns must be schema names.)",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument(
+            "schema", action=StorePatternAsSelector, help="name of external schema", nargs="*"
+        )
+
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
+        try:
+            args.schema.base_schemas = [schema.name for schema in dw_config.external_schemas]
+        except ValueError as exc:
+            raise InvalidArgumentError("selected schema is not external") from exc
+        try:
+            selected = args.schema.selected_schemas()
+        except ValueError as exc:
+            raise InvalidArgumentError("patterns must match schemas") from exc
+        schemas = [schema for schema in dw_config.external_schemas if schema.name in selected]
+        with etl.db.log_error():
+            etl.data_warehouse.create_external_schemas(schemas, dry_run=args.dry_run)
+
+
 class CreateSchemasCommand(SubCommand):
     def __init__(self):
         super().__init__(
@@ -1551,7 +1582,7 @@ class PingCommand(SubCommand):
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         if args.for_schema is None:
-            dsns = [dw_config.dsn_admin if args.use_admin else dw_config.dsn_etl]
+            dsn_list = [dw_config.dsn_admin if args.use_admin else dw_config.dsn_etl]
         else:
             try:
                 args.for_schema.base_schemas = [
@@ -1562,11 +1593,11 @@ class PingCommand(SubCommand):
             try:
                 selected = args.for_schema.selected_schemas()
             except ValueError as exc:
-                raise InvalidArgumentError("pattern must match schemas") from exc
+                raise InvalidArgumentError("patterns must match schemas") from exc
             logger.info("Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected))
-            dsns = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
+            dsn_list = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
         with etl.db.log_error():
-            for dsn in dsns:
+            for dsn in dsn_list:
                 etl.db.ping(dsn)
 
 

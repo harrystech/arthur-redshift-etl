@@ -48,6 +48,7 @@
             "pattern": "^(([a-zA-Z0-9._$-]+/?)|(\\${[.\\w]+})/?)+$"
         },
         "upstream_database": {
+            "description": "Description of an upstream database with access, tables and permissions for the copy",
             "type": "object",
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
@@ -62,6 +63,7 @@
             "additionalProperties": false
         },
         "upstream_static": {
+            "description": "Description of an upstream source consisting of files in S3, may also be an unload target",
             "type": "object",
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
@@ -84,12 +86,17 @@
             "additionalProperties": false
         },
         "upstream_external": {
+            "description": "Description of an external schema in AWS Redshift (listed in an AWS Glue Data Catalog)",
             "type": "object",
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
                 "description": { "type": "string" },
-                "external": { "enum": [ true ] }
+                "external": { "enum": [ true ] },
+                "groups": { "$ref": "#/definitions/identifier_list" },
+                "database": { "$ref": "#/definitions/identifier" },
+                "iam_role": { "$ref": "#/definitions/aws_arn" }
             },
+            "required": [ "name", "external" ],
             "additionalProperties": false
         },
         "s3_data_format": {
@@ -275,34 +282,39 @@
             "description": "Location and attributes for shared storage, e.g. for unloads",
             "type": "object",
             "properties": {
+                "iam_role": {
+                    "description": "DEPRECATED Use the more specific IAM role for S3",
+                    "$ref": "#/definitions/aws_arn"
+                },
                 "s3": {
                     "type": "object",
                     "properties": {
-                        "bucket_name": { "$ref": "#/definitions/identifier" }
+                        "bucket_name": { "$ref": "#/definitions/identifier" },
+                        "iam_role": { "$ref": "#/definitions/aws_arn" }
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false
-                },
-                "iam_role": { "$ref": "#/definitions/aws_arn" }
+                }
             },
-            "required": [ "s3", "iam_role" ],
+            "required": [ "s3" ],
             "additionalProperties": false
         },
         "object_store": {
-            "description": "Location and attributes for (temporary) storage",
+            "description": "Location and attributes for (temporary) storage for code and extracted data",
             "type": "object",
             "properties": {
+                "iam_role": { "$ref": "#/definitions/aws_arn" },
                 "s3": {
                     "type": "object",
                     "properties": {
-                        "bucket_name": { "$ref": "#/definitions/identifier" }
+                        "bucket_name": { "$ref": "#/definitions/identifier" },
+                        "iam_role": { "$ref": "#/definitions/aws_arn" }
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false
-                },
-                "iam_role": { "$ref": "#/definitions/aws_arn" }
+                }
             },
-            "required": [ "s3", "iam_role" ],
+            "required": [ "s3" ],
             "additionalProperties": false
         },
         "resources": {
