@@ -271,11 +271,12 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
 def _create_or_update_user(user_name, group_name=None, add_user_schema=False, only_update=False, dry_run=False):
     """
     Add new user to cluster or update existing user.
+
     Either pick a group or accept the default group (from settings).
     If the group does not yet exist, then we create the user's group here.
 
-    If so advised, creates a schema for the user. (Making sure that the ETL user keeps read access via its group).
-    So this assumes that the connection string points to the ETL database, not 'dev'.
+    If so advised, creates a schema for the user, making sure that the ETL user keeps read access
+    via its group. So this assumes that the connection string points to the ETL database, not 'dev'.
     """
     config = etl.config.get_dw_config()
     # Find user in the list of pre-defined users or create new user instance with default settings

@@ -373,10 +373,17 @@ def _get_encrypted_password(cx, user):
     dsn_complete = dict(kv.split("=") for kv in cx.dsn.split(" "))
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
     dsn_user = dict(dsn_partial, user=user)
-    password = pgpasslib.getpass(**dsn_user)
+    try:
+        password = pgpasslib.getpass(**dsn_user)
+    except pgpasslib.FileNotFound as exc:
+        logger.info("Create the file using 'touch ~/.pgpass && chmod go= ~/.pgpass'")
+        raise ETLRuntimeError("PGPASSFILE file is missing") from exc
+    except pgpasslib.InvalidPermissions as exc:
+        logger.info("Update the permissions using: 'chmod go= ~/.pgpass'")
+        raise ETLRuntimeError("PGPASSFILE file has invalid permissions") from exc
     if password is None:
         logger.warning("Missing line in .pgpass file: '%(host)s:%(port)s:%(dbname)s:%(user)s:<password>'", dsn_user)
-        raise ETLRuntimeError("password missing from PGPASSFILE for '{}'".format(user))
+        raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
     md5 = hashlib.md5()
     md5.update((password + user).encode())
     return "md5" + md5.hexdigest()
