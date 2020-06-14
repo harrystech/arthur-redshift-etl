@@ -88,8 +88,10 @@
             "properties": {
                 "name": { "$ref": "#/definitions/identifier" },
                 "description": { "type": "string" },
-                "external": { "enum": [ true ] }
+                "external": { "enum": [ true ] },
+                "groups": { "$ref": "#/definitions/identifier_list" }
             },
+            "required": [ "name", "external" ],
             "additionalProperties": false
         },
         "s3_data_format": {
