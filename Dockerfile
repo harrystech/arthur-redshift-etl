@@ -52,6 +52,10 @@ echo \n\
 echo "Environment settings:"\n\
 arthur.py settings object_store.s3.* version' > /root/.bashrc
 
+# Create an empty .pgpass file to help with create_user and update_user commands.
+RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /root/.pgpass \
+    && chmod go= /root/.pgpass
+
 # Whenever there is an ETL running, it offers progress information on port 8086.
 EXPOSE 8086
 
