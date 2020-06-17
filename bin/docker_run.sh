@@ -142,21 +142,25 @@ case "$action" in
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
-            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && arthur.py sync --force --deploy'
+            /bin/bash -c \
+                'source /tmp/redshift_etl/venv/bin/activate && \
+                arthur.py sync --force --deploy'
         ;;
     upload)
         set -o xtrace
         bin/release_version.sh
         docker build --tag "arthur:$tag" .
-        # TODO(tom): This needs to be interactive because of the y/n-question from the upload script.
-        docker run --rm --interactive --tty \
+        docker run --rm --tty \
             --volume "$data_warehouse_path":/data-warehouse \
             --volume ~/.aws:/root/.aws \
             --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
-            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && cd /arthur-redshift-etl && ./bin/upload_env.sh'
+            /bin/bash -c \
+                'source /tmp/redshift_etl/venv/bin/activate && \
+                cd /arthur-redshift-etl && \
+                ./bin/upload_env.sh -y'
         ;;
     validate)
         set -o xtrace
@@ -167,7 +171,9 @@ case "$action" in
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
-            /bin/bash -c 'source /tmp/redshift_etl/venv/bin/activate && install_validation_pipeline.sh'
+            /bin/bash -c \
+                'source /tmp/redshift_etl/venv/bin/activate \
+                && install_validation_pipeline.sh'
         ;;
     *)
         echo "Internal Error: unknown action '$action'!" >&2
