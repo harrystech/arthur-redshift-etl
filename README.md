@@ -108,6 +108,7 @@ DATA_WAREHOUSE_ADMIN=postgres://admin:<password>@<host>:<port>/<dbname>?sslmode=
 ### Starting Arthur in Docker
 
 The [INSTALL.md](INSTALL.md) file will explain how to setup a Docker image to run _Arthur_.
+
 Once you have that, getting to a prompt is easy:
 ```bash
 bin/run_arthur.sh ../warehouse-repo/config production
@@ -442,4 +443,15 @@ If you find yourself using a one-off EC2 instance more often than an EMR cluster
   User ec2-user
 ```
 
-For information about maintaining the virtual environment, see the [INSTALL.md](INSTALL.md) file.
+## Virtual environment
+
+If you want to have a virtual environment in your local directory, _e.g._ to make working with an IDE easier,
+then these steps will work:
+```shell
+python3 -m venv venv
+source venv/bin/activate
+pip3 install -r requirements-dev.txt
+```
+
+_N.B._ Both `.gitignore` and `.dockerignore` are configured for the name `venv`. Use a different name
+or location for the virtual environment at your own risk.
