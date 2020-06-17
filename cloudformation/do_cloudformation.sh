@@ -91,6 +91,18 @@ case "$DW_VERB" in
             "Key=user:stack-env-name,Value=$ENV_NAME"
     ;;
 
+  create-change-set)
+    aws cloudformation create-change-set \
+        --stack-name "$STACK_NAME" \
+        --change-set-name "DW-$(date -u '+%Y-%m-%d-%H-%M-%S')" \
+        --template-body "$TEMPLATE_URI" \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --parameters $STACK_PARAMETERS \
+        --tags \
+            "Key=user:project,Value=data-warehouse" \
+            "Key=user:stack-env-name,Value=$ENV_NAME"
+    ;;
+
   update)
 
     aws cloudformation update-stack \

@@ -1,4 +1,4 @@
-Description: |
+Description: |-
     Create the VPC for the Redshift data warehouse and its ETL.
 
 #    We use one public and one private subnet, an Internet Gateway, a service
@@ -690,6 +690,21 @@ Resources:
                                 - "sqs:PurgeQueue"
                                 - "sqs:ReceiveMessage"
                             Resource: "*"
+                - PolicyName: "service-role-for-spot"
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action: "iam:CreateServiceLinkedRole"
+                            Resource: "arn:aws:iam::*:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot"
+                            Condition:
+                                StringLike:
+                                    "iam:AWSServiceName": "spot.amazonaws.com"
+                          - Effect: "Allow"
+                            Action:
+                              - "iam:AttachRolePolicy"
+                              - "iam:PutRolePolicy"
+                            Resource: "arn:aws:iam::*:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot"
 
     # This starts from the default EMR instance profile role plus the Data Pipeline default resource role.
     # (NB We need allow ec2:CreateTags here so that bootstrap can update the tags of the instance.)
