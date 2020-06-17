@@ -26,7 +26,6 @@ If the bucket name is not specified, the variable DATA_WAREHOUSE_CONFIG must be 
 You can specify "-y" to skip the confirmation question.
 
 USAGE
-
     exit ${1-0}
 }
 
@@ -47,7 +46,7 @@ ask_to_confirm () {
 }
 
 assume_yes="NO"
-while getopts ":hq" opt; do
+while getopts ":hy" opt; do
     case "$opt" in
       h)
         show_usage_and_exit
