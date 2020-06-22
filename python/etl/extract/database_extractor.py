@@ -57,14 +57,11 @@ class DatabaseExtractor(Extractor):
 
     def maximize_partitions(self, table_size: int) -> int:
         """
-        Determine the maximum number of row-wise partitions a table can be divided into while respecting a minimum
-        partition size, and a limit on the number of partitions.
+        Find largest number of partitions that keeps partitions above minimal partition size.
 
-        DatabaseExtractors often need to partition the input so that multiple smaller parts can be operated on in
-        parallel.
-
-        Given a table size (in bytes), the maximum number of partitions to divide the table, and the minimum partition
-        size (in bytes), return the number of partitions.
+        The number of partitions will (1) stay below the maximum defined as the default or in the
+        table design file, (2) stay above the number where the partition size is above the
+        minimum size, (3) is a multiple of 4. (Rule 1 wins over rule 2.)
 
         >>> extractor = DatabaseExtractor("test", {}, [], 64, use_sampling=False, keep_going=False, dry_run=True)
         >>> extractor.maximize_partitions(1)
@@ -79,8 +76,12 @@ class DatabaseExtractor(Extractor):
         1
         >>> extractor.maximize_partitions(20971520)
         2
+        >>> extractor.maximize_partitions(30971520)
+        2
+        >>> extractor.maximize_partitions(41943040)
+        4
         >>> extractor.maximize_partitions(671088630)
-        63
+        60
         >>> extractor.maximize_partitions(671088640)
         64
         >>> extractor.maximize_partitions(671088650)
@@ -91,10 +92,19 @@ class DatabaseExtractor(Extractor):
         1
         """
         min_partition_size = self.select_min_partition_size(table_size)
-        partitions = self.max_partitions
+
+        # Find largest value at or below max_partitions which is also a multiple of 4.
+        # (Using a multiple of 4 here since that's likely the min number of slices.)
+        partitions = max(range(0, self.max_partitions + 1, 4))
+
         partition_size = table_size / partitions
         while partition_size < min_partition_size and partitions > 1:
-            partitions -= 1
+            if partitions > 4:
+                partitions -= 4
+            elif partitions == 4:
+                partitions = 2
+            else:
+                partitions = 1
             partition_size = table_size / partitions
 
         self.logger.debug(
