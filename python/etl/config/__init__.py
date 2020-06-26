@@ -77,6 +77,9 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
     else:
         return int(value)
 
+def get_config_list(name: str) -> List:
+    return []
+
 
 def set_config_value(name: str, value: str) -> None:
     """
