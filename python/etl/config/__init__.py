@@ -77,7 +77,11 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
     else:
         return int(value)
 
+
 def get_config_list(name: str) -> List:
+    """
+        Lookup a configuration value that is a List.
+    """
     return []
 
 
