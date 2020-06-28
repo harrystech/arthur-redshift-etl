@@ -82,7 +82,7 @@ def get_config_list(name: str) -> List:
     """
         Lookup a configuration value that is a List.
     """
-    return []
+    return _mapped_config.get(name)
 
 
 def set_config_value(name: str, value: str) -> None:
