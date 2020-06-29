@@ -13,18 +13,58 @@ set -o errexit
 USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
-if [[ $# -gt 2 || "$1" = "-h" ]]; then
-    cat <<EOF
+show_usage_and_exit () {
+    cat <<USAGE
 
-Usage: `basename $0` [[<bucket_name>] <target_env>]
+Usage: `basename $0` [-y] [[<bucket_name>] <target_env>]
 
 This creates a new distribution and uploads it into S3.
 The <target_env> defaults to "$DEFAULT_PREFIX".
 The <bucket_name> defaults to your object store setting.
-If the bucket name is not specified, variable DATA_WAREHOUSE_CONFIG must be set.
+If the bucket name is not specified, the variable DATA_WAREHOUSE_CONFIG must be set.
 
-EOF
-    exit 0
+You can specify "-y" to skip the confirmation question.
+
+USAGE
+    exit ${1-0}
+}
+
+ask_to_confirm () {
+    while true; do
+        read -r -p "$1 (y/[n]) " ANSWER
+        case "$ANSWER" in
+            y|Y)
+                echo "Proceeding"
+                break
+                ;;
+            *)
+                echo "Bailing out"
+                exit 0
+                ;;
+        esac
+    done
+}
+
+assume_yes="NO"
+while getopts ":hy" opt; do
+    case "$opt" in
+      h)
+        show_usage_and_exit
+        ;;
+      y)
+        assume_yes="YES"
+        ;;
+      \?)
+        echo "Invalid option: -$OPTARG" >&2
+        show_usage_and_exit 1
+      ;;
+    esac
+done
+shift $((OPTIND -1))
+
+if [[ $# -gt 2 ]]; then
+    echo "Too many arguments"
+    show_usage_and_exit 1
 fi
 
 if [[ $# -lt 2 && -z "$DATA_WAREHOUSE_CONFIG" ]]; then
@@ -46,22 +86,6 @@ else
 fi
 
 set -o nounset
-
-ask_to_confirm () {
-    while true; do
-        read -r -p "$1 (y/[n]) " ANSWER
-        case "$ANSWER" in
-            y|Y)
-                echo "Proceeding"
-                break
-                ;;
-            *)
-                echo "Bailing out"
-                exit 0
-                ;;
-        esac
-    done
-}
 
 DIR_NAME=`dirname $0`
 BIN_PATH=$(\cd "$DIR_NAME" && \pwd)
@@ -92,7 +116,9 @@ if ! aws s3 ls "s3://$PROJ_BUCKET/" > /dev/null; then
     exit 2
 fi
 
-if aws s3 ls "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars" > /dev/null; then
+if [[ "$assume_yes" = "YES" ]]; then
+    true
+elif aws s3 ls "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars" > /dev/null; then
     ask_to_confirm "Are you sure you want to overwrite 's3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT'?"
 else
     ask_to_confirm "Are you sure you want to create 's3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT'?"
@@ -126,6 +152,10 @@ if [[ -d "jars" ]]; then
 fi
 
 set +o xtrace
-echo
-echo "# You should *now* sync your data warehouse::"
-echo "arthur.py sync --deploy --prefix \"$PROJ_TARGET_ENVIRONMENT\""
+
+# If you're confident enough to use "-y", you should know already about next steps.
+if [[ "$assume_yes" != "YES" ]]; then
+    echo
+    echo "# You should *now* sync your data warehouse::"
+    echo "arthur.py sync --deploy --prefix \"$PROJ_TARGET_ENVIRONMENT\""
+fi
