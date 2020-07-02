@@ -155,8 +155,8 @@
                     "minimum": 0
                 },
                 "retriable_error_codes": {
-                    "description": "known spectrum pgcodes - safe to retry",
-                    "type": "array"
+                    "description": "Comma-separated list of pgcodes which can be safely retried",
+                    "type": "string"
                 }
             },
             "required": [ "extract_retries", "copy_data_retries" ],
