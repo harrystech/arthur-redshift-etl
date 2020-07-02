@@ -349,5 +349,5 @@ def insert_from_query(
             if exc.pgcode in retriable_error_codes:
                 raise TransientETLError(exc) from exc
             else:
-                logger.warning("SQL Error Code is unexpected, cannot retry: %s", exc.pgcode)
+                logger.warning("SQL Error Code is unexpected, cannot retry: pgcode=%d", exc.pgcode)
                 raise
