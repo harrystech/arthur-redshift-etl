@@ -78,11 +78,11 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
         return int(value)
 
 
-def get_config_list(name: str) -> List:
+def get_config_list(name: str) -> List[int]:
     """
-        Lookup a configuration value that is a List.
+    Lookup a configuration value that is a List.
     """
-    return _mapped_config.get(name)
+    return list(map(int, get_config_value(name).split(",")))
 
 
 def set_config_value(name: str, value: str) -> None:

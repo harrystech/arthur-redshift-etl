@@ -346,10 +346,8 @@ def insert_from_query(
         try:
             etl.db.execute(conn, stmt)
         except psycopg2.InternalError as exc:
-            #if "S3 Query Exception" in exc.pgerror or "S3Query Exception" in exc.pgerror:
             if exc.pgcode in retriable_error_codes:
-                # If this error was caused by a table in S3 (see Redshift Spectrum) then we might be able to try again.
                 raise TransientETLError(exc) from exc
             else:
-                logger.warning("SQL Error is not S3 Query Exception, cannot retry: %s", exc.pgerror)
+                logger.warning("SQL Error Code is unexpected, cannot retry: %s", exc.pgcode)
                 raise

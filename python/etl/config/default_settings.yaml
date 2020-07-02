@@ -6,7 +6,7 @@
         "extract_retries": 1,
         "copy_data_retries": 3,
         "insert_data_retries": 3,
-        "retriable_error_codes": [15001]
+        "retriable_error_codes": "8001,15001,15005"
     },
     # Target (Redshift) cluster
     "data_warehouse": {
