@@ -14,7 +14,7 @@ import psycopg2
 import psycopg2.extensions
 from psycopg2.extensions import connection  # only for type annotation
 
-from etl.config import get_config_list
+import etl.config
 import etl.db
 from etl.errors import ETLSystemError, TransientETLError
 from etl.names import TableName
@@ -328,7 +328,7 @@ def insert_from_query(
     """
     Load data into table in the data warehouse using the INSERT INTO command.
     """
-    retriable_error_codes = get_config_list("arthur_settings.retriable_error_codes")
+    retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
     stmt = """
         INSERT INTO {table} (
             {columns}
