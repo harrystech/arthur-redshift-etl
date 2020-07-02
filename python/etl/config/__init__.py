@@ -74,8 +74,17 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
         value = get_config_value(name, str(default))
     if value is None:
         raise InvalidArgumentError("missing config for {}".format(name))
-    else:
-        return int(value)
+    return int(value)
+
+
+def get_config_list(name: str) -> List[int]:
+    """
+    Lookup a configuration value that is a List.
+    """
+    value = get_config_value(name)
+    if value is None:
+        raise InvalidArgumentError("missing config for {}".format(name))
+    return list(map(int, value.split(",")))
 
 
 def set_config_value(name: str, value: str) -> None:

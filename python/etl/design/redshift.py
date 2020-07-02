@@ -14,10 +14,12 @@ import psycopg2
 import psycopg2.extensions
 from psycopg2.extensions import connection  # only for type annotation
 
+import etl.config
 import etl.db
 from etl.errors import ETLSystemError, TransientETLError
 from etl.names import TableName
 from etl.text import join_column_list
+
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -326,6 +328,7 @@ def insert_from_query(
     """
     Load data into table in the data warehouse using the INSERT INTO command.
     """
+    retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
     stmt = """
         INSERT INTO {table} (
             {columns}
@@ -343,9 +346,8 @@ def insert_from_query(
         try:
             etl.db.execute(conn, stmt)
         except psycopg2.InternalError as exc:
-            if "S3 Query Exception" in exc.pgerror or "S3Query Exception" in exc.pgerror:
-                # If this error was caused by a table in S3 (see Redshift Spectrum) then we might be able to try again.
+            if exc.pgcode in retriable_error_codes:
                 raise TransientETLError(exc) from exc
             else:
-                logger.warning("SQL Error is not S3 Query Exception, cannot retry: %s", exc.pgerror)
+                logger.warning("Unretriable SQL Error: pgcode=%d, pgerror=%s", exc.pgcode, exc.pgerror)
                 raise

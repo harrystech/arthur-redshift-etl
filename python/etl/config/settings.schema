@@ -153,6 +153,10 @@
                     "description": "If an INSERT command fails to load data with an error pointing to S3 fetch, retry the INSERT at most this many times. Zero disables retries",
                     "type": "integer",
                     "minimum": 0
+                },
+                "retriable_error_codes": {
+                    "description": "Comma-separated list of pgcodes which can be safely retried",
+                    "type": "string"
                 }
             },
             "required": [ "extract_retries", "copy_data_retries" ],
