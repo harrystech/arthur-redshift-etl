@@ -1,4 +1,4 @@
-Description: |
+Description: |-
     Create a Redshift cluster with its subnet group and parameter group.
 
 AWSTemplateFormatVersion: '2010-09-09'
@@ -74,6 +74,10 @@ Parameters:
         Type: String
         Default: ""
 
+    PreferredMaintenanceWindow:
+        Description: (optional) Preferred maintenance window for the Redshift cluster
+        Type: String
+        Default: "sun:18:30-sun:19:00"
 
 Conditions:
 
@@ -172,7 +176,7 @@ Resources:
             PubliclyAccessible:
                 true
             PreferredMaintenanceWindow:
-                "sun:18:30-sun:19:00"
+                !Ref PreferredMaintenanceWindow
             VpcSecurityGroupIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
             SnapshotIdentifier:
