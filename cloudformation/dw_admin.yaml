@@ -1,4 +1,4 @@
-Description: |
+Description: |-
     Create the admin role for users and add permission to assume this role to the given group.
 
 AWSTemplateFormatVersion: '2010-09-09'
