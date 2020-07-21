@@ -1,0 +1,13 @@
+# See https://EditorConfig.org for background and options.
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+max_line_length = 120
+
+[*.{py,yaml}]
+indent_size = 4
+indent_style = space
+tab_width = 4
+trim_trailing_whitespace = true
