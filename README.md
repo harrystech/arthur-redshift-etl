@@ -392,14 +392,19 @@ Once code is considered ready for production (and you've made sure there's an **
 ```
 git checkout master
 git pull
-git merge origin/next
+git merge --no-ff origin/next
 git push
+```
+* Tag the latest commit on master
+```
+git tag # pick a tag following SemVer
+git push origin --tags
 ```
 * Then merge `master` back into `next` to ensure any hotfixes on master get picked up:
 ```
 git checkout next
 git pull
-git merge --no-ff origin/master
+git merge origin/master
 git push
 ```
 
