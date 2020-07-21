@@ -155,7 +155,7 @@
                     "minimum": 0
                 },
                 "retriable_error_codes": {
-                    "description": "Comma-separated list of pgcodes which can be safely retried",
+                    "description": "Comma-separated list of pgcode values which can be safely retried",
                     "type": "string"
                 }
             },

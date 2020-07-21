@@ -36,8 +36,11 @@ configured to use <config_dir>.
 
 The <config_dir> defaults to \$DATA_WAREHOUSE_CONFIG.
 The <target_env> defaults to \$ARTHUR_DEFAULT_PREFIX (or \$USER if not set).
+
 The optional -p flag lets you use the given profile from your AWS CLI config
-within the container. If \$AWS_PROFILE is set, it will be used as a default.
+within the container. When the flag is not present, \$AWS_PROFILE is used if set
+or \$AWS_DEFAULT_PROFILE is used if set and \$AWS_PROFILE isn't.
+
 With the -w flag, port 8086 is published to access the HTTP server in the ETL.
 
 You must have built the Docker image with build_arthur.sh before using this script!
@@ -46,7 +49,7 @@ EOF
     exit ${1-0}
 }
 
-profile="${AWS_PROFILE-}"
+profile="${AWS_PROFILE-${AWS_DEFAULT_PROFILE-}}"
 tag="latest"
 publish_arg=""
 

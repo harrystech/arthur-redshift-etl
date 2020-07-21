@@ -349,5 +349,5 @@ def insert_from_query(
             if exc.pgcode in retriable_error_codes:
                 raise TransientETLError(exc) from exc
             else:
-                logger.warning("Unretriable SQL Error: pgcode=%d, pgerror=%s", exc.pgcode, exc.pgerror)
+                logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
                 raise
