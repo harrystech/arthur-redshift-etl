@@ -4,6 +4,7 @@ Implement commands that interact with AWS Data Pipeline
 
 import fnmatch
 import logging
+from datetime import datetime, timedelta
 from operator import attrgetter
 from typing import List
 
@@ -52,7 +53,10 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     all_pipeline_ids = response_iterator.search("pipelineIdList[].id")
     if selection:
         selected_pipeline_ids = [
-            pipeline_id for pipeline_id in all_pipeline_ids for glob in selection if fnmatch.fnmatch(pipeline_id, glob)
+            pipeline_id
+            for pipeline_id in all_pipeline_ids
+            for glob in selection
+            if fnmatch.fnmatch(pipeline_id, glob)
         ]
     else:
         selected_pipeline_ids = list(all_pipeline_ids)
@@ -80,8 +84,11 @@ def show_pipelines(selection: List[str]) -> None:
     if not pipelines:
         logger.warning("Found no pipelines")
         print("*** No pipelines found ***")
-    elif selection and len(pipelines) > 1:
+        return
+
+    if selection and len(pipelines) > 1:
         logger.warning("Selection matches more than one pipeline")
+
     if pipelines:
         if selection:
             logger.info(
@@ -90,7 +97,8 @@ def show_pipelines(selection: List[str]) -> None:
             )
         else:
             logger.info(
-                "Currently active pipelines: %s", join_with_quotes(pipeline.pipeline_id for pipeline in pipelines)
+                "Currently active pipelines: %s",
+                join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
             )
         print(
             etl.text.format_lines(
@@ -102,11 +110,49 @@ def show_pipelines(selection: List[str]) -> None:
                 max_column_width=80,
             )
         )
+    # Show additional details if we're looking at a specific pipeline.
     if selection and len(pipelines) == 1:
         pipeline = pipelines[0]
         print()
         print(
             etl.text.format_lines(
-                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)], header_row=["Key", "Value"]
+                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
+                header_row=["Key", "Value"],
             )
         )
+
+
+def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
+    """
+    Delete pipelines that finished more than 24 hours ago.
+
+    You can use this to easily clean up (validation or pizza) pipelines.
+    The 24-hour cool off period suggests not to delete pipelines that are still needed for inspection.
+    """
+    yesterday_or_before = (datetime.utcnow() - timedelta(days=1)).replace(microsecond=0)
+    earliest_finished_time = yesterday_or_before.isoformat()
+
+    pipelines = [
+        pipeline
+        for pipeline in list_pipelines(selection)
+        if pipeline.fields["@pipelineState"] == "FINISHED"
+        and pipeline.fields.get("@finishedTime") < earliest_finished_time
+    ]
+    if not pipelines:
+        logger.warning("Found no finished pipelines (older than %s)", earliest_finished_time)
+        return
+
+    client = boto3.client("datapipeline")
+    for pipeline in pipelines:
+        if dry_run:
+            logger.info(
+                "Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name
+            )
+        else:
+            logger.info("Trying to delete pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
+            response = client.delete_pipeline(pipelineId=pipeline.pipeline_id)
+            logger.info(
+                "Succeeded to delete '%s' (request_id=%s)",
+                pipeline.pipeline_id,
+                response["ResponseMetadata"]["RequestId"],
+            )

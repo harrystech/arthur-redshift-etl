@@ -20,7 +20,6 @@ from etl.errors import ETLSystemError, TransientETLError
 from etl.names import TableName
 from etl.text import join_column_list
 
-
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
