@@ -17,7 +17,7 @@ _arthur_completion()
                   extract load upgrade update unload
                   create_schemas promote_schemas terminate_sessions
                   show_downstream_dependents show_dependents show_upstream_dependencies
-                  render_template show_value show_vars settings show_pipelines
+                  render_template show_value show_vars settings show_pipelines delete_finished_pipelines
                   query_events summarize_events tail_events
                   help selftest
                   --submit --config"
