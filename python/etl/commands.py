@@ -300,6 +300,7 @@ def build_full_parser(prog_name):
         ShowValueCommand,
         ShowVarsCommand,
         ShowPipelinesCommand,
+        DeleteFinishedPipelinesCommand,
         QueryEventsCommand,
         SummarizeEventsCommand,
         TailEventsCommand,
@@ -1268,10 +1269,26 @@ class ShowPipelinesCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        parser.add_argument("selection", help="pick pipelines to show", nargs="*")
+        parser.add_argument("selection", help="pick pipelines to show more details for", nargs="*")
 
     def callback(self, args, config):
         etl.pipeline.show_pipelines(args.selection)
+
+
+class DeleteFinishedPipelinesCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "delete_finished_pipelines",
+            "delete pipelines that finished yesterday or before",
+            "Delete pipelines if they are finished and they finished more than 24 hours ago.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument("selection", help="pick specific pipelines", nargs="*")
+
+    def callback(self, args, config):
+        etl.pipeline.delete_finished_pipelines(args.selection, dry_run=args.dry_run)
 
 
 class QueryEventsCommand(SubCommand):

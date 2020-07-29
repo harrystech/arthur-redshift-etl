@@ -43,14 +43,8 @@ RUN source /tmp/redshift_etl/venv/bin/activate && \
     python3 setup.py develop && \
     run_tests.py
 
-# Ensure the venv is activated when running interactive shells
-RUN echo $'source /tmp/redshift_etl/venv/bin/activate\n\
-source /arthur-redshift-etl/etc/arthur_completion.sh\n\
-PATH=$PATH:/tmp/redshift_etl/bin\n\
-cat /arthur-redshift-etl/etc/motd\n\
-echo \n\
-echo "Environment settings:"\n\
-arthur.py settings object_store.s3.* version' > /root/.bashrc
+# The .bashrc will ensure the venv is activated when running interactive shells.
+RUN cat /arthur-redshift-etl/etc/default.bashrc > /root/.bashrc
 
 # Create an empty .pgpass file to help with create_user and update_user commands.
 RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /root/.pgpass \

@@ -222,6 +222,7 @@ def test_object_creation(bucket_name: str, prefix: str) -> None:
 
 if __name__ == "__main__":
     import sys
+
     import etl.config
 
     if len(sys.argv) != 3:
