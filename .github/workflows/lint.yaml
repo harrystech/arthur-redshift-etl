@@ -30,7 +30,7 @@ jobs:
         black --config ./etc/pyproject.toml --check python/
     - name: Lint with isort
       run: |-
-        isort --settings-path ./etc --check-only --recursive python/
+        isort --settings-path ./etc --check-only python/
     - name: Lint with pycodestyle
       run: |-
         pycodestyle python
