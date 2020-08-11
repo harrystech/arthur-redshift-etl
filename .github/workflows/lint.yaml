@@ -1,0 +1,39 @@
+# Simple workflow to run linters.
+
+name: Lint Python code
+
+on: [push]
+
+#  push:
+#    branches: [ next ]
+#  pull_request:
+#    branches: [ next ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout out code
+      uses: actions/checkout@v2
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: Install dependencies
+      run: |-
+        python3 -m pip install --upgrade pip
+        python3 -m pip install --requirement requirements-linters.txt
+    - name: Lint with black
+      run: |-
+        black --config ./etc/pyproject.toml --check python/
+    - name: Lint with isort
+      run: |-
+        isort --settings-path ./etc --check-only --recursive python/
+    - name: Lint with pycodestyle
+      run: |-
+        pycodestyle python
+    - name: Run type checker
+      run: |-
+        mypy python
