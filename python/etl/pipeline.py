@@ -53,10 +53,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     all_pipeline_ids = response_iterator.search("pipelineIdList[].id")
     if selection:
         selected_pipeline_ids = [
-            pipeline_id
-            for pipeline_id in all_pipeline_ids
-            for glob in selection
-            if fnmatch.fnmatch(pipeline_id, glob)
+            pipeline_id for pipeline_id in all_pipeline_ids for glob in selection if fnmatch.fnmatch(pipeline_id, glob)
         ]
     else:
         selected_pipeline_ids = list(all_pipeline_ids)
@@ -97,8 +94,7 @@ def show_pipelines(selection: List[str]) -> None:
             )
         else:
             logger.info(
-                "Currently active pipelines: %s",
-                join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
+                "Currently active pipelines: %s", join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
             )
         print(
             etl.text.format_lines(
@@ -116,8 +112,7 @@ def show_pipelines(selection: List[str]) -> None:
         print()
         print(
             etl.text.format_lines(
-                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
-                header_row=["Key", "Value"],
+                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)], header_row=["Key", "Value"],
             )
         )
 
@@ -145,9 +140,7 @@ def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
     client = boto3.client("datapipeline")
     for pipeline in pipelines:
         if dry_run:
-            logger.info(
-                "Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name
-            )
+            logger.info("Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
         else:
             logger.info("Trying to delete pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
             response = client.delete_pipeline(pipelineId=pipeline.pipeline_id)
