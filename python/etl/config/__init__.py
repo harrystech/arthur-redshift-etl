@@ -175,11 +175,7 @@ def load_environ_file(filename: str) -> None:
     logger.info("Loading environment variables from '%s'", filename)
     assignment_re = re.compile(r"\s*(?:export\s+)?(\w+)=(\S+)")
     with open(filename) as content:
-        settings = [
-            match.groups()
-            for match in map(assignment_re.match, content)
-            if match is not None
-        ]
+        settings = [match.groups() for match in map(assignment_re.match, content) if match is not None]
     for name, value in settings:
         os.environ[name] = value
 
