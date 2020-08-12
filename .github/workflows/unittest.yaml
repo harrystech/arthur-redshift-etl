@@ -1,0 +1,33 @@
+# Simple workflow to run unit tests.
+
+name: Unit Tests
+
+on:
+  push:
+    paths:
+    - "python"
+    - ".github/workflows/unittest.yaml"
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout out code
+      uses: actions/checkout@v2
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: Cache pip
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+    - name: Install dependencies
+      run: |-
+        python3 -m pip install --upgrade pip
+        python3 -m pip install --requirement requirements.txt
+        python3 setup.py develop
+    - name: Run doctests
+      run: |-
+        python3 -m python.etl.selftest
