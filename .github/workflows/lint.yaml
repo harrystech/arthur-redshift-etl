@@ -2,18 +2,15 @@
 
 name: Lint Python code
 
-on: [push]
-
-#  push:
-#    branches: [ next ]
-#  pull_request:
-#    branches: [ next ]
+on:
+  push:
+    paths:
+    - "python"
+    - ".github/workflows/*"
 
 jobs:
-  build:
-
+  lint:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout out code
       uses: actions/checkout@v2
@@ -21,6 +18,11 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.8
+    - name: Cache pip
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements-linters.txt') }}
     - name: Install dependencies
       run: |-
         python3 -m pip install --upgrade pip
