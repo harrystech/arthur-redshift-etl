@@ -42,9 +42,10 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
     if column.get("not_null", False):
         column_ddl += " NOT NULL"
     if "references" in column and not skip_references:
-        [table_identifier, [foreign_column]] = column["references"]
-        foreign_name = TableName.from_identifier(table_identifier)
-        column_ddl += ' REFERENCES {} ( "{}" )'.format(foreign_name, foreign_column)
+        # TODO(tom): Fix type definition of column references
+        [table_identifier, [foreign_column]] = column["references"]  # type: ignore
+        foreign_name = TableName.from_identifier(table_identifier)  # type: ignore
+        column_ddl += ' REFERENCES {} ( "{}" )'.format(foreign_name, foreign_column)  # type: ignore
     return column_ddl
 
 
