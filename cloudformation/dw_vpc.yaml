@@ -240,7 +240,7 @@ Resources:
                             "s3:PutObject*"
                         ],
                         "Resource": [
-                            !Sub "arn:aws:s3:${AWS::Region}:${AWS::AccountId}:*"
+                            !Sub "arn:aws:s3::${AWS::AccountId}:*"
                         ]
                     }
                 ]
@@ -836,9 +836,7 @@ Resources:
                                 - "s3:DeleteObject"
                                 - "s3:PutObject"
                             Resource:
-                                - !Sub "arn:aws:s3:::${ObjectStore}/*"
-                                - !Sub "arn:aws:s3:::${DataLake}/*"
-                                - !If [ "ValidNotEmptySecondaryDataLake",  !Sub "arn:aws:s3:::${SecondaryDataLake}/*",  !Ref "AWS::NoValue" ]
+                                - !Sub "arn:aws:s3:::*"
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
