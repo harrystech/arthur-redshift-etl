@@ -232,7 +232,7 @@ Resources:
                         "Resource": "*"
                     },
                     {
-                        "Sid": "WriteSelective",
+                        "Sid": "WriteIntoAccountOnly",
                         "Effect": "Allow",
                         "Principal": "*",
                         "Action": [
@@ -240,9 +240,7 @@ Resources:
                             "s3:PutObject*"
                         ],
                         "Resource": [
-                            !Sub "arn:aws:s3:::${ObjectStore}/*" ,
-                            !Sub "arn:aws:s3:::${DataLake}/*" ,
-                            !If [ "ValidNotEmptySecondaryDataLake",  !Sub "arn:aws:s3:::${SecondaryDataLake}/*", !Ref "AWS::NoValue" ]
+                            !Sub "arn:aws:s3:${AWS::Region}:${AWS::AccountId}:*"
                         ]
                     }
                 ]
