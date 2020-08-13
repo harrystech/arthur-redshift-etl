@@ -1,5 +1,6 @@
-![Lint](https://github.com/harrystech/arthur-redshift-etl/workflows/Lint%20Python%20code/badge.svg)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Lint Python code](https://github.com/harrystech/arthur-redshift-etl/workflows/Lint%20Python%20code/badge.svg)](https://github.com/harrystech/arthur-redshift-etl/actions?query=workflow%3A%22Lint+Python+code%22)
+[![Unit Tests](https://github.com/harrystech/arthur-redshift-etl/workflows/Unit%20Tests/badge.svg)](https://github.com/harrystech/arthur-redshift-etl/actions?query=workflow%3A%22Unit+Tests%22)
+[![code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 **ETL Code for Loading Data Into a Redshift-based Data Warehouse**
 ---
