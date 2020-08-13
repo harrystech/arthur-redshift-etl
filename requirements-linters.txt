@@ -1,0 +1,4 @@
+black==19.10b0
+isort[pyproject]==5.3.2
+mypy==0.782
+pycodestyle==2.6.0

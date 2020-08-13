@@ -1,4 +1,8 @@
+![Lint](https://github.com/harrystech/arthur-redshift-etl/workflows/Lint%20Python%20code/badge.svg)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 **ETL Code for Loading Data Into a Redshift-based Data Warehouse**
+---
 
 ```
                 _   _                  _____          _     _     _  __ _     ______ _______ _
@@ -320,19 +324,37 @@ on the next ETL feature.
 
 ### Formatting code
 
-* Please run code through [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg)):
-```bash
-pycodestyle python
+Please format your code using:
+* [black](https://github.com/psf/black)
+* [isort](https://github.com/timothycrosley/isort)
+
+Also, we want to run code through:
+* [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg))
+* [type checker](http://mypy-lang.org/)
+
+#### Installing linters locally
+
+To use the linters (`isort`, `black`, `pycodestyle`, `mypy`) locally, install them using:
+```
+python3 -m venv venv
+source venv/bin/activate
+pip3 install --requirement requirements-linters.txt
 ```
 
-* Please sort your imports using [isort](https://github.com/timothycrosley/isort):
-```bash
-isort --settings-path ./etc --recursive python/
-```
+#### Running formatters locally
 
-* Please format your code using [black](https://github.com/psf/black):
 ```bash
 black --config ./etc/pyproject.toml python/
+isort --settings-path ./etc python/
+```
+
+#### Running linters locally
+
+```bash
+black --config ./etc/pyproject.toml --check python/
+isort --settings-path ./etc --check-only python/
+pycodestyle python
+mypy python
 ```
 
 ### Adding a pre-commit hook
