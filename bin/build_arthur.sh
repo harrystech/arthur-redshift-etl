@@ -17,7 +17,6 @@ EOF
     exit ${1-0}
 }
 
-
 while getopts ":ht:" opt; do
     case "$opt" in
       h)
@@ -34,7 +33,11 @@ while getopts ":ht:" opt; do
 done
 shift $((OPTIND -1))
 
+BIN_DIR=$(\cd "${0%/*}"/ && \pwd)
+TOP_DIR=$(\cd "$BIN_DIR/.." && \pwd)
+
 set -o xtrace
 
+cd "$TOP_DIR"
 bin/release_version.sh
 docker build --tag "arthur-redshift-etl:$tag" .

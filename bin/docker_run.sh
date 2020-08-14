@@ -25,6 +25,7 @@ case "$0" in
         ;;
 esac
 
+BUILD_SCRIPT="${0%/*}/build_arthur.sh"
 
 show_usage_and_exit () {
     cat <<EOF
@@ -42,8 +43,6 @@ within the container. When the flag is not present, \$AWS_PROFILE is used if set
 or \$AWS_DEFAULT_PROFILE is used if set and \$AWS_PROFILE isn't.
 
 With the -w flag, port 8086 is published to access the HTTP server in the ETL.
-
-You must have built the Docker image with build_arthur.sh before using this script!
 
 EOF
     exit ${1-0}
@@ -96,7 +95,6 @@ elif [[ -z "$config_arg" ]]; then
     show_usage_and_exit 1
 fi
 
-
 if [[ ! -d "$config_arg" ]]; then
     echo "Bad configuration directory: $config_arg"
     exit 1
@@ -134,13 +132,27 @@ if ! grep 'name="redshift_etl"' setup.py >/dev/null 2>&1; then
     fi
 fi
 
+# We always build a new image for deploying so that we deploy the latest version with the latest version.
+# Otherwise, we only build if we cannot find the image locally.
+if [[ "$action" = "deploy" ]]; then
+    BUILD_IMAGE=yes
+elif ! docker image inspect "arthur-redshift-etl:$tag" >/dev/null 2>&1; then
+    echo "Docker image not found ... building on demand."
+    BUILD_IMAGE=yes
+else
+    BUILD_IMAGE=no
+fi
+if [[ "$BUILD_IMAGE" = "yes" ]]; then
+    "$BUILD_SCRIPT" -t "$tag"
+fi
+
 case "$action" in
     deploy)
         set -o xtrace
         # Need to mount read-write to be able to write arthur.log.
         docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume ~/.aws:/home/arthur/.aws:ro \
+            --volume ~/.aws:/home/arthur/.aws \
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
@@ -177,10 +189,9 @@ case "$action" in
         ;;
     upload)
         set -o xtrace
-        bin/build_arthur.sh -t "$tag"
         docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume ~/.aws:/home/arthur/.aws:ro \
+            --volume ~/.aws:/home/arthur/.aws \
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
