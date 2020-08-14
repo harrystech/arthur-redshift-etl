@@ -11,13 +11,7 @@ setup(
     url="https://github.com/harrystech/arthur-redshift-etl",
     package_dir={"": "python"},
     packages=find_packages("python"),
-    package_data={
-        "etl": [
-            "assets/*",
-            "config/*",
-            "templates/*",
-        ]
-    },
+    package_data={"etl": ["assets/*", "config/*", "templates/*"]},
     scripts=[
         "python/scripts/compare_events.py",
         "python/scripts/install_extraction_pipeline.sh",
@@ -39,5 +33,6 @@ setup(
             "arthur.py = etl.commands:run_arg_as_command",
             "run_tests.py = etl.selftest:run_tests",
         ]
-    }
+    },
+    zip_safe=False,
 )

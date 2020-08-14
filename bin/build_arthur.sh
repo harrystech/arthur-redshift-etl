@@ -2,6 +2,8 @@
 
 set -o errexit -o nounset
 
+tag="latest"
+
 show_usage_and_exit () {
     cat <<EOF
 
@@ -9,12 +11,12 @@ Usage: `basename $0` [-t image_tag]
 
 This builds the Docker image to run Arthur locally. Docker itself must already be installed.
 The script 'bin/release_version.sh' is run to update version information for the build.
+The image tag defaults to: $tag
 
 EOF
     exit ${1-0}
 }
 
-tag="latest"
 
 while getopts ":ht:" opt; do
     case "$opt" in
@@ -35,4 +37,4 @@ shift $((OPTIND -1))
 set -o xtrace
 
 bin/release_version.sh
-docker build --tag "arthur:$tag" .
+docker build --tag "arthur-redshift-etl:$tag" .

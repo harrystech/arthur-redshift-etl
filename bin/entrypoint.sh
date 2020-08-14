@@ -10,16 +10,23 @@
 # 3. Finally it's easy to forget to update package information when changing
 #    one of the scripts but then their old version will continue to be used.
 #
-# Bottom line: We'll always run "python setup.py develop" when starting up.
+# Bottom line: We should always run "python setup.py develop" when starting up.
 # Side-effect: You will find a python/redshift_etl.egg-info directory locally.
 #              (This also means that we cannot mount the source read-only.)
 
-set -o errexit -o xtrace
+export PATH="/opt/local/redshift_etl/bin:$PATH"
 
-# Using "--quiet" here to reduce the startup noise for "end users."
-(
-    cd /arthur-redshift-etl &&
-    python setup.py --quiet develop
-)
+if [[ -r "/opt/local/redshift_etl/venv/bin/activate" ]]; then
+    source /opt/local/redshift_etl/venv/bin/activate
+
+    # Using "--quiet" here to reduce the startup noise for "end users."
+    if [[ -d "/opt/src/arthur-redshift-etl/.git" ]]; then
+      (
+        set -o errexit -o xtrace
+        cd /opt/src/arthur-redshift-etl
+        python3 setup.py --quiet develop
+      )
+    fi
+fi
 
 exec "$@"

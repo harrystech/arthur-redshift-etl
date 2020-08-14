@@ -1,19 +1,22 @@
 # This is the default .bashrc file inside a container.
 
-PS1='(aws:$AWS_PROFILE, prefix=$ARTHUR_DEFAULT_PREFIX) \$ '
-
-source /opt/redshift_etl/venv/bin/activate
-PATH=$PATH:/opt/redshift_etl/bin
-
-# Useful when developing Arthur
-alias develop="( \cd /arthur-redshift-etl && python setup.py develop )"
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+    . /etc/bashrc
+fi
 
 # Generally useful
 alias ll='ls -alF'
 
-source /arthur-redshift-etl/etc/arthur_completion.sh
+# Useful when developing Arthur
+alias develop="( \cd /opt/src/arthur-redshift-etl && python setup.py develop )"
 
-cat /arthur-redshift-etl/etc/motd
-echo -e "\nEnvironment settings:\n"
-arthur.py settings object_store.s3.* version
-echo
+# Change prompt to show active profile and default prefix.
+PS1='(aws:$AWS_PROFILE, prefix:$ARTHUR_DEFAULT_PREFIX) \$ '
+
+if [[ -z "$VIRTUAL_ENV" ]]; then
+    source /opt/local/redshift_etl/venv/bin/activate
+fi
+
+# Commandline completion
+source /opt/src/arthur-redshift-etl/etc/arthur_completion.sh

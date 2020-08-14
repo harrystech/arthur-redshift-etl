@@ -9,11 +9,11 @@ case "$0" in
         ;;
     *docker_deploy.sh|*deploy_with_arthur.sh)
         action="deploy"
-        action_description="deploy your data warehouse from a shell"
+        action_description="deploy your data warehouse into S3"
         ;;
     *docker_upload.sh|*deploy_arthur.sh)
         action="upload"
-        action_description="upload your ELT code from a shell (after building the image)"
+        action_description="build the Docker image and upload your ELT code to S3"
         ;;
     *run_validation.sh)
         action="validate"
@@ -31,8 +31,8 @@ show_usage_and_exit () {
 
 Usage: `basename $0` [-p aws_profile] [-t image_tag] [-w] [<config_dir> [<target_env>]]
 
-This will $action_description inside a Docker container with Arthur installed and
-configured to use <config_dir>.
+This will $action_description inside a Docker container
+with Arthur installed and configured to use <config_dir>.
 
 The <config_dir> defaults to \$DATA_WAREHOUSE_CONFIG.
 The <target_env> defaults to \$ARTHUR_DEFAULT_PREFIX (or \$USER if not set).
@@ -112,22 +112,24 @@ else
 fi
 
 # The commands below bind the following directories
-#   - the "data warehouse" directory which is the parent of the chosen configuration directory
-#   - the '~/.aws' directory which contains the config and credentials needed
+#   - the "data warehouse" directory as /opt/data-warhouse, which is the parent of the chosen
+#     configuration directory (always read-write when we need to write an arthur.log file)
+#   - the '~/.aws' directory which contains the config and credentials needed (always read-write
+#     when we need to write to the cli cache)
 #   - the '~/.ssh' directory which contains the keys to login into EMR and EC2 hosts (for interactive shells)
-#   - the current directory as `/arthur-redshift-etl` when running a shell, to allow development
+#   - the current directory as `/opt/src/arthur-redshift-etl` when running a shell, to allow development
 # The commands below set these environment variables
 #   - DATA_WAREHOUSE_CONFIG so that Arthur finds the configuration files
 #   - ARTHUR_DEFAULT_PREFIX to pick the default "environment" (same as S3 prefix)
 #   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
 # In case you are running interactively, this also exposes port 8086 for ETL monitoring.
 
-if ! grep 'name="redshift_etl"' setup.py 2>/dev/null; then
+if ! grep 'name="redshift_etl"' setup.py >/dev/null 2>&1; then
     # This only applies to "run" since the other actions do not mount the source directory.
     if [[ "$action" = "run" ]]; then
         action="run-ro"
         echo "Did not find source path (looked for setup.py) -- switching to standalone mode."
-        echo "Changes to code in /arthur-redshift-etl will not be preservd between runs."
+        echo "Changes to code in /opt/src/arthur-redshift-etl will not be preservd between runs."
         echo "However, changes to your schemas or config will be reflected in your local filesystem."
     fi
 fi
@@ -135,72 +137,66 @@ fi
 case "$action" in
     deploy)
         set -o xtrace
+        # Need to mount read-write to be able to write arthur.log.
         docker run --rm --tty \
-            --volume "$data_warehouse_path":/data-warehouse:ro \
-            --volume ~/.aws:/root/.aws:ro \
-            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
+            --volume ~/.aws:/home/arthur/.aws:ro \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
-            "arthur:$tag" \
-            /bin/bash -c \
-                'source /opt/redshift_etl/venv/bin/activate && \
-                arthur.py sync --force --deploy'
+            "arthur-redshift-etl:$tag" \
+            arthur.py sync --force --deploy
         ;;
     run)
         set -o xtrace
         docker run --rm --interactive --tty \
             $publish_arg \
-            --volume "$data_warehouse_path":/data-warehouse \
-            --volume `pwd`:/arthur-redshift-etl \
-            --volume ~/.aws:/root/.aws \
-            --volume ~/.ssh:/root/.ssh \
-            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
+            --volume `pwd`:/opt/src/arthur-redshift-etl \
+            --volume ~/.aws:/home/arthur/.aws \
+            --volume ~/.ssh:/home/arthur/.ssh:ro \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
-            --entrypoint "/arthur-redshift-etl/bin/entrypoint.sh" \
+            --entrypoint "/opt/src/arthur-redshift-etl/bin/entrypoint.sh" \
             $profile_arg \
-            "arthur:$tag" \
-            /bin/bash
+            "arthur-redshift-etl:$tag" \
+            /bin/bash --login
         ;;
     run-ro)
         set -o xtrace
         docker run --rm --interactive --tty \
             $publish_arg \
-            --volume "$data_warehouse_path":/data-warehouse \
-            --volume ~/.aws:/root/.aws:ro \
-            --volume ~/.ssh:/root/.ssh:ro \
-            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
+            --volume ~/.aws:/home/arthur/.aws \
+            --volume ~/.ssh:/home/arthur/.ssh:ro \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
-            "arthur:$tag"
+            "arthur-redshift-etl:$tag" \
+            /bin/bash --login
         ;;
     upload)
         set -o xtrace
-        bin/release_version.sh
-        docker build --tag "arthur:$tag" .
+        bin/build_arthur.sh -t "$tag"
         docker run --rm --tty \
-            --volume "$data_warehouse_path":/data-warehouse:ro \
-            --volume ~/.aws:/root/.aws:ro \
-            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
+            --volume ~/.aws:/home/arthur/.aws:ro \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
-            "arthur:$tag" \
-            /bin/bash -c \
-                'source /opt/redshift_etl/venv/bin/activate && \
-                cd /arthur-redshift-etl && \
-                ./bin/upload_env.sh -y'
+            "arthur-redshift-etl:$tag" \
+            upload_env.sh -y
         ;;
     validate)
         set -o xtrace
         docker run --rm --interactive --tty \
-            --volume "$data_warehouse_path":/data-warehouse:ro \
-            --volume ~/.aws:/root/.aws:ro \
-            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
+            --volume ~/.aws:/home/arthur/.aws \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
-            "arthur:$tag" \
-            /bin/bash -c \
-                'source /opt/redshift_etl/venv/bin/activate \
-                && install_validation_pipeline.sh'
+            "arthur-redshift-etl:$tag" \
+            install_validation_pipeline.sh
         ;;
     *)
         echo "Internal Error: unknown action '$action'!" >&2
