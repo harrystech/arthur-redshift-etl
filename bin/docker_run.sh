@@ -149,7 +149,6 @@ fi
 case "$action" in
     deploy)
         set -o xtrace
-        # Need to mount read-write to be able to write arthur.log.
         docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
             --volume ~/.aws:/home/arthur/.aws \
@@ -169,10 +168,8 @@ case "$action" in
             --volume ~/.ssh:/home/arthur/.ssh:ro \
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
-            --entrypoint "/opt/src/arthur-redshift-etl/bin/entrypoint.sh" \
             $profile_arg \
-            "arthur-redshift-etl:$tag" \
-            /bin/bash --login
+            "arthur-redshift-etl:$tag"
         ;;
     run-ro)
         set -o xtrace
@@ -184,8 +181,7 @@ case "$action" in
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
-            "arthur-redshift-etl:$tag" \
-            /bin/bash --login
+            "arthur-redshift-etl:$tag"
         ;;
     upload)
         set -o xtrace
@@ -200,7 +196,7 @@ case "$action" in
         ;;
     validate)
         set -o xtrace
-        docker run --rm --interactive --tty \
+        docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
             --volume ~/.aws:/home/arthur/.aws \
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \

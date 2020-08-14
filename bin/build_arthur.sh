@@ -38,6 +38,9 @@ TOP_DIR=$(\cd "$BIN_DIR/.." && \pwd)
 
 set -o xtrace
 
+# Change into our source directory and make sure we didn't get lost.
 cd "$TOP_DIR"
+test -f Dockerfile
+
 bin/release_version.sh
 docker build --tag "arthur-redshift-etl:$tag" .

@@ -66,4 +66,4 @@ EXPOSE 8086
 WORKDIR /opt/data-warehouse
 
 ENTRYPOINT ["/opt/src/arthur-redshift-etl/bin/entrypoint.sh"]
-CMD ["/bin/bash"]
+CMD ["/bin/bash", "--login"]

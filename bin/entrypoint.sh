@@ -14,6 +14,8 @@
 # Side-effect: You will find a python/redshift_etl.egg-info directory locally.
 #              (This also means that we cannot mount the source read-only.)
 
+set -o errexit -o nounset
+
 export PATH="/opt/local/redshift_etl/bin:$PATH"
 
 if [[ -r "/opt/local/redshift_etl/venv/bin/activate" ]]; then
@@ -22,7 +24,7 @@ if [[ -r "/opt/local/redshift_etl/venv/bin/activate" ]]; then
     # Using "--quiet" here to reduce the startup noise for "end users."
     if [[ -d "/opt/src/arthur-redshift-etl/.git" ]]; then
       (
-        set -o errexit -o xtrace
+        set -o xtrace
         cd /opt/src/arthur-redshift-etl
         python3 setup.py --quiet develop
       )
