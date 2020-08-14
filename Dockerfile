@@ -29,8 +29,7 @@ RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
 USER arthur
 
 # The .bashrc will ensure the virutal environment is activated when running interactive shells.
-COPY --chown=arthur:arthur etc/default.bashrc /home/arthur/.bashrc
-COPY --chown=arthur:arthur etc/default.bash_profile /home/arthur/.bash_profile
+COPY --chown=arthur:arthur etc/.bash_history etc/.bashrc etc/.bash_profile /home/arthur/
 
 # Install code in /opt/local/redshift_etl (which would be in /tmp/redshift_etl on an EC2 host).
 COPY --chown=arthur:arthur \

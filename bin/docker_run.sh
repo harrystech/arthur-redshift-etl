@@ -134,6 +134,7 @@ fi
 
 # We always build a new image for deploying so that we deploy the latest version with the latest version.
 # Otherwise, we only build if we cannot find the image locally.
+# NOTA BENE We do not try to ascertain whether the image is "out of date."
 if [[ "$action" = "deploy" ]]; then
     BUILD_IMAGE=yes
 elif ! docker image inspect "arthur-redshift-etl:$tag" >/dev/null 2>&1; then
