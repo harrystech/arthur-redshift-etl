@@ -1,9 +1,10 @@
+# This attempts to create an environment close to what ./bin/bootstrap.sh creates
+# with the images available. Note that we install code (and the virtual environment)
+# into /opt. There will be a copy of the source code in /arthur-redshift-etl. If you
+# make changes, run "python setup.py develop"!
 #
-# This attempts to create an environment as close as possible to what ./bin/bootstrap.sh
-# creates with the images available. One notable exception is that the code
-# is expected in /arthur-redshift-etl and is not copied into /tmp/redshift_etl
-# N.B. Make sure to keep this and the bootstrap script in sync!
-#
+# N.B. Make sure to keep the Dockerfile and bootstrap script in sync wrt. packages.
+
 FROM amazonlinux:2017.03
 
 RUN yum install -y \
@@ -21,7 +22,7 @@ RUN yum install -y \
     && \
     pip-3.5 install --upgrade --disable-pip-version-check virtualenv
 
-WORKDIR /tmp/redshift_etl
+WORKDIR /opt/redshift_etl
 
 COPY requirements*.txt ./
 
@@ -30,7 +31,14 @@ RUN virtualenv --python=python3 venv && \
     pip3 install --upgrade pip --disable-pip-version-check && \
     pip3 install --requirement ./requirements-dev.txt
 
-COPY bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh bin/
+COPY bin/entrypoint.sh bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh bin/
+
+# The .bashrc will ensure the venv is activated when running interactive shells.
+COPY etc/default.bashrc /root/.bashrc
+
+# Create an empty .pgpass file to help with create_user and update_user commands.
+RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /root/.pgpass \
+    && chmod go= /root/.pgpass
 
 WORKDIR /arthur-redshift-etl
 
@@ -38,17 +46,10 @@ WORKDIR /arthur-redshift-etl
 # But we want to be independent of the source so copy everything over once.
 COPY . ./
 
-# Use the self tests to check if everything was installed properly
-RUN source /tmp/redshift_etl/venv/bin/activate && \
-    python3 setup.py develop && \
-    run_tests.py
-
-# The .bashrc will ensure the venv is activated when running interactive shells.
-RUN cat /arthur-redshift-etl/etc/default.bashrc > /root/.bashrc
-
-# Create an empty .pgpass file to help with create_user and update_user commands.
-RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /root/.pgpass \
-    && chmod go= /root/.pgpass
+# Ww run this here once in case somebody overrides the entrypoint.
+RUN source /opt/redshift_etl/venv/bin/activate && \
+    python3 setup.py install && \
+    arthur.py --version
 
 # Whenever there is an ETL running, it offers progress information on port 8086.
 EXPOSE 8086
@@ -58,5 +59,5 @@ WORKDIR /data-warehouse
 # All of the normal Arthur configuration for accessing and managing the data
 # warehouse is assumed to have already been set up in that directory.
 
-ENTRYPOINT ["/arthur-redshift-etl/bin/entrypoint.sh"]
+# ENTRYPOINT ["/opt/redshift_etl/bin/entrypoint.sh"]
 CMD ["/bin/bash"]

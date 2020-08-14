@@ -5,7 +5,7 @@ jmespath~=0.9
 jsonschema~=2.5
 pgpasslib~=1.1
 psycopg2-binary~=2.6
-pycodestyle>=2.5.0
+pycodestyle>=2.6.0
 pyyaml~=5.1
 simplejson~=3.8
 tabulate~=0.8,>=0.8.3

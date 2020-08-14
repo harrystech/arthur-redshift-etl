@@ -122,7 +122,30 @@ fi
 #   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
 # In case you are running interactively, this also exposes port 8086 for ETL monitoring.
 
+if ! grep 'name="redshift_etl"' setup.py 2>/dev/null; then
+    # This only applies to "run" since the other actions do not mount the source directory.
+    if [[ "$action" = "run" ]]; then
+        action="run-ro"
+        echo "Did not find source path (looked for setup.py) -- switching to standalone mode."
+        echo "Changes to code in /arthur-redshift-etl will not be preservd between runs."
+        echo "However, changes to your schemas or config will be reflected in your local filesystem."
+    fi
+fi
+
 case "$action" in
+    deploy)
+        set -o xtrace
+        docker run --rm --tty \
+            --volume "$data_warehouse_path":/data-warehouse:ro \
+            --volume ~/.aws:/root/.aws:ro \
+            --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
+            --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            $profile_arg \
+            "arthur:$tag" \
+            /bin/bash -c \
+                'source /opt/redshift_etl/venv/bin/activate && \
+                arthur.py sync --force --deploy'
+        ;;
     run)
         set -o xtrace
         docker run --rm --interactive --tty \
@@ -133,49 +156,50 @@ case "$action" in
             --volume ~/.ssh:/root/.ssh \
             --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --entrypoint "/arthur-redshift-etl/bin/entrypoint.sh" \
             $profile_arg \
-            "arthur:$tag"
+            "arthur:$tag" \
+            /bin/bash
         ;;
-    deploy)
+    run-ro)
         set -o xtrace
-        docker run --rm --tty \
+        docker run --rm --interactive --tty \
+            $publish_arg \
             --volume "$data_warehouse_path":/data-warehouse \
-            --volume ~/.aws:/root/.aws \
+            --volume ~/.aws:/root/.aws:ro \
+            --volume ~/.ssh:/root/.ssh:ro \
             --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
-            "arthur:$tag" \
-            /bin/bash -c \
-                'source /tmp/redshift_etl/venv/bin/activate && \
-                arthur.py sync --force --deploy'
+            "arthur:$tag"
         ;;
     upload)
         set -o xtrace
         bin/release_version.sh
         docker build --tag "arthur:$tag" .
         docker run --rm --tty \
-            --volume "$data_warehouse_path":/data-warehouse \
-            --volume ~/.aws:/root/.aws \
+            --volume "$data_warehouse_path":/data-warehouse:ro \
+            --volume ~/.aws:/root/.aws:ro \
             --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
             /bin/bash -c \
-                'source /tmp/redshift_etl/venv/bin/activate && \
+                'source /opt/redshift_etl/venv/bin/activate && \
                 cd /arthur-redshift-etl && \
                 ./bin/upload_env.sh -y'
         ;;
     validate)
         set -o xtrace
         docker run --rm --interactive --tty \
-            --volume "$data_warehouse_path":/data-warehouse \
-            --volume ~/.aws:/root/.aws \
+            --volume "$data_warehouse_path":/data-warehouse:ro \
+            --volume ~/.aws:/root/.aws:ro \
             --env DATA_WAREHOUSE_CONFIG="/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             $profile_arg \
             "arthur:$tag" \
             /bin/bash -c \
-                'source /tmp/redshift_etl/venv/bin/activate \
+                'source /opt/redshift_etl/venv/bin/activate \
                 && install_validation_pipeline.sh'
         ;;
     *)
