@@ -29,9 +29,13 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
     Return the description of a table column suitable for a table creation.
     See build_columns.
 
-    >>> build_column_description({"name": "key", "sql_type": "int", "not_null": True, "encoding": "raw"})
+    >>> build_column_description(
+    ...     {"name": "key", "sql_type": "int", "not_null": True, "encoding": "raw"}
+    ... )
     '"key" int ENCODE raw NOT NULL'
-    >>> build_column_description({"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]})
+    >>> build_column_description(
+    ...     {"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]}
+    ... )
     '"my_key" int REFERENCES "sch"."ble" ( "key" )'
     """
     column_ddl = '"{name}" {sql_type}'.format(**column)
@@ -70,11 +74,13 @@ def build_columns(columns: List[dict], is_temp=False) -> List[str]:
 
 def build_table_constraints(table_design: dict) -> List[str]:
     """
-    Return the constraints from the table design so that they can be inserted into a SQL DDL statement.
+    Return the constraints from the table design, ready to be inserted into a SQL DDL statement.
 
     >>> build_table_constraints({})  # no-op
     []
-    >>> build_table_constraints({"constraints": [{"primary_key": ["id"]}, {"unique": ["name", "email"]}]})
+    >>> build_table_constraints(
+    ...     {"constraints": [{"primary_key": ["id"]}, {"unique": ["name", "email"]}]}
+    ... )
     ['PRIMARY KEY ( "id" )', 'UNIQUE ( "name", "email" )']
     """
     table_constraints = table_design.get("constraints", [])
@@ -95,7 +101,7 @@ def build_table_constraints(table_design: dict) -> List[str]:
 
 def build_table_attributes(table_design: dict) -> List[str]:
     """
-    Return the attributes from the table design so that they can be inserted into a SQL DDL statement.
+    Return the attributes from the table design, ready to be inserted into a SQL DDL statement.
 
     >>> build_table_attributes({})  # no-op
     []
@@ -339,10 +345,10 @@ def insert_from_query(
     """
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
     stmt = """
-        INSERT INTO {table} (
-            {columns}
-        )
-        {query}
+INSERT INTO {table} (
+    {columns}
+)
+{query}
         """.format(
         table=table_name, columns=join_column_list(column_list), query=query_stmt
     )
