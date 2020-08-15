@@ -147,12 +147,14 @@ def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) ->
 
 @contextmanager
 def log_load_error(cx):
-    """Log any Redshift LOAD errors during a COPY command"""
+    """Log any Redshift LOAD errors during a COPY command."""
     try:
         yield
     except psycopg2.Error as exc:
+        etl.db.log_sql_error(exc)
+        # For load errors, let's get some details from Redshift.
         if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
-            logger.warning("Cannot retrieve error information from stl_load_errors within failed transaction")
+            logger.warning("Cannot retrieve error information from 'stl_load_errors' within failed transaction")
         else:
             rows = etl.db.query(
                 cx,
@@ -176,7 +178,7 @@ def log_load_error(cx):
                 info = ["{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len) for k in row0.keys()]
                 logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
             else:
-                etl.db.log_sql_error(exc)
+                logger.debug("There was no additional information in 'stl_load_errors'")
         raise
 
 
