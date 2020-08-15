@@ -5,8 +5,9 @@ name: Lint Python code
 on:
   push:
     paths:
-    - "python"
     - ".github/workflows/lint.yaml"
+    - "python"
+    - "setup.py"
 
 jobs:
   lint:
