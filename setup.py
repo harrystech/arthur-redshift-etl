@@ -1,14 +1,21 @@
 from setuptools import find_packages, setup
 
+ARTHUR_VERSION = "1.28.0"
+
 
 setup(
-    name="redshift_etl",
-    version="1.27.0",
     author="Harry's Data Engineering and Analytics Engineering",
     description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
-    license="MIT",
+    entry_points={
+        "console_scripts": [
+            # NB The script must end in ".py" so that spark submit accepts it as a Python script.
+            "arthur.py = etl.commands:run_arg_as_command",
+            "run_tests.py = etl.selftest:run_tests",
+        ]
+    },
     keywords="redshift postgresql ETL ELT extract transform load",
-    url="https://github.com/harrystech/arthur-redshift-etl",
+    license="MIT",
+    name="redshift_etl",
     package_dir={"": "python"},
     packages=find_packages("python"),
     package_data={"etl": ["assets/*", "config/*", "templates/*"]},
@@ -27,12 +34,7 @@ setup(
         "python/scripts/submit_arthur.sh",
         "python/scripts/terminate_emr_cluster.sh",
     ],
-    entry_points={
-        "console_scripts": [
-            # NB The script must end in ".py" so that spark submit accepts it as a Python script.
-            "arthur.py = etl.commands:run_arg_as_command",
-            "run_tests.py = etl.selftest:run_tests",
-        ]
-    },
+    url="https://github.com/harrystech/arthur-redshift-etl",
+    version=ARTHUR_VERSION,
     zip_safe=False,
 )
