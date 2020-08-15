@@ -16,7 +16,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
 import etl.db
-from etl.errors import ETLSystemError, TransientETLError
+from etl.errors import ETLRuntimeError, ETLSystemError, TransientETLError
 from etl.names import TableName
 from etl.text import join_column_list
 
@@ -182,21 +182,7 @@ def log_load_error(cx):
         raise
 
 
-def copy_using_manifest(
-    conn: connection,
-    table_name: TableName,
-    column_list: List[str],
-    s3_uri: str,
-    aws_iam_role: str,
-    data_format: Optional[str] = None,
-    format_option: Optional[str] = None,
-    file_compression: Optional[str] = None,
-    need_compupdate=False,
-    dry_run=False,
-) -> None:
-
-    credentials = "aws_iam_role={}".format(aws_iam_role)
-
+def determine_data_format_parameters(data_format, format_option, file_compression):
     if data_format is None:
         # This is our original data format (which mirrors settings in unload).
         data_format_parameters = "DELIMITER ',' ESCAPE REMOVEQUOTES GZIP"
@@ -214,6 +200,24 @@ def copy_using_manifest(
             raise ETLSystemError("found unexpected data format: {}".format(data_format))
         if file_compression is not None:
             data_format_parameters += " {}".format(file_compression)
+    return data_format_parameters
+
+
+def copy_using_manifest(
+    conn: connection,
+    table_name: TableName,
+    column_list: List[str],
+    s3_uri: str,
+    aws_iam_role: str,
+    data_format: Optional[str] = None,
+    format_option: Optional[str] = None,
+    file_compression: Optional[str] = None,
+    need_compupdate=False,
+    dry_run=False,
+) -> None:
+
+    credentials = "aws_iam_role={}".format(aws_iam_role)
+    data_format_parameters = determine_data_format_parameters(data_format, format_option, file_compression)
 
     copy_stmt = """
         COPY {table} (
@@ -242,7 +246,10 @@ def copy_using_manifest(
             with log_load_error(conn):
                 etl.db.execute(conn, copy_stmt, (s3_uri, credentials))
         except psycopg2.InternalError as exc:
-            raise TransientETLError(exc) from exc
+            if exc.pgcode == "XX000":
+                raise ETLRuntimeError(exc) from exc
+            else:
+                raise TransientETLError(exc) from exc
 
 
 def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
