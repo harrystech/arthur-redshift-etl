@@ -23,7 +23,6 @@ def elapsed_seconds(start: datetime.datetime, end: datetime.datetime = None) -> 
 
 
 class Timer:
-
     """
     Context manager class to measure elapsed (wall clock) time in seconds
 
