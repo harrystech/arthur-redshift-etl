@@ -33,9 +33,9 @@ jobs:
     - name: Lint with isort
       run: |-
         isort --settings-path ./etc --check-only python/ setup.py
-    - name: Lint with pycodestyle
+    - name: Lint with flake8
       run: |-
-        pycodestyle python setup.py
+        flake8 python setup.py
     - name: Run type checker
       run: |-
         mypy python
