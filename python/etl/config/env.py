@@ -6,6 +6,7 @@ from typing import Union
 def get(name: str, default: Union[str, None] = None) -> str:
     """
     Retrieve environment variable or error out if variable is not set.
+
     This is mildly more readable than direct use of os.environ.
     """
     value = os.environ.get(name, default)

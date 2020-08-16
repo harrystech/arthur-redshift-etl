@@ -50,8 +50,9 @@ class ColumnDefinition:
     @staticmethod
     def from_attribute(attribute, as_is_att_type, cast_needed_att_type, default_att_type):
         """
-        Turn a table attribute into a "column" of a table design. This adds the generic type and
-        possibly a cast into a supported type.
+        Turn a table attribute into a "column" of a table design.
+
+        This adds the generic type and possibly a cast into a supported type.
         """
         for re_att_type, generic_type in as_is_att_type.items():
             if re.match("^" + re_att_type + "$", attribute.sql_type):
