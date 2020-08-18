@@ -16,7 +16,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
 import etl.db
-from etl.errors import ETLSystemError, TransientETLError
+from etl.errors import ETLRuntimeError, ETLSystemError, TransientETLError
 from etl.names import TableName
 from etl.text import join_column_list
 
@@ -29,9 +29,13 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
     Return the description of a table column suitable for a table creation.
     See build_columns.
 
-    >>> build_column_description({"name": "key", "sql_type": "int", "not_null": True, "encoding": "raw"})
+    >>> build_column_description(
+    ...     {"name": "key", "sql_type": "int", "not_null": True, "encoding": "raw"}
+    ... )
     '"key" int ENCODE raw NOT NULL'
-    >>> build_column_description({"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]})
+    >>> build_column_description(
+    ...     {"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]}
+    ... )
     '"my_key" int REFERENCES "sch"."ble" ( "key" )'
     """
     column_ddl = '"{name}" {sql_type}'.format(**column)
@@ -70,11 +74,13 @@ def build_columns(columns: List[dict], is_temp=False) -> List[str]:
 
 def build_table_constraints(table_design: dict) -> List[str]:
     """
-    Return the constraints from the table design so that they can be inserted into a SQL DDL statement.
+    Return the constraints from the table design, ready to be inserted into a SQL DDL statement.
 
     >>> build_table_constraints({})  # no-op
     []
-    >>> build_table_constraints({"constraints": [{"primary_key": ["id"]}, {"unique": ["name", "email"]}]})
+    >>> build_table_constraints(
+    ...     {"constraints": [{"primary_key": ["id"]}, {"unique": ["name", "email"]}]}
+    ... )
     ['PRIMARY KEY ( "id" )', 'UNIQUE ( "name", "email" )']
     """
     table_constraints = table_design.get("constraints", [])
@@ -95,7 +101,7 @@ def build_table_constraints(table_design: dict) -> List[str]:
 
 def build_table_attributes(table_design: dict) -> List[str]:
     """
-    Return the attributes from the table design so that they can be inserted into a SQL DDL statement.
+    Return the attributes from the table design, ready to be inserted into a SQL DDL statement.
 
     >>> build_table_attributes({})  # no-op
     []
@@ -147,12 +153,14 @@ def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) ->
 
 @contextmanager
 def log_load_error(cx):
-    """Log any Redshift LOAD errors during a COPY command"""
+    """Log any Redshift LOAD errors during a COPY command."""
     try:
         yield
     except psycopg2.Error as exc:
+        etl.db.log_sql_error(exc)
+        # For load errors, let's get some details from Redshift.
         if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
-            logger.warning("Cannot retrieve error information from stl_load_errors within failed transaction")
+            logger.warning("Cannot retrieve error information from 'stl_load_errors' within failed transaction")
         else:
             rows = etl.db.query(
                 cx,
@@ -176,25 +184,11 @@ def log_load_error(cx):
                 info = ["{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len) for k in row0.keys()]
                 logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
             else:
-                etl.db.log_sql_error(exc)
+                logger.debug("There was no additional information in 'stl_load_errors'")
         raise
 
 
-def copy_using_manifest(
-    conn: connection,
-    table_name: TableName,
-    column_list: List[str],
-    s3_uri: str,
-    aws_iam_role: str,
-    data_format: Optional[str] = None,
-    format_option: Optional[str] = None,
-    file_compression: Optional[str] = None,
-    need_compupdate=False,
-    dry_run=False,
-) -> None:
-
-    credentials = "aws_iam_role={}".format(aws_iam_role)
-
+def determine_data_format_parameters(data_format, format_option, file_compression):
     if data_format is None:
         # This is our original data format (which mirrors settings in unload).
         data_format_parameters = "DELIMITER ',' ESCAPE REMOVEQUOTES GZIP"
@@ -212,6 +206,24 @@ def copy_using_manifest(
             raise ETLSystemError("found unexpected data format: {}".format(data_format))
         if file_compression is not None:
             data_format_parameters += " {}".format(file_compression)
+    return data_format_parameters
+
+
+def copy_using_manifest(
+    conn: connection,
+    table_name: TableName,
+    column_list: List[str],
+    s3_uri: str,
+    aws_iam_role: str,
+    data_format: Optional[str] = None,
+    format_option: Optional[str] = None,
+    file_compression: Optional[str] = None,
+    need_compupdate=False,
+    dry_run=False,
+) -> None:
+
+    credentials = "aws_iam_role={}".format(aws_iam_role)
+    data_format_parameters = determine_data_format_parameters(data_format, format_option, file_compression)
 
     copy_stmt = """
         COPY {table} (
@@ -240,7 +252,10 @@ def copy_using_manifest(
             with log_load_error(conn):
                 etl.db.execute(conn, copy_stmt, (s3_uri, credentials))
         except psycopg2.InternalError as exc:
-            raise TransientETLError(exc) from exc
+            if exc.pgcode == "XX000":
+                raise ETLRuntimeError(exc) from exc
+            else:
+                raise TransientETLError(exc) from exc
 
 
 def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
@@ -330,10 +345,10 @@ def insert_from_query(
     """
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
     stmt = """
-        INSERT INTO {table} (
-            {columns}
-        )
-        {query}
+INSERT INTO {table} (
+    {columns}
+)
+{query}
         """.format(
         table=table_name, columns=join_column_list(column_list), query=query_stmt
     )

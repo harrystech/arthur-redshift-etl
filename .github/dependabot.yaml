@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - assignees:
+      - "tvogels01"
+    directory: "/"
+    open-pull-requests-limit: 3
+    package-ecosystem: "pip"
+    reviewers:
+      - "data-eng"
+    schedule:
+      day: "tuesday"
+      interval: "weekly"
