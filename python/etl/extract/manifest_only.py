@@ -7,7 +7,6 @@ from etl.relation import RelationDescription
 
 
 class ManifestOnlyExtractor(Extractor):
-
     """
     Generate manifest files for already-extracted data in S3
     """

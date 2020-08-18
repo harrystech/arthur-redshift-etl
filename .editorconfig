@@ -6,7 +6,14 @@ end_of_line = lf
 insert_final_newline = true
 max_line_length = 100
 
-[*.py]
+[*.md]
+indent_size = 4
+indent_style = space
+max_line_length = 80
+tab_width = 4
+trim_trailing_whitespace = true
+
+[*.{py,sh}]
 indent_size = 4
 indent_style = space
 tab_width = 4
