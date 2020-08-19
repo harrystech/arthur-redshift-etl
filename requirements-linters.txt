@@ -1,5 +1,5 @@
 black==19.10b0
-isort[pyproject]==5.4.2
+isort[pyproject]==4.3.21
 flake8==3.8.3
 flake8-docstrings==1.5.0
 flake8-fixme==1.1.1

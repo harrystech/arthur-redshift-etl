@@ -1,5 +1,5 @@
 -rrequirements.txt
-isort[pyproject]==5.4.2
+isort[pyproject]==4.3.21
 mypy==0.782
 # q>=2.6
 # ipython>=6.2
