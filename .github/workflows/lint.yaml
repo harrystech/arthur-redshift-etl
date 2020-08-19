@@ -6,7 +6,7 @@ on:
   push:
     paths:
     - ".github/workflows/lint.yaml"
-    - "python"
+    - "python/**"
     - "setup.py"
 
 jobs:
