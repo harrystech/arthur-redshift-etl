@@ -5,8 +5,9 @@ name: Unit Tests
 on:
   push:
     paths:
-    - "python"
     - ".github/workflows/unittest.yaml"
+    - "python/**"
+    - "setup.py"
 
 jobs:
   unittest:

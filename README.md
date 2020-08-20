@@ -345,16 +345,16 @@ pip3 install --requirement requirements-linters.txt
 #### Running formatters locally
 
 ```bash
-black --config ./etc/pyproject.toml python/
-isort --settings-path ./etc python/
+black --config ./etc/pyproject.toml python/ setup.py
+isort --settings-path ./etc python/ setup.py
 ```
 
 #### Running linters locally
 
 ```bash
-black --config ./etc/pyproject.toml --check python/
-isort --settings-path ./etc --check-only python/
-pycodestyle python
+black --config ./etc/pyproject.toml --check python/ setup.py
+isort --settings-path ./etc --check-only python/ setup.py
+flake8 python setup.py
 mypy python
 ```
 

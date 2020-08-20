@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# Copy or link this file into your .git/hooks/ directory.
+
 . $(git --exec-path)/git-sh-setup  # for die
 
 tmpdir=$(mktemp -d commitXXXXXX)
@@ -7,11 +9,14 @@ trap "rm -rf $tmpdir" EXIT
 
 git checkout-index --prefix=$tmpdir/ -af
 files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
+
 if [ -n "$files" ]; then
+    echo "Checking for code style using black"
+    echo $files | (cd $tmpdir; xargs black --check --config ./etc/pyproject.toml; exit $?) || die "Blocking commit because of black issues"
+    echo "Checking for sorting of imports"
+    echo $files | (cd $tmpdir; xargs isort --settings-path ./etc --check-only; exit $?) || die "Blocking commit because of isort issues"
     echo "Checking for PEP8 violations"
-    echo $files | (cd $tmpdir; xargs pycodestyle; exit $?) || die "Blocking commit because of PEP8 issues"
-    echo "Checking for outstanding to-dos"
-    echo $files | (cd $tmpdir; xargs grep '# XXX'; exit $?) && die "Blocking commit because string '# XXX' detected in patch"
+    echo $files | (cd $tmpdir; xargs flake8; exit $?) || die "Blocking commit because of PEP8 (flake8) issues"
 fi
 
 exit 0
