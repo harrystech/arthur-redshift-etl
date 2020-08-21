@@ -83,23 +83,31 @@
             "name": "Copy Startup Scripts (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "(sudo yum -y update aws-cli) && /usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'sync_env.sh' s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin /tmp"
+            "command": "/usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'create_validation_credentials' --include 'sync_env.sh' s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin /tmp"
         },
         {
             "id": "SyncEnvironment",
             "name": "Sync environments (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/validation",
+            "command": "/bin/bash /tmp/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/validation",
             "dependsOn": { "ref": "CopyStartupScripts" }
+        },
+        {
+            "id": "CreateValidationCredentials",
+            "name": "Create validation credentials (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "/bin/bash /tmp/create_validation_credentials ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
+            "dependsOn": { "ref": "SyncEnvironment" }
         },
         {
             "id": "Bootstrap",
             "name": "Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
-            "dependsOn": { "ref": "SyncEnvironment" }
+            "command": "/bin/bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
+            "dependsOn": { "ref": "CreateValidationCredentials" }
         },
         {
             "id": "ArthurValidateUpstream",
