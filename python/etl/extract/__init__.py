@@ -101,9 +101,7 @@ def extract_upstream_sources(
 def filter_relations_for_sources(
     source_lookup: Dict[str, DataWarehouseSchema], relations: List[RelationDescription]
 ) -> List[RelationDescription]:
-    """
-    Filter for the relations that a given "extract" stage cares about.
-    """
+    """Filter for the relations that a given "extract" stage cares about."""
     selected = [relation for relation in relations if relation.source_name in source_lookup]
     if selected:
         sources = frozenset(relation.source_name for relation in selected)

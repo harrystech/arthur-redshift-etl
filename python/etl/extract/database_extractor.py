@@ -1,6 +1,4 @@
-"""
-DatabaseExtractors query upstream databases and save their data on S3 before writing manifests
-"""
+"""DatabaseExtractors query upstream databases and save data on S3 before writing manifests."""
 from contextlib import closing
 from typing import Dict, List, Optional
 
@@ -11,8 +9,9 @@ from etl.relation import RelationDescription
 
 
 class DatabaseExtractor(Extractor):
-    """
-    Special super class for database extractors that stores parameters and helps with partitioning and sampling.
+    """Parent class for database extractors.
+
+    This class pulls out parameters and helps with partitioning and sampling.
     """
 
     def __init__(
@@ -36,9 +35,7 @@ class DatabaseExtractor(Extractor):
         return info
 
     def use_sampling_with_table(self, size: int) -> bool:
-        """
-        Return True iff option `--use-sampling` appeared and table is large enough (> 100MB).
-        """
+        """Return True iff option `--use-sampling` appeared and table is large enough (> 100MB)."""
         return self.use_sampling and (size > 100 * 1024 ** 2)
 
     def select_min_partition_size(self, size: int) -> int:
@@ -109,10 +106,13 @@ class DatabaseExtractor(Extractor):
 
     def select_statement(self, relation: RelationDescription, add_sampling_on_column: Optional[str]) -> str:
         """
+        Create "SELECT statement with quoted identifiers and base WHERE clause.
+
         Return something like
             "SELECT id, name FROM table WHERE TRUE" or
             "SELECT id, name FROM table WHERE ((id % 10) = 1)"
-        where the actual statement used delimited identifiers, but note the existence of the WHERE clause.
+        where the actual statement uses delimited identifiers.
+        Note the existence of the WHERE clause which allows appending more conditions.
         """
         selected_columns = relation.get_columns_with_casts()
         statement = """SELECT {} FROM {}""".format(", ".join(selected_columns), relation.source_table_name)

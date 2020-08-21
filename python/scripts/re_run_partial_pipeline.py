@@ -9,9 +9,7 @@ import jmespath
 
 
 def get_etl_pipeline_ids(client):
-    """
-    Return a dict mapping pipeline ids to their names, filtering on ETL pipelines.
-    """
+    """Return a dict mapping pipeline ids to their names, filtering on ETL pipelines."""
     paginator = client.get_paginator("list_pipelines")
     response_iterator = paginator.paginate()
     filtered_iterator = response_iterator.search("pipelineIdList[?contains(@.name, 'ETL') == `true`].id")
@@ -19,9 +17,7 @@ def get_etl_pipeline_ids(client):
 
 
 def get_pipeline_status(client, pipeline_ids):
-    """
-    Return dicts describing the current status of the pipelines.
-    """
+    """Return dicts describing the current status of the pipelines."""
     extract_fields = jmespath.compile(
         """
         pipelineDescriptionList[].{
@@ -42,9 +38,7 @@ def get_pipeline_status(client, pipeline_ids):
 
 
 def get_scheduled_component_ids(client, pipeline_id):
-    """
-    Return ids of component objects of the pipeline which are in "SCHEDULED" state.
-    """
+    """Return ids of component objects of the pipeline which are in "SCHEDULED" state."""
     paginator = client.get_paginator("query_objects")
     response_iterator = paginator.paginate(
         pipelineId=pipeline_id,
@@ -55,9 +49,7 @@ def get_scheduled_component_ids(client, pipeline_id):
 
 
 def get_shell_activity_status(client, pipeline_id, object_ids):
-    """
-    Return generator for status of objects which are ShellCommandActivity objects.
-    """
+    """Return generator for status of objects which are ShellCommandActivity objects."""
     paginator = client.get_paginator("describe_objects")
     response_iterator = paginator.paginate(pipelineId=pipeline_id, objectIds=object_ids)
     filtered_iterator = response_iterator.search(
@@ -69,7 +61,8 @@ def get_shell_activity_status(client, pipeline_id, object_ids):
             id: id,
             name: name,
             healthStatus: fields[?key == '@healthStatus'].stringValue|[0],
-            healthStatusFromInstanceId: fields[?key == '@healthStatusFromInstanceId'].stringValue|[0]
+            healthStatusFromInstanceId:
+                fields[?key == '@healthStatusFromInstanceId'].stringValue|[0]
         }
         """
     )
@@ -83,9 +76,7 @@ def set_status_to_rerun(client, pipeline_id, object_ids):
 
 
 def change_status_to_rerun(pipeline_id):
-    """
-    Set status of most recent instances of pipeline objects to re-run.
-    """
+    """Set status of most recent instances of pipeline objects to re-run."""
     client = boto3.client("datapipeline")
     [pipeline_status] = get_pipeline_status(client, [pipeline_id])
 
@@ -114,9 +105,7 @@ def change_status_to_rerun(pipeline_id):
 
 
 def list_pipelines():
-    """
-    List all ETL pipelines that are currently scheduled.
-    """
+    """List all ETL pipelines that are currently scheduled."""
     client = boto3.client("datapipeline")
     pipeline_ids = get_etl_pipeline_ids(client)
     statuses = [

@@ -45,7 +45,8 @@ leader_only_functions = [
     "TO_ASCII",
 ]
 
-# the pattern matches while ignoring case if the name (or whatever is in {}) is not preceded by '.' and not in a word.
+# The pattern matches while ignoring case if the name (or whatever is in {}) is not preceded
+# by '.' and not in a word.
 leader_only_compiled = {name: re.compile(r"(?i)(?<!\.)\b{}\b".format(name)) for name in leader_only_functions}
 
 

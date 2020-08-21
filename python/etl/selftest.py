@@ -1,5 +1,5 @@
 """
-"Self-test" of Arthur
+Provide "self-test" feature of Arthur.
 
 We can run
 * all the doctests from the source code
@@ -95,7 +95,8 @@ def run_type_checker() -> None:
     if not os.path.isdir("python"):
         raise etl.errors.ETLRuntimeError("Cannot find source directory: 'python'")
 
-    # We wait with this import so that commands can be invoked in an environment where mypy is not installed.
+    # We wait with this import so that commands can be invoked in an environment where mypy is
+    # not installed.
     import mypy.api
 
     normal_report, error_report, exit_status = mypy.api.run(
