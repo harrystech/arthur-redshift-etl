@@ -90,7 +90,7 @@ set -o nounset
 DIR_NAME=`dirname $0`
 BIN_PATH=$(\cd "$DIR_NAME" && \pwd)
 TOP_PATH=`dirname "$BIN_PATH"`
-DOCKER_IMAGE_PATH=/arthur-redshift-etl
+DOCKER_IMAGE_PATH=/opt/src/arthur-redshift-etl
 
 if [[ ! -r ./setup.py ]]; then
     echo "Failed to find 'setup.py' file in the local directory."

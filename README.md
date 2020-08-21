@@ -68,6 +68,7 @@ a description of configurations.
 
 ## General notes about the CLI
 
+* It's easiest to use a Docker container to run `arthur.py`.
 * Commands will provide usage information when you use `-h`.
     - There is also a `help` command that provides introductions to various topics.
 * Commands need configuration files. They will pick up all files in a local `./config` directory
@@ -110,7 +111,7 @@ If you need to make changes in the cluster beyond schema changes, you will also 
 DATA_WAREHOUSE_ADMIN=postgres://admin:<password>@<host>:<port>/<dbname>?sslmode=require
 ```
 
-### Starting Arthur in Docker
+### Starting Arthur in a Docker container
 
 The [INSTALL.md](INSTALL.md) file will explain how to setup a Docker image to run _Arthur_.
 
@@ -123,12 +124,14 @@ This command will set the path to the configuration files and default environmen
 
 ### Copying code into the S3 bucket
 
-Copy the ETL code (including bootstrap scripts and configuration) is as simple as:
+From within the Docker container, use:
 ```bash
 upload_env.sh
 ```
 
 For this to work, you have to set the `object_store` in one of your configuration files.
+
+As an alternative, you can use `bin/deploy_arthur.sh` from outside a container.
 
 ### Starting a cluster and submitting commands
 
@@ -149,6 +152,8 @@ arthur.py --submit "<cluster ID>" load --prolix --prefix $USER
 ```
 
 Don't worry -- the script `launch_emr_cluster.sh` will show this information before it exits.
+
+Don't forget to run `terminate_emr_cluster.sh` when you're done.
 
 ## Initializing the Redshift cluster
 
@@ -304,7 +309,7 @@ A staging environment can help with deploying data that you'll be confident to r
 
 ```bash
 arthur.py initialize staging
-arthur.py initialize staging --dry-run  # In case you want to see what happeens but not lose all schemas.
+arthur.py initialize staging --dry-run  # In case you want to see what happens but not lose all schemas.
 ```
 
 Once everything is working fine in staging, you can promote the code into production.
@@ -441,7 +446,7 @@ For the bash shell, there is a file to add command completion that allows to tab
 ```bash
 source etc/arthur_completion.sh
 ```
-(Within a Docker image, that happens automatically.)
+(Within a Docker container, that happens automatically.)
 
 ### iPython and q
 

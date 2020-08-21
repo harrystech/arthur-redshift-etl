@@ -1,6 +1,8 @@
--rrequirements.txt
+--requirement requirements.txt
 isort[pyproject]==4.3.21
 mypy==0.782
-# q>=2.6
-# ipython>=6.2
 # Requires Python 3.6: black
+# Also interesting:
+# ipython>=6.2
+# q>=2.6
+# xonsh
