@@ -94,12 +94,20 @@
             "dependsOn": { "ref": "CopyStartupScripts" }
         },
         {
+            "id": "UpdateValidationCredentials",
+            "name": "Update validation credentials (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "bash /tmp/update_validation_credentials.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
+            "dependsOn": { "ref": "SyncEnvironment" }
+        },
+        {
             "id": "Bootstrap",
             "name": "Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
             "command": "bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
-            "dependsOn": { "ref": "SyncEnvironment" }
+            "dependsOn": { "ref": "UpdateValidationCredentials" }
         },
         {
             "id": "ArthurValidateUpstream",
