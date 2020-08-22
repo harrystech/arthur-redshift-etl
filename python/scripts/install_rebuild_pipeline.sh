@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 
+START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+DEFAULT_TIMEOUT=6
+
 if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
-    echo "Usage: `basename $0` <environment> <startdatetime> <occurrences> [timeout]"
-    echo "      Start time should be 'now' or take the ISO8601 format like: `date -u +"%Y-%m-%dT%H:%M:%S"`"
-    echo "      Optional timeout should be the number of hours pipeline is allowed to run. Defaults to 8."
+    cat <<USAGE
+
+Rebuild ETL to extract, load (including transforms), and unload data.
+
+Usage: `basename $0` <environment> <startdatetime> <occurrences> [timeout]
+
+Start time should be 'now' or take the ISO8601 format like: $START_NOW
+Optional timeout should be the number of hours pipeline is allowed to run. Defaults to $DEFAULT_TIMEOUT.
+
+USAGE
     exit 0
 fi
 
-# Optional timeout parameter. Default value set in pipeline template, not here.
-TIMEOUT="$4"
-
-set -e -u
+set -o errexit -o nounset
 
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
@@ -24,11 +31,12 @@ PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 
 if [[ "$2" == "now" ]]; then
-    START_DATE_TIME="`date -u +'%Y-%m-%dT%H:%M:%S'`"
+    START_DATE_TIME="$START_NOW"
 else
     START_DATE_TIME="$2"
 fi
 OCCURRENCES="$3"
+TIMEOUT="${4:-$DEFAULT_TIMEOUT}"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -37,7 +45,7 @@ if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     exit 1
 fi
 
-set -x
+set -o xtrace
 
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
@@ -63,18 +71,12 @@ if [[ -z "$PIPELINE_ID" ]]; then
     exit 1
 fi
 
-if [[ -n "$TIMEOUT" ]]; then
-    timeout_arg="myTimeout=$TIMEOUT"
-else
-    timeout_arg=""
-fi
-
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myStartDateTime="$START_DATE_TIME" \
         myOccurrences="$OCCURRENCES" \
-        $timeout_arg \
+        myTimeout="$TIMEOUT" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
