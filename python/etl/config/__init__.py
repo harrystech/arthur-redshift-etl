@@ -37,6 +37,7 @@ _dw_config = None  # type: Optional[DataWarehouseConfig]
 _mapped_config = None  # type: Optional[Dict[str, str]]
 
 # Local temp directory used for bootstrap, temp files, etc.
+# TODO(tom): This is a misnomer -- it's also the install dir on EC2 hosts.
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 

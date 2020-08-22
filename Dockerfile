@@ -1,9 +1,10 @@
+# This attempts to create an environment close to what ./bin/bootstrap.sh creates
+# with the images available. Note that we install code (and the virtual environment)
+# into /opt. There will be a copy of the source code in /arthur-redshift-etl. If you
+# make changes, run "python setup.py develop"!
 #
-# This attempts to create an environment as close as possible to what ./bin/bootstrap.sh
-# creates with the images available. One notable exception is that the code
-# is expected in /arthur-redshift-etl and is not copied into /tmp/redshift_etl
-# N.B. Make sure to keep this and the bootstrap script in sync!
-#
+# N.B. Make sure to keep the Dockerfile and bootstrap script in sync wrt. packages.
+
 FROM amazonlinux:2017.03
 
 RUN yum install -y \
@@ -21,42 +22,47 @@ RUN yum install -y \
     && \
     pip-3.5 install --upgrade --disable-pip-version-check virtualenv
 
-WORKDIR /tmp/redshift_etl
+# Run as non-priviledged user "arthur".
+RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
+    mkdir --parent /opt/data-warehouse /opt/local/redshift_etl /opt/src/arthur-redshift-etl && \
+    chown -R arthur.arthur /opt/*
+USER arthur
 
-COPY requirements*.txt ./
+# The .bashrc will ensure the virutal environment is activated when running interactive shells.
+COPY --chown=arthur:arthur etc/.bash_history etc/.bashrc etc/.bash_profile /home/arthur/
 
-RUN virtualenv --python=python3 venv && \
-    source venv/bin/activate && \
-    pip3 install --upgrade pip --disable-pip-version-check && \
-    pip3 install --requirement ./requirements-dev.txt
+# Install code in /opt/local/redshift_etl (which would be in /tmp/redshift_etl on an EC2 host).
+COPY --chown=arthur:arthur \
+    bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh \
+    /opt/local/redshift_etl/bin/
 
-COPY bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh bin/
+COPY requirements*.txt /tmp/
+RUN virtualenv --python=python3 /opt/local/redshift_etl/venv && \
+    source /opt/local/redshift_etl/venv/bin/activate && \
+    pip3 install --upgrade pip --disable-pip-version-check --no-cache-dir && \
+    pip3 install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
 
-WORKDIR /arthur-redshift-etl
+# Create an empty .pgpass file to help with create_user and update_user commands.
+RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /home/arthur/.pgpass \
+    && chmod go= /home/arthur/.pgpass
 
 # Note that at runtime we (can or may) mount the local directory here.
 # But we want to be independent of the source so copy everything over once.
-COPY . ./
+WORKDIR /opt/src/arthur-redshift-etl
+COPY --chown=arthur:arthur ./ ./
 
-# Use the self tests to check if everything was installed properly
-RUN source /tmp/redshift_etl/venv/bin/activate && \
-    python3 setup.py develop && \
-    run_tests.py
+# Ww run this here once in case somebody overrides the entrypoint.
+RUN source /opt/local/redshift_etl/venv/bin/activate && \
+    python3 setup.py install && \
+    rm -rf build dist && \
+    arthur.py --version
 
-# The .bashrc will ensure the venv is activated when running interactive shells.
-RUN cat /arthur-redshift-etl/etc/default.bashrc > /root/.bashrc
-
-# Create an empty .pgpass file to help with create_user and update_user commands.
-RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /root/.pgpass \
-    && chmod go= /root/.pgpass
 
 # Whenever there is an ETL running, it offers progress information on port 8086.
 EXPOSE 8086
 
-WORKDIR /data-warehouse
-# From here, bind-mount your data warehouse code directory to /data-warehouse.
-# All of the normal Arthur configuration for accessing and managing the data
-# warehouse is assumed to have already been set up in that directory.
+# The data warehouse (with schemas, config, etc.) will be mounted here:
+WORKDIR /opt/data-warehouse
 
-ENTRYPOINT ["/arthur-redshift-etl/bin/entrypoint.sh"]
-CMD ["/bin/bash"]
+ENTRYPOINT ["/opt/src/arthur-redshift-etl/bin/entrypoint.sh"]
+CMD ["/bin/bash", "--login"]

@@ -3,7 +3,8 @@ This script compares events from two ETLs to highlight differences in elapsed ti
 
 * Pre-requisites
 
-You need to have a list of events for each ETL. Arthur can provide this using the "query_events" command.
+You need to have a list of events for each ETL. Arthur can provide this using the
+"query_events" command.
 
 For example:
 ```
@@ -31,9 +32,10 @@ from tabulate import tabulate
 
 
 def read_file(filename):
-    """Read output from query_events command, which must contain "elapsed" and "rowcount" columns."""
-    # The file is expected to be formatted such that there's a header line, a separator, then the data.
-    # And Arthur prints a summary after the table, like "(100 rows)" which will be skipped if present.
+    """Read output from query_events command which must contain "elapsed" and "rowcount" columns."""
+    # The file is expected to be formatted such that there's a header line, a separator, then the
+    # data. Also Arthur prints a summary after the table, like "(100 rows)" which will be skipped
+    # if present.
     _column_spacing = re.compile(r"\s+\|\s+")
     _row_count_re = re.compile(r"\(\d+\s*rows\)")
 

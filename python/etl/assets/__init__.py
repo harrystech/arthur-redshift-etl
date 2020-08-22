@@ -25,9 +25,7 @@ class Content:
 
 
 def asset_exists(name: str) -> bool:
-    """
-    Return True only if the desired asset is known to exist.
-    """
+    """Return True only if the desired asset is known to exist."""
     if name:
         return pkg_resources.resource_exists(__name__, name)
     else:
@@ -38,6 +36,7 @@ def asset_exists(name: str) -> bool:
 def get_asset(name: str) -> Content:
     """
     Return asset along with content type and length.
+
     If asset does not exist, simply return None.
     """
     return Content(name=name)

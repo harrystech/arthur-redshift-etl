@@ -7,9 +7,7 @@ from etl.relation import RelationDescription
 
 
 class StaticExtractor(Extractor):
-    """
-    Enable using files in S3 as an upstream data source.
-    """
+    """Enable using files in S3 as an upstream data source."""
 
     # TODO Describe expected file paths, existence of "_SUCCESS" file
 
@@ -33,9 +31,6 @@ class StaticExtractor(Extractor):
         }
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
-        """
-        Render the S3 path template for a given source to check for data files before writing
-        out a manifest file
-        """
+        """Write out manifest file for files from (rendered) path in S3."""
         prefix_for_table = relation.data_directory(source.s3_path_prefix)
         self.write_manifest_file(relation, source.s3_bucket, prefix_for_table)
