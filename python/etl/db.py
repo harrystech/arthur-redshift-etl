@@ -65,9 +65,7 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
 
 
 def unparse_connection(dsn: Dict[str, str]) -> str:
-    """
-    Return connection string for pretty printing or copying when starting psql
-    """
+    """Return connection string for pretty printing or copying when starting psql."""
     values = dict(dsn)
     for key in ("user", "port"):
         if key not in values:
@@ -141,9 +139,7 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
 
 
 def dbname(cx):
-    """
-    Return name of database that this connection points to.
-    """
+    """Return name of database that this connection points to."""
     dsn = dict(kv.split("=") for kv in cx.dsn.split(" "))
     return dsn["dbname"]
 
@@ -171,9 +167,7 @@ def remove_password(s):
 
 
 def mogrify(cursor, stmt, args=()):
-    """
-    Build the statement by filling in the arguments (and cleaning up whitespace along the way).
-    """
+    """Build the statement by filling in the arguments and cleaning up whitespace along the way."""
     stripped = textwrap.dedent(stmt).strip("\n")
     if len(args):
         actual_stmt = cursor.mogrify(stripped, args)
@@ -183,9 +177,7 @@ def mogrify(cursor, stmt, args=()):
 
 
 def query(cx, stmt, args=()):
-    """
-    Send query stmt to connection (with parameters) and return rows.
-    """
+    """Send query stmt to connection (with parameters) and return rows."""
     return execute(cx, stmt, args, return_result=True)
 
 
@@ -218,9 +210,7 @@ def execute(cx, stmt, args=(), return_result=False):
 
 
 def skip_query(cx, stmt, args=()):
-    """
-    For logging side-effect only ... show which query would have been executed.
-    """
+    """For logging side-effect only ... show which query would have been executed."""
     with cx.cursor() as cursor:
         executable_statement = mogrify(cursor, stmt, args)
         printable_stmt = remove_password(executable_statement.decode())
@@ -248,9 +238,7 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
 
 
 def print_result(title, dict_rows) -> None:
-    """
-    Print query result
-    """
+    """Print query result."""
     print(title)
     if dict_rows:
         keys = list(dict_rows[0].keys())
@@ -272,9 +260,7 @@ def explain(cx, stmt, args=()):
 
 
 def test_connection(cx):
-    """
-    Send a test query to our connection
-    """
+    """Send a test query to our connection."""
     is_alive = False
     try:
         result = run(cx, "Ping {}!".format(dbname(cx)), "SELECT 1 AS connection_test", return_result=True)
@@ -287,9 +273,7 @@ def test_connection(cx):
 
 
 def ping(dsn):
-    """
-    Give me a ping to the database, Vasili. One ping only, please.
-    """
+    """Give me a ping to the database, Vasili; one ping only, please."""
     with closing(connection(dsn, readonly=True)) as cx:
         if test_connection(cx):
             print("{} is alive".format(dbname(cx)))

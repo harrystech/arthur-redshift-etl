@@ -27,6 +27,7 @@ logger.addHandler(logging.NullHandler())
 def build_column_description(column: Dict[str, str], skip_identity=False, skip_references=False) -> str:
     """
     Return the description of a table column suitable for a table creation.
+
     See build_columns.
 
     >>> build_column_description(
@@ -131,9 +132,7 @@ def build_table_attributes(table_design: dict) -> List[str]:
 
 
 def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) -> str:
-    """
-    Assemble the DDL of a table in a Redshift data warehouse.
-    """
+    """Assemble the DDL of a table in a Redshift data warehouse."""
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
     attributes = build_table_attributes(table_design)
@@ -318,9 +317,7 @@ def copy_from_uri(
     need_compupdate=False,
     dry_run=False,
 ) -> None:
-    """
-    Load data into table in the data warehouse using the COPY command.
-    """
+    """Load data into table in the data warehouse using the COPY command."""
     copy_using_manifest(
         conn,
         table_name,
@@ -340,9 +337,7 @@ def copy_from_uri(
 def insert_from_query(
     conn: connection, table_name: TableName, column_list: List[str], query_stmt: str, dry_run=False
 ) -> None:
-    """
-    Load data into table in the data warehouse using the INSERT INTO command.
-    """
+    """Load data into table in the data warehouse using the INSERT INTO command."""
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
     stmt = """
 INSERT INTO {table} (

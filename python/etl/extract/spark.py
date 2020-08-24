@@ -15,9 +15,7 @@ from etl.timer import Timer
 
 
 class SparkExtractor(DatabaseExtractor):
-    """
-    Use Apache Spark to download data from upstream databases.
-    """
+    """Use Apache Spark to download data from upstream databases."""
 
     def __init__(
         self,
@@ -40,7 +38,9 @@ class SparkExtractor(DatabaseExtractor):
 
     def _create_sql_context(self):
         """
-        Create a new SQL context within a new Spark context. Import of classes from
+        Create a new SQL context within a new Spark context.
+
+        Import of classes from
         pyspark has to be pushed down into this method as Spark needs to be available
         in order for the libraries to be imported successfully. Since Spark is not available
         when the ETL is started initally, we delay the import until the ETL has restarted
@@ -77,9 +77,7 @@ class SparkExtractor(DatabaseExtractor):
             self.write_manifest_file(relation, relation.bucket_name, relation.data_directory())
 
     def read_table_as_dataframe(self, source: DataWarehouseSchema, relation: RelationDescription):
-        """
-        Read dataframe (with partitions) by contacting upstream JDBC-reachable source.
-        """
+        """Read dataframe (with partitions) by contacting upstream JDBC-reachable source."""
         partition_key = relation.find_partition_key()
 
         table_size = self.fetch_source_table_size(source.dsn, relation)
@@ -109,6 +107,7 @@ class SparkExtractor(DatabaseExtractor):
     ) -> List[str]:
         """
         Create list of predicates to split up table into that number of partitions.
+
         This requires for one numeric column to be marked as the primary key.
         """
         self.logger.info(
@@ -132,9 +131,7 @@ class SparkExtractor(DatabaseExtractor):
     def fetch_partition_boundaries(
         self, conn: connection, table_name: TableName, partition_key: str, num_partitions: int
     ) -> List[Tuple[int, int]]:
-        """
-        Fetch ranges for the partition key that partitions the table nicely.
-        """
+        """Fetch ranges for the partition key that partitions the table nicely."""
         stmt = """
             SELECT MIN(pkey) AS lower_bound
                  , MAX(pkey) AS upper_bound
@@ -165,9 +162,7 @@ class SparkExtractor(DatabaseExtractor):
         return [(low, high) for low, high in zip(lower_bounds, upper_bounds)]
 
     def write_dataframe_as_csv(self, df, relation: RelationDescription) -> None:
-        """
-        Write (partitioned) dataframe to CSV file(s)
-        """
+        """Write (partitioned) dataframe to CSV file(s)."""
         s3_uri = "s3a://{}/{}".format(relation.bucket_name, relation.data_directory())
         if self.dry_run:
             self.logger.info("Dry-run: Skipping upload to '%s'", s3_uri)

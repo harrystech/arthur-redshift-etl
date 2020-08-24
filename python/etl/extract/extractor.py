@@ -56,7 +56,9 @@ class Extractor:
 
     def options_info(self) -> List[str]:
         """
-        Return list of "options" that describe the extract. This list will be part of the step monitor
+        Return list of "options" that describe the extract.
+
+        This list will be part of the step monitor
         """
         return ["with-{0.name}-extractor".format(self)]
 
@@ -64,6 +66,7 @@ class Extractor:
     def source_info(source: DataWarehouseSchema, relation: RelationDescription) -> Dict:
         """
         Return info for the job monitor that says from where the data is extracted.
+
         Defaults to the relation's idea of the source but may be overridden by child classes.
         """
         return {
@@ -121,9 +124,7 @@ class Extractor:
         return failed
 
     def extract_sources(self) -> None:
-        """
-        Iterate over sources to be extracted and parallelize extraction at the source level
-        """
+        """Iterate over sources to be extracted and parallelize extraction at the source level."""
         self.logger.info("Starting to extract %d relation(s) in %d schema(s)", len(self.relations), len(self.schemas))
         self.failed_sources.clear()
         max_workers = len(self.schemas)
@@ -160,7 +161,8 @@ class Extractor:
         Create manifest file to load all the data files for the given relation.
 
         The manifest file will be created in the folder ABOVE the data files.
-        If the data files are in 'data/foo/bar/csv/part-r*', then the manifest is 'data/foo/bar.manifest'.
+        If the data files are in 'data/foo/bar/csv/part-r*',
+        then the manifest is 'data/foo/bar.manifest'.
 
         Note that for static sources, we need to check the bucket of that source, not the
         bucket where the manifest will be written to.

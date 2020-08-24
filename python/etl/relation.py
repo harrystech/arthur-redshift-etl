@@ -46,6 +46,7 @@ logger.addHandler(logging.NullHandler())
 class RelationDescription:
     """
     Handy object for working with relations (tables or views) created with Arthur.
+
     Created from a collection of files that pertain to the same table.
     Offers helpful properties for lazily loading contents of relation files.
     Modified by other functions in relations module to set attributes related to dependency graph.
@@ -129,9 +130,7 @@ class RelationDescription:
 
     @staticmethod
     def load_in_parallel(relations: List["RelationDescription"]) -> None:
-        """
-        Load all relations' table design file in parallel.
-        """
+        """Load all relations' table design file in parallel."""
         with etl.timer.Timer() as timer:
             # TODO With Python 3.6, we should pass in a thread_name_prefix
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -222,31 +221,26 @@ class RelationDescription:
 
     @property
     def unquoted_columns(self) -> List[str]:
-        """
-        List of the column names of this relation
-        """
+        """List of the column names of this relation."""
         return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
 
     @property
     def columns(self) -> List[str]:
-        """
-        List of delimited column names of this relation
-        """
+        """List of delimited column names of this relation."""
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
     @property
     def has_identity_column(self) -> bool:
         """
         Return whether any of the columns is marked as identity column.
+
         (Should only ever be possible for CTAS, see validation code).
         """
         return any(column.get("identity") for column in self.table_design["columns"])
 
     @property
     def is_missing_encoding(self) -> bool:
-        """
-        Return whether any column doesn't have encoding specified.
-        """
+        """Return whether any column doesn't have encoding specified."""
         return any(not column.get("encoding") for column in self.table_design["columns"] if not column.get("skipped"))
 
     @classmethod
@@ -517,9 +511,7 @@ def set_required_relations(relations: List[RelationDescription], required_select
 
 
 def find_matches(relations: List[RelationDescription], selector: TableSelector):
-    """
-    Return list of matching relations.
-    """
+    """Return list of matching relations."""
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
@@ -528,6 +520,7 @@ def find_dependents(
 ) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
+
     For this to really work, the list of relations should be sorted in "execution order"!
     """
     seeds = frozenset(relation.identifier for relation in seed_relations)

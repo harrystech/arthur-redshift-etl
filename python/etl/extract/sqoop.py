@@ -18,8 +18,9 @@ from etl.relation import RelationDescription
 
 class SqoopExtractor(DatabaseExtractor):
     """
-    This extractor manages parallel SQL database extraction via MapReduce
-    using Sqoop (http://sqoop.apache.org/)
+    This extractor manages parallel SQL database extraction via MapReduce using Sqoop.
+
+    See http://sqoop.apache.org/
     """
 
     def __init__(
@@ -48,9 +49,7 @@ class SqoopExtractor(DatabaseExtractor):
         return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
-        """
-        Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop.
-        """
+        """Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop."""
         table_size = self.fetch_source_table_size(source.dsn, relation)
 
         connection_params_file_path = self.write_connection_params()
@@ -66,9 +65,7 @@ class SqoopExtractor(DatabaseExtractor):
         self.write_manifest_file(relation, relation.bucket_name, relation.data_directory())
 
     def write_password_file(self, password: str) -> str:
-        """
-        Write password to a (temporary) file, return name of file created.
-        """
+        """Write password to a (temporary) file, return name of file created."""
         if self.dry_run:
             self.logger.info("Dry-run: Skipping writing of password file")
             password_file_path = "/only/needed/for/type/checking"
@@ -81,9 +78,7 @@ class SqoopExtractor(DatabaseExtractor):
         return password_file_path
 
     def write_connection_params(self) -> str:
-        """
-        Write a (temporary) file for connection parameters, return name of file created.
-        """
+        """Write a (temporary) file for connection parameters, return name of file created."""
         if self.dry_run:
             self.logger.info("Dry-run: Skipping writing of connection params file")
             params_file_path = "/only/needed/for/type/checking"
@@ -162,9 +157,7 @@ class SqoopExtractor(DatabaseExtractor):
         return args
 
     def build_sqoop_select(self, relation: RelationDescription, partition_key: Optional[str], table_size: int) -> str:
-        """
-        Build custom select statement needed to implement sampling and extracting views.
-        """
+        """Build custom select statement needed to implement sampling and extracting views."""
         if self.use_sampling_with_table(table_size):
             select_statement = self.select_statement(relation, partition_key)
         else:
@@ -176,9 +169,7 @@ class SqoopExtractor(DatabaseExtractor):
     def build_sqoop_partition_options(
         self, relation: RelationDescription, partition_key: Optional[str], table_size: int
     ) -> List[str]:
-        """
-        Build the partitioning-related arguments for Sqoop.
-        """
+        """Build the partitioning-related arguments for Sqoop."""
         if partition_key:
             column = fy.first(fy.where(relation.table_design["columns"], name=partition_key))
             if column["type"] in ("date", "timestamp"):
@@ -199,9 +190,7 @@ class SqoopExtractor(DatabaseExtractor):
         return ["--num-mappers", "1"]
 
     def write_options_file(self, args: List[str]) -> str:
-        """
-        Write options to a (temporary) file, return name of file created.
-        """
+        """Write options to a (temporary) file, return name of file created."""
         if self.dry_run:
             self.logger.info("Dry-run: Skipping creation of Sqoop options file")
             options_file_path = "/tmp/never_used"
@@ -215,9 +204,7 @@ class SqoopExtractor(DatabaseExtractor):
         return options_file_path
 
     def _delete_directory_before_write(self, relation: RelationDescription) -> None:
-        """
-        Need to first delete data directory since Sqoop won't overwrite (and can't delete).
-        """
+        """Need to first delete data directory since Sqoop won't overwrite (and can't delete)."""
         csv_prefix = relation.data_directory()
         deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
         if deletable:
@@ -232,9 +219,7 @@ class SqoopExtractor(DatabaseExtractor):
                 etl.s3.delete_objects(relation.bucket_name, deletable, wait=True)
 
     def run_sqoop(self, options_file_path: str):
-        """
-        Run Sqoop in a sub-process with the help of the given options file.
-        """
+        """Run Sqoop in a sub-process with the help of the given options file."""
         args = [self.sqoop_executable, "--options-file", options_file_path]
         cmdline = " ".join(map(shlex.quote, args))
         if self.dry_run:
@@ -258,7 +243,9 @@ class SqoopExtractor(DatabaseExtractor):
 
 class FakeSqoopExtractor(SqoopExtractor):
     """
-    This extractor runs '/usr/bin/false' which means that extraction fails ... used for testing outside EMR.
+    This extractor runs '/usr/bin/false' which means that extraction fails.
+
+    Used for testing outside EMR.
     """
 
     def __init__(self, *args, **kwargs):

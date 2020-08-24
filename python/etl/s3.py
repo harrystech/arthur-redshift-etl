@@ -39,9 +39,7 @@ def _get_s3_bucket(bucket_name: str):
 
 
 class S3Uploader:
-    """
-    Upload files from local filesystem into the given S3 folder.
-    """
+    """Upload files from local filesystem into the given S3 folder."""
 
     def __init__(self, bucket_name: str, dry_run=False) -> None:
         self.logger = logging.getLogger(__name__)
@@ -72,9 +70,7 @@ class S3Uploader:
 
 
 def upload_empty_object(bucket_name: str, object_key: str) -> None:
-    """
-    Create a key in an S3 bucket with no content
-    """
+    """Create a key in an S3 bucket with no content."""
     try:
         logger.debug("Creating empty 's3://%s/%s'", bucket_name, object_key)
         bucket = _get_s3_bucket(bucket_name)
@@ -137,6 +133,7 @@ def delete_objects(bucket_name: str, object_keys: List[str], wait=False, _retry=
 def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) -> Union[datetime, None]:
     """
     Return the last_modified datetime timestamp for an S3 Object.
+
     If the call errors out, return None.
     """
     try:
@@ -163,6 +160,7 @@ def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) ->
 def object_stat(bucket_name: str, object_key: str) -> Tuple[int, datetime]:
     """
     Return content_length and last_modified timestamp from the object.
+
     It is an error if the object does not exist.
     """
     bucket = _get_s3_bucket(bucket_name)
@@ -172,7 +170,7 @@ def object_stat(bucket_name: str, object_key: str) -> Tuple[int, datetime]:
 
 def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.response.StreamingBody:
     """
-    Return stream for content of s3://bucket_name/object_key
+    Return stream for content of s3://bucket_name/object_key .
 
     You must close the stream when you're done with it.
     """

@@ -33,6 +33,7 @@ logger.addHandler(logging.NullHandler())
 def create_schemas(schemas: List[DataWarehouseSchema], use_staging=False, dry_run=False) -> None:
     """
     Create schemas and grant access.
+
     It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
@@ -61,7 +62,8 @@ def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, 
 
 def _promote_schemas(schemas: List[DataWarehouseSchema], from_where: str, dry_run=False) -> None:
     """
-    Promote (staging or backup) schemas into their standard names and permissions
+    Promote (staging or backup) schemas into their standard names and permissions.
+
     Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name' or 'staging_name'
     """
     attr_name = from_where + "_name"
@@ -99,6 +101,7 @@ def _promote_schemas(schemas: List[DataWarehouseSchema], from_where: str, dry_ru
 def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.
+
     Once the access is revoked, the backup schemas "disappear" from BI tools.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
@@ -126,6 +129,7 @@ def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
 def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
     For the schemas that we need / want, rename the backups and restore access.
+
     This is the inverse of backup_schemas.
     Useful if bad data is in standard schemas
     """
@@ -361,9 +365,7 @@ def terminate_sessions_with_transaction_locks(cx, dry_run=False) -> None:
 
 
 def terminate_sessions(dry_run=False) -> None:
-    """
-    Terminate sessions that currently hold locks on (user or system) tables.
-    """
+    """Terminate sessions that currently hold locks on (user or system) tables."""
     dsn_admin = etl.config.get_dw_config().dsn_admin_on_etl_db
     with closing(etl.db.connection(dsn_admin, autocommit=True)) as conn:
         etl.db.execute(conn, "SET query_group TO 'superuser'")

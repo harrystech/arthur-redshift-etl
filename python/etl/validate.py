@@ -53,6 +53,7 @@ _error_occurred = threading.Event()
 def validate_relation_description(relation: RelationDescription, keep_going=False) -> Optional[RelationDescription]:
     """
     Load table design (which always also validates against the schema).
+
     If we try to keep_going, then we don't fail but return None for invalid table designs.
     """
     logger.info("Loading and validating file '%s'", relation.design_file_name)
@@ -132,9 +133,7 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
 
 
 def validate_column_ordering(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
-    """
-    Download the column order (using the temporary view) and compare with table design.
-    """
+    """Download the column order (using the temporary view) and compare with table design."""
     attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
 
@@ -190,6 +189,7 @@ def validate_single_transform(conn: connection, relation: RelationDescription, k
 def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool = False) -> None:
     """
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
+
     This allows us to check their syntax, their dependencies, etc.
     """
     transforms = [relation for relation in relations if relation.is_ctas_relation or relation.is_view_relation]
@@ -278,9 +278,7 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
 
 
 def check_select_permission(conn: connection, table_name: TableName):
-    """
-    Check whether permissions on table will allow us to read from database.
-    """
+    """Check whether permissions on table will allow us to read from database."""
     # Why mess with querying the permissions table when you can just try to read (EAFP).
     statement = """SELECT 1 FROM {} WHERE FALSE""".format(table_name)
     try:
@@ -413,9 +411,7 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
 
 
 def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool = False) -> None:
-    """
-    Validate table design of an upstream table against its source database.
-    """
+    """Validate table design of an upstream table against its source database."""
     try:
         with etl.db.log_error():
             check_select_permission(conn, table.source_table_name)
@@ -463,9 +459,7 @@ def validate_upstream_sources(
 
 
 def validate_execution_order(relations: List[RelationDescription], keep_going=False):
-    """
-    Wrapper around order_by_dependencies to deal with our keep_going predilection.
-    """
+    """Wrapper around order_by_dependencies to deal with our keep_going predilection."""
     try:
         ordered_relations = etl.relation.order_by_dependencies(relations)
     except ETLConfigError:

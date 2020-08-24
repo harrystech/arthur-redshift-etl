@@ -1,7 +1,8 @@
 """
 Utility methods to deal with "names" of relations.
 
-To be safe, we always delimit names in queries but would prefer not to during logging. See TableName.
+To be safe, we always delimit names in queries but would prefer not to during logging.
+See TableName.
 
 There are additional methods and classes here to support the feature of choosing relations
 by a pattern from the command line.
