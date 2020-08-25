@@ -1,5 +1,6 @@
 """
 Deal with text, mostly around iterables of texts which we want to pretty print.
+
 Should not import Arthur modules (so that etl.errors remains widely importable)
 """
 
@@ -63,9 +64,7 @@ def join_with_quotes(names):
 
 
 def join_column_list(columns):
-    """
-    Return string with comma-separated, delimited column names
-    """
+    """Return string with comma-separated, delimited column names."""
     return ", ".join('"{}"'.format(column) for column in columns)
 
 
@@ -78,7 +77,7 @@ class ColumnWrapper(textwrap.TextWrapper):
 
     def _split(self, text):
         """
-        Create one chunk smaller than the column width or three chunks with the last one wider than the placeholder.
+        Create eitehr one chunk that fits or three chunks with the last wider than the placeholder.
 
         >>> cw = ColumnWrapper(width=10, placeholder='..')
         >>> cw._split("ciao")
@@ -98,7 +97,8 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     Format a list of rows which each have a list of values, optionally with a header.
 
     We process whitespace by expanding tabs and then replacing all whitespace but actual spaces.
-    If any column is longer than the max_column_width, a placeholder will be inserted after cutting the value.
+    If any column is longer than the max_column_width, a placeholder will be inserted after cutting
+    the value.
 
     >>> print(format_lines([["aa", "b", "ccc"], ["a", "bb", "c"]]))
     col #1 | col #2 | col #3
@@ -106,8 +106,9 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     aa     | b      | ccc
     a      | bb     | c
     (2 rows)
-    >>> print(format_lines([["name", "breed"], ["monty", "spaniel"], ["cody", "poodle"], ["cooper", "shepherd"]],
-    ...                    has_header=True))
+    >>> print(format_lines(
+    ...     [["name", "breed"], ["monty", "spaniel"], ["cody", "poodle"], ["cooper", "shepherd"]],
+    ...     has_header=True))
     name   | breed
     -------+---------
     monty  | spaniel

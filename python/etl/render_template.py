@@ -26,9 +26,7 @@ class DottedNameTemplate(string.Template):
 
 
 def _find_templates() -> Dict[str, str]:
-    """
-    Find all templates and return a map from short name to full name
-    """
+    """Find all templates and return a map from short name to full name."""
     lookup = OrderedDict()  # type: Dict[str, str]
     templates = pkg_resources.resource_listdir("etl", "templates")
     for filename in sorted(templates):
@@ -38,9 +36,7 @@ def _find_templates() -> Dict[str, str]:
 
 
 def list_templates(compact=False) -> None:
-    """
-    Print available template names to stdout.
-    """
+    """Print available template names to stdout."""
     if compact:
         for name in _find_templates():
             print(name)
@@ -71,9 +67,7 @@ def render_from_config(template_string, context=None):
 
 
 def render(template_name: str, compact=False) -> None:
-    """
-    Replace template ${strings} by configuration values.
-    """
+    """Replace template ${strings} by configuration values."""
     resource_name = _find_templates()
     if template_name not in resource_name:
         raise InvalidArgumentError("template name not found: '{}'".format(template_name))
@@ -97,7 +91,9 @@ def render(template_name: str, compact=False) -> None:
 
 def show_value(name: str, default: Optional[str]) -> None:
     """
-    Show value of a specific variable. This fails if the variable is not set and no default is provided.
+    Show value of a specific variable.
+
+    This fails if the variable is not set and no default is provided.
     """
     value = etl.config.get_config_value(name, default)
     if value is None:

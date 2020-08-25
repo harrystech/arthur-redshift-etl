@@ -105,18 +105,14 @@ class DataWarehouseSchema:
 
     @property
     def s3_path_prefix(self) -> str:
-        """
-        Render S3 path prefix in particular wrt. prefix (environment) and dates.
-        """
+        """Render S3 path prefix in particular wrt. prefix (environment) and dates."""
         return etl.render_template.render_from_config(
             self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name)
         )
 
     @property
     def s3_unload_path_prefix(self) -> str:
-        """
-        Render S3 unload path prefix in particular wrt. prefix (environment) and dates.
-        """
+        """Render S3 unload path prefix in particular wrt. prefix (environment) and dates."""
         return etl.render_template.render_from_config(
             self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name)
         )
@@ -149,9 +145,7 @@ class DataWarehouseSchema:
 
 
 class DataWarehouseConfig:
-    """
-    Pretty interface to create objects from the settings files.
-    """
+    """Pretty interface to create objects from the settings files."""
 
     def __init__(self, settings):
         dw_settings = settings["data_warehouse"]

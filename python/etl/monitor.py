@@ -54,7 +54,9 @@ _DUMMY_TARGET = "#.dummy"
 
 def trace_key():
     """
-    Return a "trace key" suitable to track program execution.  It's most likely unique between invocations.
+    Return a "trace key" suitable to track program execution.
+
+    It's most likely unique between invocations.
     """
     # We will never make a 32-bit operating system.
     return uuid.uuid4().hex[:16].upper()
@@ -62,7 +64,7 @@ def trace_key():
 
 class MetaMonitor(type):
     """
-    Metaclass to implement read-only attributes of our ETL's Monitor
+    Metaclass to implement read-only attributes of our ETL's Monitor.
 
     If you need to find out the current trace key, call Monitor.etl_id.
     If you want to know the "environment" (selected by using --prefix or the user's login),
@@ -107,8 +109,7 @@ class MetaMonitor(type):
 
 class Monitor(metaclass=MetaMonitor):
     """
-    Context manager to monitor ETL steps for some target table
-
+    Context manager to monitor ETL steps for some target table.
 
     Monitor instances have these properties which will be stored in the event payload:
         environment: a description of the source folder (aka prefix)
@@ -161,7 +162,7 @@ class Monitor(metaclass=MetaMonitor):
         self._target = target
         self._step = step
         self._dry_run = dry_run
-        # Create a deep copy so that changes that the caller might make later do not alter our payload
+        # Create a deep copy so that changes made later by the caller don't alter our payload.
         self._extra = deepcopy(dict(**kwargs))
         self._index = self._extra.get("index")
 
@@ -240,7 +241,8 @@ class Monitor(metaclass=MetaMonitor):
 
 class MonitorPayload:
     """
-    Simple class to encapsulate data for Monitor events which knows how to morph itself for JSON etc.
+    Simple class to encapsulate data for Monitor events which knows how to morph into JSON etc.
+
     You should consider all attributes to be read-only with the possible exception of 'errors'
     that may be set to a list of objects (in JSON-terminology) with 'code' and 'message' fields.
     (Which is to say: do not modify the payload object!)
@@ -282,9 +284,7 @@ class MonitorPayload:
 
 class PayloadDispatcher:
     def store(self, payload):
-        """
-        Send payload to persistence layer
-        """
+        """Send payload to persistence layer."""
         raise NotImplementedError("PayloadDispatcher failed to implement store method")
 
 
@@ -314,9 +314,7 @@ class DynamoDBStorage(PayloadDispatcher):
         self._thread_local_table = threading.local()
 
     def get_table(self, create_if_not_exists=True):
-        """
-        Get table reference from DynamoDB or create it (within a new session)
-        """
+        """Get table reference from DynamoDB or create it (within a new session)."""
         session = boto3.session.Session(region_name=self.region_name)
         dynamodb = session.resource("dynamodb")
         try:
@@ -359,6 +357,7 @@ class DynamoDBStorage(PayloadDispatcher):
     def store(self, payload: dict, _retry: bool = True):
         """
         Actually send the payload to the DynamoDB table.
+
         If this is the first call at all, then get a reference to the table,
         or even create the table as necessary.
         This method will try to store the payload a second time if there's an
@@ -371,7 +370,8 @@ class DynamoDBStorage(PayloadDispatcher):
                 setattr(self._thread_local_table, "table", table)
             item = dict(payload)
             # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
-            # But decimals maybe finicky when instantiated from float so we make sure to fix the number of decimals.
+            # But decimals maybe finicky when instantiated from float so we make sure to fix the
+            # number of decimals.
             item["timestamp"] = Decimal("%.6f" % item["timestamp"].timestamp())
             if "elapsed" in item:
                 item["elapsed"] = Decimal("%.6f" % item["elapsed"])
@@ -395,7 +395,7 @@ class _ThreadingSimpleServer(socketserver.ThreadingMixIn, http.server.HTTPServer
 
 class MemoryStorage(PayloadDispatcher):
     """
-    Store ETL events in memory and make the events accessible via HTTP
+    Store ETL events in memory and make the events accessible via HTTP.
 
     When the ETL is running for extract, load, or unload, connect to port 8086.
 
@@ -458,9 +458,7 @@ class MemoryStorage(PayloadDispatcher):
         return etl.assets.Content(json=events_as_list)
 
     def create_handler(self):
-        """
-        Factory method to create a handler that serves our storage content.
-        """
+        """Return a handler that serves our storage content, used as factory method."""
         storage = self
         http_logger = logging.getLogger("arthur_http")
 
@@ -516,9 +514,7 @@ class MemoryStorage(PayloadDispatcher):
         return MonitorHTTPHandler
 
     def start_server(self):
-        """
-        Start background daemon to serve our events.
-        """
+        """Start background daemon to serve our events."""
         handler_class = self.create_handler()
 
         class BackgroundServer(threading.Thread):
@@ -540,9 +536,7 @@ class MemoryStorage(PayloadDispatcher):
 
 
 class InsertTraceKey(logging.Filter):
-    """
-    Called as a logging filter, insert the ETL id into the logging record for the log's trace key.
-    """
+    """Called as a logging filter: insert the ETL id as the trace key into the logging record."""
 
     def filter(self, record):
         record.trace_key = Monitor.etl_id
@@ -577,11 +571,13 @@ def _format_output_column(key: str, value: str) -> str:
 
 
 def _flatten_scan_result(result: dict) -> dict:
-    """Remove type annotation from a scan result.
+    """
+    Remove type annotation from a scan result.
 
     Careful, this only works for a specific subset of types that DynamoDB may send back.
 
-    >>> result = _flatten_scan_result({'step': {'S': 'load'}, 'extra': {'M': {'rowcount': {'N': '100'}}}})
+    >>> result = _flatten_scan_result(
+    ...     {'step': {'S': 'load'}, 'extra': {'M': {'rowcount': {'N': '100'}}}})
     >>> sorted(result)
     ['extra', 'step']
     >>> result['extra']['rowcount']
@@ -742,7 +738,9 @@ class EventsQuery:
 class BackgroundQueriesRunner(threading.Thread):
     """
     An instance of this thread will repeatedly try to run queries on a DynamoDB table.
-    Every time a query returns a result, this result is sent to a queue and the query will no longer be tried.
+
+    Every time a query returns a result, this result is sent to a queue and the query will no
+    longer be tried.
     """
 
     def __init__(self, targets, query, consumer_queue, start_time, update_interval, idle_time_out, **kwargs) -> None:
@@ -782,7 +780,7 @@ class BackgroundQueriesRunner(threading.Thread):
                 idle = Timer()
             elif self.idle_time_out and idle.elapsed > self.idle_time_out:
                 logger.info(
-                    "Idle time-out: Waited for %d seconds but no events arrived, %d target(s) remaining",
+                    "Idle time-out: Waited for %d seconds but no events arrived, " "%d target(s) remaining",
                     self.idle_time_out,
                     len(targets),
                 )
@@ -798,7 +796,7 @@ def recently_extracted_targets(source_relations, start_time):
     Query the events table for "extract" events on the provided source_relations after start_time.
 
     Waits for up to an hour, sleeping for 30s between checks.
-    Return the set of targets (ie, relation.identifier or event["target"]) with successful extracts
+    Return the set of targets (ie, relation.identifier or event["target"]) with successful extracts.
     """
     targets = [relation.identifier for relation in source_relations]
 
@@ -825,9 +823,7 @@ def recently_extracted_targets(source_relations, start_time):
 
 
 def summarize_events(relations, step: Optional[str] = None) -> None:
-    """
-    Summarize latest ETL step for the given relations by showing elapsed time and row count.
-    """
+    """Summarize latest ETL step for the given relations by showing elapsed time and row count."""
     etl_info = _query_for_etls(step=step, days_ago=7)
     if not len(etl_info):
         logger.warning("Found no ETLs within the last 7 days")
@@ -873,9 +869,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
 
 
 def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str] = None) -> None:
-    """
-    Tail the events table and show latest events coming in (which are not start events, just fail or finish).
-    """
+    """Tail the events table and show latest finish or fail events coming in."""
     targets = [relation.identifier for relation in relations]
     query = EventsQuery(step)
     consumer_queue = queue.Queue()  # type: ignore
