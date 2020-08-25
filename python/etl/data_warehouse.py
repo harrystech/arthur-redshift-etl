@@ -34,7 +34,7 @@ def create_schemas(schemas: List[DataWarehouseSchema], use_staging=False, dry_ru
     """
     Create schemas and grant access.
 
-    It's ok if any of the schemas already exist (in which case the owner and privileges are updated).
+    It's ok if any of the schemas already exist, in which case the owner and privileges are updated.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
@@ -64,7 +64,8 @@ def _promote_schemas(schemas: List[DataWarehouseSchema], from_where: str, dry_ru
     """
     Promote (staging or backup) schemas into their standard names and permissions.
 
-    Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name' or 'staging_name'
+    Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name'
+    or 'staging_name'
     """
     attr_name = from_where + "_name"
     from_names = [getattr(schema, attr_name) for schema in schemas]
@@ -128,7 +129,7 @@ def backup_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
 
 def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
     """
-    For the schemas that we need / want, rename the backups and restore access.
+    For the schemas that we need or want, rename the backups and restore access.
 
     This is the inverse of backup_schemas.
     Useful if bad data is in standard schemas
@@ -137,19 +138,13 @@ def restore_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
 
 
 def publish_schemas(schemas: List[DataWarehouseSchema], dry_run=False) -> None:
-    """
-    Put staging schemas into their standard configuration after backing up the current occupants of
-    of standard position.
-    """
+    """Backup current occupants of standard position and put staging schemas there."""
     backup_schemas(schemas, dry_run=dry_run)
     _promote_schemas(schemas, "staging", dry_run=dry_run)
 
 
 def grant_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> None:
-    """
-    Grant usage to readers and writers
-    Grant select to readers and select & write to writers
-    """
+    """Grant usage & select on all tables, grant write on all tables only to writers."""
     for reader_group in schema.reader_groups:
         etl.db.grant_usage(conn, schema.name, reader_group)
         etl.db.grant_select_on_all_tables_in_schema(conn, schema.name, reader_group)
@@ -159,10 +154,7 @@ def grant_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> N
 
 
 def revoke_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> None:
-    """
-    Revoke usage to readers and writers
-    Revoke select to readers and select & write to writers
-    """
+    """Revoke usage & select on all tables, also revoke write on all tables from writers."""
     for reader_group in schema.reader_groups:
         etl.db.revoke_usage(conn, schema.name, reader_group)
         etl.db.revoke_select_on_all_tables_in_schema(conn, schema.name, reader_group)
@@ -174,8 +166,10 @@ def revoke_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> 
 def _create_or_update_cluster_user(conn, user, only_update=False, dry_run=False):
     """
     Create user in its group, or add user to its group.
+
     If the user's group does not exist, it is automatically created.
-    The connection may point to 'dev' database since users are not tied to a database (but the cluster).
+    The connection may point to 'dev' database since users are not tied to a database (but the
+    cluster).
     """
     with conn:
         if not etl.db.group_exists(conn, user.group):
@@ -209,9 +203,7 @@ def _create_schema_for_user(conn, user, etl_group, dry_run=False):
 
 
 def _update_search_path(conn, user, dry_run=False):
-    """
-    Non-system users have "their" schema in the search path, others get nothing (meaning just public).
-    """
+    """Non-system users have their schema in the search path, others get nothing (only "public")."""
     search_path = ["public"]
     if user.schema == user.name:
         search_path[:0] = ["'$user'"]  # needs to be quoted per documentation
@@ -244,7 +236,8 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
         raise ETLRuntimeError(
             "Refused to initialize non-validation database '%s' without the --force option" % database_name
         )
-    # Create all defined users which includes the ETL user needed before next step (so that database is owned by ETL)
+    # Create all defined users which includes the ETL user needed before next step (so that
+    # database is owned by ETL)
     if with_user_creation:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True, readonly=dry_run)) as conn:
             for user in config.users:
@@ -321,9 +314,11 @@ def update_user(old_user, group=None, add_user_schema=False, dry_run=False):
 
 def list_open_transactions(cx):
     """
-    Return information about sessions (identified by the PIDs of the backends)
+    Look for sessions that by other users that might interfere with the ETL.
+
+    This returns information about sessions (identified by the PIDs of the backends)
     that have locks open and are for the same database as the current sessions.
-    (Also, sessions of the current user are skipped so that we don't bouncer ourselves.)
+    (Also, sessions of the current user are skipped so that we don't bounce ourselves.)
     """
     stmt = """
         SELECT proc_pid
@@ -352,7 +347,9 @@ def list_open_transactions(cx):
 
 def terminate_sessions_with_transaction_locks(cx, dry_run=False) -> None:
     """
-    Call Redshift's PG_TERMINATE_BACKEND to kick out users with queries that might interfere with the ETL
+    Call Redshift's PG_TERMINATE_BACKEND to kick out other users with running queries.
+
+    Other queries might interfere with the ETL, e.g. by having locks.
     """
     tx_info = list_open_transactions(cx)
     etl.db.print_result("List of sessions that have open transactions:", tx_info)

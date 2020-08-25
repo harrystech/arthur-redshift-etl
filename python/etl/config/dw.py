@@ -1,8 +1,5 @@
 """
-Objects to deal with configuration of our data warehouse, like
-* data warehouse itself
-* its schemas
-* its users
+Data warehouse configuration based on the config file for setup, sources, transformations, users.
 """
 
 from typing import Dict
@@ -17,6 +14,7 @@ from etl.errors import ETLConfigError, InvalidEnvironmentError
 class DataWarehouseUser:
     """
     Data warehouse users have always a name and group associated with them.
+
     Users may have a schema "belong" to them which they then have write access to.
     This is useful for system users, mostly, since end users should treat the
     data warehouse as read-only.
@@ -47,16 +45,18 @@ class S3DataFormat:
 
 class DataWarehouseSchema:
     """
+    Define configuration of schema in the data warehouse, e.g. source vs. transformation..
+
     Schemas in the data warehouse fall into one of four buckets:
-    (1) Upstream source backed by a database.  Data will be extracted from there and
-    so we need to have a DSN with which we can connect.
-    (2) Upstream source backed by CSV files in S3.  Data will be "extracted" in the sense
-    that the ETL will create a manifest file suitable for the COPY command.  No DSN
-    is needed here.
-    (2.5) Target in S3 for "unload" command, which may also be an upstream source.
-    (3) Schemas with CTAS or VIEWs that are computed during the ETL.  Data cannot be extracted here
-    (but maybe unload'ed).
-    (4) Schemas reserved for users (where user could be a BI tool)
+      (1) Upstream source backed by a database.  Data will be extracted from there and
+        so we need to have a DSN with which we can connect.
+      (2) Upstream source backed by CSV files in S3.  Data will be "extracted" in the sense
+        that the ETL will create a manifest file suitable for the COPY command.  No DSN
+        is needed here.
+      (2.5) Target in S3 for "unload" command, which may also be an upstream source.
+      (3) Schemas with CTAS or VIEWs that are computed during the ETL. Data cannot be extracted here
+        (but maybe unload'ed).
+      (4) Schemas reserved for users (where user could be a BI tool)
 
     Although there is a (logical) distinction between "sources" and "schemas" in the settings file
     those are really all the same here ...
@@ -84,21 +84,21 @@ class DataWarehouseSchema:
         else:
             self._dsn_env_var = etl_access
         self.has_dsn = self._dsn_env_var is not None
-        # The S3 bucket, path template and unload path template must be rendered since they may be template strings.
+        # The S3 bucket, path template and unload path template must be rendered since they may
+        # be template strings.
         self._s3_bucket_template = schema_info.get("s3_bucket")
         self._s3_path_template = schema_info.get("s3_path_template")
         self._s3_unload_path_template = schema_info.get("s3_unload_path_template")
         # Additional attributes used for specifying data formats for files in S3
         self.s3_data_format = S3DataFormat(schema_info.get("s3_data_format", {}))
-        # When dealing with this schema of some upstream source, which tables should be used? skipped?
+        # When dealing with this schema of some upstream source, which tables should be used
+        # and which should be skipped?
         self.include_tables = schema_info.get("include_tables", [self.name + ".*"])
         self.exclude_tables = schema_info.get("exclude_tables", [])
 
     @property
     def s3_bucket(self) -> str:
-        """
-        Renders S3 Bucket name (if it references Arthur configuration, for instance, the data lake)
-        """
+        """Renders S3 Bucket name (if it references Arthur configuration, e.g., the data lake)."""
         return etl.render_template.render_from_config(
             self._s3_bucket_template, context="s3_bucket of schema '{}'".format(self.name)
         )
@@ -120,12 +120,14 @@ class DataWarehouseSchema:
     @property
     def dsn(self):
         """
-        Return connection string suitable for the schema which is
+        Return connection string to find this schema upstream or in the data warehouse.
+
+        This returns connection string suitable for the schema which is
         - the value of the environment variable named in the read_access field for upstream sources
-        - the value of the environment variable named in the etl_access field of the data warehouse for schemas
-            that have CTAS or views (transformations)
-        Evaluation of the DSN (and the environment variable) is deferred so that an environment variable
-        may be not set if it is actually not used.
+        - the value of the environment variable named in the etl_access field of the data warehouse
+          for schemas that have CTAS or views (transformations)
+        Evaluation of the DSN (and the environment variable) is deferred so that an environment
+        variable may be not set if it is actually not used.
         """
         # Note this returns None for a static source.
         if self._dsn_env_var:
@@ -171,7 +173,8 @@ class DataWarehouseConfig:
         ]
         self._schema_lookup = {schema.name: schema for schema in self.schemas}
 
-        # Schemas may grant access to groups that have no bootstrapped users, so create all mentioned user groups
+        # Schemas may grant access to groups that have no bootstrapped users, so create all
+        # mentioned user groups.
         other_groups = {u.group for u in other_users} | {g for schema in self.schemas for g in schema.reader_groups}
 
         # Groups are in sorted order after the root group
@@ -184,16 +187,18 @@ class DataWarehouseConfig:
         required_patterns = dw_settings.get("required_for_success", [])
         self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)
 
-        # Mapping SQL types to be able to automatically insert "expressions" into table design files.
+        # Map of SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
 
-        # External schemas are not only un-managed by Arthur but they also require late-binding views
+        # External schemas are un-managed by Arthur and require late-binding views.
         self.external_schema_names = [info["name"] for info in schema_settings if info.get("external", False)]
 
     def _check_access_to_cluster(self):
         """
-        Make sure that the ETL and Admin access point to the same cluster (identified by host and port),
-        but they must point to different databases in the cluster.
+        Make sure that ETL user and admin may connect and connect to differenet databases.
+
+        This makes sure that the ETL and Admin access point to the same cluster (identified by host
+        and port), but they must point to different databases in the cluster.
         It is ok if an environment variable is missing.  But if both are present they must align.
         """
         try:
