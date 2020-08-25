@@ -119,7 +119,7 @@ class LoadableRelation:
     __str__ = RelationDescription.__str__  # type: ignore
 
     def __format__(self, code):
-        """
+        r"""
         Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
 
         Compared to RelationDescription, we have the additional complexity of dealing with

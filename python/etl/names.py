@@ -278,7 +278,7 @@ class TableName:
 
 
 class TempTableName(TableName):
-    """
+    r"""
     Class to deal with names of temporary relations.
 
     Note that temporary views or tables do not have a schema (*) and have a name starting with '#'.
