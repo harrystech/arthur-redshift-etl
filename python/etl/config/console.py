@@ -1,4 +1,5 @@
 import logging
+import sys
 import time
 
 from termcolor import colored
@@ -15,6 +16,8 @@ class ColorfulFormatter(logging.Formatter):
         logging.CRITICAL: "magenta",
     }
 
+    is_tty = sys.stderr.isatty()
+
     def format(self, record):
         s = super().format(record)
-        return colored(s, color=self.palette.get(record.levelno))
+        return colored(s, color=self.palette.get(record.levelno)) if self.is_tty else s
