@@ -4,4 +4,4 @@ flake8==3.8.3
 flake8-docstrings==1.5.0
 flake8-fixme==1.1.1
 mypy==0.782
-mypy-boto3==1.14.43
+mypy-boto3==1.14.48.0
