@@ -108,7 +108,7 @@ class RelationDescription:
         >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
         >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
+        'As delimited identifier: "c"."b", as loggable string: \'c.b\''
         """
         if (not code) or (code == "s"):
             return str(self.target_table_name)
