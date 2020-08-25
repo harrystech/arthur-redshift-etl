@@ -12,6 +12,8 @@ The descriptions of relations contain access to:
          for the table or its columns
     "queries" which are the SQL SELECT statements backing the CTAS or VIEW
     "manifests" which are lists of data files for tables backed by upstream sources
+
+When called as a module, dumps the current configuration of table designs.
 """
 
 import codecs
@@ -576,3 +578,33 @@ def select_in_execution_order(
         if not selected:
             logger.warning("Found no relation to continue from while matching '%s'", continue_from)
     return selected
+
+
+if __name__ == "__main__":
+    import simplejson as json
+    import sys
+
+    from etl.json_encoder import FancyJsonEncoder
+    from etl.design.bootstrap import make_item_sorter
+
+    config_dir = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
+    uri_parts = ("file", "localhost", "schemas")
+    print(
+        "Reading designs from '{schema_dir}' with config in '{config_dir}'.".format(
+            schema_dir=uri_parts[2], config_dir=config_dir
+        ),
+        file=sys.stderr,
+    )
+    etl.config.load_config([config_dir])
+    dw_config = etl.config.get_dw_config()
+    base_schemas = [s.name for s in dw_config.schemas]
+    selector = etl.names.TableSelector(base_schemas=base_schemas)
+    required_selector = dw_config.required_in_full_load_selector
+    file_sets = etl.file_sets.find_file_sets(uri_parts, selector)
+    descriptions = RelationDescription.from_file_sets(file_sets, required_relation_selector=required_selector)
+    if len(sys.argv) > 1:
+        selector = etl.names.TableSelector(sys.argv[1:])
+        descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
+
+    native = [d.table_design for d in descriptions]
+    print(json.dumps(native, cls=FancyJsonEncoder, default=str, indent=4, item_sort_key=make_item_sorter()))
