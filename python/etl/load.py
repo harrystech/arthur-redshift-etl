@@ -119,7 +119,7 @@ class LoadableRelation:
     __str__ = RelationDescription.__str__  # type: ignore
 
     def __format__(self, code):
-        """
+        r"""
         Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
 
         Compared to RelationDescription, we have the additional complexity of dealing with
@@ -134,10 +134,10 @@ class LoadableRelation:
         >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as string: \\'c.b\\''
+        'As delimited identifier: "c"."b", as string: \'c.b\''
         >>> relation_with_staging = LoadableRelation(RelationDescription(fs), {}, use_staging=True, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation_with_staging, relation_with_staging)
-        'As delimited identifier: "etl_staging$c"."b", as string: \\'c.b\\' (in staging)'
+        'As delimited identifier: "etl_staging$c"."b", as string: \'c.b\' (in staging)'
         """
         if (not code) or (code == "s"):
             return str(self)

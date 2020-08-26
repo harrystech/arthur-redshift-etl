@@ -1,10 +1,10 @@
 """
+This module provides global access to settings.  Always treat them nicely and read-only.
+
 We use the term "config" files to refer to all files that may reside in the "config" directory:
 * "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
 * Environment files (with variables used in connections)
 * Other files (like release notes)
-
-This module provides global access to settings.  Always treat them nicely and read-only.
 """
 
 import datetime
@@ -139,7 +139,7 @@ def etl_tmp_dir(path: str) -> str:
 
 def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     """
-    Setup logging to go to console and application log file.
+    Set up logging to go to console and application log file.
 
     If full_format is True, then use the terribly verbose format of
     the application log file also for the console.  And log at the DEBUG level.

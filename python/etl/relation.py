@@ -102,13 +102,13 @@ class RelationDescription:
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
     def __format__(self, code):
-        """
+        r"""
         Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
 
         >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
         >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
+        'As delimited identifier: "c"."b", as loggable string: \'c.b\''
         """
         if (not code) or (code == "s"):
             return str(self.target_table_name)
@@ -211,7 +211,7 @@ class RelationDescription:
         return dw_config.schema_lookup(self.source_name)
 
     def data_directory(self, from_prefix=None):
-        """"Full path to data files (in the schema's data format)."""
+        """Full path to data files (in the schema's data format)."""
         # TODO(tom): Split between source data and static data
         # Either somewhere in S3 for static sources, in S3 for extracted sources or locally.
         return os.path.join(

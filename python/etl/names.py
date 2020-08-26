@@ -278,7 +278,7 @@ class TableName:
 
 
 class TempTableName(TableName):
-    """
+    r"""
     Class to deal with names of temporary relations.
 
     Note that temporary views or tables do not have a schema (*) and have a name starting with '#'.
@@ -290,7 +290,7 @@ class TempTableName(TableName):
     >>> temp.identifier
     '#hello'
     >>> "For SQL: {:s}, for logging: {:x}".format(temp, temp)
-    'For SQL: "#hello", for logging: \\'#hello\\''
+    'For SQL: "#hello", for logging: \'#hello\''
 
     Schema and name comparison in SQL continues to work if you use LIKE for schema names:
     >>> temp.schema
