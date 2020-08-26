@@ -11,16 +11,44 @@ _arthur_completion()
 
     case "$prev" in
         "arthur.py")
-            opts="initialize create_user update_user ping
-                  bootstrap_sources design bootstrap_transformations auto_design
-                  sync validate explain ls
-                  extract load upgrade update unload
-                  create_schemas promote_schemas terminate_sessions
-                  show_downstream_dependents show_dependents show_upstream_dependencies
-                  render_template show_value show_vars settings show_pipelines delete_finished_pipelines
-                  query_events summarize_events tail_events
-                  help selftest
-                  --submit --config"
+            opts="
+                --config
+                --submit
+                auto_design
+                bootstrap_sources
+                bootstrap_transformations
+                create_schemas
+                create_user
+                delete_finished_pipelines
+                design
+                explain
+                extract
+                help
+                initialize
+                load
+                ls
+                ping
+                promote_schemas
+                query_events
+                render_template
+                selftest
+                settings
+                show_dependents
+                show_downstream_dependents
+                show_pipelines
+                show_upstream_dependencies
+                show_value
+                show_vars
+                summarize_events
+                sync
+                tail_events
+                terminate_sessions
+                unload
+                update
+                update_user
+                upgrade
+                validate
+                "
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;
         "-c"|"--config")
@@ -43,13 +71,21 @@ _arthur_completion()
                     COMPREPLY=( $(compgen -A file -P "@" -- "${cur#@}") )
                     ;;
                 *.*)
-                    opts=$(find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
-                           sed -n -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\)\..*:\1.\2:p' | uniq)
+                    # Split schemas/dw/dw-fact.sql to dw.fact (to list all tables that match).
+                    opts=$(
+                        find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
+                            sed -n -e 's:^schemas/\([^/]\{1,\}\)/\([^-]*-\)\{0,1\}\([^.]\{1,\}\)[.].*:\1.\3:p' |
+                            sort -u
+                    )
                     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
                     ;;
                 *)
-                    opts=$(find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
-                           sed -n -e 's:schemas/\([^/]*\)/[^-]*-\([^.]*\)\..*:\1:p' | uniq)
+                    # Split schemas/dw/dw-fact.sql to dw (to list all schemas that match).
+                    opts=$(
+                        find -L schemas -type f \( -name '*.yaml' -o -name '*.sql' \) 2>/dev/null |
+                            sed -n -e 's:^schemas/\([^/]\{1,\}\)/\([^-]*-\)\{0,1\}\([^.]\{1,\}\)[.].*:\1:p' |
+                            sort -u
+                    )
                     # compopt -o nospace
                     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
                     ;;
@@ -57,5 +93,8 @@ _arthur_completion()
             ;;
     esac
 
-} &&
+}
+
 complete -F _arthur_completion arthur.py
+complete -F _arthur_completion install_extraction_pipeline.sh
+complete -F _arthur_completion install_upgrade_pipeline.sh
