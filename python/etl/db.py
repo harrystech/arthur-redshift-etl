@@ -49,7 +49,7 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
     # Now they have two problems.
     dsn_re = re.compile(
-        r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # be nice and accept either connection type
+        r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # accept either type
             (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
             (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
             (?P<database>\w+)  # database (and not dbname)
@@ -87,7 +87,9 @@ def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
 
 def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, autocommit=False, readonly=False):
     """
-    Open a connection to the database described by dsn_string which looks something like
+    Open a connection to the database described by dsn_string.
+
+    The dsn_string is expected to look something like
     "postgresql://user:password@host:port/database" (see parse_connection_string).
 
     Caveat Emptor: By default, this turns off autocommit on the connection. This means that you
@@ -109,8 +111,9 @@ def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, aut
 
 def connection_pool(max_conn, dsn_dict: Dict[str, str], application_name=psycopg2.__name__):
     """
-    Create a connection pool (with up to max_conn connections), where all connections will use the
-    given connection string.
+    Create a connection pool with up to max_conn connections.
+
+    All connections will use the given connection string.
     """
     dsn_values = _dsn_connection_values(dsn_dict, application_name)
     return psycopg2.pool.ThreadedConnectionPool(1, max_conn, **dsn_values)
@@ -151,9 +154,9 @@ def remove_password(s):
     >>> s = '''CREATE USER dw_user IN GROUP etl PASSWORD 'horse_staple_battery';'''
     >>> remove_password(s)
     "CREATE USER dw_user IN GROUP etl PASSWORD '';"
-    >>> s = '''copy listing from 's3://mybucket/data/listing/' credentials 'aws_access_key_id=...';'''
+    >>> s = '''copy listing from 's3://mybucket/data/tbl/' credentials 'aws_access_key_id=...';'''
     >>> remove_password(s)
-    "copy listing from 's3://mybucket/data/listing/' credentials '';"
+    "copy listing from 's3://mybucket/data/tbl/' credentials '';"
     >>> s = '''COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS 'aws_iam_role=...';'''
     >>> remove_password(s)
     "COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS '';"
@@ -188,7 +191,8 @@ def execute(cx, stmt, args=(), return_result=False):
     Be careful with query statements that have a '%' in them (say for LIKE)
     since this will interfere with psycopg2 interpreting parameters.
 
-    Printing the query will not print AWS credentials IF the string used matches "CREDENTIALS '[^']*'"
+    Printing the query will not print AWS credentials IF the string used
+    matches "CREDENTIALS '[^']*'".
     So be careful or you'll end up sending your credentials to the logfile.
     """
     with cx.cursor() as cursor:
@@ -219,8 +223,9 @@ def skip_query(cx, stmt, args=()):
 
 def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
     """
-    Execute the query and log the message around it.  Or just show what would have been run in dry-run mode.
+    Execute the query and log the message around it.
 
+    Or just show what would have been run in dry-run mode.
     This will try to use the caller's logger.
     """
     # Figure out caller for better logging
@@ -315,7 +320,7 @@ def log_sql_error(exc):
 
 @contextmanager
 def log_error():
-    """Log any psycopg2 errors using the pretty log_sql_error function before re-raising the exception"""
+    """Log any psycopg2 errors using the log_sql_error function before re-raising the exception."""
     try:
         yield
     except psycopg2.Error as exc:
@@ -433,7 +438,8 @@ def alter_schema_rename(cx, old_name, new_name):
 def create_schema(cx, schema, owner=None):
     execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" """.format(schema))
     if owner:
-        # Because of the "IF NOT EXISTS" we need to expressly set owner in case there's a change in ownership.
+        # Because of the "IF NOT EXISTS" we need to expressly set owner in case there's a change
+        # in ownership.
         execute(cx, """ALTER SCHEMA "{}" OWNER TO "{}" """.format(schema, owner))
 
 
@@ -476,6 +482,7 @@ def revoke_select_and_write_on_all_tables_in_schema(cx, schema, group):
 def relation_kind(cx, schema, table) -> Optional[str]:
     """
     Return "kind" of relation, either 'TABLE' or 'VIEW' for relations that actually exist.
+
     If the relation doesn't exist, None is returned.
     """
     rows = query(
