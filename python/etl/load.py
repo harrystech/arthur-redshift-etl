@@ -239,9 +239,7 @@ class LoadableRelation:
         skip_copy=False,
         in_transaction=False,
     ) -> List["LoadableRelation"]:
-        """
-        Build a list of "loadable" relations
-        """
+        """Build a list of "loadable" relations."""
         dsn_etl = etl.config.get_dw_config().dsn_etl
         database = dsn_etl["database"]
         base_index = {"name": database, "current": 0, "final": len(relations)}
@@ -508,9 +506,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
 
 
 def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
-    """
-    Update table statistics.
-    """
+    """Update table statistics."""
     etl.db.run(conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
 
 
@@ -710,7 +706,7 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
 
 def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
     """
-    Final step ... tidy up the warehouse before guests come over.
+    Tidy up the warehouse before guests come over.
 
     This needs to open a new connection since it needs to happen outside a transaction.
     """
@@ -1027,7 +1023,6 @@ def create_relations(
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
-
     if concurrent_extract:
         create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
     else:
