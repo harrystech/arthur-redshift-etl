@@ -307,12 +307,17 @@ def list_local_files(directory):
 
 def find_file_sets(uri_parts, selector, allow_empty=False):
     """
-    Generic method to collect files from either s3://bucket/prefix or file://localhost/directory
-    based on the tuple describing a parsed URI, which should be either
+    Find files related to relations in S3 or locally.
+
+    This is a generic method to collect files from either
+    s3://bucket/prefix or file://localhost/directory or ./schemas
+    based on the tuple describing a parsed URI. So that which should be either
     ("s3", "bucket", "prefix", ...) or ("file", "localhost", "directory", ...)
+
     The selector (as a bare minimum) should have a reasonable set of base schemas.
 
-    If :allow_empty is True and no files are found in the local filesystem, an empty list is returned.
+    If :allow_empty is True and no files are found in the local filesystem, an empty list
+    is returned. This is useful for commands supporting local development.
     """
     scheme, netloc, path = uri_parts[:3]
     if scheme == "s3":

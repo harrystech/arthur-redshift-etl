@@ -103,7 +103,7 @@ class TableName:
     @property
     def managed_schemas(self) -> frozenset:
         """
-        (Cached) list of schemas that are managed by Arthur
+        List of schemas that are managed by Arthur.
 
         This contains all schemas not just the schema of this relation.
         """

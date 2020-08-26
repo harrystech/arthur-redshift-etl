@@ -1050,9 +1050,12 @@ def load_data_warehouse(
     dry_run=False,
 ):
     """
-    Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
+    Fully "load" the data warehouse after creating a blank slate.
 
-    Check that only complete schemas are selected. Error out if not.
+    By default, we use staging positions of schemas to load and thus first
+    moving existing schemas out of the way.
+
+    This function allows only complete schemas as selection.
 
     1 Determine schemas that house any of the selected or dependent relations.
     2 Move old schemas in the data warehouse out of the way (for "backup").
