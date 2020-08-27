@@ -31,4 +31,5 @@ jars/
 # VC, wiki, etc.
 .git/
 .github/
+.gitignore
 wiki/

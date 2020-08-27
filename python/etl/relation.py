@@ -12,6 +12,8 @@ The descriptions of relations contain access to:
          for the table or its columns
     "queries" which are the SQL SELECT statements backing the CTAS or VIEW
     "manifests" which are lists of data files for tables backed by upstream sources
+
+When called as a module, dumps the current configuration of table designs.
 """
 
 import codecs
@@ -46,6 +48,7 @@ logger.addHandler(logging.NullHandler())
 class RelationDescription:
     """
     Handy object for working with relations (tables or views) created with Arthur.
+
     Created from a collection of files that pertain to the same table.
     Offers helpful properties for lazily loading contents of relation files.
     Modified by other functions in relations module to set attributes related to dependency graph.
@@ -99,13 +102,13 @@ class RelationDescription:
         return "{}({}:{})".format(self.__class__.__name__, self.identifier, self.source_path_name)
 
     def __format__(self, code):
-        """
+        r"""
         Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
 
         >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
         >>> "As delimited identifier: {:s}, as loggable string: {:x}".format(relation, relation)
-        'As delimited identifier: "c"."b", as loggable string: \\'c.b\\''
+        'As delimited identifier: "c"."b", as loggable string: \'c.b\''
         """
         if (not code) or (code == "s"):
             return str(self.target_table_name)
@@ -129,9 +132,7 @@ class RelationDescription:
 
     @staticmethod
     def load_in_parallel(relations: List["RelationDescription"]) -> None:
-        """
-        Load all relations' table design file in parallel.
-        """
+        """Load all relations' table design file in parallel."""
         with etl.timer.Timer() as timer:
             # TODO With Python 3.6, we should pass in a thread_name_prefix
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -210,7 +211,7 @@ class RelationDescription:
         return dw_config.schema_lookup(self.source_name)
 
     def data_directory(self, from_prefix=None):
-        """"Full path to data files (in the schema's data format)."""
+        """Full path to data files (in the schema's data format)."""
         # TODO(tom): Split between source data and static data
         # Either somewhere in S3 for static sources, in S3 for extracted sources or locally.
         return os.path.join(
@@ -222,31 +223,26 @@ class RelationDescription:
 
     @property
     def unquoted_columns(self) -> List[str]:
-        """
-        List of the column names of this relation
-        """
+        """List of the column names of this relation."""
         return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
 
     @property
     def columns(self) -> List[str]:
-        """
-        List of delimited column names of this relation
-        """
+        """List of delimited column names of this relation."""
         return ['"{}"'.format(column) for column in self.unquoted_columns]
 
     @property
     def has_identity_column(self) -> bool:
         """
         Return whether any of the columns is marked as identity column.
+
         (Should only ever be possible for CTAS, see validation code).
         """
         return any(column.get("identity") for column in self.table_design["columns"])
 
     @property
     def is_missing_encoding(self) -> bool:
-        """
-        Return whether any column doesn't have encoding specified.
-        """
+        """Return whether any column doesn't have encoding specified."""
         return any(not column.get("encoding") for column in self.table_design["columns"] if not column.get("skipped"))
 
     @classmethod
@@ -517,9 +513,7 @@ def set_required_relations(relations: List[RelationDescription], required_select
 
 
 def find_matches(relations: List[RelationDescription], selector: TableSelector):
-    """
-    Return list of matching relations.
-    """
+    """Return list of matching relations."""
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
@@ -528,6 +522,7 @@ def find_dependents(
 ) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
+
     For this to really work, the list of relations should be sorted in "execution order"!
     """
     seeds = frozenset(relation.identifier for relation in seed_relations)
@@ -576,3 +571,33 @@ def select_in_execution_order(
         if not selected:
             logger.warning("Found no relation to continue from while matching '%s'", continue_from)
     return selected
+
+
+if __name__ == "__main__":
+    import simplejson as json
+    import sys
+
+    from etl.json_encoder import FancyJsonEncoder
+    from etl.design.bootstrap import make_item_sorter
+
+    config_dir = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
+    uri_parts = ("file", "localhost", "schemas")
+    print(
+        "Reading designs from '{schema_dir}' with config in '{config_dir}'.".format(
+            schema_dir=uri_parts[2], config_dir=config_dir
+        ),
+        file=sys.stderr,
+    )
+    etl.config.load_config([config_dir])
+    dw_config = etl.config.get_dw_config()
+    base_schemas = [s.name for s in dw_config.schemas]
+    selector = etl.names.TableSelector(base_schemas=base_schemas)
+    required_selector = dw_config.required_in_full_load_selector
+    file_sets = etl.file_sets.find_file_sets(uri_parts, selector)
+    descriptions = RelationDescription.from_file_sets(file_sets, required_relation_selector=required_selector)
+    if len(sys.argv) > 1:
+        selector = etl.names.TableSelector(sys.argv[1:])
+        descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
+
+    native = [d.table_design for d in descriptions]
+    print(json.dumps(native, cls=FancyJsonEncoder, default=str, indent=4, item_sort_key=make_item_sorter()))

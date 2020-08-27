@@ -343,6 +343,7 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
 def _find_file_sets_from(iterable, selector):
     """
     Return list of file sets ordered by (target) schema name, (source) schema_name and (source) table_name.
+
     Remember that the (target) schema name is the same as the source name (for upstream sources).
     The selector's base schemas (if present) will override alphabetical sorting for the source_name.
     """

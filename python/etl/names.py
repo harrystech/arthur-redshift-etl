@@ -1,7 +1,8 @@
 """
 Utility methods to deal with "names" of relations.
 
-To be safe, we always delimit names in queries but would prefer not to during logging. See TableName.
+To be safe, we always delimit names in queries but would prefer not to during logging.
+See TableName.
 
 There are additional methods and classes here to support the feature of choosing relations
 by a pattern from the command line.
@@ -277,7 +278,7 @@ class TableName:
 
 
 class TempTableName(TableName):
-    """
+    r"""
     Class to deal with names of temporary relations.
 
     Note that temporary views or tables do not have a schema (*) and have a name starting with '#'.
@@ -289,7 +290,7 @@ class TempTableName(TableName):
     >>> temp.identifier
     '#hello'
     >>> "For SQL: {:s}, for logging: {:x}".format(temp, temp)
-    'For SQL: "#hello", for logging: \\'#hello\\''
+    'For SQL: "#hello", for logging: \'#hello\''
 
     Schema and name comparison in SQL continues to work if you use LIKE for schema names:
     >>> temp.schema

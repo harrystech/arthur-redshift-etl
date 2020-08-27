@@ -75,9 +75,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
 
 
 def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
-    """
-    Retrieve table definition (column names and types).
-    """
+    """Retrieve table definition (column names and types)."""
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
     if getattr(table_name, "is_late_binding_view", False):
         stmt = """
@@ -162,9 +160,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
 
 
 def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
-    """
-    Lookup dependencies (other tables)
-    """
+    """Lookup dependencies (other tables)."""
     # See https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
     stmt = """
         SELECT DISTINCT
@@ -216,8 +212,9 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
 
 def create_table_design_for_source(conn: connection, source_table_name: TableName, target_table_name: TableName):
     """
-    Create new table design for a table in an upstream source. If present, we gather the constraints from the source.
+    Create new table design for a table in an upstream source.
 
+    If present, we gather the constraints from the source.
     (Note that only upstream tables can have constraints derived from inspecting the database.)
     """
     table_design = create_partial_table_design(conn, source_table_name, target_table_name)

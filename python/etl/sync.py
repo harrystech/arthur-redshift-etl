@@ -32,7 +32,8 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False) -> None:
     """
     Upload warehouse configuration files (minus credentials) to target bucket/prefix's "config" dir.
 
-    It is an error to try to upload files with the same name (coming from different config directories).
+    It is an error to try to upload files with the same name (coming from different config
+    directories).
     """
     settings_files = etl.config.gather_setting_files(config_files)
     logger.info("Found %d settings file(s) to deploy", len(settings_files))
@@ -44,9 +45,7 @@ def upload_settings(config_files, bucket_name, prefix, dry_run=False) -> None:
 
 
 def sync_with_s3(relations: List[RelationDescription], bucket_name: str, prefix: str, dry_run: bool = False) -> None:
-    """
-    Copy (validated) table design and SQL files from local directory to S3 bucket.
-    """
+    """Copy (validated) table design and SQL files from local directory to S3 bucket."""
     logger.info("Validating %d table design(s) before upload", len(relations))
     RelationDescription.load_in_parallel(relations)
 

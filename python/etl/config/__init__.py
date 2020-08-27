@@ -1,10 +1,10 @@
 """
+This module provides global access to settings.  Always treat them nicely and read-only.
+
 We use the term "config" files to refer to all files that may reside in the "config" directory:
 * "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
 * Environment files (with variables used in connections)
 * Other files (like release notes)
-
-This module provides global access to settings.  Always treat them nicely and read-only.
 """
 
 import datetime
@@ -37,6 +37,7 @@ _dw_config = None  # type: Optional[DataWarehouseConfig]
 _mapped_config = None  # type: Optional[Dict[str, str]]
 
 # Local temp directory used for bootstrap, temp files, etc.
+# TODO(tom): This is a misnomer -- it's also the install dir on EC2 hosts.
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
@@ -78,9 +79,7 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
 
 
 def get_config_list(name: str) -> List[int]:
-    """
-    Lookup a configuration value that is a List.
-    """
+    """Lookup a configuration value that is a List."""
     value = get_config_value(name)
     if value is None:
         raise InvalidArgumentError("missing config for {}".format(name))
@@ -88,9 +87,7 @@ def get_config_list(name: str) -> List[int]:
 
 
 def set_config_value(name: str, value: str) -> None:
-    """
-    Set configuration value to given string.
-    """
+    """Set configuration value to given string."""
     assert _mapped_config is not None, "attempted to set config value before reading config map"
     _mapped_config[name] = value
 
@@ -136,15 +133,13 @@ def _build_config_map(settings):
 
 
 def etl_tmp_dir(path: str) -> str:
-    """
-    Return the absolute path within the ETL runtime directory for the selected path.
-    """
+    """Return the absolute path within the ETL runtime directory for the selected path."""
     return os.path.join(ETL_TMP_DIR, path)
 
 
 def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     """
-    Setup logging to go to console and application log file.
+    Set up logging to go to console and application log file.
 
     If full_format is True, then use the terribly verbose format of
     the application log file also for the console.  And log at the DEBUG level.
@@ -202,9 +197,7 @@ def _deep_update(old: dict, new: dict) -> None:
 
 
 def load_settings_file(filename: str, settings: dict) -> None:
-    """
-    Load new settings from config file and merge with given settings.
-    """
+    """Load new settings from config file and merge with given settings."""
     logger.info("Loading settings from '%s'", filename)
     with open(filename) as content:
         new_settings = yaml.safe_load(content)
@@ -214,6 +207,7 @@ def load_settings_file(filename: str, settings: dict) -> None:
 def get_release_info() -> str:
     """
     Read the release file and return all lines bunched into one comma-separated value.
+
     Life's exciting. And short. But mostly exciting.
     """
     if pkg_resources.resource_exists(__name__, "release.txt"):

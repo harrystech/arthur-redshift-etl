@@ -34,23 +34,23 @@ git pull
 
 bin/build_arthur.sh
 ```
+You will now have an image `arthur-redshift-etl:latest`.
 
-## Using the container
+## Using the Docker container
 
-This might be as simple as:
+It's easiest to set these environment variables, _e.g._ in your `~/.bashrc` or file:
+```bash
+export DATA_WAREHOUSE_CONFIG= ...
+export ARTHUR_DEFAULT_PREFIX= ...
+export AWS_DEFAULT_PROFILE= ...
+```
 
+Then you can simply run:
 ```bash
 bin/run_arthur.sh
 ```
 
-For that to work, set these environment variables:
-```bash
-export AWS_PROFILE= ...
-export DATA_WAREHOUSE_CONFIG= ...
-export ARTHUR_DEFAULT_PREFIX= ...
-```
-
-Or you can set (or override) the settings on the command line:
+You can set or override the settings on the command line:
 ```bash
 bin/run_arthur.sh -p aws_profile ../warehouse-repo/config-dir wip
 ```
@@ -58,6 +58,13 @@ bin/run_arthur.sh -p aws_profile ../warehouse-repo/config-dir wip
 When in doubt, ask for help:
 ```bash
 bin/run_arthur.sh -h
+```
+
+## Deploying to S3
+
+You should now try to deploy your code into the object store in S3:
+```bash
+bin/deploy_arthur.sh
 ```
 
 ## Additional steps for developers

@@ -6,7 +6,9 @@ import simplejson as json
 
 class FancyJsonEncoder(json.JSONEncoder):
     """
-    Fancy encoder for JSON turning instances of datetime and Decimal into something more primordial:
+    Fancy encoder for JSON turning instances of datetime and Decimal into something more primordial.
+
+    Specific changes:
         Instance of datetime.datetime -> String in ISO 8601 format (with ' ', not 'T')
         Instance of decimal.Decimal -> float or int depending on presence of decimals
     """

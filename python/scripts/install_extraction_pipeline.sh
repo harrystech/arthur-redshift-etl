@@ -5,24 +5,22 @@ USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 if [[ $# -lt 1 || "$1" = "-h" ]]; then
-
-    cat <<EOF
+    cat <<USAGE
 
 Single-shot extraction pipeline. You get to pick the arguments to 'extract' command.
 
 Usage: `basename $0` extract_arg [extract_arg ...]
 
-The remaining arguments will be passed to 'extract'.
+The commandline arguments will be passed to 'extract'.
 The environment defaults to "$DEFAULT_PREFIX".
 
 Example: `basename $0` dw
 
-EOF
+USAGE
     exit 0
-
 fi
 
-set -e -u
+set -o errexit -o nounset
 
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
@@ -32,15 +30,14 @@ if [[ ! -d "$DEFAULT_CONFIG" ]]; then
     exit 1
 fi
 
-function join_by { local IFS="$1"; shift; echo "$*"; }
 
 PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$DEFAULT_PREFIX"
+START_DATE_TIME="$START_NOW"
 
 # The list of arguments must be comma-separated when passed to a step in an EMR cluster.
+function join_by { local IFS="$1"; shift; echo "$*"; }
 EXTRACT_ARGUMENTS=$(join_by ',' "$@")
-
-START_DATE_TIME="$START_NOW"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -49,7 +46,7 @@ if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     exit 1
 fi
 
-set -x
+set -o xtrace
 
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
@@ -87,4 +84,4 @@ aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 set +x
 echo
 echo "You can monitor the status of this extraction pipeline using:"
-echo "  watch arthur.py show_pipelines -q '$PIPELINE_ID'"
+echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"

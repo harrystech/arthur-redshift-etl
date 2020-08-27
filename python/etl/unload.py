@@ -105,9 +105,7 @@ def unload_relation(
     allow_overwrite=False,
     dry_run=False,
 ) -> None:
-    """
-    Unload data from table in the data warehouse using the UNLOAD command of Redshift.
-    """
+    """Unload data from table in the data warehouse using the UNLOAD command of Redshift."""
     s3_key_prefix = "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
         schema=schema, source=relation.target_table_name,
     )
@@ -137,9 +135,7 @@ def unload_to_s3(
     keep_going: bool,
     dry_run: bool,
 ) -> None:
-    """
-    Create CSV files for selected tables based on the S3 path in an "unload" source.
-    """
+    """Create CSV files for selected tables based on the S3 path in an "unload" source."""
     logger.info("Loading table design for %d relation(s) to look for unloadable relations", len(relations))
     etl.relation.RelationDescription.load_in_parallel(relations)
 

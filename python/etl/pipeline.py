@@ -1,6 +1,4 @@
-"""
-Implement commands that interact with AWS Data Pipeline
-"""
+"""Implement commands that interact with AWS Data Pipeline."""
 
 import fnmatch
 import logging
@@ -122,7 +120,8 @@ def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
     Delete pipelines that finished more than 24 hours ago.
 
     You can use this to easily clean up (validation or pizza) pipelines.
-    The 24-hour cool off period suggests not to delete pipelines that are still needed for inspection.
+    The 24-hour cool off period suggests not to delete pipelines that are still needed for
+    inspection.
     """
     yesterday_or_before = (datetime.utcnow() - timedelta(days=1)).replace(microsecond=0)
     earliest_finished_time = yesterday_or_before.isoformat()

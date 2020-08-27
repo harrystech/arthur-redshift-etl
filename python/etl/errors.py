@@ -6,9 +6,7 @@ from etl.text import join_with_quotes
 
 
 class ETLError(Exception):
-    """
-    Parent to all ETL-oriented exceptions which allows to write effective except statements
-    """
+    """Parent to all ETL-oriented exceptions which allows to write effective except statements."""
 
 
 class ETLSystemError(ETLError):
@@ -51,9 +49,7 @@ class ETLDelayedExit(ETLError):
 
 
 class SelfTestError(ETLSystemError):
-    """
-    Exception when one of the built-in test suites fails
-    """
+    """Exception when one of the built-in test suites fails."""
 
 
 class SchemaInvalidError(ETLSystemError):
@@ -65,45 +61,31 @@ class SchemaValidationError(ETLConfigError):
 
 
 class MissingValueTemplateError(ETLSystemError):
-    """
-    Exception when a template cannot be rendered because a configuration setting is missing.
-    """
+    """Exception when a template cannot be rendered because a configuration setting is missing."""
 
 
 class InvalidArgumentError(ETLRuntimeError):
-    """
-    Exception when arguments are detected to be invalid by the command callback
-    """
+    """Exception when arguments are detected to be invalid by the command callback."""
 
 
 class InvalidEnvironmentError(ETLRuntimeError):
-    """
-    Exception when environment settings are invalid
-    """
+    """Exception when environment settings are invalid."""
 
 
 class TableDesignError(ETLConfigError):
-    """
-    Exception when a table design file is incorrect
-    """
+    """Exception when a table design file is incorrect."""
 
 
 class TableDesignParseError(TableDesignError):
-    """
-    Exception when a table design file cannot be parsed
-    """
+    """Exception when a table design file cannot be parsed."""
 
 
 class TableDesignSyntaxError(TableDesignError):
-    """
-    Exception when a table design file does not pass schema validation
-    """
+    """Exception when a table design file does not pass schema validation."""
 
 
 class TableDesignSemanticError(TableDesignError):
-    """
-    Exception when a table design file does not pass logic checks
-    """
+    """Exception when a table design file does not pass logic checks."""
 
 
 class TableDesignValidationError(TableDesignError):
@@ -113,27 +95,19 @@ class TableDesignValidationError(TableDesignError):
 
 
 class MissingQueryError(ETLConfigError):
-    """
-    Exception when the query (SQL file) is missing
-    """
+    """Exception when the query (SQL file) is missing."""
 
 
 class CyclicDependencyError(ETLConfigError):
-    """
-    Exception when evaluation order runs in circles
-    """
+    """Exception when evaluation order runs in circles."""
 
 
 class UpstreamValidationError(ETLRuntimeError):
-    """
-    Exception when validation against upstream database fails
-    """
+    """Exception when validation against upstream database fails."""
 
 
 class DataExtractError(TransientETLError):
-    """
-    Exception when extracting from an upstream source fails
-    """
+    """Exception when extracting from an upstream source fails."""
 
 
 class UnknownTableSizeError(DataExtractError):
@@ -149,15 +123,11 @@ class MissingCsvFilesError(DataExtractError):
 
 
 class S3ServiceError(ETLRuntimeError):
-    """
-    Exception when we encounter problems with S3
-    """
+    """Exception when we encounter problems with S3."""
 
 
 class RelationConstructionError(ETLRuntimeError):
-    """
-    Exception when we fail to drop or create a relation
-    """
+    """Exception when we fail to drop or create a relation."""
 
 
 class RelationDataError(ETLRuntimeError):
@@ -236,8 +206,8 @@ def retry(max_retries: int, func: partial, logger):
     The function should be a functools.partial called with no arguments.
     Sleeps for 5 ^ attempt_number seconds if there are remaining retry attempts.
 
-    The given func function is only retried if it throws a TransientETLError. Any other error is considered
-    permanent, and therefore no retry attempt is made.
+    The given func function is only retried if it throws a TransientETLError. Any other error is
+    considered permanent, and therefore no retry attempt is made.
     """
     failure_reason = None
     successful_result = None

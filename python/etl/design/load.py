@@ -27,6 +27,7 @@ logger.addHandler(logging.NullHandler())
 def load_table_design(stream, table_name):
     """
     Load table design from stream (usually, an open file).
+
     The table design is validated before being returned.
     """
     try:
@@ -48,9 +49,7 @@ def load_table_design(stream, table_name):
 
 
 def load_table_design_from_localfile(local_filename, table_name):
-    """
-    Load (and validate) table design file in local file system.
-    """
+    """Load (and validate) table design file in local file system."""
     if local_filename is None:
         raise ValueError("local filename is unknown")
     try:
@@ -63,9 +62,7 @@ def load_table_design_from_localfile(local_filename, table_name):
 
 
 def load_table_design_from_s3(bucket_name, design_file, table_name):
-    """
-    Download (and validate) table design from file in S3.
-    """
+    """Download (and validate) table design from file in S3."""
     with closing(etl.s3.get_s3_object_content(bucket_name, design_file)) as content:
         table_design = load_table_design(content, table_name)
     return table_design
@@ -91,6 +88,7 @@ def validate_table_design(table_design, table_name):
 def validate_table_design_syntax(table_design, table_name):
     """
     Validate table design based on the (JSON) schema (which can only check syntax but not values).
+
     Raise an exception if anything is amiss.
     """
     try:
@@ -168,9 +166,7 @@ def validate_semantics_of_view(table_design):
 
 
 def validate_semantics_of_table_or_ctas(table_design):
-    """
-    Check for semantics that apply to tables that are in source schemas or are a CTAS.
-    """
+    """Check for semantics that apply to tables that are in source schemas or are a CTAS."""
     validate_identity_as_surrogate_key(table_design)
     validate_column_references(table_design)
 
@@ -185,18 +181,14 @@ def validate_semantics_of_table_or_ctas(table_design):
 
 
 def validate_semantics_of_ctas(table_design):
-    """
-    Check for semantics that apply only to CTAS.
-    """
+    """Check for semantics that apply only to CTAS."""
     validate_semantics_of_table_or_ctas(table_design)
     if "extract_settings" in table_design:
         raise TableDesignSemanticError("Extract settings not supported for transformations")
 
 
 def validate_semantics_of_table(table_design):
-    """
-    Check for semantics that apply to tables in source schemas.
-    """
+    """Check for semantics that apply to tables in source schemas."""
     validate_semantics_of_table_or_ctas(table_design)
 
     if "depends_on" in table_design:
@@ -226,6 +218,7 @@ def validate_semantics_of_table(table_design):
 def validate_table_design_semantics(table_design, table_name):
     """
     Validate table design against rule set based on values (e.g. name of columns).
+
     Raise an exception if anything is amiss.
     """
     if table_design["name"] != table_name.identifier:

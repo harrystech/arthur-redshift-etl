@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-ARTHUR_VERSION = "1.27.1"
+ARTHUR_VERSION = "1.28.0"
 
 
 setup(
@@ -36,4 +36,5 @@ setup(
     ],
     url="https://github.com/harrystech/arthur-redshift-etl",
     version=ARTHUR_VERSION,
+    zip_safe=False,
 )
