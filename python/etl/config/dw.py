@@ -98,7 +98,7 @@ class DataWarehouseSchema:
 
     @property
     def s3_bucket(self) -> str:
-        """Renders S3 Bucket name (if it references Arthur configuration, e.g., the data lake)."""
+        """Render S3 Bucket name (if it references Arthur configuration, e.g., the data lake)."""
         return etl.render_template.render_from_config(
             self._s3_bucket_template, context="s3_bucket of schema '{}'".format(self.name)
         )

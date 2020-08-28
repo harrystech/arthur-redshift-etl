@@ -45,7 +45,8 @@ class SqoopExtractor(DatabaseExtractor):
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
 
     def _temporary_options_file(self, prefix: Optional[str] = None):
-        # This function is needed to avoid a type error around 'dir' which isn't defined as 'Optional' in the library.
+        # This function is needed to avoid a type error around 'dir' which isn't defined
+        # as 'Optional' in the library.
         return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
@@ -163,7 +164,8 @@ class SqoopExtractor(DatabaseExtractor):
         else:
             select_statement = self.select_statement(relation, None)
 
-        # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
+        # Note that select statement always ends in a where clause, adding $CONDITIONS per
+        # sqoop documentation
         return select_statement + " AND $CONDITIONS"
 
     def build_sqoop_partition_options(
@@ -236,8 +238,8 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
             if sqoop.returncode != 0:
-                # TODO: Be more intelligent about detecting whether certain Sqoop errors are retryable, instead of
-                # assuming they all are.
+                # TODO: Be more intelligent about detecting whether certain Sqoop errors are
+                # retryable, instead of assuming they all are.
                 raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 

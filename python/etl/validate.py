@@ -84,7 +84,10 @@ def validate_semantics(relations: List[RelationDescription], keep_going=False) -
 
 def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Optional[str]:
     """
-    Calculate differences between what was found while running the query to what was declared in the design.
+    Calculate difference between the two lists and return human-interpretable string.
+
+    The assumption here is that we can run a query to find dependencies
+    and compare that list to what is stored in the table design file.
 
     >>> compare_query_to_design(["a", "b"], ["b", "a"])
     >>> compare_query_to_design(["a", "b"], ["a"])
@@ -111,9 +114,7 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
 
 
 def validate_dependencies(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
-    """
-    Download the dependencies (usually, based on the temporary view) and compare with table design.
-    """
+    """Download the dependencies (based on a temporary view) and compare with table design."""
     if tmp_view_name.is_late_binding_view:
         logger.warning(
             "Dependencies of '%s' cannot be verified because it depends on an external table", relation.identifier
@@ -121,7 +122,8 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
         return
 
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
-    # We break with tradition and show the list of dependencies such that they can be copied into a design file.
+    # We break with tradition and show the list of dependencies such that they can be copied into
+    # a design file.
     logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, json.dumps(dependencies))
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
@@ -138,7 +140,8 @@ def validate_column_ordering(conn: connection, relation: RelationDescription, tm
     actual_columns = [attribute.name for attribute in attributes]
 
     if not actual_columns and tmp_view_name.is_late_binding_view:
-        # Thanks to late-binding views it is not an error for a view to not be able to resolve its columns.
+        # Thanks to late-binding views it is not an error for a view to not be able to resolve
+        # its columns.
         logger.warning(
             "Order of columns in design of '%s' cannot be validated because external table is missing",
             relation.identifier,
@@ -205,8 +208,9 @@ def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_go
 
 def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     """
-    Return list of elements that help turn list1 into list2 -- a "minimal" list of
-    differences based on changing one list into the other.
+    Return list of elements that help turn list1 into list2.
+
+    This should be a "minimal" list of differences based on changing one list into the other.
 
     >>> get_list_difference(["a", "b"], ["b", "a"])
     ['b']
@@ -351,8 +355,9 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
     """
     Compare table constraints between database and table design file.
 
-    Note that "natural_key" or "surrogate_key" constraints are not valid in upstream (source) tables.
-    Also, a "primary_key" in upstream may be used as a "unique" constraint in the design (but not vice versa).
+    Note that "natural_key" or "surrogate_key" constraints are not valid in upstream
+    (source) tables. Also, a "primary_key" in upstream may be used as a "unique" constraint
+    in the design (but not vice versa).
     """
     current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
     design_constraint = table.table_design.get("constraints", [])
@@ -363,7 +368,7 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
     design_primary_key = frozenset([col for c in design_constraint for col in c.get("primary_key", [])])
     design_uniques = [frozenset(c["unique"]) for c in design_constraint if "unique" in c]
 
-    # We'll pluck from the not_used info and report if anything wasn't used in the design at the end.
+    # We'll pluck from the not_used info and report if anything wasn't used in the design.
     not_used = deepcopy(current_constraint)
 
     if design_primary_key:

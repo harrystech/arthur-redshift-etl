@@ -19,7 +19,9 @@ logger.addHandler(logging.NullHandler())
 
 class DottedNameTemplate(string.Template):
     """
-    Support ${name} substitutions where name may be any identifier (including dotted or hyphenated names).
+    Support ${name} substitutions where name may be any identifier.
+
+    This also allows dotted or hyphenated names.
     """
 
     idpattern = r"[_a-z][-._a-z0-9]*"
@@ -80,7 +82,8 @@ def render(template_name: str, compact=False) -> None:
     if filename.endswith((".json", ".yaml", ".yml")):
         # Always load as YAML in order to support comments.
         obj = yaml.safe_load(rendered)
-        # But since we don't support anything that couldn't be done in JSON, dump the (prettier) JSON format.
+        # But since we don't support anything that couldn't be done in JSON, dump the (prettier)
+        # JSON format.
         if compact:
             print(simplejson.dumps(obj, separators=(",", ":"), sort_keys=True))
         else:

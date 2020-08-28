@@ -18,16 +18,12 @@ from etl.text import join_with_quotes
 
 
 def as_staging_name(name):
-    """
-    The canonical transformation of a schema name to its staging position
-    """
+    """Transform the schema name to its staging position."""
     return "$".join(("etl_staging", name))
 
 
 def as_backup_name(name):
-    """
-    The canonical transformation of a schema name to its backup position
-    """
+    """Transform the schema name to its backup position."""
     return "$".join(("etl_backup", name))
 
 
@@ -107,7 +103,7 @@ class TableName:
     @property
     def managed_schemas(self) -> frozenset:
         """
-        (Cached) list of schemas that are managed by Arthur
+        List of schemas that are managed by Arthur.
 
         This contains all schemas not just the schema of this relation.
         """
@@ -126,9 +122,7 @@ class TableName:
 
     @property
     def external_schemas(self) -> frozenset:
-        """
-        (Cached) list of external schemas that are never managed by Arthur and may not exist during validation
-        """
+        """List external schemas that are not managed by Arthur and may not exist during validation."""
         if self._external_schemas is None:
             try:
                 self._external_schemas = frozenset(etl.config.get_dw_config().external_schema_names)
@@ -169,7 +163,7 @@ class TableName:
     @classmethod
     def from_identifier(cls, identifier: str):
         """
-        Split identifier into schema and table before creating a new TableName instance
+        Split identifier into schema and table before creating a new TableName instance.
 
         >>> identifier = "ford.mustang"
         >>> tn = TableName.from_identifier(identifier)
@@ -181,7 +175,9 @@ class TableName:
 
     def __str__(self):
         """
-        Delimited table identifier to safeguard against unscrupulous users who use "default" as table name...
+        Return delimited table identifier with quotes around schema and table name.
+
+        This safeguards against unscrupulous users who use "default" as table name.
 
         >>> import etl.config
         >>> from collections import namedtuple
@@ -198,7 +194,10 @@ class TableName:
 
     def __format__(self, code):
         """
-        Format name as delimited identifier (by default, or 's') or just as quoted identifier (using 'x').
+        Format name as delimited identifier (with quotes) or just as an identifier.
+
+        With the default or ':s', it's a delimited identifier with quotes.
+        With ':x", the name is left bare but single quotes are around it.
 
         >>> pu = TableName("public", "users")
         >>> format(pu)
@@ -233,7 +232,7 @@ class TableName:
 
     def __lt__(self, other: "TableName"):
         """
-        Order two table names, case-insensitive. (Used by sort.)
+        Order two table names, case-insensitive.
 
         >>> ta = TableName("Iowa", "Cedar Rapids")
         >>> tb = TableName("Iowa", "Davenport")
@@ -263,7 +262,7 @@ class TableName:
 
     def match_pattern(self, pattern: str) -> bool:
         """
-        Test whether this table matches the given pattern
+        Test whether this table matches the given pattern.
 
         >>> tn = TableName("www", "orders")
         >>> tn.match_pattern("w*.o*")

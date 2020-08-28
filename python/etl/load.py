@@ -3,7 +3,7 @@ This is the "load and transform" part of our ELT.
 
 There are three options for accomplishing this:
 
-(1) a "load" command will start building the data warehouse from scratch (usually, after backing up).
+(1) a "load" command will start building the data warehouse from scratch, usually, after backing up.
 (2) an "upgrade" command will try to load new data and changed relations (without any back up).
 (3) an "update" command will attempt to bring in new data and new relations, then let it percolate.
 
@@ -12,7 +12,8 @@ it always operates on all tables in any schemas impacted by the load.
 
 The "update" command is used in the refresh pipeline. It is safe to run (and safe to
 re-run) to bring in new data.  It cannot be used to make a structural change. Basically,
-"update" will respect the boundaries set by "publishing" the data warehouse state in S3 as "current".
+"update" will respect the boundaries set by "publishing" the data warehouse state in S3
+as "current".
 
 The "upgrade" command should probably be used only during development. Think of an "upgrade" as a
 "load" without the safety net. Unlike "load", it will upgrade more surgically and not expand
@@ -81,20 +82,21 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-# ---- Section 0: Foundation: LoadableRelation ----
+# --- Section 0: Foundation: LoadableRelation
 
 
 class LoadableRelation:
     """
     Wrapper for RelationDescription that adds state machinery useful for loading.
+
     (Load here refers to the step in the ETL, so includes load, upgrade, and update commands).
 
     We use composition here to avoid copying from the RelationDescription.
     Also, inheritance would work less well given how lazy loading is used in RelationDescription.
     You're welcome.
 
-    Being 'Loadable' means that load-relevant RelationDescription properties may get new values here.
-    In particular:
+    Being 'Loadable' means that load-relevant RelationDescription properties may get new values
+    here. In particular:
         - target_table_name is 'use_staging' aware
         - query_stmt is 'use_staging' aware
 
@@ -115,12 +117,16 @@ class LoadableRelation:
             return getattr(self._relation_description, name)
         raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, name))
 
-    # This works although __str__ will get passed a 'LoadableRelation' object instead of a 'RelationDescription' object.
+    # This works although __str__ will get passed a 'LoadableRelation' object instead of a
+    # 'RelationDescription' object.
     __str__ = RelationDescription.__str__  # type: ignore
 
     def __format__(self, code):
         r"""
-        Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
+        Format target table as delimited identifier (with quotes) or just as an identifier.
+
+        With the default or ':s', it's a delimited identifier with quotes.
+        With ':x", the name is left bare but single quotes are around it.
 
         Compared to RelationDescription, we have the additional complexity of dealing with
         the position (staging or not) of a table.
@@ -135,8 +141,10 @@ class LoadableRelation:
         >>> relation = LoadableRelation(RelationDescription(fs), {}, skip_copy=True)
         >>> "As delimited identifier: {:s}, as string: {:x}".format(relation, relation)
         'As delimited identifier: "c"."b", as string: \'c.b\''
-        >>> relation_with_staging = LoadableRelation(RelationDescription(fs), {}, use_staging=True, skip_copy=True)
-        >>> "As delimited identifier: {:s}, as string: {:x}".format(relation_with_staging, relation_with_staging)
+        >>> relation_with_staging = LoadableRelation(
+        ...     RelationDescription(fs), {}, use_staging=True, skip_copy=True)
+        >>> "As delimited identifier: {:s}, as string: {:x}".format(
+        ...     relation_with_staging, relation_with_staging)
         'As delimited identifier: "etl_staging$c"."b", as string: \'c.b\' (in staging)'
         """
         if (not code) or (code == "s"):
@@ -182,7 +190,7 @@ class LoadableRelation:
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
     def mark_failure(self, relations: List["LoadableRelation"], exc_info=True) -> None:
-        """Mark this relation as failed and set dependents (elements from :relations) to skip_copy"""
+        """Mark this relation as failed and set dependents (stored in :relations) to skip_copy."""
         self.failed = True
         if self.is_required:
             logger.error("Failed to build required relation '%s':", self.identifier, exc_info=exc_info)
@@ -231,9 +239,7 @@ class LoadableRelation:
         skip_copy=False,
         in_transaction=False,
     ) -> List["LoadableRelation"]:
-        """
-        Build a list of "loadable" relations
-        """
+        """Build a list of "loadable" relations."""
         dsn_etl = etl.config.get_dw_config().dsn_etl
         database = dsn_etl["database"]
         base_index = {"name": database, "current": 0, "final": len(relations)}
@@ -261,7 +267,7 @@ class LoadableRelation:
         return loadable
 
 
-# ---- Section 1: Functions that work on relations (creating them, filling them, adding permissions) ----
+# --- Section 1: Functions that work on relations (creating them, filling them, adding permissions)
 
 
 def create_table(
@@ -269,6 +275,7 @@ def create_table(
 ) -> None:
     """
     Create a table matching this design (but possibly under another name).
+
     If a name is specified, we'll assume that this should be an intermediate, aka temp table.
 
     Columns must have a name and a SQL type (compatible with Redshift).
@@ -294,9 +301,7 @@ def create_table(
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
-    """
-    Create VIEW using the relation's query.
-    """
+    """Create VIEW using the relation's query."""
     view_name = relation.target_table_name
     columns = join_column_list(relation.unquoted_columns)
     stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
@@ -305,8 +310,9 @@ def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> 
 
 def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
-    Run either DROP VIEW or DROP TABLE depending on type of existing relation. It's ok if the relation
-    doesn't already exist.
+    Run either DROP VIEW or DROP TABLE depending on type of existing relation.
+
+    It's ok if the relation doesn't already exist.
     """
     try:
         kind = etl.db.relation_kind(conn, relation.target_table_name.schema, relation.target_table_name.table)
@@ -341,7 +347,8 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
     Grant privileges on (new) relation based on configuration.
 
     We always grant all privileges to the ETL user. We may grant read-only access
-    or read-write access based on configuration. Note that the access is always based on groups, not users.
+    or read-write access based on configuration. Note that the access is always based on groups,
+    not users.
     """
     target = relation.target_table_name
     schema_config = relation.schema_config
@@ -373,9 +380,7 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
 
 
 def delete_whole_table(conn: connection, table: LoadableRelation, dry_run=False) -> None:
-    """
-    Delete all rows from this table.
-    """
+    """Delete all rows from this table."""
     stmt = """DELETE FROM {}""".format(table)
     etl.db.run(conn, "Deleting all rows in table {:x}".format(table), stmt, dry_run=dry_run)
 
@@ -383,6 +388,7 @@ def delete_whole_table(conn: connection, table: LoadableRelation, dry_run=False)
 def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
+
     A manifest for the CSV files must be provided -- it is an error if the manifest is missing.
     """
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
@@ -428,7 +434,8 @@ def insert_from_query(
     """
     Load data into table from its query (aka materializing a view).
 
-    The table name, query, and columns may be overridden from their defaults, which are the values from the relation.
+    The table name, query, and columns may be overridden from their defaults, which are the
+    values from the relation.
     """
     if table_name is None:
         table_name = relation.target_table_name
@@ -446,16 +453,12 @@ def insert_from_query(
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
-    """
-    Run query to fill CTAS relation. (Not to be used for dimensions etc.)
-    """
+    """Run query to fill CTAS relation. (Not to be used for dimensions etc.)"""
     insert_from_query(conn, relation, dry_run=dry_run)
 
 
 def create_missing_dimension_row(columns: List[dict]) -> List[str]:
-    """
-    Return row that represents missing dimension values.
-    """
+    """Return row that represents missing dimension values."""
     na_values_row = []
     for column in columns:
         if column.get("skipped", False):
@@ -503,9 +506,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
 
 
 def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
-    """
-    Update table statistics.
-    """
+    """Update table statistics."""
     etl.db.run(conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
 
 
@@ -576,13 +577,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
                 raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
-# ---- Section 2: Functions that work on schemas ----
+# --- Section 2: Functions that work on schemas
 
 
 def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWarehouseSchema]:
-    """
-    Return schemas traversed when refreshing relations (in order that they are needed).
-    """
+    """Return schemas traversed when refreshing relations (in order that they are needed)."""
     got_it = set()  # type: Set[str]
     traversed_in_order = []
     for relation in relations:
@@ -595,7 +594,8 @@ def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWareho
 
 def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
     """
-    Create schemas necessary for a full rebuild of data warehouse
+    Create schemas necessary for a full rebuild of data warehouse.
+
     If `use_staging`, create new staging schemas.
     Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
     """
@@ -606,7 +606,7 @@ def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: 
         etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
 
 
-# ---- Section 3: Functions that tie table operations together ----
+# --- Section 3: Functions that tie table operations together
 
 
 def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -615,13 +615,16 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
     for CTAS relations. This assumes that the table was previously created.
 
     1. For tables backed by upstream sources, data is copied in.
-    2. If the CTAS doesn't have a key (no identity column), then values are inserted straight from a view.
-    3. If a column is marked as being a key (identity is true), then a temporary table is built from
-    the query and then copied into the "CTAS" relation. If the name of the relation starts with "dim_",
-    then it's assumed to be a dimension and a row with missing values (mostly 0, false, etc.) is added as well.
+    2. If the CTAS doesn't have a key (no identity column), then values are inserted straight
+        from a view.
+    3. If a column is marked as being a key (identity is true), then a temporary table is built
+        from the query and then copied into the "CTAS" relation. If the name of the relation starts
+        with "dim_", then it's assumed to be a dimension and a row with missing values (mostly 0,
+        false, etc.) is added as well.
 
-    Finally, we run an ANALYZE statement to update table statistics (unless we're updating the table
-    within a transaction since -- we've been having problems with locks so skip the ANALYZE for updates).
+    Finally, we run an ANALYZE statement to update table statistics (unless we're updating the
+    table within a transaction since -- we've been having problems with locks so skip the ANALYZE
+    for updates).
     """
     try:
         if relation.is_ctas_relation:
@@ -640,10 +643,12 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
 def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Empty out tables (either with delete or by create-or-replacing them) and fill 'em up.
+
     Unless in delete mode, this always makes sure tables and views are created.
 
     Within transaction? Only applies to tables which get emptied and then potentially filled again.
-    Not in transaction? Drop and create all relations and for tables also potentially fill 'em up again.
+    Not in transaction? Drop and create all relations and for tables also potentially fill 'em up
+    again.
     """
     with relation.monitor() as monitor:
 
@@ -701,7 +706,7 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
 
 def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
     """
-    Final step ... tidy up the warehouse before guests come over.
+    Tidy up the warehouse before guests come over.
 
     This needs to open a new connection since it needs to happen outside a transaction.
     """
@@ -713,7 +718,7 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
             logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
 
 
-# ---- Experimental Section: load during extract ----
+# --- Experimental Section: load during extract
 
 
 def create_source_tables_when_ready(
@@ -725,6 +730,7 @@ def create_source_tables_when_ready(
 ) -> None:
     """
     Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
+
     We assume here that the relations have no dependencies on each other and just gun it.
     This will only raise an Exception if one of the created relations was marked as "required".
 
@@ -752,8 +758,9 @@ def create_source_tables_when_ready(
 
     def poll_worker():
         """
-        Check DynamoDB for successful extracts
-        Get items from the queue 'to_poll'
+        Check DynamoDB for successful extracts.
+
+        Get items from the queue 'to_poll'.
         When the item
             - is an identifier: poll DynamoDB
             - is an int: sleep that many seconds
@@ -824,7 +831,8 @@ def create_source_tables_when_ready(
 
     def load_worker():
         """
-        Look for a ready-to-load relation from queue 'to_load'
+        Look for a ready-to-load relation from queue 'to_load'.
+
         If the item
             - is a relation: load it using connection pool 'pool'
             - is None: we're giving up, so return
@@ -899,12 +907,13 @@ def create_source_tables_when_ready(
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
-# ---- Section 4: Functions related to control flow ----
+# --- Section 4: Functions related to control flow
 
 
 def create_source_tables_in_parallel(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
     """
-    Create relations in parallel operations, using a connection pool, a thread pool, and a kiddie pool.
+    Create relations in parallel, using a connection pool, a thread pool, and a kiddie pool.
+
     We assume here that the relations have no dependencies on each other and just gun it.
     This will only raise an Exception if one of the created relations was marked as "required".
 
@@ -959,13 +968,17 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
 
 def create_transformations_sequentially(relations: List[LoadableRelation], wlm_query_slots: int, dry_run=False) -> None:
     """
-    Create relations one-by-one. If relations do depend on each other, we don't get ourselves in trouble here.
+    Create relations one-by-one.
+
+    If relations do depend on each other, we don't get ourselves in trouble here.
     If we trip over a "required" relation, an exception is raised.
     If dependencies were left empty, we'll fall back to skip_copy mode.
 
-    Given a dependency tree of:  A(required) <- B(required, per selector) <- C(not required) <- D (not required)
+    Given a dependency tree of:
+      A(required) <- B(required, per selector) <- C(not required) <- D (not required)
     Then failing to create either A or B will stop us. But failure on C will just leave D empty.
-    N.B. It is not possible for a relation to be not required but have dependents that are (by construction).
+    N.B. It is not possible for a relation to be not required but have dependents that are
+    (by construction).
     """
     transformations = [relation for relation in relations if relation.is_transformation]
     if not transformations:
@@ -1010,7 +1023,6 @@ def create_relations(
     """
     "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
     """
-
     if concurrent_extract:
         create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
     else:
@@ -1019,7 +1031,7 @@ def create_relations(
     create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
 
 
-# ---- Section 5: "Callbacks" (functions that implement commands) ----
+# --- Section 5: "Callbacks" (functions that implement commands)
 
 
 def load_data_warehouse(
@@ -1033,9 +1045,12 @@ def load_data_warehouse(
     dry_run=False,
 ):
     """
-    Fully "load" the data warehouse after creating a blank slate by moving existing schemas out of the way.
+    Fully "load" the data warehouse after creating a blank slate.
 
-    Check that only complete schemas are selected. Error out if not.
+    By default, we use staging positions of schemas to load and thus first
+    moving existing schemas out of the way.
+
+    This function allows only complete schemas as selection.
 
     1 Determine schemas that house any of the selected or dependent relations.
     2 Move old schemas in the data warehouse out of the way (for "backup").
@@ -1242,9 +1257,7 @@ def show_downstream_dependents(
 
 
 def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):
-    """
-    List the relations upstream (towards sources) from the selected ones, report in execution order.
-    """
+    """List the relations upstream (towards sources) from the selected ones in execution order."""
     execution_order = etl.relation.order_by_dependencies(relations)
     selected_relations = etl.relation.find_matches(execution_order, selector)
     if len(selected_relations) == 0:
