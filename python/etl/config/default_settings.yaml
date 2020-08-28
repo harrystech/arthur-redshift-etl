@@ -36,14 +36,26 @@
     },
     # AWS resource configuration
     "resources": {
-        # Set a default value for spot instances that is high enough that engineers do not need
-        # to think about it for most use cases.
+        "VPC": {
+            "region": "us-east-1"
+        },
+        "EC2": {
+            "image_id": "ami-a4c7edb2",
+            "instance_type": "t2.small"
+        },
         "EMR": {
-            "core": {
-                "bid_price": 10.0
-            },
+            "release_label": "emr-5.3.0",
             "master": {
-                "bid_price": 10.0
+                "bid_price": 10.0,
+                "instance_type": "m4.2xlarge",
+                "instance_count": 1
+            },
+            "core": {
+                # Set a default value for spot instances that is high enough that engineers do not need
+                # to think about it for most use cases.
+                "bid_price": 10.0,
+                "instance_type": "m4.4xlarge",
+                "instance_count": 4
             },
             "max_partitions": 32
         }

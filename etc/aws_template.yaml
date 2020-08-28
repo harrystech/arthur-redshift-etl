@@ -3,51 +3,51 @@
 #     DATA_WAREHOUSE_CONFIG="./etc" arthur.py settings
 {
     "object_store": {
-        "iam_role": "arn:aws:iam:REGION:11111111:ROLE",  # copy from the outputs of the VPC
+        "iam_role": "arn:aws:iam:REGION:11111111:ROLE", # Copy from Outputs of VPC stack: RedshiftCopyRole
         "s3": {
-            "bucket_name": "some-bucket"  # copy from the outputs of the VPC
+            "bucket_name": "object-store" # Copy from Outputs of VPC stack: ObjectStore
         }
     },
     "data_lake": {
-        "iam_role": "arn:aws:iam:REGION:11111111:ROLE",  # copy from the outputs of the VPC
+        "iam_role": "arn:aws:iam:REGION:11111111:ROLE", # Copy from Outputs of VPC stack: RedshiftCopyRole
         "s3": {
-            "bucket_name": "some-bucket"  # copy from the outputs of the VPC
+            "bucket_name": "data-lake"  # Copy from Outputs of VPC stack: DataLake
         }
     },
     "resources": {
-        "key_name": "dw-{env_type}-keypair.pem",  # copy from the outputs of the VPC
+        "key_name": "dw-env_type-keypair", # Env type is something like dev or prod.
         "VPC": {
-            "region": "copy from the outputs of the VPC",
-            "account": "copy from the outputs of the VPC",
-            "name": "env_type",  # argument to VPC creation, like 'dev' or 'prod'
-            "public_subnet": "copy from the outputs of the VPC",
-            "whitelist_security_group": "copy from the outputs of the VPC"
+            "region": "us-east-1", # Copy from Outputs of VPC stack: VpcRegion
+            "account": "123456789", # Copy from Outputs of VPC stack: Sorry, need to check any ARN to grab the account
+            "name": "dw-vpc-env_type", # Name of the stack
+            "public_subnet": "vpc-public_subnet", # Copy from Outputs of VPC stack: PublicSubnet
+            "whitelist_security_group": "vpc-security_group" # Copy from Outputs of VPC stack: WhitelistSecurityGroup
         },
         "EC2": {
-            "iam_instance_profile": "copy from the outputs of the VPC",
+            "iam_instance_profile": "instance-profile", # Copy from Outputs of VPC stack: EC2InstanceProfile
             "instance_type": "t2.small",
             "image_id": "ami-a4c7edb2",
-            "public_security_group": "copy from the outputs of the VPC"
+            "public_security_group": "security_group" # Copy from Outputs of VPC stack: PublicEC2SecurityGroups
         },
         "EMR": {
             "release_label": "emr-5.3.0",
             "master": {
                 "instance_type": "m4.2xlarge",
                 "instance_count": 1,
-                "managed_security_group": "copy from the outputs of the VPC"
+                "managed_security_group": "master_security_group" # Copy from Outputs of VPC stack: ManagedMasterSecurityGroup
                 },
             "core": {
                 "instance_type": "m4.4xlarge",
                 "instance_count": 4,
-                "managed_security_group": "copy from the outputs of the VPC"
+                "managed_security_group": "core_security_group" # Copy from Outputs of VPC stack: ManagedCoreSecurityGroup
             }
         },
         "DataPipeline": {
-            "role": "arn:aws:iam:REGION:11111111:ROLE"  # copy from the outputs of the VPC
+                "role": "dw-vpc-dev-DataPipelineRole-12345678"  # Copy from Outputs of VPC stack: DataPipelineRole
         },
         "RedshiftCluster": {
-            "max_concurrency": 2,  # make sure this suits the hardware allocation
-            "wlm_query_slots": 4  # make sure this works with the rest of the WLM settings
+            "max_concurrency": 2, # Make sure this suits the hardware allocation
+            "wlm_query_slots": 4  # Make sure this works with the rest of the WLM settings
         }
     }
 }
