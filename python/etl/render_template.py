@@ -54,7 +54,7 @@ def list_templates(compact=False) -> None:
 def render_from_config(template_string, context=None):
     try:
         config_mapping = etl.config.get_config_map()
-        # FIXME Remove code that serves backwards-compatibility once new settings files have been deployed
+        # These assignments are to create backwards-compatibility with old settings files.
         config_mapping.update(
             {
                 "prefix": config_mapping["object_store.s3.prefix"],
@@ -106,7 +106,10 @@ def show_value(name: str, default: Optional[str]) -> None:
 
 def show_vars(names: List[str]) -> None:
     """
-    List all known configuration settings as "variables" with their values or just the variables that are selected.
+    List "variables" with values.
+
+    This shows all known configuration settings as "variables" with their values or just
+    the variables that are selected.
     """
     config_mapping = etl.config.get_config_map()
     all_keys = sorted(config_mapping)

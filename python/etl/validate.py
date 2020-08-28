@@ -464,7 +464,11 @@ def validate_upstream_sources(
 
 
 def validate_execution_order(relations: List[RelationDescription], keep_going=False):
-    """Wrapper around order_by_dependencies to deal with our keep_going predilection."""
+    """
+    Make sure we can build an execution order.
+
+    We'll catch an exception and set a flag if the keep_going option is true.
+    """
     try:
         ordered_relations = etl.relation.order_by_dependencies(relations)
     except ETLConfigError:

@@ -5,10 +5,11 @@ The basic location of a file depends on the data source and can be one of:
 .../schemas/{source_or_schema_name}/{source_schema_name}-{table_name}.yaml -- for table design files
 .../schemas/{schema_name}/{source_schema_name}-{table_name}.sql -- for queries for CTAS or views
 .../data/{source_name}/{source_schema_name}-{table_name}.manifest -- for a manifest of data files
-.../data/{source_name}/{source_schema_name}-{table_name}/csv/part-*.gz -- for the data files themselves.
+.../data/{source_name}/{source_schema_name}-{table_name}/csv/part-*.gz -- for the data files
 
 If the files are in S3, then the start of the path is always s3://{bucket_name}/{prefix}/...
-If the files are stored locally, then the start of the path is probably simply the current directory ('.').
+If the files are stored locally, then the start of the path is probably simply the current
+directory ('.').
 
 For tables that are backed by upstream sources, the directory after 'schemas' or 'data' will be the
 name of the source in the configuration file.
@@ -39,7 +40,8 @@ logger.addHandler(logging.NullHandler())
 
 
 class FileInfo:
-    """Store file path along with information such as file type, related schema and table names.
+    """
+    Store file path along with information such as file type, related schema and table names.
 
     Known file types:
       - yaml: Table design file
@@ -75,7 +77,8 @@ class FileInfo:
 
     @classmethod
     def from_filename(cls, filename: str) -> Optional["FileInfo"]:
-        """Return a FileInfo instance with properties derived from the filename.
+        """
+        Return a FileInfo instance with properties derived from the filename.
 
         If the filename doesn't appear to match a file that we can use, return None.
         """
@@ -221,9 +224,7 @@ class RelationFileSet:
         self.path = path
 
     def uri(self, filename):
-        """
-        Return the full URI for the filename, which probably should be one of the files from this set
-        """
+        """Return the full URI for the filename (either in S3 or local)."""
         if self.scheme == "s3":
             return "{0.scheme}://{0.netloc}/{1}".format(self, filename)
         elif self.scheme == "file":
@@ -232,9 +233,7 @@ class RelationFileSet:
             raise ETLSystemError("illegal scheme in file set")
 
     def stat(self, filename):
-        """
-        Return file size (in bytes) and timestamp of last modification for this file.
-        """
+        """Return file size (in bytes) and timestamp of last modification for this file."""
         if self.scheme == "s3":
             return etl.s3.object_stat(self.netloc, filename)
         elif self.scheme == "file":
@@ -347,7 +346,7 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
 
 def _find_file_sets_from(iterable, selector):
     """
-    Return list of file sets ordered by (target) schema name, (source) schema_name and (source) table_name.
+    Return list of file sets ordered by (target) schema, (source) schema and (source) table.
 
     Remember that the (target) schema name is the same as the source name (for upstream sources).
     The selector's base schemas (if present) will override alphabetical sorting for the source_name.

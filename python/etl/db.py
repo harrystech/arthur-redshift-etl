@@ -1,7 +1,9 @@
 #! /usr/bin/env python3
 
 """
-Thin wrapper around Psycopg2 for database access, adding niceties like logging,
+Low-level database routines.
+
+This is a thin wrapper around Psycopg2 for database access, adding niceties like logging,
 transaction handling, simple DSN strings, as well as simple commands
 (for new users, schema creation, etc.)
 

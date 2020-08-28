@@ -25,7 +25,7 @@ logger.addHandler(logging.NullHandler())
 
 def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
     """
-    Retrieve all tables for this source (and matching the selector) and return them as a list of TableName instances.
+    Retrieve tables (matching selector) for this source, return as a list of TableName instances.
 
     The :source configuration contains a "whitelist" (which tables to include) and a
     "blacklist" (which tables to exclude). Note that "exclude" always overrides "include."
@@ -84,7 +84,11 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
                  , col_type AS "sql_type"
                  , FALSE AS "not_null"
               FROM pg_get_late_binding_view_cols() cols(
-                       view_schema name, view_name name, col_name name, col_type varchar, col_num int)
+                       view_schema name
+                     , view_name name
+                     , col_name name
+                     , col_type varchar
+                     , col_num int)
              WHERE view_schema LIKE %s
                AND view_name = %s
              ORDER BY col_num"""
@@ -110,8 +114,9 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     """
     Retrieve table constraints from database by looking up indices.
 
-    We will only check primary key constraints and unique constraints. If constraints have predicates
-    (like a WHERE clause) or use functions (like COALESCE(column, value), we'll skip them.
+    We will only check primary key constraints and unique constraints. If constraints have
+    predicates (like a WHERE clause) or use functions (like COALESCE(column, value), we'll skip
+    them.
 
     (To recreate the constraint, we could use `pg_get_indexdef`.)
     """
@@ -172,7 +177,8 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
           JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
           JOIN pg_catalog.pg_depend AS dep ON cls.oid = dep.refobjid
           JOIN pg_catalog.pg_depend AS target_dep ON dep.objid = target_dep.objid
-          JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid AND cls.oid <> target_cls.oid
+          JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid
+                                                AND cls.oid <> target_cls.oid
           JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
          WHERE ns.nspname LIKE %s
            AND cls.relname = %s
@@ -322,13 +328,16 @@ def create_table_design_for_view(
     conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
 ):
     """
-    Create (and return) new table design suited for a view. Views are expected to always depend on some
-    other relations. (Also, we only keep the names for columns.)
+    Create (and return) new table design suited for a view.
+
+    Views are expected to always depend on some other relations. (Also, we only keep the names
+    for columns.)
 
     If :update is True, try to merge additional information from any existing table design file.
     """
     update_keys = ["description", "unload_target"] if update else None
-    # This creates a full column description with types (testing the type-maps), then drop all of it but their names.
+    # This creates a full column description with types (testing the type-maps), then drop all of
+    # it but their names.
     table_design = create_partial_table_design_for_transformation(conn, tmp_view_name, relation, update_keys)
     table_design["source_name"] = "VIEW"
     table_design["columns"] = [{"name": column["name"]} for column in table_design["columns"]]
@@ -337,8 +346,9 @@ def create_table_design_for_view(
 
 def make_item_sorter():
     """
-    Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict)
-    so that the resulting order of keys is easier to digest by humans.
+    Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict).
+
+    The sort order makes the resulting order of keys easier to digest by humans.
 
     Input to the sorter is a tuple of (key, value) from turning a dict into a list of items.
     Output (return value) of the sorter is a tuple of (preferred order, key name).
@@ -494,7 +504,7 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=
 def bootstrap_transformations(
     dsn_etl, schemas, local_dir, local_files, as_view, update=False, replace=False, dry_run=False
 ):
-    """Download design information for transformations by test-running them in the data warehouse."""
+    """Download design information for transformations by test-running in the data warehouse."""
     transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
     if not (update or replace):

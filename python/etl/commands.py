@@ -137,9 +137,7 @@ def run_arg_as_command(my_name="arthur.py"):
 
 
 def submit_step(cluster_id, sub_command):
-    """
-    Send the current arthur command to a cluster instead of running it locally.
-    """
+    """Send the current arthur command to a cluster instead of running it locally."""
     # Don't even bother trying to submit the case of 'arthur.py --submit "$CLUSTER_ID"' where
     # CLUSTER_ID is not set.
     if not cluster_id:
@@ -326,8 +324,10 @@ def build_full_parser(prog_name):
 
 def add_standard_arguments(parser, options):
     """
-    Provide "standard" arguments in the sense that the name and description should be the
-    same when used by multiple sub-commands.
+    Add set of "standard" arguments.
+
+    They are "standard" in that the name and description should be the same when used
+    by multiple sub-commands.
 
     :param parser: should be a sub-parser
     :param options: see option strings below, like "prefix", "pattern"
@@ -445,10 +445,11 @@ class SubCommand:
     @staticmethod
     def location(args, default_scheme=None):
         """
-        Decide whether we should focus on local or remote files and return appropriate "location" information.
+        Decide whether we should focus on local or remote files.
 
-        This expects args to be a Namespace instance from the argument parser with "table_design_dir",
-        "bucket_name", "prefix", and hopefully "scheme" as fields.
+        This returns the appropriate "location" information. This expects args to be a Namespace
+        instance from the argument parser with "table_design_dir", "bucket_name", "prefix",
+        and hopefully "scheme" as fields.
         """
         scheme = getattr(args, "scheme", default_scheme)
         if scheme == "file":
@@ -460,7 +461,7 @@ class SubCommand:
 
     def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None, return_all=False):
         """
-        Most commands need to (1) collect file sets and (2) create relation descriptions around those.
+        Most commands need to collect file sets and create relation descriptions around those.
 
         Commands vary slightly as to what error handling they want to do and whether they need all
         possible descriptions or a selected subset.
@@ -758,7 +759,8 @@ class ExtractToS3Command(MonitoredSubCommand):
             raise ETLSystemError("bad extractor value: {}".format(args.extractor))
 
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
-        # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
+        # (Without this step, the Spark context is unknown and we won't be able to create a
+        # SQL context.)
         if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
             # Try the full path (in the EMR cluster), or try without path and hope for the best.
             submit_arthur = etl.config.etl_tmp_dir("venv/bin/submit_arthur.sh")

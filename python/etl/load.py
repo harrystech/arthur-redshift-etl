@@ -110,9 +110,7 @@ class LoadableRelation:
     """
 
     def __getattr__(self, name):
-        """
-        Grab everything from the contained relation. Fail if it's actually not available.
-        """
+        """Grab everything from the contained relation. Fail if it's actually not available."""
         if hasattr(self._relation_description, name):
             return getattr(self._relation_description, name)
         raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, name))
@@ -453,7 +451,11 @@ def insert_from_query(
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
-    """Run query to fill CTAS relation. (Not to be used for dimensions etc.)"""
+    """
+    Run query to fill CTAS relation.
+
+    Not to be used for dimensions etc.)
+    """
     insert_from_query(conn, relation, dry_run=dry_run)
 
 
