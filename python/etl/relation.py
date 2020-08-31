@@ -56,8 +56,10 @@ class RelationDescription:
 
     def __getattr__(self, attr):
         """
-        Pass-through access to file set -- if the relation doesn't know about an attribute
-        we'll pick up the attribute from the file set!
+        Pass-through access to file set underlying the relation description.
+
+        If the relation doesn't know about an attribute we'll pick up the attribute from
+        the file set.
         """
         if hasattr(self._fileset, attr):
             return getattr(self._fileset, attr)
@@ -75,9 +77,11 @@ class RelationDescription:
         else:
             self.bucket_name = None
             self.prefix = None
-        # Note the subtle difference to RelationFileSet: the manifest_file_name is always present since it's computed
+        # Note the subtle difference to RelationFileSet: the manifest_file_name is always present
+        # since it's computed.
         self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
-        # Lazy-loading of table design and query statement and any derived information from the table design
+        # Lazy-loading of table design and query statement and any derived information from the
+        # table design.
         self._table_design = None  # type: Optional[Dict[str, Any]]
         self._query_stmt = None  # type: Optional[str]
         self._dependencies = None  # type: Optional[FrozenSet[TableName]]
@@ -372,7 +376,6 @@ class SortableRelationDescription:
     """
     Facade to add modifiable list of dependencies.
 
-
     This adds decoration around relation descriptions so that we can easily
     compute the execution order and then throw away our intermediate results.
     """
@@ -491,7 +494,8 @@ def order_by_dependencies(relation_descriptions):
     _sanitize_dependencies(descriptions)
     _sort_by_dependencies(descriptions)
 
-    # TODO Find a better way to back-annotate the relation descriptions. Having "level" reach in here is bad.
+    # TODO Find a better way to back-annotate the relation descriptions. Having "level" reach
+    # in here is bad.
     for description in descriptions:
         description.original_description.level = description.level
 
@@ -500,7 +504,9 @@ def order_by_dependencies(relation_descriptions):
 
 def set_required_relations(relations: List[RelationDescription], required_selector: TableSelector) -> None:
     """
-    Set the required property of the relations if they are directly or indirectly feeding
+    Set the "required" property based on the selector.
+
+    The "required" property of the relations is set if they are directly or indirectly feeding
     into relations selected by the :required_selector.
 
     Side-effect: relations are sorted to determine dependencies and their order and level is set.

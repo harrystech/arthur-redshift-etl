@@ -35,8 +35,10 @@ class ETLRuntimeError(ETLError):
 
 class TransientETLError(ETLRuntimeError):
     """
-    Represents all types of runtime errors that should be retryable due to the cause being something in the external
-    environment that might change over time.
+    Error found at runtime which we might overcome by retrying the operation.
+
+    Represents all types of runtime errors that should be retryable due to the cause being
+    something in the external environment that might change over time.
     """
 
 
@@ -90,7 +92,9 @@ class TableDesignSemanticError(TableDesignError):
 
 class TableDesignValidationError(TableDesignError):
     """
-    Exception when a table design does not pass validation (against other table designs, upstream sources, ...
+    Exception when a table design does not pass validation.
+
+    Reasons to fail validation includes issues against upstream sources or other table designs.
     """
 
 
@@ -131,9 +135,7 @@ class RelationConstructionError(ETLRuntimeError):
 
 
 class RelationDataError(ETLRuntimeError):
-    """
-    Exception when we have problems due to data that was supposed to go into the relation or that landed there.
-    """
+    """Parent of exceptions that occur while trying to load or loading a relation."""
 
 
 class MissingManifestError(RelationDataError):
@@ -182,16 +184,15 @@ class RequiredRelationLoadError(ETLRuntimeError):
 
 
 class DataUnloadError(ETLRuntimeError):
-    """
-    Exception when the unload operation fails
-    """
+    """Exception when the unload operation fails."""
 
 
 class RetriesExhaustedError(ETLRuntimeError):
     """
     Raised when all retry attempts have been exhausted.
 
-    The causing exception should be passed to this one to complete the chain of failure accountability. For example:
+    The causing exception should be passed to this one to complete the chain of failure
+    accountability. For example:
     >>> raise RetriesExhaustedError from ETLRuntimeError("Boom!")
     Traceback (most recent call last):
         ...

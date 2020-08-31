@@ -122,7 +122,7 @@ class TableName:
 
     @property
     def external_schemas(self) -> frozenset:
-        """List external schemas that are not managed by Arthur and may not exist during validation."""
+        """List external schemas that are not managed by us and may not exist during validation."""
         if self._external_schemas is None:
             try:
                 self._external_schemas = frozenset(etl.config.get_dw_config().external_schema_names)
@@ -347,11 +347,12 @@ class TableSelector:
     Patterns that are supported are based on "glob" matches, which use *, ?, and [] -- just
     like the shell does. But note that all matching is done case-insensitive.
 
-    There is a concept of "base schemas."  This list should be based on the configuration and defines
-    the set of usable schemas.  ("Schemas" here refers to either upstream sources or schemas storing
-    transformations.) So when base schemas are defined then there is an implied additional
-    match against them before a table name is tried to be matched against stored patterns.
-    If no base schemas are set, then we default simply to a list of schemas from the patterns.
+    There is a concept of "base schemas."  This list should be based on the configuration and
+    defines the set of usable schemas.  ("Schemas" here refers to either upstream sources or
+    schemas storing transformations.) So when base schemas are defined then there is an implied
+    additional match against them before a table name is tried to be matched against stored
+    patterns. If no base schemas are set, then we default simply to a list of schemas from the
+    patterns.
     """
 
     __slots__ = ("_patterns", "_base_schemas")
@@ -428,6 +429,7 @@ class TableSelector:
     def base_schemas(self, schemas):
         """
         Add base schemas (names, not patterns) to match against.
+
         It is an error to have a pattern that does not match against the base schemas.
         """
         # Fun fact: you can't have doctests in docstrings for properties
@@ -472,6 +474,7 @@ class TableSelector:
     def selected_schemas(self) -> List[str]:
         """
         Return list of schemas from base schemas that match the selection.
+
         It is an error if a pattern tries to select a specific table instead of a schema.
 
         >>> ts = TableSelector(["www.*", "marketing"], ["factory", "marketing", "www"])
