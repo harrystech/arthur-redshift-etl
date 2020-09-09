@@ -67,7 +67,8 @@ def execute_or_bail():
     """
     Either execute (the wrapped code) successfully or bail out with a helpful error message.
 
-    Also measures execution time and does some basic error handling so that commands can be chained, UNIX-style.
+    Also measures execution time and does some basic error handling so that commands can be
+    chained, UNIX-style.
     """
     timer = Timer()
     try:
@@ -97,6 +98,7 @@ def execute_or_bail():
 def run_arg_as_command(my_name="arthur.py"):
     """
     Use the sub-command's callback in `func` to actually run the sub-command.
+
     This function can be used as an entry point for a console script.
     """
     parser = build_full_parser(my_name)
@@ -106,7 +108,8 @@ def run_arg_as_command(my_name="arthur.py"):
     elif args.cluster_id is not None:
         submit_step(args.cluster_id, args.sub_command)
     else:
-        # We need to configure logging before running context because that context expects logging to be setup.
+        # We need to configure logging before running context because that context expects
+        # logging to be setup.
         try:
             etl.config.configure_logging(args.prolix, args.log_level)
         except Exception as exc:
@@ -134,13 +137,13 @@ def run_arg_as_command(my_name="arthur.py"):
 
 
 def submit_step(cluster_id, sub_command):
-    """
-    Send the current arthur command to a cluster instead of running it locally.
-    """
-    # Don't even bother trying to submit the case of 'arthur.py --submit "$CLUSTER_ID"' where CLUSTER_ID is not set.
+    """Send the current arthur command to a cluster instead of running it locally."""
+    # Don't even bother trying to submit the case of 'arthur.py --submit "$CLUSTER_ID"' where
+    # CLUSTER_ID is not set.
     if not cluster_id:
         raise InvalidArgumentError("cluster id in submit may not be empty")
-    # We need to remove --submit and --config to avoid an infinite loop and insert a redirect to the config directory
+    # We need to remove --submit and --config to avoid an infinite loop and insert a redirect
+    # to the config directory.
     partial_parser = build_basic_parser("arthur.py")
     done, remaining = partial_parser.parse_known_args()
     try:
@@ -150,7 +153,8 @@ def submit_step(cluster_id, sub_command):
             Steps=[
                 {
                     "Name": "Arthur command: {}".format(str(sub_command).upper()),
-                    # For "interactive" steps, allow a sequence of steps to continue after failure of one
+                    # For "interactive" steps, allow a sequence of steps to continue after
+                    # failure of prior step.
                     "ActionOnFailure": "CONTINUE",
                     "HadoopJarStep": {
                         "Jar": "command-runner.jar",
@@ -178,7 +182,8 @@ class FancyArgumentParser(argparse.ArgumentParser):
     Add feature to read command line arguments from files and support:
         * One argument per line (whitespace is trimmed)
         * Comments or empty lines (either are ignored)
-    This enables direct use of output from show_downstream_dependents and show_upstream_dependencies.
+    This enables direct use of output from show_downstream_dependents and
+    show_upstream_dependencies.
 
     To use this feature, add an argument with "@" and have values ready inside of it, one per line:
         cat > tables <<EOF
@@ -201,7 +206,8 @@ class FancyArgumentParser(argparse.ArgumentParser):
         ['--verbose']
         >>> parser.convert_arg_line_to_args(" schema.table ")
         ['schema.table']
-        >>> parser.convert_arg_line_to_args("show_dependents.output_compatible # index=1, kind=CTAS, is_required=true")
+        >>> parser.convert_arg_line_to_args(
+        ...     "show_dependents.output_compatible # index=1, kind=CTAS, is_required=true")
         ['show_dependents.output_compatible']
         >>> parser.convert_arg_line_to_args(" # single-line comment")
         []
@@ -231,7 +237,7 @@ def build_basic_parser(prog_name, description=None):
     parser = FancyArgumentParser(prog=prog_name, description=description, fromfile_prefix_chars="@")
     group = parser.add_mutually_exclusive_group()
 
-    # Show different help message depending on whether user has already set the environment variable.
+    # Show different help message depending whether user has already set the environment variable.
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
     group.add_argument(
         "-c",
@@ -253,6 +259,7 @@ def build_basic_parser(prog_name, description=None):
 def build_full_parser(prog_name):
     """
     Build a parser by adding sub-parsers for sub-commands.
+
     Other options, even if shared between sub-commands, are in the sub-parsers to avoid
     having to awkwardly insert them between program name and sub-command name.
 
@@ -264,7 +271,8 @@ def build_full_parser(prog_name):
     package = etl.config.package_version()
     parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
 
-    # Details for sub-commands lives with sub-classes of sub-commands. Hungry? Get yourself a sub-way.
+    # Details for sub-commands lives with sub-classes of sub-commands.
+    # Hungry? Get yourself a sub-way.
     subparsers = parser.add_subparsers(
         help="specify one of these sub-commands (which can all provide more help)",
         title="available sub-commands",
@@ -316,8 +324,10 @@ def build_full_parser(prog_name):
 
 def add_standard_arguments(parser, options):
     """
-    Provide "standard" arguments in the sense that the name and description should be the
-    same when used by multiple sub-commands.
+    Add set of "standard" arguments.
+
+    They are "standard" in that the name and description should be the same when used
+    by multiple sub-commands.
 
     :param parser: should be a sub-parser
     :param options: see option strings below, like "prefix", "pattern"
@@ -388,9 +398,7 @@ def add_standard_arguments(parser, options):
 
 
 class StorePatternAsSelector(argparse.Action):
-    """
-    Store the list of glob patterns (to pick tables) as a TableSelector instance.
-    """
+    """Store the list of glob patterns (to pick tables) as a TableSelector instance."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         selector = etl.names.TableSelector(values)
@@ -398,9 +406,7 @@ class StorePatternAsSelector(argparse.Action):
 
 
 class SubCommand:
-    """
-    Instances (of child classes) will setup sub-parsers and have callbacks for those.
-    """
+    """Instances (of child classes) will setup sub-parsers and have callbacks for those."""
 
     def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None) -> None:
         self.name = name
@@ -417,7 +423,8 @@ class SubCommand:
             parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
         parser.set_defaults(func=self.callback)
 
-        # Log level and prolix setting need to be always known since `run_arg_as_command` depends on them.
+        # Log level and prolix setting need to be always known since `run_arg_as_command` depends
+        # on them.
         # TODO move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
         group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
@@ -438,10 +445,11 @@ class SubCommand:
     @staticmethod
     def location(args, default_scheme=None):
         """
-        Decide whether we should focus on local or remote files and return appropriate "location" information.
+        Decide whether we should focus on local or remote files.
 
-        This expects args to be a Namespace instance from the argument parser with "table_design_dir",
-        "bucket_name", "prefix", and hopefully "scheme" as fields.
+        This returns the appropriate "location" information. This expects args to be a Namespace
+        instance from the argument parser with "table_design_dir", "bucket_name", "prefix",
+        and hopefully "scheme" as fields.
         """
         scheme = getattr(args, "scheme", default_scheme)
         if scheme == "file":
@@ -453,15 +461,17 @@ class SubCommand:
 
     def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None, return_all=False):
         """
-        Most commands need to (1) collect file sets and (2) create relation descriptions around those.
+        Most commands need to collect file sets and create relation descriptions around those.
+
         Commands vary slightly as to what error handling they want to do and whether they need all
         possible descriptions or a selected subset.
 
-        If a "required relation" selector is passed in, we first pick up ALL descriptions (to be able
-        to build a dependency tree), build the dependency order, then pick out the matching descriptions.
+        If a "required relation" selector is passed in, we first pick up ALL descriptions (to be
+        able to build a dependency tree), build the dependency order, then pick out the matching
+        descriptions.
 
-        Set the default_scheme to "s3" to leverage the object store -- avoid relying on having current files
-        locally and instead opt for the "publish first, then use S3" pattern.
+        Set the default_scheme to "s3" to leverage the object store -- avoid relying on having
+        current files locally and instead opt for the "publish first, then use S3" pattern.
         """
         if return_all or required_relation_selector is not None:
             selector = etl.names.TableSelector(base_schemas=args.pattern.base_schemas)
@@ -749,7 +759,8 @@ class ExtractToS3Command(MonitoredSubCommand):
             raise ETLSystemError("bad extractor value: {}".format(args.extractor))
 
         # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
-        # (Without this step, the Spark context is unknown and we won't be able to create a SQL context.)
+        # (Without this step, the Spark context is unknown and we won't be able to create a
+        # SQL context.)
         if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
             # Try the full path (in the EMR cluster), or try without path and hope for the best.
             submit_arthur = etl.config.etl_tmp_dir("venv/bin/submit_arthur.sh")
@@ -1062,7 +1073,7 @@ class ValidateDesignsCommand(SubCommand):
         )
 
     def callback(self, args, config):
-        # NB This does not pick up all designs to speed things up but that may lead to false positives.
+        # This does not pick up all designs to speed things up but that may lead to false positives.
         descriptions = self.find_relation_descriptions(args)
         etl.validate.validate_designs(
             config,
@@ -1368,7 +1379,8 @@ class TailEventsCommand(SubCommand):
             update_interval = idle_time_out = None
 
         # This will sort events by 30s time buckets and execution order within those buckets.
-        # (If events for all tables already happen to exist, then this matches the desired execution order.)
+        # (If events for all tables already happen to exist, then this matches the desired
+        # execution order.)
         all_relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         selected_relations = etl.relation.select_in_execution_order(all_relations, args.pattern)
         if not selected_relations:
@@ -1400,7 +1412,8 @@ class SelfTestCommand(SubCommand):
         super().__init__("selftest", "run code tests of ETL", "Run self test of the ETL.")
 
     def add_arguments(self, parser):
-        # For self-tests, dial logging back to (almost) nothing so that logging in console doesn't mix with test output.
+        # For self-tests, dial logging back to (almost) nothing so that logging in console
+        # doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument(
             "test_family",

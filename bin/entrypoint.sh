@@ -23,11 +23,11 @@ if [[ -r "/opt/local/redshift_etl/venv/bin/activate" ]]; then
 
     # Using "--quiet" here to reduce the startup noise for "end users."
     if [[ -d "/opt/src/arthur-redshift-etl/.git" ]]; then
-      (
-        set -o xtrace
-        cd /opt/src/arthur-redshift-etl
-        python3 setup.py --quiet develop
-      )
+        (
+          set -o xtrace
+          cd /opt/src/arthur-redshift-etl
+          python3 setup.py --quiet develop || echo "Warning: Failed to update image to latest source version" 2>&1
+        )
     fi
 fi
 

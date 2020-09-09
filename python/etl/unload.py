@@ -69,9 +69,7 @@ def run_redshift_unload(
 
 
 def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
-    """
-    Write out a YAML file into the same folder as the CSV files to document the relation's columns.
-    """
+    """Write out a YAML file into the same folder as the CSV files with a list of the columns."""
     data = {
         "columns": relation.unquoted_columns,
         "columns_with_types": relation.get_columns_with_types(),
@@ -86,8 +84,10 @@ def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: 
 
 def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
     """
-    Write out a "_SUCCESS" file into the same folder as the CSV files to mark
-    the unload as complete. The dump insists on this file before writing a manifest for load.
+    Write out a "_SUCCESS" file into the same folder as the CSV files.
+
+    The sentinel file marks the unload as complete. The dump insists on this file before
+    writing a manifest for load.
     """
     object_key = os.path.join(prefix, "_SUCCESS")
     if dry_run:

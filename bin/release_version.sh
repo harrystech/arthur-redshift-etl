@@ -21,7 +21,7 @@ if ! type -a git >/dev/null 2>&1 ; then
     exit 1
 fi
 
-> "$TEMP_RELEASE_FILE"
+true > "$TEMP_RELEASE_FILE"
 trap "rm \"$TEMP_RELEASE_FILE\"" EXIT
 
 echo "toplevel=`git rev-parse --show-toplevel`" >> "$TEMP_RELEASE_FILE"
@@ -44,7 +44,7 @@ if git status --porcelain 2>/dev/null | egrep '^ M|^M' >/dev/null; then
     echo "warning=locally modified files exist" >> "$TEMP_RELEASE_FILE"
 fi
 
-if cmp "$TEMP_RELEASE_FILE" "$RELEASE_FILE" >/dev/null; then
+if cmp "$TEMP_RELEASE_FILE" "$RELEASE_FILE" >/dev/null 2>&1; then
     echo "Release information is unchanged."
 else
     echo "Updating release information in $RELEASE_FILE"

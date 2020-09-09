@@ -1,7 +1,7 @@
 """
-Base classes for preparing data to be loaded
+Base classes for preparing data to be loaded.
 
-Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data files
+Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data files.
 """
 import concurrent.futures
 import logging
@@ -78,9 +78,7 @@ class Extractor:
     def extract_source(
         self, source: DataWarehouseSchema, relations: List[RelationDescription]
     ) -> List[RelationDescription]:
-        """
-        For a given upstream source, iterate through given relations to extract the relations' data.
-        """
+        """For a given upstream source, iterate through given relations to extract the data."""
         self.logger.info("Extracting %d relation(s) from source '%s'", len(relations), source.name)
         failed = []
         extract_retries = etl.config.get_config_int("arthur_settings.extract_retries")
@@ -142,7 +140,8 @@ class Extractor:
         if self.failed_sources:
             self.logger.warning("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
 
-        # Note that iterating over result of futures may raise an exception (which surfaces exceptions from threads)
+        # Note that iterating over result of futures may raise an exception (which surfaces
+        # exceptions from threads)
         missing_tables = []  # type: List
         for future in done:
             missing_tables.extend(future.result())

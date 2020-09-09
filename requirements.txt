@@ -1,5 +1,5 @@
-boto3==1.14.47
-botocore==1.17.47
+boto3==1.14.52
+botocore==1.17.52
 funcy==1.14
 jmespath==0.10.0
 jsonschema==2.6.0

@@ -45,7 +45,8 @@ class SqoopExtractor(DatabaseExtractor):
             os.makedirs(self._sqoop_options_dir, mode=0o750, exist_ok=True)
 
     def _temporary_options_file(self, prefix: Optional[str] = None):
-        # This function is needed to avoid a type error around 'dir' which isn't defined as 'Optional' in the library.
+        # This function is needed to avoid a type error around 'dir' which isn't defined
+        # as 'Optional' in the library.
         return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
@@ -144,7 +145,7 @@ class SqoopExtractor(DatabaseExtractor):
             # NOTE Does not work with s3n:  "--delete-target-dir",
             "--target-dir",
             '"s3n://{}/{}"'.format(relation.bucket_name, relation.data_directory()),
-            # NOTE Quoting the select statement (e.g. with shlex.quote) breaks the select in an unSQLy way.
+            # NOTE Quoting the select statement breaks the select in an unSQLy way.
             "--query",
             select_statement,
             # NOTE Embedded newlines are not escaped so we need to remove them.  WAT?
@@ -163,7 +164,8 @@ class SqoopExtractor(DatabaseExtractor):
         else:
             select_statement = self.select_statement(relation, None)
 
-        # Note that select statement always ends in a where clause, adding $CONDITIONS per sqoop documentation
+        # Note that select statement always ends in a where clause, adding $CONDITIONS per
+        # sqoop documentation
         return select_statement + " AND $CONDITIONS"
 
     def build_sqoop_partition_options(
@@ -178,7 +180,7 @@ class SqoopExtractor(DatabaseExtractor):
                 quoted_key_arg = '"{}"'.format(partition_key)
 
             if relation.num_partitions:
-                # num_partitions explicitly set in the design file overrides the dynamic determination.
+                # num_partitions explicitly set in the design file overrides dynamic determination.
                 num_mappers = min(relation.num_partitions, self.max_partitions)
             else:
                 num_mappers = self.maximize_partitions(table_size)
@@ -186,7 +188,8 @@ class SqoopExtractor(DatabaseExtractor):
             if num_mappers > 1:
                 return ["--split-by", quoted_key_arg, "--num-mappers", str(num_mappers)]
 
-        # Use 1 mapper if either there is no partition key, or if the partitioner returns only one partition
+        # Use single mapper if either there is no partition key, or if the partitioner returns
+        # only one partition.
         return ["--num-mappers", "1"]
 
     def write_options_file(self, args: List[str]) -> str:
@@ -236,8 +239,8 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
             if sqoop.returncode != 0:
-                # TODO: Be more intelligent about detecting whether certain Sqoop errors are retryable, instead of
-                # assuming they all are.
+                # TODO: Be more intelligent about detecting whether certain Sqoop errors are
+                # retryable, instead of assuming they all are.
                 raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 

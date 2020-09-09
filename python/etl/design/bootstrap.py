@@ -25,7 +25,7 @@ logger.addHandler(logging.NullHandler())
 
 def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
     """
-    Retrieve all tables for this source (and matching the selector) and return them as a list of TableName instances.
+    Retrieve tables (matching selector) for this source, return as a list of TableName instances.
 
     The :source configuration contains a "whitelist" (which tables to include) and a
     "blacklist" (which tables to exclude). Note that "exclude" always overrides "include."
@@ -76,14 +76,19 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
 
 def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     """Retrieve table definition (column names and types)."""
-    # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s` works in the editor.
+    # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s`
+    # works in the editor.
     if getattr(table_name, "is_late_binding_view", False):
         stmt = """
             SELECT col_name AS "name"
                  , col_type AS "sql_type"
                  , FALSE AS "not_null"
               FROM pg_get_late_binding_view_cols() cols(
-                       view_schema name, view_name name, col_name name, col_type varchar, col_num int)
+                       view_schema name
+                     , view_name name
+                     , col_name name
+                     , col_type varchar
+                     , col_num int)
              WHERE view_schema LIKE %s
                AND view_name = %s
              ORDER BY col_num"""
@@ -109,15 +114,17 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
     """
     Retrieve table constraints from database by looking up indices.
 
-    We will only check primary key constraints and unique constraints. If constraints have predicates
-    (like a WHERE clause) or use functions (like COALESCE(column, value), we'll skip them.
+    We will only check primary key constraints and unique constraints. If constraints have
+    predicates (like a WHERE clause) or use functions (like COALESCE(column, value), we'll skip
+    them.
 
     (To recreate the constraint, we could use `pg_get_indexdef`.)
     """
-    # We need to make two trips to the database because Redshift doesn't support functions on int2vector types.
-    # So we find out which indices exist (with unique constraints) and how many attributes are related to each,
-    # then we look up the attribute names with our exquisitely hand-rolled "where" clause.
-    # See http://www.postgresql.org/message-id/10279.1124395722@sss.pgh.pa.us for further explanations.
+    # We need to make two trips to the database because Redshift doesn't support functions
+    # on int2vector types. So we find out which indices exist (with unique constraints) and how
+    # many attributes are related to each, then we look up the attribute names with our
+    # exquisitely hand-rolled "where" clause. See
+    # http://www.postgresql.org/message-id/10279.1124395722@sss.pgh.pa.us for further explanations.
     stmt_index = """
         SELECT i.indexrelid AS index_id
              , ic.relname AS index_name
@@ -170,7 +177,8 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
           JOIN pg_catalog.pg_namespace AS ns ON cls.relnamespace = ns.oid
           JOIN pg_catalog.pg_depend AS dep ON cls.oid = dep.refobjid
           JOIN pg_catalog.pg_depend AS target_dep ON dep.objid = target_dep.objid
-          JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid AND cls.oid <> target_cls.oid
+          JOIN pg_catalog.pg_class AS target_cls ON target_dep.refobjid = target_cls.oid
+                                                AND cls.oid <> target_cls.oid
           JOIN pg_catalog.pg_namespace AS target_ns ON target_cls.relnamespace = target_ns.oid
          WHERE ns.nspname LIKE %s
            AND cls.relname = %s
@@ -249,7 +257,8 @@ def create_partial_table_design_for_transformation(
         logger.info("Experimental update of existing table design file in progress...")
         existing_table_design = relation.table_design
         if "columns" in update_keys:
-            # If the old design had added an identity column, we carry it forward here (and always as the first column).
+            # If the old design had added an identity column, we carry it forward
+            # here (and always as the first column).
             identity = [column for column in existing_table_design["columns"] if column.get("identity")]
             if identity:
                 table_design["columns"][:0] = identity
@@ -305,8 +314,8 @@ def create_table_design_for_ctas(
 ):
     """
     Create new table design for a CTAS.
-    If tables are referenced, they are added in the dependencies list.
 
+    If tables are referenced, they are added in the dependencies list.
     If :update is True, try to merge additional information from any existing table design file.
     """
     update_keys = ["description", "unload_target", "columns", "constraints", "attributes"] if update else None
@@ -319,13 +328,16 @@ def create_table_design_for_view(
     conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
 ):
     """
-    Create (and return) new table design suited for a view. Views are expected to always depend on some
-    other relations. (Also, we only keep the names for columns.)
+    Create (and return) new table design suited for a view.
+
+    Views are expected to always depend on some other relations. (Also, we only keep the names
+    for columns.)
 
     If :update is True, try to merge additional information from any existing table design file.
     """
     update_keys = ["description", "unload_target"] if update else None
-    # This creates a full column description with types (testing the type-maps), then drop all of it but their names.
+    # This creates a full column description with types (testing the type-maps), then drop all of
+    # it but their names.
     table_design = create_partial_table_design_for_transformation(conn, tmp_view_name, relation, update_keys)
     table_design["source_name"] = "VIEW"
     table_design["columns"] = [{"name": column["name"]} for column in table_design["columns"]]
@@ -334,8 +346,9 @@ def create_table_design_for_view(
 
 def make_item_sorter():
     """
-    Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict)
-    so that the resulting order of keys is easier to digest by humans.
+    Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict).
+
+    The sort order makes the resulting order of keys easier to digest by humans.
 
     Input to the sorter is a tuple of (key, value) from turning a dict into a list of items.
     Output (return value) of the sorter is a tuple of (preferred order, key name).
@@ -382,8 +395,8 @@ def save_table_design(
     Write new table design file to disk.
 
     Although these files are generated by computers, they get read by humans. So we try to be nice
-    here and write them out with a specific order of the keys, like have name and description towards
-    the top.
+    here and write them out with a specific order of the keys, like have name and description
+    towards the top.
     """
     # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
     etl.design.load.validate_table_design(table_design, target_table_name)
@@ -423,7 +436,9 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
 def create_table_designs_from_source(source, selector, local_dir, local_files, dry_run=False):
     """
     Create table design files for tables from a single source to local directory.
-    Whenever some table designs already exist locally, validate them against the information found from upstream.
+
+    Whenever some table designs already exist locally, validate them against the information
+    found from upstream.
     """
     source_dir = os.path.join(local_dir, source.name)
     normalize_and_create(source_dir, dry_run=dry_run)
@@ -469,6 +484,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
 def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=False):
     """
     Download schemas from database tables and compare against local design files (if available).
+
     This will create new design files locally if they don't already exist for any relations tied
     to upstream database sources.
     """
@@ -488,9 +504,7 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=
 def bootstrap_transformations(
     dsn_etl, schemas, local_dir, local_files, as_view, update=False, replace=False, dry_run=False
 ):
-    """
-    Download design information for transformations by test-running them in the data warehouse.
-    """
+    """Download design information for transformations by test-running in the data warehouse."""
     transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
     if not (update or replace):

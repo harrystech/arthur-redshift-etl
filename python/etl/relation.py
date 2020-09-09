@@ -1,5 +1,5 @@
 """
-Work with relations: tables, CTAS tables, or views
+Work with relations: tables, CTAS tables, or views.
 
 Table descriptions -- model around the notion of relations and their support files
     "Table" relations are tables created based on data probably coming from an upstream source.
@@ -56,8 +56,10 @@ class RelationDescription:
 
     def __getattr__(self, attr):
         """
-        Pass-through access to file set -- if the relation doesn't know about an attribute
-        we'll pick up the attribute from the file set!
+        Pass-through access to file set underlying the relation description.
+
+        If the relation doesn't know about an attribute we'll pick up the attribute from
+        the file set.
         """
         if hasattr(self._fileset, attr):
             return getattr(self._fileset, attr)
@@ -75,9 +77,11 @@ class RelationDescription:
         else:
             self.bucket_name = None
             self.prefix = None
-        # Note the subtle difference to RelationFileSet: the manifest_file_name is always present since it's computed
+        # Note the subtle difference to RelationFileSet: the manifest_file_name is always present
+        # since it's computed.
         self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
-        # Lazy-loading of table design and query statement and any derived information from the table design
+        # Lazy-loading of table design and query statement and any derived information from the
+        # table design.
         self._table_design = None  # type: Optional[Dict[str, Any]]
         self._query_stmt = None  # type: Optional[str]
         self._dependencies = None  # type: Optional[FrozenSet[TableName]]
@@ -103,7 +107,10 @@ class RelationDescription:
 
     def __format__(self, code):
         r"""
-        Format target table as delimited identifier (by default, or 's') or just as identifier (using 'x').
+        Format target table as delimited identifier (with quotes) or just as an identifier.
+
+        With the default or ':s', it's a delimited identifier with quotes.
+        With ':x", the name is left bare but single quotes are around it.
 
         >>> fs = etl.file_sets.RelationFileSet(TableName("a", "b"), TableName("c", "b"), None)
         >>> relation = RelationDescription(fs)
@@ -121,7 +128,8 @@ class RelationDescription:
         """
         Force a loading of the table design (which is normally loaded "on demand").
 
-        Strictly speaking, this isn't thread-safe.  But if you worry about thread safety here, rethink your code.
+        Strictly speaking, this isn't thread-safe. But if you worry about thread safety here,
+        rethink your code.
         """
         if self._table_design is None:
             if self.bucket_name:
@@ -251,10 +259,11 @@ class RelationDescription:
         Return a list of relation descriptions based on a list of file sets.
 
         If there's a file set without a table design file, then there's a warning and that file set
-        is skipped.  (This comes in handy when creating the design file for a CTAS or VIEW automatically.)
+        is skipped. (This comes in handy when creating the design file for a CTAS or VIEW
+        automatically.)
 
-        If provided, the required_relation_selector will be used to mark dependencies of high-priority.  A failure
-        to dump or load in these relations will end the ETL run.
+        If provided, the required_relation_selector will be used to mark dependencies of
+        high-priority. A failure to dump or load in these relations will end the ETL run.
         """
         relations = []
         for file_set in file_sets:
@@ -285,9 +294,7 @@ class RelationDescription:
         return selected_columns
 
     def get_columns_with_types(self) -> List[Dict[str, str]]:
-        """
-        Return list of dicts that describe non-skipped columns with their name and type.
-        """
+        """Return list of dicts that describe non-skipped columns with their name and type."""
         return [
             fy.project(column, ["name", "type"]) for column in self.table_design["columns"] if not column.get("skipped")
         ]
@@ -298,13 +305,16 @@ class RelationDescription:
 
     def find_partition_key(self) -> Union[str, None]:
         """
-        Return valid partition key for a relation which fulfills the conditions that
+        Return valid partition key for a relation.
+
+        The partition key will fulfill these conditions:
         (1) the column is marked as a primary key
         (2) the table's primary key is a single column
-        (3) the column has a numeric type or can be cast into one (which currently only works for timestamps).
+        (3) the column has a numeric type or can be cast into one (which currently only works for
+            timestamps).
 
-        If the table design provides extract_settings with a split_by column setting, provide that instead.
-        (The column will be numeric (int or long) or a timestamp in this case.)
+        If the table design provides extract_settings with a split_by column setting, provide that
+        instead. The column will be numeric (int or long) or a timestamp in this case.
 
         If no partition key can be found, returns None.
         """
@@ -364,7 +374,9 @@ class RelationDescription:
 
 class SortableRelationDescription:
     """
-    Add decoration around relation descriptions so that we can easily
+    Facade to add modifiable list of dependencies.
+
+    This adds decoration around relation descriptions so that we can easily
     compute the execution order and then throw away our intermediate results.
     """
 
@@ -395,7 +407,8 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
         if unknowns:
             known_unknowns.update(unknowns)
             has_unknown_dependencies.add(description.target_table_name)
-            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait for their resolution.
+            # Drop the unknowns from the list of dependencies so that the loop below doesn't wait
+            # for their resolution.
             description.dependencies = description.dependencies.difference(unknowns)
         if unmanaged_dependencies:
             logger.info(
@@ -416,7 +429,8 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
             join_with_quotes([dep.identifier for dep in has_unknown_dependencies]),
         )
 
-    # Make tables that depend on pg_catalog tables on all our tables (except those depending on pg_catalog tables).
+    # Make tables that depend on tables in pg_catalog depend on all our tables (except those
+    # depending on pg_catalog tables).
     has_no_internal_dependencies = known_tables - known_unknowns - has_pg_catalog_dependencies
     for description in descriptions:
         if description.target_table_name in has_pg_catalog_dependencies:
@@ -429,7 +443,8 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
 
     This will change the sortable relation in place.
     """
-    # The queue has tuples of (min expected order number, original sort order to break ties, relation description).
+    # The queue has tuples of (min expected order number, original sort order to break ties,
+    # relation description).
     queue = PriorityQueue()  # type: PriorityQueue[Tuple[int, int, SortableRelationDescription]]
     for initial_order, description in enumerate(descriptions):
         queue.put((1, initial_order + 1, description))
@@ -444,7 +459,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
 
         if all(relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed):
-            # Relation has no dependencies (all([]) == True !) or has all its dependencies evaluated.
+            # Relation has no dependencies (all([]) == True) or has all its dependencies evaluated.
             latest_order += 1
             description.order = latest_order
 
@@ -479,7 +494,8 @@ def order_by_dependencies(relation_descriptions):
     _sanitize_dependencies(descriptions)
     _sort_by_dependencies(descriptions)
 
-    # TODO Find a better way to back-annotating the relation descriptions. Having "level" reach in here is bad.
+    # TODO Find a better way to back-annotate the relation descriptions. Having "level" reach
+    # in here is bad.
     for description in descriptions:
         description.original_description.level = description.level
 
@@ -488,7 +504,9 @@ def order_by_dependencies(relation_descriptions):
 
 def set_required_relations(relations: List[RelationDescription], required_selector: TableSelector) -> None:
     """
-    Set the required property of the relations if they are directly or indirectly feeding
+    Set the "required" property based on the selector.
+
+    The "required" property of the relations is set if they are directly or indirectly feeding
     into relations selected by the :required_selector.
 
     Side-effect: relations are sorted to determine dependencies and their order and level is set.
@@ -499,7 +517,8 @@ def set_required_relations(relations: List[RelationDescription], required_select
     required_relations = [
         description for description in ordered_descriptions if required_selector.match(description.target_table_name)
     ]
-    # Walk through descriptions in reverse dependency order, expanding required set based on dependency fan-out
+    # Walk through descriptions in reverse dependency order, expanding required set based on
+    # dependency fan-out.
     for description in ordered_descriptions[::-1]:
         if any([description.target_table_name in required.dependencies for required in required_relations]):
             required_relations.append(description)
@@ -541,7 +560,7 @@ def select_in_execution_order(
     continue_from: Optional[str] = None,
 ) -> List[RelationDescription]:
     """
-    Return list of relations that were selected, optionally adding dependents and optionally skipping forward.
+    Return list of relations that were selected, optionally adding dependents or skipping forward.
 
     The values supported for skipping forward are:
       - '*' to start from the first relation (which is the same behavior as passing in None)

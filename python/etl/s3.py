@@ -1,6 +1,4 @@
-"""
-Common code around interacting with AWS S3
-"""
+"""Common code around interacting with AWS S3."""
 
 import logging
 import tempfile
@@ -101,7 +99,8 @@ def delete_objects(bucket_name: str, object_keys: List[str], wait=False, _retry=
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
 
-    If the optional parameter "wait" is true, then we'll wait until the object has actually been deleted.
+    If the optional parameter "wait" is true, then we'll wait until the object has actually been
+    deleted.
     """
     bucket = _get_s3_bucket(bucket_name)
     keys = [{"Key": key} for key in object_keys]
@@ -198,8 +197,9 @@ def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.respons
 
 def list_objects_for_prefix(bucket_name: str, *prefixes: str) -> Iterator[str]:
     """
-    List all the files in "s3://{bucket_name}/{prefix}" for each given prefix
-    (where prefix is probably a path and not an object key).
+    List all the files in "s3://{bucket_name}/{prefix}" for each given prefix.
+
+    The prefix is probably a path and not an object key.
     """
     if not prefixes:
         raise ValueError("List of prefixes may not be empty")

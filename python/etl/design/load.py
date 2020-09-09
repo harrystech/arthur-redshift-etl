@@ -38,7 +38,8 @@ def load_table_design(stream, table_name):
     etl.config.validate_with_schema(table_design, "table_design.schema")
 
     # We used to specify constraints using an object (before v0.24.0) and then switched to using
-    # an array of objects (with v0.24.0). This rewrites the constraints into the new format as needed.
+    # an array of objects (with v0.24.0). This rewrites the constraints into the new format
+    # as needed.
     constraints = table_design.get("constraints")
     if isinstance(constraints, dict):
         table_design["constraints"] = [
@@ -70,7 +71,7 @@ def load_table_design_from_s3(bucket_name, design_file, table_name):
 
 def validate_table_design(table_design, table_name):
     """
-    Validate table design against schema.  Raise exception if anything is not right.
+    Validate table design against schema. Raise exception if anything is not right.
 
     Phase 1 of validation is based on a schema and json-schema validation.
     Phase 2 is built on specific rules that I couldn't figure out how
@@ -119,9 +120,7 @@ def validate_identity_as_surrogate_key(table_design):
 
 
 def validate_column_references(table_design):
-    """
-    Make sure that table attributes and constraints only reference columns that actually exist.
-    """
+    """Make sure that table attributes and constraints only reference columns that actually exist."""
     column_list_references = [
         ("constraints", "primary_key"),
         ("constraints", "natural_key"),
