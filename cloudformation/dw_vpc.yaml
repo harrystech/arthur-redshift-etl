@@ -232,16 +232,14 @@ Resources:
                         "Resource": "*"
                     },
                     {
-                        "Sid": "WriteIntoAccountOnly",
+                        "Sid": "WriteOnlyWIP",
                         "Effect": "Allow",
                         "Principal": "*",
                         "Action": [
                             "s3:DeleteObject*",
                             "s3:PutObject*"
                         ],
-                        "Resource": [
-                            !Sub "arn:aws:s3:::*"
-                        ]
+                        "Resource": "*"
                     }
                 ]
             }
@@ -794,8 +792,7 @@ Resources:
                             Action:
                                 - "s3:DeleteObject"
                                 - "s3:PutObject"
-                            Resource:
-                                - !Sub "arn:aws:s3:::*"
+                            Resource: "arn:aws:s3:::*/*"
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
@@ -833,8 +830,7 @@ Resources:
                             Action:
                                 - "s3:DeleteObject"
                                 - "s3:PutObject"
-                            Resource:
-                                - !Sub "arn:aws:s3:::*"
+                            Resource: "arn:aws:s3:::*/*"
                           - Sid: "EventAccess"
                             Effect: "Allow"
                             Action:
