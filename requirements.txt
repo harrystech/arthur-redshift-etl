@@ -4,7 +4,7 @@ funcy==1.14
 jmespath==0.10.0
 jsonschema==2.6.0
 pgpasslib==1.1.0
-psycopg2-binary==2.8.5
+psycopg2-binary==2.8.6
 pycodestyle==2.6.0
 PyYAML==5.3.1
 simplejson==3.17.2
