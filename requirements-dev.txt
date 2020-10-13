@@ -1,5 +1,5 @@
 --requirement requirements.txt
-isort[pyproject]==4.3.21
+isort[pyproject]==5.6.3
 mypy==0.782
 # Requires Python 3.6: black
 # Also interesting:
