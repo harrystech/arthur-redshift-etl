@@ -1,4 +1,4 @@
-boto3==1.14.52
+boto3==1.16.0
 botocore==1.17.52
 funcy==1.14
 jmespath==0.10.0
