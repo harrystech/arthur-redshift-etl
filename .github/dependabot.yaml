@@ -3,7 +3,7 @@ updates:
   - assignees:
       - "tvogels01"
     directory: "/"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 5
     package-ecosystem: "pip"
     reviewers:
       - "harrystech/data-eng"
