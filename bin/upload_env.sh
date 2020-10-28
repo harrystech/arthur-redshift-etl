@@ -8,7 +8,7 @@
 # Example:
 #   AWS_PROFILE=my-prof bin/upload_env.sh my-warehouse-bucket my-env
 
-set -o errexit
+set -xo errexit
 
 USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"

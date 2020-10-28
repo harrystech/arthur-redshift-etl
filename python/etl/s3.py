@@ -2,11 +2,12 @@
 
 import concurrent.futures
 import logging
+import subprocess
 import tempfile
 import threading
 import time
 from datetime import datetime
-from typing import Iterable, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Iterable, Iterator, List, Optional, Sequence, Set, Tuple, Union
 
 import boto3
 import botocore.exceptions
@@ -15,6 +16,7 @@ import funcy
 import simplejson as json
 from tqdm import tqdm
 
+import etl.config
 import etl.timer
 from etl.errors import ETLRuntimeError, S3ServiceError
 from etl.json_encoder import FancyJsonEncoder
@@ -71,8 +73,12 @@ class S3Uploader:
             return
         logger.debug("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
         try:
+            upload_kwargs = {}
+            upload_acl = etl.config.get_config_value("object_store.s3.upload_acl", None)
+            if upload_acl:
+                upload_kwargs["ExtraArgs"] = {"ACL": upload_acl}
             bucket = _get_s3_bucket(self.bucket_name)
-            bucket.upload_file(filename, object_key)
+            bucket.upload_file(filename, object_key, **upload_kwargs)
         except botocore.exceptions.ClientError as exc:
             error_code = exc.response["Error"]["Code"]
             logger.error("Error code %s for object 's3://%s/%s'", error_code, self.bucket_name, object_key)
@@ -173,12 +179,14 @@ def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str
         raise ETLRuntimeError(f"There were {errors} error(s) during upload")
 
 
-def delete_objects(bucket_name: str, object_keys: Sequence[str], wait=False, _retry=True, dry_run=False) -> None:
+def delete_objects(
+    bucket_name: str, object_keys: Sequence[str], wait=False, hdfs_wait=False, _retry=True, dry_run=False
+) -> None:
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
 
     If the optional parameter "wait" is true, then we'll wait until the object has actually been
-    deleted.
+    deleted. If optional parameter "hdfs_wait" is true, we will confirm each key's removal using `hdfs ls`.
     """
     bucket = _get_s3_bucket(bucket_name)
     chunk_size = min(100, len(object_keys))  # seemed reasonable at the time
@@ -228,6 +236,26 @@ def delete_objects(bucket_name: str, object_keys: Sequence[str], wait=False, _re
         logger.info("Waiting for %d object(s) to no longer exist", len(object_keys))
         for key in object_keys:
             bucket.Object(key).wait_until_not_exists()
+    if hdfs_wait and _retry:
+        logger.debug("Verifying %d object(s) no longer exist according to HDFS S3A.", len(object_keys))
+        confirmed_deleted: Set[str] = set()
+        total_waits = 0
+        while len(confirmed_deleted) < len(object_keys) or total_waits > 10:
+            for key in object_keys:
+                if key in confirmed_deleted:
+                    continue
+                process = subprocess.run(["hadoop", "fs", "-ls", f"s3a://{bucket_name}/{key}"], timeout=60)
+                if process.returncode == 0:
+                    logger.error("HDFS did not confirm deletion of 's3://%s/%s'", bucket_name, key)
+                    time.sleep(5)
+                    total_waits += 1
+                elif process.returncode == 1:
+                    confirmed_deleted.add(key)
+                else:
+                    process.check_returncode()
+        nondeleted_count = len([key for key in object_keys if key not in confirmed_deleted])
+        if nondeleted_count:
+            raise S3ServiceError("Failed to confirm deletion of %d file(s)" % nondeleted_count)
 
 
 def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) -> Union[datetime, None]:

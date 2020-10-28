@@ -55,9 +55,9 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     # Now they have two problems.
     dsn_re = re.compile(
         r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # accept either type
-            (?:(?P<user>[-\w.%]+)(?::(?P<password>[-\w.%]+))?@)?  # optional user with password
-            (?P<host>[-\w.%]+)(:?:(?P<port>\d+))?/  # host and optional port information
-            (?P<database>[-\w.%]+)  # database (and not dbname)
+            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w\!\$\&.%]+))?@)?  # optional user with password
+            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
+            (?P<database>\w+)  # database (and not dbname)
             (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
         re.ASCII | re.VERBOSE,
     )

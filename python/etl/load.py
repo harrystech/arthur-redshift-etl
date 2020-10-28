@@ -748,7 +748,6 @@ def create_source_tables_when_ready(
     relations: Sequence[LoadableRelation],
     max_concurrency=1,
     look_back_minutes=15,
-    idle_termination_seconds=60 * 60,
     dry_run=False,
 ) -> None:
     """
@@ -761,6 +760,7 @@ def create_source_tables_when_ready(
     any relation from the full set of relations that depends on a source relation that failed
     to load.
     """
+    idle_termination_seconds = etl.config.get_config_int("arthur_settings.concurrent_load_idle_termination_seconds")
     source_relations = [relation for relation in relations if not relation.is_transformation]
     if not source_relations:
         logger.info("None of the relations are in source schemas")
