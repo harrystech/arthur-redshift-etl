@@ -351,14 +351,14 @@ pip3 install --requirement requirements-linters.txt
 
 ```bash
 black --config ./etc/pyproject.toml python/ setup.py
-isort --settings-path ./etc python/ setup.py
+isort --settings-path ./etc --recursive python/ setup.py
 ```
 
 #### Running linters locally
 
 ```bash
 black --config ./etc/pyproject.toml --check python/ setup.py
-isort --settings-path ./etc --check-only python/ setup.py
+isort --settings-path ./etc --check-only --recursive python/ setup.py
 flake8 python setup.py
 mypy python
 ```
