@@ -296,11 +296,11 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
     )
     try:
         schema = etl.config.load_json(schema_name)
-        jsonschema.Draft4Validator.check_schema(schema)
+        jsonschema.Draft7Validator.check_schema(schema)
     except validation_internal_errors as exc:
         raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
     try:
-        jsonschema.validate(obj, schema)
+        jsonschema.validate(obj, schema, format_checker=jsonschema.draft7_format_checker)
     except validation_internal_errors as exc:
         raise SchemaValidationError("failed to validate against '%s'" % schema_name) from exc
 
