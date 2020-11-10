@@ -203,7 +203,7 @@ Resources:
             Namespace: AWS/Redshift
             Statistic: Average
             ComparisonOperator: GreaterThanThreshold
-            Threshold: 65
+            Threshold: 85
             Period: 300
             EvaluationPeriods: 3
             Dimensions:
