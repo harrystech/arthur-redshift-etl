@@ -54,7 +54,7 @@ def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, 
         if use_staging:
             # Don't grant usage on staging schemas to readers/writers
             return None
-        logger.info("Granting access to %s", group_names)
+        logger.info("Granting access in '%s' to %s", name, group_names)
         for group in schema.groups:
             # Readers/writers are differentiated in table permissions, not schema permissions
             etl.db.grant_usage(conn, name, group)
