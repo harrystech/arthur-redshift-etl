@@ -4,7 +4,7 @@
 # Make sure to keep this in sync with our Dockerfile.
 
 PROJ_NAME="redshift_etl"
-PROJ_PACKAGES="aws-cli gcc jq libyaml-devel postgresql95-devel python35 python35-devel python35-pip tmux"
+PROJ_PACKAGES="aws-cli gcc jq libyaml-devel tmux"
 
 PROJ_TEMP="/tmp/$PROJ_NAME"
 
@@ -45,7 +45,7 @@ set -o xtrace
 
 sudo yum install --assumeyes $PROJ_PACKAGES
 
-# Install virtualenv using pip since the python35-virtualenv packages are out of date.
+# Install virtualenv using pip
 sudo python3 -m pip install --upgrade --disable-pip-version-check virtualenv
 
 # Set creation mask to: u=rwx,g=rx,o=
@@ -73,8 +73,8 @@ set +o nounset
 source venv/bin/activate
 set -o nounset
 
-python -m pip install --upgrade pip --disable-pip-version-check
-python -m pip install --requirement ./jars/requirements.txt
+python3 -m pip install --upgrade pip --disable-pip-version-check
+python3 -m pip install --requirement ./jars/requirements.txt
 
 # This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
 # so that the sort command can split correctly on '.' with the -t option.
@@ -85,7 +85,7 @@ LATEST_TAR_FILE=`
     sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |
     sed "s:${PROJ_NAME}\.:${PROJ_NAME}-:" |
     head -1`
-python -m pip install --upgrade "./jars/$LATEST_TAR_FILE"
+python3 -m pip install --upgrade "./jars/$LATEST_TAR_FILE"
 
 # Update instance tags
 TMP_DOCUMENT="$PROJ_TEMP/document"
