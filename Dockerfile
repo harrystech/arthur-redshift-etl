@@ -5,18 +5,19 @@
 #
 # N.B. Make sure to keep the Dockerfile and bootstrap script in sync wrt. packages.
 
-FROM amazonlinux:2018.03
+FROM amazonlinux:2.0.20201218.1
 
 RUN yum install -y \
-        aws-cli \
+        awscli \
         gcc \
         jq \
         libyaml-devel \
         openssh-clients \
+        postgresql \
+        python3 \
+        python3-devel \
         tmux \
-        vim-minimal \
-    && \
-    python3 -m pip install --upgrade --disable-pip-version-check virtualenv
+        vim-minimal
 
 # Run as non-priviledged user "arthur".
 RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
@@ -33,7 +34,7 @@ COPY --chown=arthur:arthur \
     /opt/local/redshift_etl/bin/
 
 COPY requirements*.txt /tmp/
-RUN virtualenv --python=python3 /opt/local/redshift_etl/venv && \
+RUN python3 -m venv /opt/local/redshift_etl/venv && \
     source /opt/local/redshift_etl/venv/bin/activate && \
     python3 -m pip install --upgrade pip --disable-pip-version-check --no-cache-dir && \
     python3 -m pip install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
