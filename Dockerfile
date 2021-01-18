@@ -14,6 +14,7 @@ RUN yum install -y \
         libyaml-devel \
         openssh-clients \
         postgresql \
+        procps-ng \
         python3 \
         python3-devel \
         tmux \
