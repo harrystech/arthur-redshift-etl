@@ -58,7 +58,7 @@ from psycopg2.extensions import connection  # only for type annotation
 import etl
 import etl.data_warehouse
 import etl.db
-import etl.design.redshift
+import etl.dialect.redshift
 import etl.monitor
 import etl.relation
 from etl.config.dw import DataWarehouseSchema
@@ -294,14 +294,14 @@ def create_table(
         message = "Creating temporary table for {:x}".format(relation)
         is_temp = True
 
-    ddl_stmt = etl.design.redshift.build_table_ddl(ddl_table_name, relation.table_design, is_temp=is_temp)
+    ddl_stmt = etl.dialect.redshift.build_table_ddl(ddl_table_name, relation.table_design, is_temp=is_temp)
     etl.db.run(conn, message, ddl_stmt, dry_run=dry_run)
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """Create VIEW using the relation's query."""
     ddl_view_name = relation.target_table_name
-    stmt = etl.design.redshift.build_view_ddl(ddl_view_name, relation.unquoted_columns, relation.query_stmt)
+    stmt = etl.dialect.redshift.build_view_ddl(ddl_view_name, relation.unquoted_columns, relation.query_stmt)
     etl.db.run(conn, "Creating view {:x}".format(relation), stmt, dry_run=dry_run)
 
 
@@ -401,7 +401,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
                 "relation '{}' is missing manifest file '{}'".format(relation.identifier, s3_uri)
             )
     copy_func = partial(
-        etl.design.redshift.copy_from_uri,
+        etl.dialect.redshift.copy_from_uri,
         conn,
         relation.target_table_name,
         relation.unquoted_columns,
@@ -441,7 +441,9 @@ def insert_from_query(
     if query_stmt is None:
         query_stmt = relation.query_stmt
 
-    insert_func = partial(etl.design.redshift.insert_from_query, conn, table_name, columns, query_stmt, dry_run=dry_run)
+    insert_func = partial(
+        etl.dialect.redshift.insert_from_query, conn, table_name, columns, query_stmt, dry_run=dry_run
+    )
 
     if relation.in_transaction:
         insert_func()

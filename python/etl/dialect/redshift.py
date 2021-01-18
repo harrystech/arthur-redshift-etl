@@ -1,5 +1,5 @@
 """
-This module contains functions to maintain relations in Redshift.
+This module contains functions to maintain relations in the "dialect" of AWS Redshift.
 
 Note that overall we try to have this minimally depend on other data structures -- actually
 we use only TableName which is handy to get a qualified and quoted name as needed.
@@ -18,7 +18,6 @@ import etl.config
 import etl.db
 from etl.errors import ETLRuntimeError, ETLSystemError, TransientETLError
 from etl.names import TableName
-from etl.relation import RelationDescription
 from etl.text import join_column_list, whitespace_cleanup
 
 logger = logging.getLogger(__name__)
@@ -383,16 +382,3 @@ def insert_from_query(
             else:
                 logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
                 raise
-
-
-def show_ddl(relations: List[RelationDescription]) -> None:
-    """Print to stdout the DDL used to create the corresponding tables or views."""
-    for i, relation in enumerate(relations):
-        if i > 0:
-            print()
-        if relation.is_view_relation:
-            ddl_stmt = build_view_ddl(relation.target_table_name, relation.unquoted_columns, relation.query_stmt)
-        else:
-            ddl_stmt = build_table_ddl(relation.target_table_name, relation.table_design)
-        print("-- target: {table}".format(table=relation.target_table_name.identifier))
-        print(ddl_stmt + "\n;")

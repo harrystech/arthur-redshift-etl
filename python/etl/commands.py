@@ -24,7 +24,7 @@ import etl.config.env
 import etl.data_warehouse
 import etl.db
 import etl.design.bootstrap
-import etl.design.redshift
+import etl.dialect
 import etl.explain
 import etl.extract
 import etl.file_sets
@@ -1127,7 +1127,7 @@ class ShowDdlCommand(SubCommand):
         descriptions = [
             etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
         ]
-        etl.design.redshift.show_ddl(descriptions)
+        etl.dialect.show_ddl(descriptions)
 
 
 class ListFilesCommand(SubCommand):
