@@ -92,7 +92,8 @@ def show_pipelines(selection: List[str]) -> None:
             )
         else:
             logger.info(
-                "Currently active pipelines: %s", join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
+                "Currently active pipelines: %s",
+                join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
             )
         print(
             etl.text.format_lines(
@@ -110,7 +111,8 @@ def show_pipelines(selection: List[str]) -> None:
         print()
         print(
             etl.text.format_lines(
-                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)], header_row=["Key", "Value"],
+                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
+                header_row=["Key", "Value"],
             )
         )
 

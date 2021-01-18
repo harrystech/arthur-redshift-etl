@@ -27,9 +27,9 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     """
     Retrieve tables (matching selector) for this source, return as a list of TableName instances.
 
-    The :source configuration contains a "whitelist" (which tables to include) and a
-    "blacklist" (which tables to exclude). Note that "exclude" always overrides "include."
-    The list of tables matching the whitelist but not the blacklist can be further narrowed
+    The :source configuration contains an "allowlist" (which tables to include) and a
+    "denylist" (which tables to exclude). Note that "exclude" always overrides "include."
+    The list of tables matching the allowlist but not the denylist can be further narrowed
     down by the pattern in :selector.
     """
     # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
@@ -53,7 +53,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
         target_table_name = TableName(source.name, row["table"])
         for reject_pattern in source.exclude_tables:
             if source_table_name.match_pattern(reject_pattern):
-                logger.debug("Table '%s' matches blacklist", source_table_name.identifier)
+                logger.debug("Table '%s' matches denylist", source_table_name.identifier)
                 break
         else:
             for accept_pattern in source.include_tables:
@@ -63,9 +63,9 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
                         logger.debug("Table '%s' is included in result set", source_table_name.identifier)
                         break
                     else:
-                        logger.debug("Table '%s' matches whitelist but is not selected", source_table_name.identifier)
+                        logger.debug("Table '%s' matches allowlist but is not selected", source_table_name.identifier)
     logger.info(
-        "Found %d table(s) matching patterns; whitelist=%s, blacklist=%s, subset='%s'",
+        "Found %d table(s) matching patterns; allowlist=%s, denylist=%s, subset='%s'",
         len(found),
         source.include_tables,
         source.exclude_tables,
