@@ -156,6 +156,6 @@ set +o xtrace
 # If you're confident enough to use "-y", you should know already about next steps.
 if [[ "$assume_yes" != "YES" ]]; then
     echo
-    echo "# You should *now* sync your data warehouse::"
+    echo "# You should *now* sync your data warehouse:"
     echo "arthur.py sync --deploy --prefix \"$PROJ_TARGET_ENVIRONMENT\""
 fi
