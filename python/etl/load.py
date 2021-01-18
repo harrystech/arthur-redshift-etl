@@ -294,15 +294,14 @@ def create_table(
         message = "Creating temporary table for {:x}".format(relation)
         is_temp = True
 
-    ddl_stmt = etl.design.redshift.build_table_ddl(relation.table_design, ddl_table_name, is_temp=is_temp)
+    ddl_stmt = etl.design.redshift.build_table_ddl(ddl_table_name, relation.table_design, is_temp=is_temp)
     etl.db.run(conn, message, ddl_stmt, dry_run=dry_run)
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """Create VIEW using the relation's query."""
-    view_name = relation.target_table_name
-    columns = join_column_list(relation.unquoted_columns)
-    stmt = """CREATE VIEW {} (\n{}\n) AS\n{}""".format(view_name, columns, relation.query_stmt)
+    ddl_view_name = relation.target_table_name
+    stmt = etl.design.redshift.build_view_ddl(ddl_view_name, relation.unquoted_columns, relation.query_stmt)
     etl.db.run(conn, "Creating view {:x}".format(relation), stmt, dry_run=dry_run)
 
 

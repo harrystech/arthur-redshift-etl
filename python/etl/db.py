@@ -17,7 +17,6 @@ import logging
 import os
 import os.path
 import re
-import textwrap
 from contextlib import closing, contextmanager
 from typing import Dict, List, Optional
 
@@ -173,7 +172,7 @@ def remove_password(s):
 
 def mogrify(cursor, stmt, args=()):
     """Build the statement by filling in the arguments and cleaning up whitespace along the way."""
-    stripped = textwrap.dedent(stmt).strip("\n")
+    stripped = etl.text.whitespace_cleanup(stmt)
     if len(args):
         actual_stmt = cursor.mogrify(stripped, args)
     else:

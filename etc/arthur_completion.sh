@@ -33,6 +33,7 @@ _arthur_completion()
                 render_template
                 selftest
                 settings
+                show_ddl
                 show_dependents
                 show_downstream_dependents
                 show_pipelines
