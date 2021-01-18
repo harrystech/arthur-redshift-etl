@@ -26,11 +26,9 @@
         "EC2": {
             "iam_instance_profile": "instance-profile", # Copy from Outputs of VPC stack: EC2InstanceProfile
             "instance_type": "t2.small",
-            "image_id": "ami-01d7070812ee4de14",
             "public_security_group": "security_group" # Copy from Outputs of VPC stack: PublicEC2SecurityGroups
         },
         "EMR": {
-            "release_label": "emr-6.2.0",
             "master": {
                 "instance_type": "m4.2xlarge",
                 "instance_count": 1,

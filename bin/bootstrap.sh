@@ -4,7 +4,7 @@
 # Make sure to keep this in sync with our Dockerfile.
 
 PROJ_NAME="redshift_etl"
-PROJ_PACKAGES="awscli gcc jq libyaml-devel postgresql python3 python3-devel tmux"
+PROJ_PACKAGES="awscli gcc jq libyaml-devel postgresql procps-ng python3 python3-devel tmux"
 
 PROJ_TEMP="/tmp/$PROJ_NAME"
 
