@@ -244,7 +244,7 @@ def copy_using_manifest(
     data_format: Optional[str] = None,
     format_option: Optional[str] = None,
     file_compression: Optional[str] = None,
-    need_compupdate=False,
+    compupdate="ON",
     dry_run=False,
 ) -> None:
 
@@ -267,7 +267,7 @@ def copy_using_manifest(
         table=table_name,
         columns=join_column_list(column_list),
         data_format_parameters=data_format_parameters,
-        compupdate="PRESET" if need_compupdate else "OFF",
+        compupdate=compupdate,
     )
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
@@ -342,7 +342,7 @@ def copy_from_uri(
     data_format: Optional[str] = None,
     format_option: Optional[str] = None,
     file_compression: Optional[str] = None,
-    need_compupdate=False,
+    compupdate="ON",
     dry_run=False,
 ) -> None:
     """Load data into table in the data warehouse using the COPY command."""
@@ -355,7 +355,7 @@ def copy_from_uri(
         data_format,
         format_option,
         file_compression,
-        need_compupdate,
+        compupdate,
         dry_run,
     )
     query_load_commits(conn, table_name, s3_uri, dry_run)

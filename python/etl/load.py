@@ -400,6 +400,13 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
             raise MissingManifestError(
                 "relation '{}' is missing manifest file '{}'".format(relation.identifier, s3_uri)
             )
+
+    compupdate_setting = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding")
+    if not relation.is_missing_encoding:
+        compupdate = "OFF"
+    else:
+        compupdate = compupdate_setting or "ON"
+
     copy_func = partial(
         etl.dialect.redshift.copy_from_uri,
         conn,
@@ -410,7 +417,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         data_format=relation.schema_config.s3_data_format.format,
         format_option=relation.schema_config.s3_data_format.format_option,
         file_compression=relation.schema_config.s3_data_format.compression,
-        need_compupdate=relation.is_missing_encoding,
+        compupdate=compupdate,
         dry_run=dry_run,
     )
 
