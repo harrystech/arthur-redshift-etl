@@ -1,5 +1,5 @@
-boto3==1.16.45
-botocore==1.19.45
+boto3==1.16.52
+botocore==1.19.52
 funcy==1.15
 jmespath==0.10.0
 jsonschema==3.2.0
@@ -10,4 +10,4 @@ PyYAML==5.3.1
 simplejson==3.17.2
 tabulate==0.8.7
 termcolor==1.1.0
-tqdm==4.50.2
+tqdm==4.56.0
