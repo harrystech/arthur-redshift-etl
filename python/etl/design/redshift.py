@@ -340,8 +340,6 @@ def insert_from_query(
 ) -> None:
     """Load data into table in the data warehouse using the INSERT INTO command."""
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
-
-    # TODO(tom): Add comment to easily identify queries in Redshift console, fix formatting
     stmt = """
 INSERT INTO {table} (
     {columns}
