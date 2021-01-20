@@ -186,7 +186,7 @@ def _create_or_update_cluster_user(conn, user, only_update=False, dry_run=False)
                 logger.info("Adding user '%s' to group '%s'", user.name, user.group)
                 etl.db.alter_group_add_user(conn, user.group, user.name)
                 logger.info("Updating password for user '%s'", user.name)
-                etl.db.alter_password(conn, user.name)
+                etl.db.alter_password(conn, user.name, ignore_missing_password=True)
         else:
             if dry_run:
                 logger.info("Dry-run: Skipping creating user '%s' in group '%s'", user.name, user.group)
