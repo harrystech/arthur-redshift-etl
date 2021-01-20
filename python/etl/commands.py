@@ -328,7 +328,7 @@ def build_full_parser(prog_name):
 
 def add_standard_arguments(parser, options):
     """
-    Add set of "standard" arguments.
+    Add from set of "standard" arguments.
 
     They are "standard" in that the name and description should be the same when used
     by multiple sub-commands.
@@ -397,8 +397,6 @@ def add_standard_arguments(parser, options):
             nargs="*",
             action=StorePatternAsSelector,
         )
-    # Cannot be set on the command line since changing it is not supported by file sets.
-    parser.set_defaults(table_design_dir="./schemas")
 
 
 class StorePatternAsSelector(argparse.Action):
@@ -438,6 +436,8 @@ class SubCommand:
         group.add_argument(
             "-q", "--quiet", help="decrease verbosity", action="store_const", const="WARNING", dest="log_level"
         )
+        # Cannot be set on the command line since changing it is not supported by file sets.
+        parser.set_defaults(table_design_dir="./schemas")
 
         self.add_arguments(parser)
         return parser
