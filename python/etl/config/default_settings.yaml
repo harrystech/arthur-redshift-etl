@@ -44,7 +44,7 @@
             "region": "us-east-1"
         },
         "EC2": {
-            "image_id": "ami-0623133d3181bb2d9",
+            "image_id": "ami-0be2609ba883822ec",
             "instance_type": "t2.small"
         },
         "EMR": {
