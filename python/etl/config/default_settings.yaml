@@ -76,8 +76,8 @@
             "boolean": "boolean",
             "character\\(\\d+\\)": "string",
             "character varying\\(\\d+\\)": "string",
-            "date": "string",
-            "timestamp without time zone": "string"
+            "date": "date",
+            "timestamp without time zone": "timestamp"
         },
         # Map of known PostgreSQL attribute types to usable types in Redshift.
         # The first element in the list is the new type, the second element is the necessary cast expression,
@@ -93,7 +93,7 @@
             "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
             # CAVEAT EMPTOR This only works if your database is running in UTC.
-            "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],
+            "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "timestamp"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
             # N.B. This requires a PostgreSQL version of 9.3 or better.
             "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
