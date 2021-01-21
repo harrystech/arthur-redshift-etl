@@ -19,6 +19,7 @@ import os.path
 import re
 from contextlib import closing, contextmanager
 from typing import Dict, List, Optional
+from urllib.parse import unquote
 
 import pgpasslib
 import psycopg2
@@ -51,18 +52,18 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     # Now they have two problems.
     dsn_re = re.compile(
         r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # accept either type
-            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
-            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
-            (?P<database>\w+)  # database (and not dbname)
+            (?:(?P<user>[-\w.%]+)(?::(?P<password>[-\w.%]+))?@)?  # optional user with password
+            (?P<host>[-\w.%]+)(:?:(?P<port>\d+))?/  # host and optional port information
+            (?P<database>[-\w.%]+)  # database (and not dbname)
             (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
-        re.VERBOSE,
+        re.ASCII | re.VERBOSE,
     )
     dsn_after_expansion = os.path.expandvars(dsn)  # Supports stuff like $USER
     match = dsn_re.match(dsn_after_expansion)
     if match is None:
         raise ValueError("value of connection string does not conform to expected format.")
     values = match.groupdict()
-    return {key: values[key] for key in values if values[key] is not None}
+    return {key: unquote(values[key], errors="strict") for key in values if values[key] is not None}
 
 
 def unparse_connection(dsn: Dict[str, str]) -> str:
