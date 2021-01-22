@@ -44,11 +44,11 @@
             "region": "us-east-1"
         },
         "EC2": {
-            "image_id": "ami-a4c7edb2",
+            "image_id": "ami-0be2609ba883822ec",
             "instance_type": "t2.small"
         },
         "EMR": {
-            "release_label": "emr-5.3.0",
+            "release_label": "emr-6.1.0",
             "master": {
                 "bid_price": 10.0,
                 "instance_type": "m4.2xlarge",

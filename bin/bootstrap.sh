@@ -4,7 +4,7 @@
 # Make sure to keep this in sync with our Dockerfile.
 
 PROJ_NAME="redshift_etl"
-PROJ_PACKAGES="aws-cli gcc jq libyaml-devel postgresql95-devel python35 python35-devel python35-pip tmux"
+PROJ_PACKAGES="awscli gcc jq libyaml-devel postgresql procps-ng python3 python3-devel tmux"
 
 PROJ_TEMP="/tmp/$PROJ_NAME"
 
@@ -45,9 +45,6 @@ set -o xtrace
 
 sudo yum install --assumeyes $PROJ_PACKAGES
 
-# Install virtualenv using pip since the python35-virtualenv packages are out of date.
-sudo pip-3.5 install --upgrade --disable-pip-version-check virtualenv
-
 # Set creation mask to: u=rwx,g=rx,o=
 umask 0027
 
@@ -66,15 +63,15 @@ chmod +x ./bin/*.sh
 log "Creating virtual environment in \"$PROJ_TEMP/venv\""
 test -x deactivate && deactivate || echo "Already outside virtual environment"
 
-virtualenv --python=python3 venv
+python3 -m venv venv
 
 # Work around this error: "_OLD_VIRTUAL_PATH: unbound variable"
 set +o nounset
 source venv/bin/activate
 set -o nounset
 
-pip3 install --upgrade pip --disable-pip-version-check
-pip3 install --requirement ./jars/requirements.txt
+python3 -m pip install --upgrade pip --disable-pip-version-check
+python3 -m pip install --requirement ./jars/requirements.txt
 
 # This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
 # so that the sort command can split correctly on '.' with the -t option.
@@ -85,7 +82,7 @@ LATEST_TAR_FILE=`
     sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |
     sed "s:${PROJ_NAME}\.:${PROJ_NAME}-:" |
     head -1`
-pip3 install --upgrade "./jars/$LATEST_TAR_FILE"
+python3 -m pip install --upgrade "./jars/$LATEST_TAR_FILE"
 
 # Update instance tags
 TMP_DOCUMENT="$PROJ_TEMP/document"
