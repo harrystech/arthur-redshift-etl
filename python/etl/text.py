@@ -5,6 +5,7 @@ Should not import Arthur modules (so that etl.errors remains widely importable)
 """
 
 import textwrap
+from typing import List
 
 
 def approx_pretty_size(total_bytes) -> str:
@@ -63,9 +64,14 @@ def join_with_quotes(names):
         return ", ".join("'{}'".format(name) for name in names)
 
 
-def join_column_list(columns):
+def join_column_list(columns: List[str], sep=", ") -> str:
     """Return string with comma-separated, delimited column names."""
-    return ", ".join('"{}"'.format(column) for column in columns)
+    return sep.join('"{}"'.format(column) for column in columns)
+
+
+def whitespace_cleanup(value: str) -> str:
+    """Return the string value with (per line) leading and any trailing whitespace removed."""
+    return textwrap.dedent(value).strip("\n")
 
 
 class ColumnWrapper(textwrap.TextWrapper):

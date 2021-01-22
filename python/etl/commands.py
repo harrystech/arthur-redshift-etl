@@ -24,6 +24,7 @@ import etl.config.env
 import etl.data_warehouse
 import etl.db
 import etl.design.bootstrap
+import etl.dialect
 import etl.explain
 import etl.extract
 import etl.file_sets
@@ -288,6 +289,7 @@ def build_full_parser(prog_name):
         BootstrapTransformationsCommand,
         ValidateDesignsCommand,
         ExplainQueryCommand,
+        ShowDdlCommand,
         SyncWithS3Command,
         # ETL commands to extract, load (or update), or transform
         ExtractToS3Command,
@@ -1107,6 +1109,25 @@ class ExplainQueryCommand(SubCommand):
             descriptions = self.find_relation_descriptions(args)
         with etl.db.log_error():
             etl.explain.explain_queries(config.dsn_etl, descriptions)
+
+
+class ShowDdlCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "show_ddl",
+            "show the DDL that will be used to create the table",
+            "Show DDL corresponding to the selected relations based on their (local) table designs.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern"])
+
+    def callback(self, args, config):
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
+        descriptions = [
+            etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
+        ]
+        etl.dialect.show_ddl(descriptions)
 
 
 class ListFilesCommand(SubCommand):

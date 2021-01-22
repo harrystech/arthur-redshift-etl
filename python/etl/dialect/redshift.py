@@ -1,5 +1,5 @@
 """
-This module contains functions to maintain relations in Redshift.
+This module contains functions to maintain relations in the "dialect" of AWS Redshift.
 
 Note that overall we try to have this minimally depend on other data structures -- actually
 we use only TableName which is handy to get a qualified and quoted name as needed.
@@ -18,7 +18,7 @@ import etl.config
 import etl.db
 from etl.errors import ETLRuntimeError, ETLSystemError, TransientETLError
 from etl.names import TableName
-from etl.text import join_column_list
+from etl.text import join_column_list, whitespace_cleanup
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -33,13 +33,13 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
     >>> build_column_description(
     ...     {"name": "key", "sql_type": "int", "not_null": True, "encoding": "raw"}
     ... )
-    '"key" int ENCODE raw NOT NULL'
+    '"key" INT ENCODE raw NOT NULL'
     >>> build_column_description(
     ...     {"name": "my_key", "sql_type": "int", "references": ["sch.ble", ["key"]]}
     ... )
-    '"my_key" int REFERENCES "sch"."ble" ( "key" )'
+    '"my_key" INT REFERENCES "sch"."ble" ( "key" )'
     """
-    column_ddl = '"{name}" {sql_type}'.format(**column)
+    column_ddl = '"{name}" {sql_type}'.format(name=column["name"], sql_type=column["sql_type"].upper())
     if column.get("identity", False) and not skip_identity:
         column_ddl += " IDENTITY(1, 1)"
     if "encoding" in column:
@@ -63,7 +63,7 @@ def build_columns(columns: List[dict], is_temp=False) -> List[str]:
     For temp tables, we use IDENTITY so that the key column is filled in but skip the references.
 
     >>> build_columns([{"name": "key", "sql_type": "int"}, {"name": "?", "skipped": True}])
-    ['"key" int']
+    ['"key" INT']
     """
     ddl_for_columns = [
         build_column_description(column, skip_identity=not is_temp, skip_references=is_temp)
@@ -131,7 +131,7 @@ def build_table_attributes(table_design: dict) -> List[str]:
     return ddl_attributes
 
 
-def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) -> str:
+def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) -> str:
     """Assemble the DDL of a table in a Redshift data warehouse."""
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
@@ -147,7 +147,33 @@ def build_table_ddl(table_design: dict, table_name: TableName, is_temp=False) ->
         columns_and_constraints=",\n            ".join(chain(columns, constraints)),
         attributes="\n        ".join(attributes),
     )
-    return ddl
+    return whitespace_cleanup(ddl)
+
+
+def build_view_ddl(view_name: TableName, columns: List[str], query_stmt: str) -> str:
+    """Assemble the DDL of a view in a Redshift data warehouse."""
+    comma_separated_columns = join_column_list(columns, sep=",\n            ")
+    ddl_initial = """
+        CREATE VIEW {view_name} (
+            {columns}
+        ) AS
+        """.format(
+        view_name=view_name, columns=comma_separated_columns
+    )
+    return whitespace_cleanup(ddl_initial) + "\n" + query_stmt
+
+
+def build_insert_ddl(table_name: TableName, column_list, query_stmt) -> str:
+    """Assemble the statement to insert data based on a query."""
+    columns = join_column_list(column_list)
+    insert_stmt = """
+        INSERT INTO {table} (
+            {columns}
+        )
+        """.format(
+        table=table_name, columns=columns
+    )
+    return whitespace_cleanup(insert_stmt) + "\n" + query_stmt
 
 
 @contextmanager
@@ -164,18 +190,19 @@ def log_load_error(cx):
             rows = etl.db.query(
                 cx,
                 """
-                        SELECT session
-                             , query
-                             , starttime
-                             , colname
-                             , type
-                             , trim(filename) AS filename
-                             , line_number
-                             , trim(err_reason) AS err_reason
-                          FROM stl_load_errors
-                         WHERE session = pg_backend_pid()
-                         ORDER BY starttime DESC
-                         LIMIT 1""",
+                    SELECT session
+                         , query
+                         , starttime
+                         , colname
+                         , type
+                         , trim(filename) AS filename
+                         , line_number
+                         , trim(err_reason) AS err_reason
+                      FROM stl_load_errors
+                     WHERE session = pg_backend_pid()
+                     ORDER BY starttime DESC
+                     LIMIT 1
+                """,
             )
             if rows:
                 row0 = rows.pop()
@@ -217,7 +244,7 @@ def copy_using_manifest(
     data_format: Optional[str] = None,
     format_option: Optional[str] = None,
     file_compression: Optional[str] = None,
-    need_compupdate=False,
+    compupdate="ON",
     dry_run=False,
 ) -> None:
 
@@ -240,7 +267,7 @@ def copy_using_manifest(
         table=table_name,
         columns=join_column_list(column_list),
         data_format_parameters=data_format_parameters,
-        compupdate="ON" if need_compupdate else "OFF",
+        compupdate=compupdate,
     )
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
@@ -315,7 +342,7 @@ def copy_from_uri(
     data_format: Optional[str] = None,
     format_option: Optional[str] = None,
     file_compression: Optional[str] = None,
-    need_compupdate=False,
+    compupdate="ON",
     dry_run=False,
 ) -> None:
     """Load data into table in the data warehouse using the COPY command."""
@@ -328,7 +355,7 @@ def copy_from_uri(
         data_format,
         format_option,
         file_compression,
-        need_compupdate,
+        compupdate,
         dry_run,
     )
     query_load_commits(conn, table_name, s3_uri, dry_run)
@@ -340,14 +367,7 @@ def insert_from_query(
 ) -> None:
     """Load data into table in the data warehouse using the INSERT INTO command."""
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
-    stmt = """
-INSERT INTO {table} (
-    {columns}
-)
-{query}
-        """.format(
-        table=table_name, columns=join_column_list(column_list), query=query_stmt
-    )
+    stmt = build_insert_ddl(table_name, column_list, query_stmt)
 
     if dry_run:
         logger.info("Dry-run: Skipping inserting data into '%s' from query", table_name.identifier)
