@@ -594,8 +594,9 @@ class UpdateUserCommand(SubCommand):
             "update user's group, password, and path",
             "Update an existing user with group membership, password, and search path."
             " Note that you have to set a password for the user in your '~/.pgpass' file"
-            " before invoking this command. The password must be valid in Redshift,"
-            " so must contain upper-case and lower-case characters as well as numbers.",
+            " before invoking this command if you want to update the password. The password must"
+            " be valid in Redshift, so must contain upper-case and lower-case characters as well"
+            " as numbers. If you leave the line out, the password will not be changed.",
         )
 
     def add_arguments(self, parser):
@@ -1264,7 +1265,7 @@ class RenderTemplateCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argCRITICALument("-l", "--list", help="list available templates", action="store_true")
         group.add_argument("template", help="name of template", nargs="?")
         parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
 
