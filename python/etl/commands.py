@@ -1265,7 +1265,7 @@ class RenderTemplateCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argCRITICALument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("-l", "--list", help="list available templates", action="store_true")
         group.add_argument("template", help="name of template", nargs="?")
         parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
 
