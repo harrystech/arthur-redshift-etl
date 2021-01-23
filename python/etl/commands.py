@@ -223,6 +223,7 @@ class FancyArgumentParser(argparse.ArgumentParser):
 
 
 def isoformat_datetime_string(argument):
+    # "isoformat" is used as a verb here.
     return datetime.strptime(argument, "%Y-%m-%dT%H:%M:%S")
 
 
@@ -282,6 +283,7 @@ def build_full_parser(prog_name):
     for klass in [
         # Commands to deal with data warehouse as admin:
         InitializeSetupCommand,
+        ShowRandomPassword,
         CreateUserCommand,
         UpdateUserCommand,
         # Commands to help with table designs and uploading them
@@ -326,7 +328,7 @@ def build_full_parser(prog_name):
 
 def add_standard_arguments(parser, options):
     """
-    Add set of "standard" arguments.
+    Add from set of "standard" arguments.
 
     They are "standard" in that the name and description should be the same when used
     by multiple sub-commands.
@@ -395,8 +397,6 @@ def add_standard_arguments(parser, options):
             nargs="*",
             action=StorePatternAsSelector,
         )
-    # Cannot be set on the command line since changing it is not supported by file sets.
-    parser.set_defaults(table_design_dir="./schemas")
 
 
 class StorePatternAsSelector(argparse.Action):
@@ -436,6 +436,8 @@ class SubCommand:
         group.add_argument(
             "-q", "--quiet", help="decrease verbosity", action="store_const", const="WARNING", dest="log_level"
         )
+        # Cannot be set on the command line since changing it is not supported by file sets.
+        parser.set_defaults(table_design_dir="./schemas")
 
         self.add_arguments(parser)
         return parser
@@ -541,25 +543,42 @@ class InitializeSetupCommand(SubCommand):
             )
 
 
+class ShowRandomPassword(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "show_random_password",
+            "show a random password compatible with Redshift",
+            "Show a random password with upper-case, lower-case and a number.",
+        )
+
+    def add_arguments(self, parser):
+        parser.set_defaults(log_level="CRITICAL")
+
+    def callback(self, args, config):
+        random_password = uuid.uuid4().hex
+        example_password = random_password[:16].upper() + random_password[16:].lower()
+        print(example_password)
+
+
 class CreateUserCommand(SubCommand):
     def __init__(self):
         super().__init__(
             "create_user",
             "add new user",
             "Add new user and set group membership, optionally create a personal schema."
-            " Note that you have to set a password for the user in your .pgpass file"
+            " It is ok to re-initialize a user defined in a settings file."
+            " Note that you have to set a password for the user in your '~/.pgpass' file"
             " before invoking this command. The password must be valid in Redshift,"
-            " so must contain upper case and lower case characters as well as numbers."
-            " It is ok to re-initialize a user defined in a settings file.",
+            " so must contain upper-case and lower-case characters as well as numbers.",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
-        parser.add_argument("username", help="name for new user")
         parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument(
             "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
         )
+        parser.add_argument("username", help="name for new user")
 
     def callback(self, args, config):
         with etl.db.log_error():
@@ -570,25 +589,23 @@ class CreateUserCommand(SubCommand):
 
 class UpdateUserCommand(SubCommand):
     def __init__(self):
-        random_password = uuid.uuid4().hex
-        example_password = random_password[:16].upper() + random_password[16:].lower()
         super().__init__(
             "update_user",
             "update user's group, password, and path",
             "Update an existing user with group membership, password, and search path."
-            " Note that you have to have set a password for the user in your .pgpass file"
-            " before invoking this command. The password must be valid in Redshift,"
-            " so must contain upper case and lower case characters as well as numbers"
-            " (for example: %s)" % example_password,
+            " Note that you have to set a password for the user in your '~/.pgpass' file"
+            " before invoking this command if you want to update the password. The password must"
+            " be valid in Redshift, so must contain upper-case and lower-case characters as well"
+            " as numbers. If you leave the line out, the password will not be changed.",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
-        parser.add_argument("username", help="name of existing user")
         parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument(
             "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
         )
+        parser.add_argument("username", help="name of existing user")
 
     def callback(self, args, config):
         with etl.db.log_error():
