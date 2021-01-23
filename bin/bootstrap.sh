@@ -70,7 +70,7 @@ set +o nounset
 source venv/bin/activate
 set -o nounset
 
-python3 -m pip install --upgrade pip --disable-pip-version-check
+python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check
 python3 -m pip install --requirement ./jars/requirements.txt
 
 # This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
