@@ -14,7 +14,7 @@ data/
 dist/
 build/
 venv/
-venv_arthur/
+arthur_venv/
 *.egg-info
 **/.mypy_cache/
 **/__pycache__/
