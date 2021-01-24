@@ -37,7 +37,7 @@ COPY --chown=arthur:arthur \
 COPY requirements*.txt /tmp/
 RUN python3 -m venv /opt/local/redshift_etl/venv && \
     source /opt/local/redshift_etl/venv/bin/activate && \
-    python3 -m pip install --upgrade pip --disable-pip-version-check --no-cache-dir && \
+    python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check --no-cache-dir && \
     python3 -m pip install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
 
 # Create an empty .pgpass file to help with create_user and update_user commands.
@@ -54,7 +54,6 @@ RUN source /opt/local/redshift_etl/venv/bin/activate && \
     python3 setup.py install && \
     rm -rf build dist && \
     arthur.py --version
-
 
 # Whenever there is an ETL running, it offers progress information on port 8086.
 EXPOSE 8086
