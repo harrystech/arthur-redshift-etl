@@ -7,6 +7,9 @@
 
 FROM amazonlinux:2.0.20201218.1
 
+# See the same settingin bin/bootstrap.sh
+ARG PROJ_NAME=redshift_etl
+
 RUN yum install -y \
         awscli \
         jq \
@@ -21,21 +24,21 @@ RUN yum install -y \
 
 # Run as non-priviledged user "arthur".
 RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
-    mkdir --parent /opt/data-warehouse /opt/local/redshift_etl /opt/src/arthur-redshift-etl && \
+    mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl && \
     chown -R arthur.arthur /opt/*
 USER arthur
 
 # The .bashrc will ensure the virutal environment is activated when running interactive shells.
 COPY --chown=arthur:arthur etc/.bash_history etc/.bashrc etc/.bash_profile /home/arthur/
 
-# Install code in /opt/local/redshift_etl (which would be in /tmp/redshift_etl on an EC2 host).
+# Install code under /opt/local/ (although it is under /tmp/ on an EC2 host).
 COPY --chown=arthur:arthur \
     bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh \
-    /opt/local/redshift_etl/bin/
+    "/opt/local/$PROJ_NAME/bin/"
 
 COPY requirements*.txt /tmp/
-RUN python3 -m venv /opt/local/redshift_etl/venv && \
-    source /opt/local/redshift_etl/venv/bin/activate && \
+RUN python3 -m venv "/opt/local/$PROJ_NAME/venv" && \
+    source "/opt/local/$PROJ_NAME/venv/bin/activate" && \
     python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check --no-cache-dir && \
     python3 -m pip install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
 
@@ -48,8 +51,8 @@ RUN echo '# Format to set password (used by create_user and update_user): *:5439
 WORKDIR /opt/src/arthur-redshift-etl
 COPY --chown=arthur:arthur ./ ./
 
-# Ww run this here once in case somebody overrides the entrypoint.
-RUN source /opt/local/redshift_etl/venv/bin/activate && \
+# We run this here once in case somebody overrides the entrypoint.
+RUN source "/opt/local/$PROJ_NAME/venv/bin/activate" && \
     python3 setup.py install && \
     rm -rf build dist && \
     arthur.py --version
