@@ -360,7 +360,8 @@ def group_exists(cx, group) -> bool:
     return len(rows) > 0
 
 
-def _get_encrypted_password(cx, user):
+def _get_encrypted_password(cx, user) -> Optional[str]:
+    """Return MD5-hashed password if entry is found in PGPASSLIB or None otherwise."""
     dsn_complete = dict(kv.split("=") for kv in cx.dsn.split(" "))
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
     dsn_user = dict(dsn_partial, user=user)
@@ -372,9 +373,9 @@ def _get_encrypted_password(cx, user):
     except pgpasslib.InvalidPermissions as exc:
         logger.info("Update the permissions using: 'chmod go= ~/.pgpass'")
         raise ETLRuntimeError("PGPASSFILE file has invalid permissions") from exc
+
     if password is None:
-        logger.warning("Missing line in .pgpass file: '%(host)s:%(port)s:%(dbname)s:%(user)s:<password>'", dsn_user)
-        raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
+        return None
     md5 = hashlib.md5()
     md5.update((password + user).encode())
     return "md5" + md5.hexdigest()
@@ -382,11 +383,19 @@ def _get_encrypted_password(cx, user):
 
 def create_user(cx, user, group):
     password = _get_encrypted_password(cx, user)
+    if password is None:
+        logger.warning("Missing entry in PGPASSFILE file for '%s'", user)
+        raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
     execute(cx, """CREATE USER "{}" IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
-def alter_password(cx, user):
+def alter_password(cx, user, ignore_missing_password=False):
     password = _get_encrypted_password(cx, user)
+    if password is None:
+        logger.warning("Failed to find password in PGPASSFILE for '%s'", user)
+        if not ignore_missing_password:
+            raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
+        return
     execute(cx, """ALTER USER "{}" PASSWORD %s""".format(user), (password,))
 
 
