@@ -1,7 +1,7 @@
 [tool.black]
 include = '\.pyi?$'
 line-length = 120
-target-version = ['py35']
+target-version = ['py36']
 
 [tool.isort]
 default_section = "THIRDPARTY"
