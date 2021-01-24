@@ -9,7 +9,6 @@ FROM amazonlinux:2.0.20201218.1
 
 RUN yum install -y \
         awscli \
-        gcc \
         jq \
         libyaml-devel \
         openssh-clients \
