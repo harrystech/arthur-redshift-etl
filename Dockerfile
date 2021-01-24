@@ -5,22 +5,20 @@
 #
 # N.B. Make sure to keep the Dockerfile and bootstrap script in sync wrt. packages.
 
-FROM amazonlinux:2017.03
+FROM amazonlinux:2.0.20201218.1
 
 RUN yum install -y \
-        aws-cli \
+        awscli \
         gcc \
         jq \
         libyaml-devel \
         openssh-clients \
-        postgresql95-devel \
-        python35 \
-        python35-devel \
-        python35-pip \
+        postgresql \
+        procps-ng \
+        python3 \
+        python3-devel \
         tmux \
-        vim-minimal \
-    && \
-    pip-3.5 install --upgrade --disable-pip-version-check virtualenv
+        vim-minimal
 
 # Run as non-priviledged user "arthur".
 RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
@@ -37,10 +35,10 @@ COPY --chown=arthur:arthur \
     /opt/local/redshift_etl/bin/
 
 COPY requirements*.txt /tmp/
-RUN virtualenv --python=python3 /opt/local/redshift_etl/venv && \
+RUN python3 -m venv /opt/local/redshift_etl/venv && \
     source /opt/local/redshift_etl/venv/bin/activate && \
-    pip3 install --upgrade pip --disable-pip-version-check --no-cache-dir && \
-    pip3 install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
+    python3 -m pip install --upgrade pip --disable-pip-version-check --no-cache-dir && \
+    python3 -m pip install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
 
 # Create an empty .pgpass file to help with create_user and update_user commands.
 RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /home/arthur/.pgpass \

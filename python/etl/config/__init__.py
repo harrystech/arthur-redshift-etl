@@ -158,6 +158,7 @@ def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     logger.info('Command line: "%s"', " ".join(sys.argv))
     logger.debug("Current working directory: '%s'", os.getcwd())
     logger.info(get_release_info())
+    logger.info(get_python_info())
 
 
 def load_environ_file(filename: str) -> None:
@@ -202,6 +203,13 @@ def load_settings_file(filename: str, settings: dict) -> None:
     with open(filename) as content:
         new_settings = yaml.safe_load(content)
     _deep_update(settings, new_settings)
+
+
+def get_python_info() -> str:
+    """Return minimal information about this Python version."""
+    return ("Running Python {version_info[0]}.{version_info[1]}.{version_info[2]} ({platform})").format(
+        version_info=sys.version_info, platform=sys.platform
+    )
 
 
 def get_release_info() -> str:

@@ -54,7 +54,7 @@ def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, 
         if use_staging:
             # Don't grant usage on staging schemas to readers/writers
             return None
-        logger.info("Granting access to %s", group_names)
+        logger.info("Granting access in '%s' to %s", name, group_names)
         for group in schema.groups:
             # Readers/writers are differentiated in table permissions, not schema permissions
             etl.db.grant_usage(conn, name, group)
@@ -186,7 +186,7 @@ def _create_or_update_cluster_user(conn, user, only_update=False, dry_run=False)
                 logger.info("Adding user '%s' to group '%s'", user.name, user.group)
                 etl.db.alter_group_add_user(conn, user.group, user.name)
                 logger.info("Updating password for user '%s'", user.name)
-                etl.db.alter_password(conn, user.name)
+                etl.db.alter_password(conn, user.name, ignore_missing_password=True)
         else:
             if dry_run:
                 logger.info("Dry-run: Skipping creating user '%s' in group '%s'", user.name, user.group)

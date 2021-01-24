@@ -6,7 +6,11 @@
         "extract_retries": 1,
         "copy_data_retries": 3,
         "insert_data_retries": 3,
-        "retriable_error_codes": "8001,15001,15005"
+        "retriable_error_codes": "8001,15001,15005",
+        "redshift": {
+            # Computing column encoding is turned off if all columns have a specified encoding.
+            "relation_column_encoding": "ON"
+        }
     },
     # Target (Redshift) cluster
     "data_warehouse": {
@@ -40,11 +44,11 @@
             "region": "us-east-1"
         },
         "EC2": {
-            "image_id": "ami-a4c7edb2",
+            "image_id": "ami-0be2609ba883822ec",
             "instance_type": "t2.small"
         },
         "EMR": {
-            "release_label": "emr-5.3.0",
+            "release_label": "emr-6.1.0",
             "master": {
                 "bid_price": 10.0,
                 "instance_type": "m4.2xlarge",
@@ -76,8 +80,8 @@
             "boolean": "boolean",
             "character\\(\\d+\\)": "string",
             "character varying\\(\\d+\\)": "string",
-            "date": "string",
-            "timestamp without time zone": "string"
+            "date": "date",
+            "timestamp without time zone": "timestamp"
         },
         # Map of known PostgreSQL attribute types to usable types in Redshift.
         # The first element in the list is the new type, the second element is the necessary cast expression,
@@ -93,7 +97,7 @@
             "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
             "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
             # CAVEAT EMPTOR This only works if your database is running in UTC.
-            "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "string"],
+            "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "timestamp"],
             "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
             # N.B. This requires a PostgreSQL version of 9.3 or better.
             "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],

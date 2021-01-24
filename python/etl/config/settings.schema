@@ -157,6 +157,17 @@
                 "retriable_error_codes": {
                     "description": "Comma-separated list of pgcode values which can be safely retried",
                     "type": "string"
+                },
+                "redshift": {
+                    "description": "Settings specific to the Redshift dialect",
+                    "type": "object",
+                    "properties": {
+                        "relation_column_encoding": {
+                            "description": "Set encoding on COPY (with ON or PRESET) or automatically based on column usage.",
+                            "enum": [ "AUTO", "OFF", "ON", "PRESET" ]
+                        }
+                    },
+                    "additionalProperties": false
                 }
             },
             "required": [ "extract_retries", "copy_data_retries" ],

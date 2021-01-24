@@ -60,7 +60,7 @@
                 "${resources.VPC.whitelist_security_group}"
             ],
             "bootstrapAction": "s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin/bootstrap.sh,${object_store.s3.bucket_name},${object_store.s3.prefix}",
-            "applications": [ "Spark", "Ganglia", "Zeppelin", "Sqoop" ],
+            "applications": [ "Ganglia", "Sqoop", "Zeppelin" ],
             "configuration": []
         },
         {

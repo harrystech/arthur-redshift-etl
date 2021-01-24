@@ -17,9 +17,9 @@ import logging
 import os
 import os.path
 import re
-import textwrap
 from contextlib import closing, contextmanager
 from typing import Dict, List, Optional
+from urllib.parse import unquote
 
 import pgpasslib
 import psycopg2
@@ -52,18 +52,18 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     # Now they have two problems.
     dsn_re = re.compile(
         r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # accept either type
-            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w]+))?@)?  # optional user with password
-            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
-            (?P<database>\w+)  # database (and not dbname)
+            (?:(?P<user>[-\w.%]+)(?::(?P<password>[-\w.%]+))?@)?  # optional user with password
+            (?P<host>[-\w.%]+)(:?:(?P<port>\d+))?/  # host and optional port information
+            (?P<database>[-\w.%]+)  # database (and not dbname)
             (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
-        re.VERBOSE,
+        re.ASCII | re.VERBOSE,
     )
     dsn_after_expansion = os.path.expandvars(dsn)  # Supports stuff like $USER
     match = dsn_re.match(dsn_after_expansion)
     if match is None:
         raise ValueError("value of connection string does not conform to expected format.")
     values = match.groupdict()
-    return {key: values[key] for key in values if values[key] is not None}
+    return {key: unquote(values[key], errors="strict") for key in values if values[key] is not None}
 
 
 def unparse_connection(dsn: Dict[str, str]) -> str:
@@ -173,7 +173,7 @@ def remove_password(s):
 
 def mogrify(cursor, stmt, args=()):
     """Build the statement by filling in the arguments and cleaning up whitespace along the way."""
-    stripped = textwrap.dedent(stmt).strip("\n")
+    stripped = etl.text.whitespace_cleanup(stmt)
     if len(args):
         actual_stmt = cursor.mogrify(stripped, args)
     else:
@@ -360,7 +360,8 @@ def group_exists(cx, group) -> bool:
     return len(rows) > 0
 
 
-def _get_encrypted_password(cx, user):
+def _get_encrypted_password(cx, user) -> Optional[str]:
+    """Return MD5-hashed password if entry is found in PGPASSLIB or None otherwise."""
     dsn_complete = dict(kv.split("=") for kv in cx.dsn.split(" "))
     dsn_partial = {key: dsn_complete[key] for key in ["host", "port", "dbname"]}
     dsn_user = dict(dsn_partial, user=user)
@@ -372,9 +373,9 @@ def _get_encrypted_password(cx, user):
     except pgpasslib.InvalidPermissions as exc:
         logger.info("Update the permissions using: 'chmod go= ~/.pgpass'")
         raise ETLRuntimeError("PGPASSFILE file has invalid permissions") from exc
+
     if password is None:
-        logger.warning("Missing line in .pgpass file: '%(host)s:%(port)s:%(dbname)s:%(user)s:<password>'", dsn_user)
-        raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
+        return None
     md5 = hashlib.md5()
     md5.update((password + user).encode())
     return "md5" + md5.hexdigest()
@@ -382,11 +383,19 @@ def _get_encrypted_password(cx, user):
 
 def create_user(cx, user, group):
     password = _get_encrypted_password(cx, user)
+    if password is None:
+        logger.warning("Missing entry in PGPASSFILE file for '%s'", user)
+        raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
     execute(cx, """CREATE USER "{}" IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
-def alter_password(cx, user):
+def alter_password(cx, user, ignore_missing_password=False):
     password = _get_encrypted_password(cx, user)
+    if password is None:
+        logger.warning("Failed to find password in PGPASSFILE for '%s'", user)
+        if not ignore_missing_password:
+            raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
+        return
     execute(cx, """ALTER USER "{}" PASSWORD %s""".format(user), (password,))
 
 
