@@ -336,29 +336,31 @@ Please format your code using:
 
 Also, we want to run code through:
 * [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg))
+* [flake8](https://flake8.pycqa.org/en/latest/)
 * [type checker](http://mypy-lang.org/)
 
 #### Installing linters locally
 
-To use the linters (`isort`, `black`, `pycodestyle`, `mypy`) locally, install them using:
+To use the linters (`isort`, `black`, `flake8`, `mypy`) locally, install them using:
 ```
-python3 -m venv venv
-source venv/bin/activate
-pip3 install --requirement requirements-linters.txt
+python3 -m venv arthur_venv
+source arthur_venv/bin/activate
+python3 -m pip install --upgrade pip==20.3.4
+python3 -m pip install --requirement requirements-linters.txt
 ```
 
 #### Running formatters locally
 
 ```bash
 black --config ./etc/pyproject.toml python/ setup.py
-isort --settings-path ./etc --recursive python/ setup.py
+isort --settings-path ./etc python/ setup.py
 ```
 
 #### Running linters locally
 
 ```bash
 black --config ./etc/pyproject.toml --check python/ setup.py
-isort --settings-path ./etc --check-only --recursive python/ setup.py
+isort --settings-path ./etc --check-only python/ setup.py
 flake8 python setup.py
 mypy python
 ```
@@ -448,18 +450,6 @@ source etc/arthur_completion.sh
 ```
 (Within a Docker container, that happens automatically.)
 
-### iPython and q
-
-Consider installing [iPython](https://ipython.org/index.html):
-```bash
-pip3 install ipython
-```
-
-Also, [q](https://github.com/zestyping/q) comes in handy for debugging:
-```bash
-pip3 install q
-```
-
 ### EMR login / EC2 login
 
 You can use the `.ssh/config` file to pick the correct user (`hadoop`) for the cluster and to automatically
@@ -481,10 +471,7 @@ If you find yourself using a one-off EC2 instance more often than an EMR cluster
 If you want to have a virtual environment in your local directory, _e.g._ to make working with an IDE easier,
 then these steps will work:
 ```shell
-python3 -m venv venv
-source venv/bin/activate
-pip3 install -r requirements-dev.txt
+python3 -m venv arthur_venv
+source arthur_venv/bin/activate
+python3 -m pip install -r requirements-dev.txt
 ```
-
-_N.B._ Both `.gitignore` and `.dockerignore` are configured for the name `venv`. Use a different name
-or location for the virtual environment at your own risk.

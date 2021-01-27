@@ -593,11 +593,12 @@ def select_in_execution_order(
 
 
 if __name__ == "__main__":
-    import simplejson as json
     import sys
 
-    from etl.json_encoder import FancyJsonEncoder
+    import simplejson as json
+
     from etl.design.bootstrap import make_item_sorter
+    from etl.json_encoder import FancyJsonEncoder
 
     config_dir = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
     uri_parts = ("file", "localhost", "schemas")
