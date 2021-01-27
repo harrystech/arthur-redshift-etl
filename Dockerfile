@@ -7,7 +7,7 @@
 
 FROM amazonlinux:2.0.20201218.1
 
-# See the same settingin bin/bootstrap.sh
+# See the same setting in bin/bootstrap.sh
 ARG PROJ_NAME=redshift_etl
 
 RUN yum install -y \
