@@ -54,6 +54,8 @@ class DatabaseExtractor(Extractor):
 
     def maximize_partitions(self, table_size: int) -> int:
         """
+        Return largest "legal" number of partions for this table.
+
         Determine the maximum number of row-wise partitions a table can be divided into while respecting a minimum
         partition size, and a limit on the number of partitions.
 

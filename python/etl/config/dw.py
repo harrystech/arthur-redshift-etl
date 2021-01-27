@@ -1,6 +1,4 @@
-"""
-Data warehouse configuration based on the config file for setup, sources, transformations, users.
-"""
+"""Data warehouse configuration based on config files for setup, sources, transformations, users."""
 
 from typing import Dict
 

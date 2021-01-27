@@ -1,8 +1,10 @@
 """
+Slurp in "table design" files and validate the relation's design.
+
 Table designs describe the columns, like their name and type, as well as how the data
 should be organized once loaded into Redshift, like the distribution style or sort key.
 
-Table designs are dictionaries of dictionaries or lists etc.
+Table designs are implemented as dictionaries of dictionaries or lists etc.
 """
 
 import logging
@@ -99,9 +101,7 @@ def validate_table_design_syntax(table_design, table_name):
 
 
 def validate_identity_as_surrogate_key(table_design):
-    """
-    Check whether specification of our identity column is valid and whether it matches surrogate key.
-    """
+    """Check whether specification of our identity column is valid and matches surrogate key."""
     identity_columns = []
     for column in table_design["columns"]:
         if column.get("identity"):

@@ -24,6 +24,8 @@ from etl.timer import Timer
 
 class Extractor:
     """
+    Parent class of extractors that organizes per-source extraction.
+
     The extractor base class provides the basic mechanics to
     * iterate over sources
       * iterate over tables in each source
@@ -58,7 +60,7 @@ class Extractor:
         """
         Return list of "options" that describe the extract.
 
-        This list will be part of the step monitor
+        This list will be part of the step monitor.
         """
         return ["with-{0.name}-extractor".format(self)]
 

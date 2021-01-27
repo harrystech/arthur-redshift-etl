@@ -19,10 +19,9 @@ def get(name: str, default: Union[str, None] = None) -> str:
 
 def get_default_prefix() -> str:
     """
-    Return default prefix which is the first non-emtpy value of:
-      - the environment variable ARTHUR_DEFAULT_PREFIX
-      - the environment variable USER
-      - the "user name" as determined by the getpass module
+    Return default prefix, gleaned from the environment in ARTHUR_DEFAULT_PREFIX or USER.
+
+    We have a last resort by checking the user name using the getapass module.
 
     >>> os.environ["ARTHUR_DEFAULT_PREFIX"] = "doctest"
     >>> get_default_prefix()

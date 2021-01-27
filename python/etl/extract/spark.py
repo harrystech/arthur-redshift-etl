@@ -68,9 +68,7 @@ class SparkExtractor(DatabaseExtractor):
         return SQLContext(sc)
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
-        """
-        Using Spark's dataframe API, read the table in as a dataframe before writing it out to CSV.
-        """
+        """Read the table before writing it out to CSV using Spark's dataframe API."""
         with etl.db.log_error():
             df = self.read_table_as_dataframe(source, relation)
             self.write_dataframe_as_csv(df, relation)

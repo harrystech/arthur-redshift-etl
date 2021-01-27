@@ -1,9 +1,10 @@
 """
-The purpose of "validate" is to exercise the configuration, schemas, and queries that make up
-the data warehouse description (and eventually, its state).
+The purpose of "validate" is to exercise the configuration, schemas, and queries.
 
-This includes static and runtime checks.  As always, the "dry-run" option tries to run as much
-as possible but doesn't change any state (i.e. doesn't write or create tables or...)
+This includes static and runtime checks of our the description of the data warehouse.
+
+As always, the "dry-run" option tries to run as much as possible but doesn't change any state
+(i.e. doesn't write or create tables).
 
 Validating the warehouse schemas (definition of upstream tables and their transformations) includes:
 * Syntax checks (valid JSON?, valid against the JSON schema?)
