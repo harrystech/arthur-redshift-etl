@@ -19,6 +19,7 @@ setup(
     package_dir={"": "python"},
     packages=find_packages("python"),
     package_data={"etl": ["assets/*", "config/*", "templates/*"]},
+    python_requires=">=3.6, <4",
     scripts=[
         "python/scripts/compare_events.py",
         "python/scripts/install_extraction_pipeline.sh",
