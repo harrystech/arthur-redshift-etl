@@ -1214,7 +1214,6 @@ def show_downstream_dependents(
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    relation_map = {relation.target_table_name: relation for relation in relations}
     selected_relations = etl.relation.select_in_execution_order(
         relations, selector, include_dependents=True, continue_from=continue_from
     )
@@ -1235,13 +1234,27 @@ def show_downstream_dependents(
         len(selected_relations) - len(selected) - len(immediate),
     )
 
-    max_len = max(len(relation.identifier) for relation in selected_relations)
+    current_level = {relation.identifier: relation.execution_level for relation in selected_relations}
+    # Note that external tables are not in the list of relations (always level = 0),
+    # and if a relation isn't part of downstream, they're considered built already (level = 0).
+    for relation in selected_relations:
+        for dependency in relation.dependencies:
+            if dependency.identifier not in current_level:
+                current_level[dependency.identifier] = 0
+    # Now set the level that we show so that it starts at 1 for the relations we're building here.
+    for relation in selected_relations:
+        current_level[relation.identifier] = 1 + max(
+            (current_level[dependency.identifier] for dependency in relation.dependencies), default=0
+        )
+
+    max_len = max(len(identifier) for identifier in current_level)
     line_template = (
         "{relation.identifier:{width}s}"
-        " # kind={relation.kind} index={index:4d} level={relation.execution_level:3d}"
+        " # kind={relation.kind} index={index:4d} level={level:3d}"
         " flag={flag:9s}"
         " is_required={relation.is_required}"
     )
+    dependency_template = "  #> {identifier:{width}s} level={level:3d}"
 
     for i, relation in enumerate(selected_relations):
         if relation.identifier in selected:
@@ -1250,18 +1263,18 @@ def show_downstream_dependents(
             flag = "immediate"
         else:
             flag = "dependent"
-        print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
+        print(
+            line_template.format(
+                flag=flag, index=i + 1, level=current_level[relation.identifier], relation=relation, width=max_len
+            )
+        )
         if list_dependencies:
             for dependency in sorted(relation.dependencies):
-                if dependency in relation_map:
-                    print(
-                        "  #> {relation.identifier:{width}s} # level={relation.execution_level:3d}".format(
-                            relation=relation_map[dependency], width=max_len
-                        )
+                print(
+                    dependency_template.format(
+                        identifier=dependency.identifier, level=current_level[dependency.identifier], width=max_len
                     )
-                else:
-                    # Dependencies that are not described as relations are "external".
-                    print("  #> {relation.identifier:{width}s} # level=  0".format(relation=dependency, width=max_len))
+                )
 
 
 def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):
