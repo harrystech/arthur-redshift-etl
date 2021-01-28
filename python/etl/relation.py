@@ -84,7 +84,10 @@ class RelationDescription:
         # table design.
         self._table_design = None  # type: Optional[Dict[str, Any]]
         self._query_stmt = None  # type: Optional[str]
+
         self._dependencies = None  # type: Optional[FrozenSet[TableName]]
+        self._execution_level = None  # type: Union[None, bool]
+        self._execution_order = None  # type: Union[None, bool]
         self._is_required = None  # type: Union[None, bool]
 
     @property
@@ -174,6 +177,20 @@ class RelationDescription:
     @property
     def is_unloadable(self) -> bool:
         return "unload_target" in self.table_design
+
+    @property
+    def execution_level(self) -> bool:
+        """All relations of the same level may be loaded in parallel."""
+        if self._execution_level is None:
+            raise ETLRuntimeError("execution level unknown for RelationDescription '{0.identifier}'".format(self))
+        return self._execution_level
+
+    @property
+    def execution_order(self) -> bool:
+        """All relations can be ordered to load properly in series based on their dependencies."""
+        if self._execution_order is None:
+            raise ETLRuntimeError("execution order unknown for RelationDescription '{0.identifier}'".format(self))
+        return self._execution_order
 
     @property
     def is_required(self) -> bool:
@@ -377,7 +394,7 @@ class SortableRelationDescription:
     Facade to add modifiable list of dependencies.
 
     This adds decoration around relation descriptions so that we can easily
-    compute the execution order and then throw away our intermediate results.
+    compute the execution order by updating the "dependencies" list.
     """
 
     def __init__(self, original_description: RelationDescription) -> None:
@@ -473,7 +490,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
             queue.put((max(latest_order, minimum_order) + 1, tie_breaker, description))
 
 
-def order_by_dependencies(relation_descriptions):
+def order_by_dependencies(relation_descriptions: List[RelationDescription]) -> List[RelationDescription]:
     """
     Sort the relations such that any dependents surely are loaded afterwards.
 
@@ -487,19 +504,26 @@ def order_by_dependencies(relation_descriptions):
     Provides warnings about:
         * relations that directly depend on relations not in the input
         * relations that are depended upon but are not in the input
+
+    Side-effect: the order and level of the relations is set.
+    (So should this be invoked a second time, we'll skip computations if order is already set.)
     """
     RelationDescription.load_in_parallel(relation_descriptions)
-    descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
 
-    _sanitize_dependencies(descriptions)
-    _sort_by_dependencies(descriptions)
+    # Sorting is all-or-nothing so we get away with checking for just one relation's order.
+    if relation_descriptions and relation_descriptions[0]._execution_order is not None:
+        logger.info("Reusing previously computed execution order of %d relation(s)", len(relation_descriptions))
+    else:
+        sortable_descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
+        _sanitize_dependencies(sortable_descriptions)
+        _sort_by_dependencies(sortable_descriptions)
+        # A functional approach would be to create new instances here. Instead we reach back. Shrug.
+        # TODO Sort by level first, then order.
+        for sortable in sortable_descriptions:
+            sortable.original_description._execution_order = sortable.order
+            sortable.original_description._execution_level = sortable.level
 
-    # TODO Find a better way to back-annotate the relation descriptions. Having "level" reach
-    # in here is bad.
-    for description in descriptions:
-        description.original_description.level = description.level
-
-    return [description.original_description for description in sorted(descriptions, key=attrgetter("order"))]
+    return [description for description in sorted(relation_descriptions, key=attrgetter("execution_order"))]
 
 
 def set_required_relations(relations: List[RelationDescription], required_selector: TableSelector) -> None:

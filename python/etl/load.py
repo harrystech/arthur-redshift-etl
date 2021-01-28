@@ -1237,7 +1237,8 @@ def show_downstream_dependents(
 
     max_len = max(len(relation.identifier) for relation in selected_relations)
     line_template = (
-        "{relation.identifier:{width}s} # kind={relation.kind} index={index:4d} level={relation.level:3d}"
+        "{relation.identifier:{width}s}"
+        " # kind={relation.kind} index={index:4d} level={relation.execution_level:3d}"
         " flag={flag:9s}"
         " is_required={relation.is_required}"
     )
@@ -1254,7 +1255,7 @@ def show_downstream_dependents(
             for dependency in sorted(relation.dependencies):
                 if dependency in relation_map:
                     print(
-                        "  #> {relation.identifier:{width}s} # level={relation.level:3d}".format(
+                        "  #> {relation.identifier:{width}s} # level={relation.execution_level:3d}".format(
                             relation=relation_map[dependency], width=max_len
                         )
                     )
