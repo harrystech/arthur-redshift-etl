@@ -48,6 +48,7 @@ import re
 import threading
 import time
 from calendar import timegm
+from collections import defaultdict
 from contextlib import closing
 from datetime import datetime, timedelta
 from functools import partial
@@ -1205,7 +1206,8 @@ def show_downstream_dependents(
     relations: List[RelationDescription],
     selector: TableSelector,
     continue_from: Optional[str] = None,
-    list_dependencies: Optional[bool] = False,
+    with_dependencies: Optional[bool] = False,
+    with_dependents: Optional[bool] = False,
 ) -> None:
     """
     List the execution order of loads or updates.
@@ -1214,6 +1216,7 @@ def show_downstream_dependents(
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
+    # Relations are directly selected by pattern or by being somewhere downstream of a selected one.
     selected_relations = etl.relation.select_in_execution_order(
         relations, selector, include_dependents=True, continue_from=continue_from
     )
@@ -1222,18 +1225,29 @@ def show_downstream_dependents(
 
     directly_selected_relations = etl.relation.find_matches(selected_relations, selector)
     selected = frozenset(relation.identifier for relation in directly_selected_relations)
-    immediate = set(selected)
-    for relation in selected_relations:
-        if relation.is_view_relation and any(dep.identifier in immediate for dep in relation.dependencies):
-            immediate.add(relation.identifier)
-    immediate -= selected
+    immediate_views = etl.relation.find_immediate_dependencies(selected_relations, selector)
+    immediate = frozenset(relation.identifier for relation in immediate_views)
     logger.info(
         "Execution order includes %d selected, %d immediate, and %d other downstream relation(s)",
         len(selected),
         len(immediate),
         len(selected_relations) - len(selected) - len(immediate),
     )
+    flag = {}
+    for relation in selected_relations:
+        if relation.identifier in selected:
+            flag[relation.identifier] = "selected"
+        elif relation.identifier in immediate:
+            flag[relation.identifier] = "immediate"
+        else:
+            flag[relation.identifier] = "dependent"
 
+    dependents = defaultdict(list)
+    for relation in relations:
+        for dependency in relation.dependencies:
+            dependents[dependency.identifier].append(relation.identifier)
+
+    current_index = {relation.identifier: i + 1 for i, relation in enumerate(selected_relations)}
     current_level = {relation.identifier: relation.execution_level for relation in selected_relations}
     # Note that external tables are not in the list of relations (always level = 0),
     # and if a relation isn't part of downstream, they're considered built already (level = 0).
@@ -1254,25 +1268,34 @@ def show_downstream_dependents(
         " flag={flag:9s}"
         " is_required={relation.is_required}"
     )
-    dependency_template = "  #> {identifier:{width}s} level={level:3d}"
+    dependency_template = "  #<- {identifier:{width}s} level={level:3d}"
+    dependent_template = "  #-> {identifier:{width}s} index={index:4d} level={level:3d}"
 
-    for i, relation in enumerate(selected_relations):
-        if relation.identifier in selected:
-            flag = "selected"
-        elif relation.identifier in immediate:
-            flag = "immediate"
-        else:
-            flag = "dependent"
+    for relation in selected_relations:
         print(
             line_template.format(
-                flag=flag, index=i + 1, level=current_level[relation.identifier], relation=relation, width=max_len
+                flag=flag[relation.identifier],
+                index=current_index[relation.identifier],
+                level=current_level[relation.identifier],
+                relation=relation,
+                width=max_len,
             )
         )
-        if list_dependencies:
+        if with_dependencies:
             for dependency in sorted(relation.dependencies):
                 print(
                     dependency_template.format(
                         identifier=dependency.identifier, level=current_level[dependency.identifier], width=max_len
+                    )
+                )
+        if with_dependents:
+            for dependent in sorted(dependents[relation.identifier], key=lambda x: current_index[x]):
+                print(
+                    dependent_template.format(
+                        identifier=dependent,
+                        index=current_index[dependent],
+                        level=current_level[dependent],
+                        width=max_len,
                     )
                 )
 

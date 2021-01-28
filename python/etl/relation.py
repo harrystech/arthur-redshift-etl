@@ -86,8 +86,8 @@ class RelationDescription:
         self._query_stmt = None  # type: Optional[str]
 
         self._dependencies = None  # type: Optional[FrozenSet[TableName]]
-        self._execution_level = None  # type: Union[None, bool]
-        self._execution_order = None  # type: Union[None, bool]
+        self._execution_level = None  # type: Union[None, int]
+        self._execution_order = None  # type: Union[None, int]
         self._is_required = None  # type: Union[None, bool]
 
     @property
@@ -179,14 +179,14 @@ class RelationDescription:
         return "unload_target" in self.table_design
 
     @property
-    def execution_level(self) -> bool:
+    def execution_level(self) -> int:
         """All relations of the same level may be loaded in parallel."""
         if self._execution_level is None:
             raise ETLRuntimeError("execution level unknown for RelationDescription '{0.identifier}'".format(self))
         return self._execution_level
 
     @property
-    def execution_order(self) -> bool:
+    def execution_order(self) -> int:
         """All relations can be ordered to load properly in series based on their dependencies."""
         if self._execution_order is None:
             raise ETLRuntimeError("execution order unknown for RelationDescription '{0.identifier}'".format(self))
@@ -575,6 +575,29 @@ def find_dependents(
             in_dependency_path.add(relation.identifier)
     dependents = in_dependency_path - seeds
     return [relation for relation in relations if relation.identifier in dependents]
+
+
+def find_immediate_dependencies(
+    relations: List[RelationDescription], selector: TableSelector
+) -> List[RelationDescription]:
+    """
+    Return list of VIEW relations that directly (or chained) hang off the selected relations.
+
+    If you "DROP TABLE ..." from the relations, then the returned views would get dropped as well.
+
+    If the relations are: A (CTAS) -> B (VIEW) -> C (VIEW) -> D (CTAS) and you pass in the
+    list of A, B, C, D with a selector for A, then this will return the views B and C.
+    """
+    directly_selected_relations = find_matches(relations, selector)
+
+    directly_selected = frozenset(relation.identifier for relation in directly_selected_relations)
+    immediate = set(directly_selected)
+    for relation in relations:
+        if relation.is_view_relation and any(
+            dependency.identifier in immediate for dependency in relation.dependencies
+        ):
+            immediate.add(relation.identifier)
+    return [relation for relation in relations if relation.identifier in (immediate - directly_selected)]
 
 
 def select_in_execution_order(
