@@ -4,5 +4,5 @@ flake8-docstrings==1.5.0
 flake8-fixme==1.1.1
 isort==5.7.0
 mypy==0.800
-mypy-boto3==1.16.60.0
+mypy-boto3~=1.16
 mypy-extensions==0.4.3
