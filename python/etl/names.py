@@ -450,8 +450,10 @@ class TableSelector:
 
     def match_schema(self, schema) -> bool:
         """
-        Match against schema name, return true if any pattern matches the schema name
-        and the schema is part of the base schemas (if defined).
+        Match this schema name against the patterns.
+
+        This returns true if any pattern matches the schema name and the schema is part of the
+        base schemas (if defined).
 
         >>> tnp = TableSelector(["www.orders", "factory.products"])
         >>> tnp.match_schema("www")
@@ -492,8 +494,10 @@ class TableSelector:
 
     def match(self, table_name):
         """
-        Match names of schema and table against known patterns, return true if any pattern matches
-        and the schema is part of the base schemas (if defined).
+        Match relation on schema and table patterns (possibly limited to base schemas).
+
+        This returns true if any pattern matches and the schema is part of the base schemas
+        (if defined).
 
         >>> ts = TableSelector(["www.orders", "www.prod*"])
         >>> name = TableName("www", "products")

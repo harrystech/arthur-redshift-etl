@@ -190,10 +190,13 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
 
 def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
     """
-    Return partial table design that contains
+    Start a table design for the relation.
+
+    This returns a partial table design that contains
         - the name (identifier of our target table)
         - full column information (extracted from database source or data warehouse)
         - a description (with a timestamp)
+
     What is missing then to make it a valid table design is at least the "source_name".
     """
     type_maps = etl.config.get_dw_config().type_maps
@@ -237,7 +240,9 @@ def create_partial_table_design_for_transformation(
     conn: connection, tmp_view_name: TableName, relation: RelationDescription, update_keys: Union[List, None] = None
 ):
     """
-    Create a partial design that's applicable to transformations, which
+    Create a partial design that's applicable to transformations.
+
+    This partial design:
         - cleans up the column information (dropping accidental expressions)
         - adds dependencies (which only transformations can have)
         - and optionally updates from the existing table design
@@ -281,11 +286,13 @@ def create_partial_table_design_for_transformation(
 
 def update_column_definition(new_column: dict, old_column: dict):
     """
-    Update column definition derived from inspecting the view created for the transformation
+    Update column definition found automatically with previous information from table design.
+
+    This carefully merges the information from inspecting the view created for the transformation
     with information from the existing table design.
 
     Copied directly: "description", "encoding", "references", and "not_null"
-    Updated carefully: "sql_type", "type" (always together)
+    Updated carefully: "sql_type" and "type" (always together)
     """
     ok_to_copy = frozenset(["description", "encoding", "references", "not_null"])
     for key in ok_to_copy.intersection(old_column):

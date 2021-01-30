@@ -156,7 +156,6 @@ Resources:
             Encrypted:
                 true
             IamRoles:
-                - Fn::ImportValue: !Sub "${VpcStackName}::redshift-iam-role"
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-copy-role"
                 - !If [ HasAdditionalRole1, !Ref "AdditionalClusterIAMRole1", !Ref "AWS::NoValue" ]
                 - !If [ HasAdditionalRole2, !Ref "AdditionalClusterIAMRole2", !Ref "AWS::NoValue" ]

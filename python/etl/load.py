@@ -491,9 +491,7 @@ def create_missing_dimension_row(columns: List[dict]) -> List[str]:
 
 
 def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
-    """
-    Run query to fill temp table, then copy data (possibly along with missing dimension) into CTAS relation.
-    """
+    """Run query to fill temp table and copy data (option: with missing dimension) into target."""
     temp_name = TempTableName.for_table(relation.target_table_name)
     create_table(conn, relation, table_name=temp_name, dry_run=dry_run)
     try:
@@ -621,8 +619,9 @@ def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: 
 
 def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """
-    Update table contents either from CSV files from upstream sources or by running some SQL
-    for CTAS relations. This assumes that the table was previously created.
+    Update table contents either from CSV files from upstream sources or by running some SQL query.
+
+    This assumes that the table was previously created.
 
     1. For tables backed by upstream sources, data is copied in.
     2. If the CTAS doesn't have a key (no identity column), then values are inserted straight
@@ -1030,9 +1029,7 @@ def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
 def create_relations(
     relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1, concurrent_extract=False, dry_run=False
 ) -> None:
-    """
-    "Building" relations refers to creating them, granting access, and if they should hold data, loading them.
-    """
+    """Build relations by creating them, granting access, and loading them (if they hold data)."""
     if concurrent_extract:
         create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
     else:

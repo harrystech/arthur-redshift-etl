@@ -16,7 +16,7 @@
 
 # virtual environment and local install
 venv/
-venv_arthur/
+arthur_venv/
 /dist/
 /build/
 *.egg-info

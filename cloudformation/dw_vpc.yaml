@@ -614,7 +614,7 @@ Resources:
             # Must use the standard Path because ElasticMapReduce does not support something other than '/'
             Path: "/"
             Policies:
-                - PolicyName: "service_role_default_policy"
+                - PolicyName: "data-pipeline-role-policy"
                   PolicyDocument:
                       Version: "2012-10-17"
                       Statement:
@@ -686,10 +686,6 @@ Resources:
                                 - "sqs:PurgeQueue"
                                 - "sqs:ReceiveMessage"
                             Resource: "*"
-                - PolicyName: "service-role-for-spot"
-                  PolicyDocument:
-                      Version: "2012-10-17"
-                      Statement:
                           - Effect: "Allow"
                             Action: "iam:CreateServiceLinkedRole"
                             Resource: "arn:aws:iam::*:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot"
@@ -717,7 +713,7 @@ Resources:
                       Action: "sts:AssumeRole"
             Path: "/"
             Policies:
-                - PolicyName: "resource_role_default_policy"
+                - PolicyName: "resource-role-default-policy"
                   PolicyDocument:
                       Version: "2012-10-17"
                       Statement:
@@ -761,45 +757,6 @@ Resources:
             Roles:
                 - !Ref Ec2Role
 
-    # Oops, misspellled this one.  Bring up new role, switch over, delete this one...
-    RedshiftCopyCole:
-        Type: "AWS::IAM::Role"
-        Properties:
-            AssumeRolePolicyDocument:
-                Version: "2012-10-17"
-                Statement:
-                    - Effect: "Allow"
-                      Principal:
-                          Service: "redshift.amazonaws.com"
-                      Action: "sts:AssumeRole"
-            # Must use the standard Path because Redshift does not support something other than '/'
-            Path: "/"
-            Policies:
-                - PolicyName: "redshift_access"
-                  PolicyDocument:
-                      Version: "2012-10-17"
-                      Statement:
-                          - Sid: "ReadAccessBuckets"
-                            Effect: "Allow"
-                            Action: "s3:ListBucket*"
-                            Resource: "arn:aws:s3:::*"
-                          - Sid: "ReadAccessObjects"
-                            Effect: "Allow"
-                            Action: "s3:GetObject"
-                            Resource: "arn:aws:s3:::*/*"
-                          - Sid: "WriteAccess"
-                            Effect: "Allow"
-                            Action:
-                                - "s3:DeleteObject"
-                                - "s3:PutObject"
-                            Resource: "arn:aws:s3:::*/*"
-                          - Sid: "EventAccess"
-                            Effect: "Allow"
-                            Action:
-                                - "dynamodb:Describe*"
-                                - "dynamodb:Scan"
-                            Resource: "arn:aws:dynamodb:*:*:table/dw-etl-*"
-
     RedshiftCopyRole:
         Type: "AWS::IAM::Role"
         Properties:
@@ -813,7 +770,7 @@ Resources:
             # Must use the standard Path because Redshift does not support something other than '/'
             Path: "/"
             Policies:
-                - PolicyName: "redshift_access"
+                - PolicyName: "redshift-access"
                   PolicyDocument:
                       Version: "2012-10-17"
                       Statement:
@@ -920,12 +877,6 @@ Outputs:
         Value: !Ref SecondaryDataLake
         Export:
             Name: !Sub "${AWS::StackName}::secondary-data-lake"
-
-    RedshiftCopyCole:
-        Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store
-        Value: !GetAtt RedshiftCopyCole.Arn
-        Export:
-            Name: !Sub "${AWS::StackName}::redshift-iam-role"
 
     RedshiftCopyRole:
         Description: (object_store.iam_role) ARN for the role created for Redshift to read from the object store

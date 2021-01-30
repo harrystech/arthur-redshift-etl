@@ -180,6 +180,8 @@ def submit_step(cluster_id, sub_command):
 
 class FancyArgumentParser(argparse.ArgumentParser):
     """
+    Fancier version of the argument parser supporting "@file".
+
     Add feature to read command line arguments from files and support:
         * One argument per line (whitespace is trimmed)
         * Comments or empty lines (either are ignored)
@@ -443,7 +445,7 @@ class SubCommand:
         return parser
 
     def add_arguments(self, parser):
-        """Override this method for sub-classes"""
+        """Override this method for sub-classes."""
         pass
 
     @staticmethod
@@ -493,14 +495,12 @@ class SubCommand:
         return descriptions
 
     def callback(self, args, config):
-        """Override this method for sub-classes"""
+        """Override this method for sub-classes."""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
 
 class MonitoredSubCommand(SubCommand):
-    """
-    A sub-command that will also use monitors to update some event table
-    """
+    """A sub-command that will also use monitors to update some event table."""
 
     def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         parser = super().add_to_parser(parent_parser)

@@ -16,10 +16,10 @@ jobs:
     steps:
     - name: Checkout out code
       uses: actions/checkout@v2
-    - name: Set up Python 3.8
+    - name: Set up Python 3.7
       uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.7
     - name: Cache pip
       uses: actions/cache@v2
       with:
@@ -27,14 +27,14 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('requirements-linters.txt') }}
     - name: Install dependencies
       run: |-
-        python3 -m pip install --upgrade pip
+        python3 -m pip install --upgrade pip==20.3.4
         python3 -m pip install --requirement requirements-linters.txt
     - name: Lint with black
       run: |-
         black --config ./etc/pyproject.toml --check python/ setup.py
     - name: Lint with isort
       run: |-
-        isort --settings-path ./etc --check-only --recursive python/ setup.py
+        isort --settings-path ./etc --check-only python/ setup.py
     - name: Lint with flake8
       run: |-
         flake8 python setup.py
@@ -43,10 +43,10 @@ jobs:
     steps:
     - name: Checkout out code
       uses: actions/checkout@v2
-    - name: Set up Python 3.8
+    - name: Set up Python 3.7
       uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.7
     - name: Cache pip
       uses: actions/cache@v2
       with:
@@ -54,7 +54,7 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('requirements-linters.txt') }}
     - name: Install dependencies
       run: |-
-        python3 -m pip install --upgrade pip
+        python3 -m pip install --upgrade pip==20.3.4
         python3 -m pip install --requirement requirements-linters.txt
     - name: Run type checker
       run: |-

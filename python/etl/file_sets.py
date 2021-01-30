@@ -393,9 +393,7 @@ def find_data_files_in_s3(bucket_name: str, prefix: str) -> Iterator[str]:
 
 
 def delete_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
-    """
-    Delete all files that might be relevant given the choice of schemas and the target selection.
-    """
+    """Delete all files that might be relevant given the environment and selected relations."""
     iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data", prefix + "/schemas")
     deletable = [file_info.filename for file_info in _find_matching_files_from(iterable, selector)]
     if dry_run:

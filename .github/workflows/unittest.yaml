@@ -16,10 +16,10 @@ jobs:
     steps:
     - name: Checkout out code
       uses: actions/checkout@v2
-    - name: Set up Python 3.8
+    - name: Set up Python 3.7
       uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.7
     - name: Cache pip
       uses: actions/cache@v2
       with:
@@ -27,7 +27,7 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
     - name: Install dependencies
       run: |-
-        python3 -m pip install --upgrade pip
+        python3 -m pip install --upgrade pip==20.3.4
         python3 -m pip install --requirement requirements.txt
         python3 setup.py develop
     - name: Run doctests
