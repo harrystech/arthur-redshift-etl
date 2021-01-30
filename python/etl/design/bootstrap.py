@@ -3,6 +3,7 @@ import os.path
 import re
 from contextlib import closing
 from datetime import datetime
+from difflib import context_diff
 from typing import List, Mapping, Union
 
 import simplejson as json
@@ -517,7 +518,7 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=
 
 
 def bootstrap_transformations(
-    dsn_etl, schemas, local_dir, local_files, source_name, update=False, replace=False, dry_run=False
+    dsn_etl, schemas, local_dir, local_files, source_name, check_only=False, update=False, replace=False, dry_run=False
 ):
     """
     Download design information for transformations by test-running in the data warehouse.
@@ -527,7 +528,7 @@ def bootstrap_transformations(
     """
     transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
-    if not (update or replace):
+    if not (check_only or replace or update):
         # Filter down to new transformations (SQL files without matching YAML file).
         transforms = [file_set for file_set in transforms if not file_set.design_file_name]
     if not transforms:
@@ -535,26 +536,51 @@ def bootstrap_transformations(
         return
 
     relations = [RelationDescription(file_set) for file_set in transforms]
-    if update:
+    if check_only or update or (replace and source_name is None):
         logger.info("Loading existing table design file(s)")
-        try:
-            RelationDescription.load_in_parallel(relations)
-        except ValueError as exc:
-            logger.error("Failed to load existing design file(s) before update: %s", exc)
-            raise
+        RelationDescription.load_in_parallel(relations)
+        # TODO(tom): Collect all errors before dying.
+        for relation in relations:
+            if not relation.design_file_name:
+                raise RuntimeError("failed to load existing design file for {:x}".format(relation))
 
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             # Be careful not to trigger a load of an unknown design file by accessing "kind".
             current_source_name = relation.kind if relation.design_file_name else None
-            if (source_name or current_source_name) is None:
-                raise RuntimeError("failed to determine CTAS or VIEW for %x" % relation)
+            assert (source_name or current_source_name) in ("CTAS", "VIEW")
 
             with relation.matching_temporary_view(conn, assume_external_schema=not update) as tmp_view_name:
-                if (source_name or current_source_name) == "CTAS":
-                    table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update)
-                else:
-                    table_design = create_table_design_for_view(conn, tmp_view_name, relation, update)
+                try:
+                    if (source_name or current_source_name) == "CTAS":
+                        table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update)
+                    else:
+                        table_design = create_table_design_for_view(conn, tmp_view_name, relation, update)
+                except RuntimeError as exc:
+                    if check_only:
+                        print(f"Failed to create table design for {relation:x}")
+                        print(f"Error: {exc}")
+                        continue
+                    else:
+                        raise
+
+                if check_only:
+                    if relation.table_design != table_design:
+                        print("Change detected in table desing for {:x}".format(relation))
+                        before = json.dumps(relation.table_design, indent="    ", item_sort_key=make_item_sorter())
+                        after = json.dumps(table_design, indent="    ", item_sort_key=make_item_sorter())
+                        print(
+                            "".join(
+                                list(
+                                    context_diff(
+                                        before.splitlines(keepends=True),
+                                        after.splitlines(keepends=True),
+                                    )
+                                )[2:]
+                            )
+                        )
+                    continue
+
                 source_dir = os.path.join(local_dir, relation.source_name)
                 save_table_design(
                     source_dir,
