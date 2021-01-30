@@ -648,12 +648,20 @@ class BootstrapTransformationsCommand(SubCommand):
             "bootstrap_transformations",
             "bootstrap schema information from transformations",
             "Download schema information as if transformation had been run in data warehouse."
-            " If there is no local design file, then create one as a starting point.",
+            " If there is no local design file, then create one as a starting point."
+            " (With --check-only, no file is written and only changes in the design are flagged.)",
             aliases=["auto_design"],
         )
 
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "-c",
+            "--check-only",
+            help="only advise whether bootstrap would make any changes on the table design file",
+            default=False,
+            action="store_true",
+        )
         group.add_argument(
             "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
         )
@@ -680,6 +688,7 @@ class BootstrapTransformationsCommand(SubCommand):
             args.table_design_dir,
             local_files,
             args.type if args.type != "UPDATE" else None,
+            check_only=args.check_only,
             update=args.update or args.type == "UPDATE",
             replace=args.force,
             dry_run=args.dry_run,
