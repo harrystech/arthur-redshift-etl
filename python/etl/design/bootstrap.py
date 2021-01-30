@@ -259,7 +259,7 @@ def create_partial_table_design_for_transformation(
         table_design["depends_on"] = dependencies
 
     if update_keys is not None and relation.design_file_name:
-        logger.info("Experimental update of existing table design file in progress...")
+        logger.info("Update of existing table design file in progress...")
         existing_table_design = relation.table_design
         if "columns" in update_keys:
             # If the old design had added an identity column, we carry it forward
@@ -397,6 +397,7 @@ def save_table_design(
     table_design: dict,
     overwrite=False,
     dry_run=False,
+    current_file=False,
 ) -> None:
     """
     Write new table design file to disk.
@@ -409,19 +410,26 @@ def save_table_design(
     etl.design.load.validate_table_design(table_design, target_table_name)
 
     # FIXME Move this logic into file sets (note that "source_name" is in table_design)
-    filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
+    if current_file is None:
+        filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
+    else:
+        filename = current_file
+
     this_table = target_table_name.identifier
     if dry_run:
         logger.info("Dry-run: Skipping writing new table design file for '%s'", this_table)
-    elif os.path.exists(filename) and not overwrite:
+        return
+
+    if os.path.exists(filename) and not overwrite:
         logger.warning("Skipping writing new table design for '%s' since '%s' already exists", this_table, filename)
-    else:
-        logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
-        # We use JSON pretty printing because it is prettier than YAML printing.
-        with open(filename, "w") as o:
-            json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
-            o.write("\n")
-        logger.debug("Completed writing '%s'", filename)
+        return
+
+    logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
+    # We use JSON pretty printing because it is prettier than YAML printing.
+    with open(filename, "w") as o:
+        json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
+        o.write("\n")
+    logger.debug("Completed writing '%s'", filename)
 
 
 def normalize_and_create(directory: str, dry_run=False) -> str:
@@ -509,35 +517,44 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=
 
 
 def bootstrap_transformations(
-    dsn_etl, schemas, local_dir, local_files, as_view, update=False, replace=False, dry_run=False
+    dsn_etl, schemas, local_dir, local_files, source_name, update=False, replace=False, dry_run=False
 ):
-    """Download design information for transformations by test-running in the data warehouse."""
+    """
+    Download design information for transformations by test-running in the data warehouse.
+
+    "source_name" should be "CTAS" or "VIEW or None (in which case the relation type currently
+    specified will continue to be used).
+    """
     transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
     if not (update or replace):
+        # Filter down to new transformations (SQL files without matching YAML file).
         transforms = [file_set for file_set in transforms if not file_set.design_file_name]
     if not transforms:
         logger.warning("Found no new queries without matching design files")
         return
+
     relations = [RelationDescription(file_set) for file_set in transforms]
     if update:
         logger.info("Loading existing table design file(s)")
         try:
-            # Unfortunately, this adds warnings about any of the upstream sources being unknown.
-            relations = etl.relation.order_by_dependencies(relations)
+            RelationDescription.load_in_parallel(relations)
         except ValueError as exc:
             logger.error("Failed to load existing design file(s) before update: %s", exc)
             raise
 
-    if as_view:
-        create_func = create_table_design_for_view
-    else:
-        create_func = create_table_design_for_ctas
-
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
+            # Be careful not to trigger a load of an unknown design file by accessing "kind".
+            current_source_name = relation.kind if relation.design_file_name else None
+            if (source_name or current_source_name) is None:
+                raise RuntimeError("failed to determine CTAS or VIEW for %x" % relation)
+
             with relation.matching_temporary_view(conn, assume_external_schema=not update) as tmp_view_name:
-                table_design = create_func(conn, tmp_view_name, relation, update)
+                if (source_name or current_source_name) == "CTAS":
+                    table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update)
+                else:
+                    table_design = create_table_design_for_view(conn, tmp_view_name, relation, update)
                 source_dir = os.path.join(local_dir, relation.source_name)
                 save_table_design(
                     source_dir,
@@ -546,4 +563,5 @@ def bootstrap_transformations(
                     table_design,
                     overwrite=update or replace,
                     dry_run=dry_run,
+                    current_file=relation.design_file_name,
                 )

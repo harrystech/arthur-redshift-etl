@@ -661,19 +661,22 @@ class BootstrapTransformationsCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        parser.add_argument(
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
             "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
         )
-        # FIXME Switch to '[--update|--as-ctas|--as-view]'
-        parser.add_argument(
+        group.add_argument(
             "-u",
             "--update",
-            help="EXPERIMENTAL merge with existing table design if available",
+            help="merge new information with existing table design",
             default=False,
             action="store_true",
         )
         parser.add_argument(
-            "type", choices=["CTAS", "VIEW"], help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+            "type",
+            choices=["CTAS", "VIEW", "UPDATE"],
+            help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+            " or update the current relation",
         )
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
@@ -684,8 +687,8 @@ class BootstrapTransformationsCommand(SubCommand):
             config.schemas,
             args.table_design_dir,
             local_files,
-            args.type == "VIEW",
-            update=args.update,
+            args.type if args.type != "UPDATE" else None,
+            update=args.update or args.type == "UPDATE",
             replace=args.force,
             dry_run=args.dry_run,
         )
