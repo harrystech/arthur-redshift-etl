@@ -9,6 +9,7 @@ by a pattern from the command line.
 """
 
 import fnmatch
+import re
 import uuid
 from typing import List, Optional
 
@@ -151,6 +152,22 @@ class TableName:
         'hello.world'
         """
         return "{}.{}".format(*self.to_tuple())
+
+    @property
+    def identifier_as_re(self) -> str:
+        r"""
+        Return a regular expression that would look for the (unquoted) identifier.
+
+        >>> tn = TableName("dw", "fact")
+        >>> tn.identifier_as_re
+        '\\bdw\\.fact\\b'
+        >>> import re
+        >>> re.match(tn.identifier_as_re, "dw.fact") is not None
+        True
+        >>> re.match(tn.identifier_as_re, "dw_fact") is None
+        True
+        """
+        return r"\b{}\b".format(re.escape(self.identifier))
 
     @property
     def is_managed(self) -> bool:
