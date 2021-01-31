@@ -87,7 +87,7 @@ aws ec2 create-tags --resources "$INSTANCE_ID" --tags "Key=Name,Value=$INSTANCE_
 
 PUBLIC_DNS_NAME=$(
     aws ec2 describe-instances --instance-ids "$INSTANCE_ID" |
-        jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'
+    jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'
 )
 
 set +x +v

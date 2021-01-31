@@ -89,14 +89,16 @@ python3 -m pip install --upgrade "./jars/$LATEST_TAR_FILE"
 # Update instance name to tie it back to the EMR cluster
 TMP_DOCUMENT="$PROJ_TEMP/document"
 trap "rm -f '$TMP_DOCUMENT'" EXIT
-curl --silent --show-error http://169.254.169.254/latest/dynamic/instance-identity/document | tee "$TMP_DOCUMENT"
+curl --silent --show-error http://169.254.169.254/latest/dynamic/instance-identity/document |
+tee "$TMP_DOCUMENT"
 echo
 
 INSTANCE_ID=$(jq -r ".instanceId" "$TMP_DOCUMENT")
 REGION=$(jq -r ".region" "$TMP_DOCUMENT")
 JOB_FLOW_ID=$(
     aws ec2 describe-tags --region "$REGION" \
-        --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=aws:elasticmapreduce:job-flow-id" |
+        --filters "Name=resource-id,Values=$INSTANCE_ID" \
+            "Name=key,Values=aws:elasticmapreduce:job-flow-id" |
     jq -r ".Tags[0].Value // empty"
 )
 if [[ -n "$INSTANCE_ID" ]]; then
