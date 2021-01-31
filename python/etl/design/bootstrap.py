@@ -16,7 +16,7 @@ import etl.file_sets
 import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.design import Attribute, ColumnDefinition
+from etl.design import Attribute, ColumnDefinition, TableDesign
 from etl.names import TableName, TableSelector, join_with_quotes
 from etl.relation import RelationDescription
 
@@ -161,7 +161,10 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
             columns = list(att["name"] for att in attributes)
             constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
             logger.info(
-                "Index '%s' of '%s' adds constraint %s", index_name, table_name.identifier, json.dumps(constraint)
+                "Index '%s' of '%s' adds constraint %s",
+                index_name,
+                table_name.identifier,
+                json.dumps(constraint, sort_keys=True),
             )
             found.append(constraint)
     return found
@@ -352,53 +355,12 @@ def create_table_design_for_view(
     return table_design
 
 
-def make_item_sorter():
-    """
-    Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict).
-
-    The sort order makes the resulting order of keys easier to digest by humans.
-
-    Input to the sorter is a tuple of (key, value) from turning a dict into a list of items.
-    Output (return value) of the sorter is a tuple of (preferred order, key name).
-    If a key is not known, it's sorted alphabetically (ignoring case) after all known ones.
-    """
-    preferred_order = [
-        # always (tables, columns, etc.)
-        "name",
-        "description",
-        # only tables
-        "source_name",
-        "unload_target",
-        "depends_on",
-        "constraints",
-        "attributes",
-        "columns",
-        # only columns
-        "sql_type",
-        "type",
-        "expression",
-        "source_sql_type",
-        "not_null",
-        "identity",
-    ]
-    order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
-    max_index = len(preferred_order)
-
-    def sort_key(item):
-        key, value = item
-        return order_lookup.get(key, (max_index, key))
-
-    return sort_key
-
-
 def save_table_design(
-    source_dir: str,
-    source_table_name: TableName,
     target_table_name: TableName,
     table_design: dict,
+    filename: str,
     overwrite=False,
     dry_run=False,
-    current_file=False,
 ) -> None:
     """
     Write new table design file to disk.
@@ -410,12 +372,6 @@ def save_table_design(
     # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
     etl.design.load.validate_table_design(table_design, target_table_name)
 
-    # FIXME Move this logic into file sets (note that "source_name" is in table_design)
-    if current_file is None:
-        filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
-    else:
-        filename = current_file
-
     this_table = target_table_name.identifier
     if dry_run:
         logger.info("Dry-run: Skipping writing new table design file for '%s'", this_table)
@@ -426,10 +382,8 @@ def save_table_design(
         return
 
     logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
-    # We use JSON pretty printing because it is prettier than YAML printing.
     with open(filename, "w") as o:
-        json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
-        o.write("\n")
+        o.write(TableDesign.as_string(table_design))
     logger.debug("Completed writing '%s'", filename)
 
 
@@ -479,7 +433,12 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
                 else:
                     target_table_name = TableName(source.name, source_table_name.table)
                     table_design = create_table_design_for_source(conn, source_table_name, target_table_name)
-                    save_table_design(source_dir, source_table_name, target_table_name, table_design, dry_run=dry_run)
+
+                    filename = os.path.join(
+                        source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table)
+                    )
+                    save_table_design(target_table_name, table_design, filename, dry_run=dry_run)
+
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
         logger.error("Error while processing source '%s'", source.name)
@@ -567,27 +526,39 @@ def bootstrap_transformations(
                 if check_only:
                     if relation.table_design != table_design:
                         print("Change detected in table desing for {:x}".format(relation))
-                        before = json.dumps(relation.table_design, indent="    ", item_sort_key=make_item_sorter())
-                        after = json.dumps(table_design, indent="    ", item_sort_key=make_item_sorter())
+                        before = TableDesign.as_string(relation.table_design)
+                        after = TableDesign.as_string(table_design)
                         print(
                             "".join(
-                                list(
-                                    context_diff(
-                                        before.splitlines(keepends=True),
-                                        after.splitlines(keepends=True),
-                                    )
-                                )[2:]
+                                context_diff(
+                                    before.splitlines(keepends=True),
+                                    after.splitlines(keepends=True),
+                                    fromfile=relation.design_file_name,
+                                    tofile="bootstrap",
+                                )
                             )
                         )
                     continue
 
+                if update and relation.table_design == table_design:
+                    logger.info("No updates detected in table design for {:x}, skipping write".format(relation))
+                    continue
+
                 source_dir = os.path.join(local_dir, relation.source_name)
+
+                if relation.design_file_name is None:
+                    # TODO(tom): Drop the leading schema name for transformations.
+                    filename = os.path.join(
+                        source_dir,
+                        "{}-{}.yaml".format(relation.target_table_name.schema, relation.target_table_name.table),
+                    )
+                else:
+                    filename = relation.design_file_name
+
                 save_table_design(
-                    source_dir,
-                    relation.target_table_name,
                     relation.target_table_name,
                     table_design,
+                    filename,
                     overwrite=update or replace,
                     dry_run=dry_run,
-                    current_file=relation.design_file_name,
                 )

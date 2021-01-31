@@ -125,7 +125,7 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
     dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
     # We break with tradition and show the list of dependencies such that they can be copied into
     # a design file.
-    logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, json.dumps(dependencies))
+    logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, json.dumps(dependencies, sort_keys=True))
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
