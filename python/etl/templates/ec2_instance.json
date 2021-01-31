@@ -21,7 +21,7 @@
             "Tags": [
                 {
                     "Key": "Name",
-                    "Value": "redshift_etl (running bootstrap...)"
+                    "Value": "Arthur ETL (Initializing...)"
                 },
                 {
                     "Key": "user:project",

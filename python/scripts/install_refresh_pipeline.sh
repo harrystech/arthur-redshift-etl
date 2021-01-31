@@ -52,7 +52,7 @@ fi
 set -o xtrace
 
 # Note: "key" and "value" are lower-case keywords here.
-AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl"
+AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl key=user:data-pipeline-type,value=refresh"
 
 PIPELINE_NAME="ETL Refresh Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"

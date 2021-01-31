@@ -17,6 +17,7 @@ show_usage_and_exit() {
 
 Usage: `basename $0` [<environment>]
 
+Start an EMR cluster in AWS for running ETL steps.
 The environment defaults to "$DEFAULT_PREFIX".
 
 USAGE
@@ -72,7 +73,6 @@ APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" -
 EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_attributes )
 BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact bootstrap_actions )
 EMR_SERVICE_ROLE=$( arthur.py show_value resources.DataPipeline.role )
-AWS_TAGS="user:project=data-warehouse user:sub-project=dw-etl"
 
 # ===  Start cluster ===
 
@@ -83,7 +83,7 @@ aws emr create-cluster \
         --name "$CLUSTER_NAME" \
         --release-label "$CLUSTER_RELEASE_LABEL" \
         --applications "$CLUSTER_APPLICATIONS" \
-        --tags $AWS_TAGS \
+        --tags "user:project=data-warehouse" "user:sub-project=dw-etl" "Name=Arthur ETL EMR Cluster starting" \
         --log-uri "$CLUSTER_LOGS" \
         --enable-debugging \
         --region "$CLUSTER_REGION" \
@@ -110,7 +110,9 @@ sleep 10
 aws emr wait cluster-running --cluster-id "$CLUSTER_ID"
 
 set +x +v
-say "Your cluster is now running. All functions appear normal." || echo "Your cluster is now running. All functions appear normal."
+type say 2>/dev/null &&
+say "Your cluster is now running. All functions appear normal." ||
+echo "Your cluster is now running. All functions appear normal."
 
 KEYPAIR=$( arthur.py show_value resources.key_name )
 
