@@ -122,10 +122,7 @@ def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_v
     else:
         dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
         method = "catalog"
-    # Show a JSON-friendly list of dependencies such that they can be copied into a design file.
-    logger.info(
-        "Dependencies of '%s' per %s: %s", relation.identifier, method, json.dumps(dependencies, sort_keys=True)
-    )
+    logger.info("Dependencies of '%s' per %s: %s", relation.identifier, method, join_with_quotes(dependencies))
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
