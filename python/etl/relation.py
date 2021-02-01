@@ -369,7 +369,7 @@ class RelationDescription:
         return None
 
     @contextmanager
-    def matching_temporary_view(self, conn, assume_external_schema=False):
+    def matching_temporary_view(self, conn, as_late_binding_view=False):
         """
         Create a temporary view (with a name loosely based around the reference passed in).
 
@@ -379,9 +379,9 @@ class RelationDescription:
 
         with etl.db.log_error():
             ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
-            if assume_external_schema or any(dep.is_external for dep in self.dependencies):
-                ddl_stmt += "\nWITH NO SCHEMA BINDING"
+            if as_late_binding_view:
                 temp_view.is_late_binding_view = True
+                ddl_stmt += "\nWITH NO SCHEMA BINDING"
 
             logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)
             etl.db.execute(conn, ddl_stmt)
@@ -647,8 +647,7 @@ if __name__ == "__main__":
 
     import simplejson as json
 
-    from etl.design.bootstrap import make_item_sorter
-    from etl.json_encoder import FancyJsonEncoder
+    import etl.design
 
     config_dir = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
     uri_parts = ("file", "localhost", "schemas")
@@ -670,4 +669,4 @@ if __name__ == "__main__":
         descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
 
     native = [d.table_design for d in descriptions]
-    print(json.dumps(native, cls=FancyJsonEncoder, default=str, indent=4, item_sort_key=make_item_sorter()))
+    print(json.dumps(native, indent="    ", item_sort_key=etl.design.TableDesign.make_item_sorter()))

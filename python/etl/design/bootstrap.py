@@ -17,7 +17,7 @@ import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.design import Attribute, ColumnDefinition, TableDesign
-from etl.names import TableName, TableSelector, join_with_quotes
+from etl.names import TableName, TableSelector, TempTableName, join_with_quotes
 from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     """Retrieve table definition (column names and types)."""
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s`
     # works in the editor.
-    if getattr(table_name, "is_late_binding_view", False):
+    if isinstance(table_name, TempTableName) and table_name.is_late_binding_view:
         stmt = """
             SELECT col_name AS "name"
                  , col_type AS "sql_type"
@@ -171,7 +171,11 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
 
 
 def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
-    """Lookup dependencies (other tables)."""
+    """
+    Lookup dependencies (other relations).
+
+    Note that this will return an empty list for a late-binding view.
+    """
     # See https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
     stmt = """
         SELECT DISTINCT
@@ -190,6 +194,24 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
         """
     dependencies = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [TableName(**row).identifier for row in dependencies]
+
+
+def fetch_dependency_hints(cx: connection, stmt: str) -> List[str]:
+    """
+    Parse a query plan for hints of which relations we might depend on.
+
+    This is still a bit under construction.
+    """
+    logger.debug("Looking at query plan to find dependencies")
+    s3_scan = re.compile(r"\s*->  S3 (?:Seq Scan|Nested Subquery) (\w+\.\w+) location:")
+    plan = etl.db.explain(cx, stmt)
+
+    dependencies = []
+    for row in plan:
+        match = s3_scan.match(row)
+        if match:
+            dependencies.append(match.groups()[0])
+    return sorted(dependencies)
 
 
 def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
@@ -241,7 +263,7 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
 
 
 def create_partial_table_design_for_transformation(
-    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update_keys: Union[List, None] = None
+    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update_keys: Union[List, None] = None
 ):
     """
     Create a partial design that's applicable to transformations.
@@ -258,7 +280,10 @@ def create_partial_table_design_for_transformation(
             del column["expression"]
             del column["source_sql_type"]  # expression and source_sql_type always travel together
 
-    dependencies = fetch_dependencies(conn, tmp_view_name)
+    if tmp_view_name.is_late_binding_view:
+        dependencies = fetch_dependency_hints(conn, relation.query_stmt)
+    else:
+        dependencies = fetch_dependencies(conn, tmp_view_name)
     if dependencies:
         table_design["depends_on"] = dependencies
 
@@ -321,7 +346,7 @@ def update_column_definition(new_column: dict, old_column: dict):
 
 
 def create_table_design_for_ctas(
-    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
+    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
 ):
     """
     Create new table design for a CTAS.
@@ -336,7 +361,7 @@ def create_table_design_for_ctas(
 
 
 def create_table_design_for_view(
-    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
+    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
 ):
     """
     Create (and return) new table design suited for a view.
@@ -509,7 +534,11 @@ def bootstrap_transformations(
             current_source_name = relation.kind if relation.design_file_name else None
             assert (source_name or current_source_name) in ("CTAS", "VIEW")
 
-            with relation.matching_temporary_view(conn, assume_external_schema=not update) as tmp_view_name:
+            # Use a quick check of the query plan whether we depend on external schemas.
+            with relation.matching_temporary_view(conn, as_late_binding_view=True) as tmp_view_name:
+                has_s3_scans = any(fetch_dependency_hints(conn, relation.query_stmt))
+
+            with relation.matching_temporary_view(conn, as_late_binding_view=has_s3_scans) as tmp_view_name:
                 try:
                     if (source_name or current_source_name) == "CTAS":
                         table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update)

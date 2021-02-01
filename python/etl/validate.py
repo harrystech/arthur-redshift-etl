@@ -117,15 +117,15 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
 def validate_dependencies(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
     """Download the dependencies (based on a temporary view) and compare with table design."""
     if tmp_view_name.is_late_binding_view:
-        logger.warning(
-            "Dependencies of '%s' cannot be verified because it depends on an external table", relation.identifier
-        )
-        return
-
-    dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
-    # We break with tradition and show the list of dependencies such that they can be copied into
-    # a design file.
-    logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, json.dumps(dependencies, sort_keys=True))
+        dependencies = etl.design.bootstrap.fetch_dependency_hints(conn, relation.query_stmt)
+        method = "query plan"
+    else:
+        dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
+        method = "catalog"
+    # Show a JSON-friendly list of dependencies such that they can be copied into a design file.
+    logger.info(
+        "Dependencies of '%s' per %s: %s", relation.identifier, method, json.dumps(dependencies, sort_keys=True)
+    )
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
@@ -178,8 +178,9 @@ def validate_single_transform(conn: connection, relation: RelationDescription, k
     With a view created, we can extract dependency information and a list of columns
     to make sure table design and query match up.
     """
+    has_external_dependencies = any(dependency.is_external for dependency in relation.dependencies)
     try:
-        with relation.matching_temporary_view(conn) as tmp_view_name:
+        with relation.matching_temporary_view(conn, as_late_binding_view=has_external_dependencies) as tmp_view_name:
             validate_dependencies(conn, relation, tmp_view_name)
             validate_column_ordering(conn, relation, tmp_view_name)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
