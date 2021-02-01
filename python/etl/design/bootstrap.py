@@ -2,7 +2,6 @@ import logging
 import os.path
 import re
 from contextlib import closing
-from datetime import datetime
 from difflib import context_diff
 from typing import List, Mapping, Union
 
@@ -258,7 +257,7 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     ]
     table_design = {
         "name": "%s" % target_table_name.identifier,
-        "description": "Automatically generated on {0:%Y-%m-%d} at {0:%H:%M:%S}".format(datetime.utcnow()),
+        "description": "",
         "columns": [column.to_dict() for column in target_columns],
     }
     return table_design
@@ -317,15 +316,21 @@ def create_partial_table_design_for_transformation(
             column_lookup = {column["name"]: column for column in existing_table_design["columns"]}
             for column in table_design["columns"]:
                 update_column_definition(column, column_lookup.get(column["name"], {}))
-        # In case we're updating from an auto-designed file, fix the description to reflect the update.
-        table_design["description"] = table_design["description"].replace("generated", "updated", 1)
-        if "description" in update_keys and "description" in existing_table_design:
-            old_description = existing_table_design["description"]
-            if not old_description.startswith(("Automatically generated on", "Automatically updated on")):
-                table_design["description"] = old_description
-        for copy_key in update_keys:
-            if copy_key in existing_table_design and copy_key not in ("columns", "description"):
-                # TODO may have to cleanup columns in constraints and attributes!
+        if "description" in update_keys:
+            # Force the "description" to show up to encourage its use, but remove the old
+            # passive-aggressive descriptions.
+            if "description" not in existing_table_design:
+                table_design["description"] = ""
+            elif existing_table_design["description"].startswith(
+                ("Automatically generated on", "Automatically updated on")
+            ):
+                table_design["description"] = ""
+            else:
+                table_design["description"] = existing_table_design["description"]
+        # Now do the rest of the update keys.
+        for copy_key in (key for key in update_keys if key not in ("columns", "descriptions")):
+            if copy_key in existing_table_design:
+                # TODO(tom): May have to cleanup columns in constraints and attributes!
                 table_design[copy_key] = existing_table_design[copy_key]
     return table_design
 
