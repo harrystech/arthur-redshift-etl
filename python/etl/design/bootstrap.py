@@ -202,16 +202,33 @@ def fetch_dependency_hints(cx: connection, stmt: str) -> List[str]:
 
     This is still a bit under construction.
     """
-    logger.debug("Looking at query plan to find dependencies")
-    s3_scan = re.compile(r"\s*->  S3 (?:Seq Scan|Nested Subquery) (\w+\.\w+) location:")
-    plan = etl.db.explain(cx, stmt)
+    # Tried re.VERBOSE but escaping every space as \s was cluttering the RE.
+    scan_re = re.compile(
+        r"\s+->  (?:"
+        r"((?:S3 Seq Scan|S3 Nested Subquery) (?P<s3_table>\w+\.\w+)(?: \w+)? location:)|"
+        r"((?:XN Seq Scan on) (?P<xn_table>\w+))"
+        r")"
+    )
+    s3_dependencies = []
+    xn_dependencies = []
 
-    dependencies = []
+    logger.debug("Looking at query plan to find dependencies")
+    plan = etl.db.explain(cx, stmt)
     for row in plan:
-        match = s3_scan.match(row)
+        match = scan_re.match(row)
         if match:
-            dependencies.append(match.groups()[0])
-    return sorted(dependencies)
+            values = match.groupdict()
+            if values["s3_table"]:
+                s3_dependencies.append(values["s3_table"])
+            elif values["xn_table"]:
+                xn_dependencies.append(values["xn_table"])
+    if s3_dependencies and xn_dependencies:
+        # Unfortunately the tables aren't qualified with a schema so we can't use the info.
+        logger.warning(
+            "Found dependencies in S3 AND these not in S3: %s",
+            join_with_quotes(xn_dependencies),
+        )
+    return sorted(s3_dependencies)
 
 
 def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
