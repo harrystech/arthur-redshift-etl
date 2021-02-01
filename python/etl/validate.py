@@ -26,7 +26,6 @@ from operator import attrgetter
 from typing import Iterable, List, Optional
 
 import psycopg2
-import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl.db
@@ -122,10 +121,7 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
     else:
         dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
         method = "catalog"
-    # Show a JSON-friendly list of dependencies such that they can be copied into a design file.
-    logger.info(
-        "Dependencies of '%s' per %s: %s", relation.identifier, method, json.dumps(dependencies, sort_keys=True)
-    )
+    logger.info("Dependencies of '%s' per %s: %s", relation.identifier, method, join_with_quotes(dependencies))
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
