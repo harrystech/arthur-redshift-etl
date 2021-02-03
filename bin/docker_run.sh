@@ -152,10 +152,10 @@ case "$action" in
         set -o xtrace
         # shellcheck disable=SC2086
         docker run --rm --tty \
-            --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume ~/.aws:/home/arthur/.aws \
-            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+            --volume ~/.aws:/home/arthur/.aws \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
             $profile_arg \
             "arthur-redshift-etl:$tag" \
             arthur.py sync --force --deploy
@@ -164,13 +164,16 @@ case "$action" in
         set -o xtrace
         # shellcheck disable=SC2086
         docker run --rm --interactive --tty \
-            $publish_arg \
-            --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume "$(pwd):/opt/src/arthur-redshift-etl" \
+            --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+            --sysctl net.ipv4.tcp_keepalive_time=300 \
+            --sysctl net.ipv4.tcp_keepalive_intvl=60 \
+            --sysctl net.ipv4.tcp_keepalive_probes=9 \
             --volume ~/.aws:/home/arthur/.aws \
             --volume ~/.ssh:/home/arthur/.ssh:ro \
-            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
-            --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --volume "$data_warehouse_path:/opt/data-warehouse" \
+            --volume "$(pwd):/opt/src/arthur-redshift-etl" \
+            $publish_arg \
             $profile_arg \
             "arthur-redshift-etl:$tag"
         ;;
@@ -178,12 +181,15 @@ case "$action" in
         set -o xtrace
         # shellcheck disable=SC2086
         docker run --rm --interactive --tty \
-            $publish_arg \
-            --volume "$data_warehouse_path":/opt/data-warehouse \
+            --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+            --sysctl net.ipv4.tcp_keepalive_time=300 \
+            --sysctl net.ipv4.tcp_keepalive_intvl=60 \
+            --sysctl net.ipv4.tcp_keepalive_probes=9 \
             --volume ~/.aws:/home/arthur/.aws \
             --volume ~/.ssh:/home/arthur/.ssh:ro \
-            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
-            --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --volume "$data_warehouse_path:/opt/data-warehouse" \
+            $publish_arg \
             $profile_arg \
             "arthur-redshift-etl:$tag"
         ;;
@@ -191,10 +197,10 @@ case "$action" in
         set -o xtrace
         # shellcheck disable=SC2086
         docker run --rm --tty \
-            --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume ~/.aws:/home/arthur/.aws \
-            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+            --volume ~/.aws:/home/arthur/.aws \
+            --volume "$data_warehouse_path:/opt/data-warehouse" \
             $profile_arg \
             "arthur-redshift-etl:$tag" \
             upload_env.sh -y
@@ -203,10 +209,10 @@ case "$action" in
         set -o xtrace
         # shellcheck disable=SC2086
         docker run --rm --tty \
-            --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume ~/.aws:/home/arthur/.aws \
-            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
+            --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+            --volume ~/.aws:/home/arthur/.aws \
+            --volume "$data_warehouse_path":/opt/data-warehouse \
             $profile_arg \
             "arthur-redshift-etl:$tag" \
             install_validation_pipeline.sh
