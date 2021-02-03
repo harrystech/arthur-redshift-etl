@@ -1257,7 +1257,7 @@ def show_downstream_dependents(
     current_index = {relation.identifier: i + 1 for i, relation in enumerate(selected_relations)}
     # Note that external tables are not in the list of relations (always level = 0),
     # and if a relation isn't part of downstream, they're considered built already (level = 0).
-    current_level = defaultdict(int)
+    current_level: Dict[str, int] = defaultdict(int)
     # Now set the level that we show so that it starts at 1 for the relations we're building here.
     # Pass 1: find out the largest level, ignoring pg_catalog dependencies.
     for relation in selected_relations:
