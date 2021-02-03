@@ -1247,21 +1247,34 @@ def show_downstream_dependents(
         for dependency in relation.dependencies:
             dependents[dependency.identifier].append(relation.identifier)
 
+    # See computation of execution order -- anything depending on pg_catalog must come last.
+    pg_catalog_dependency = {
+        dependency.identifier
+        for relation in selected_relations
+        for dependency in relation.dependencies
+        if dependency.schema == "pg_catalog"
+    }
     current_index = {relation.identifier: i + 1 for i, relation in enumerate(selected_relations)}
-    current_level = {relation.identifier: relation.execution_level for relation in selected_relations}
     # Note that external tables are not in the list of relations (always level = 0),
     # and if a relation isn't part of downstream, they're considered built already (level = 0).
-    for relation in selected_relations:
-        for dependency in relation.dependencies:
-            if dependency.identifier not in current_level:
-                current_level[dependency.identifier] = 0
+    current_level = defaultdict(int)
     # Now set the level that we show so that it starts at 1 for the relations we're building here.
+    # Pass 1: find out the largest level, ignoring pg_catalog dependencies.
+    for relation in selected_relations:
+        current_level[relation.identifier] = 1 + max(
+            (current_level[dependency.identifier] for dependency in relation.dependencies), default=0
+        )
+    # Pass 2: update levels assuming pg_catalog is built at that largest level so far.
+    pg_catalog_level = max(current_level.values())
+    for identifier in pg_catalog_dependency:
+        current_level[identifier] = pg_catalog_level
     for relation in selected_relations:
         current_level[relation.identifier] = 1 + max(
             (current_level[dependency.identifier] for dependency in relation.dependencies), default=0
         )
 
-    max_len = max(len(identifier) for identifier in current_level)
+    width_selected = max(len(identifier) for identifier in current_index)
+    width_dep = max(len(identifier) for identifier in current_level)
     line_template = (
         "{relation.identifier:{width}s}"
         " # kind={relation.kind} index={index:4d} level={level:3d}"
@@ -1278,14 +1291,14 @@ def show_downstream_dependents(
                 index=current_index[relation.identifier],
                 level=current_level[relation.identifier],
                 relation=relation,
-                width=max_len,
+                width=width_selected,
             )
         )
         if with_dependencies:
             for dependency in sorted(relation.dependencies):
                 print(
                     dependency_template.format(
-                        identifier=dependency.identifier, level=current_level[dependency.identifier], width=max_len
+                        identifier=dependency.identifier, level=current_level[dependency.identifier], width=width_dep
                     )
                 )
         if with_dependents:
@@ -1295,7 +1308,7 @@ def show_downstream_dependents(
                         identifier=dependent,
                         index=current_index[dependent],
                         level=current_level[dependent],
-                        width=max_len,
+                        width=width_dep,
                     )
                 )
 
