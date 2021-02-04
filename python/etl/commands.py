@@ -1220,8 +1220,18 @@ class ShowDownstreamDependentsCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme", "continue-from"])
-        parser.add_argument(
-            "--list-dependencies", help="show list of dependencies after every relation", action="store_true"
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "--list-dependencies",
+            help="deprecated in favor of --with-dependencies",
+            action="store_true",
+            dest="with_dependencies",
+        )
+        group.add_argument(
+            "--with-dependencies", help="show list of dependencies (downstream) for every relation", action="store_true"
+        )
+        group.add_argument(
+            "--with-dependents", help="show list of dependents (upstream) for every relation", action="store_true"
         )
 
     def callback(self, args, config):
@@ -1229,7 +1239,11 @@ class ShowDownstreamDependentsCommand(SubCommand):
             args, required_relation_selector=config.required_in_full_load_selector, return_all=True
         )
         etl.load.show_downstream_dependents(
-            relations, args.pattern, continue_from=args.continue_from, list_dependencies=args.list_dependencies
+            relations,
+            args.pattern,
+            continue_from=args.continue_from,
+            with_dependencies=args.with_dependencies,
+            with_dependents=args.with_dependents,
         )
 
 

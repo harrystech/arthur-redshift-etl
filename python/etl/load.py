@@ -48,6 +48,7 @@ import re
 import threading
 import time
 from calendar import timegm
+from collections import defaultdict
 from contextlib import closing
 from datetime import datetime, timedelta
 from functools import partial
@@ -1205,7 +1206,8 @@ def show_downstream_dependents(
     relations: List[RelationDescription],
     selector: TableSelector,
     continue_from: Optional[str] = None,
-    list_dependencies: Optional[bool] = False,
+    with_dependencies: Optional[bool] = False,
+    with_dependents: Optional[bool] = False,
 ) -> None:
     """
     List the execution order of loads or updates.
@@ -1214,7 +1216,7 @@ def show_downstream_dependents(
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
     """
-    relation_map = {relation.target_table_name: relation for relation in relations}
+    # Relations are directly selected by pattern or by being somewhere downstream of a selected one.
     selected_relations = etl.relation.select_in_execution_order(
         relations, selector, include_dependents=True, continue_from=continue_from
     )
@@ -1223,44 +1225,92 @@ def show_downstream_dependents(
 
     directly_selected_relations = etl.relation.find_matches(selected_relations, selector)
     selected = frozenset(relation.identifier for relation in directly_selected_relations)
-    immediate = set(selected)
-    for relation in selected_relations:
-        if relation.is_view_relation and any(dep.identifier in immediate for dep in relation.dependencies):
-            immediate.add(relation.identifier)
-    immediate -= selected
+    immediate_views = etl.relation.find_immediate_dependencies(selected_relations, selector)
+    immediate = frozenset(relation.identifier for relation in immediate_views)
     logger.info(
         "Execution order includes %d selected, %d immediate, and %d other downstream relation(s)",
         len(selected),
         len(immediate),
         len(selected_relations) - len(selected) - len(immediate),
     )
+    flag = {}
+    for relation in selected_relations:
+        if relation.identifier in selected:
+            flag[relation.identifier] = "selected"
+        elif relation.identifier in immediate:
+            flag[relation.identifier] = "immediate"
+        else:
+            flag[relation.identifier] = "dependent"
 
-    max_len = max(len(relation.identifier) for relation in selected_relations)
+    dependents = defaultdict(list)
+    for relation in relations:
+        for dependency in relation.dependencies:
+            dependents[dependency.identifier].append(relation.identifier)
+
+    # See computation of execution order -- anything depending on pg_catalog must come last.
+    pg_catalog_dependency = {
+        dependency.identifier
+        for relation in selected_relations
+        for dependency in relation.dependencies
+        if dependency.schema == "pg_catalog"
+    }
+    current_index = {relation.identifier: i + 1 for i, relation in enumerate(selected_relations)}
+    # Note that external tables are not in the list of relations (always level = 0),
+    # and if a relation isn't part of downstream, they're considered built already (level = 0).
+    current_level: Dict[str, int] = defaultdict(int)
+    # Now set the level that we show so that it starts at 1 for the relations we're building here.
+    # Pass 1: find out the largest level, ignoring pg_catalog dependencies.
+    for relation in selected_relations:
+        current_level[relation.identifier] = 1 + max(
+            (current_level[dependency.identifier] for dependency in relation.dependencies), default=0
+        )
+    # Pass 2: update levels assuming pg_catalog is built at that largest level so far.
+    pg_catalog_level = max(current_level.values())
+    for identifier in pg_catalog_dependency:
+        current_level[identifier] = pg_catalog_level
+    for relation in selected_relations:
+        current_level[relation.identifier] = 1 + max(
+            (current_level[dependency.identifier] for dependency in relation.dependencies), default=0
+        )
+
+    width_selected = max(len(identifier) for identifier in current_index)
+    width_dep = max(len(identifier) for identifier in current_level)
     line_template = (
-        "{relation.identifier:{width}s} # kind={relation.kind} index={index:4d} level={relation.level:3d}"
+        "{relation.identifier:{width}s}"
+        " # kind={relation.kind} index={index:4d} level={level:3d}"
         " flag={flag:9s}"
         " is_required={relation.is_required}"
     )
+    dependency_template = "  #<- {identifier:{width}s} level={level:3d}"
+    dependent_template = "  #-> {identifier:{width}s} index={index:4d} level={level:3d}"
 
-    for i, relation in enumerate(selected_relations):
-        if relation.identifier in selected:
-            flag = "selected"
-        elif relation.identifier in immediate:
-            flag = "immediate"
-        else:
-            flag = "dependent"
-        print(line_template.format(index=i + 1, relation=relation, width=max_len, flag=flag))
-        if list_dependencies:
+    for relation in selected_relations:
+        print(
+            line_template.format(
+                flag=flag[relation.identifier],
+                index=current_index[relation.identifier],
+                level=current_level[relation.identifier],
+                relation=relation,
+                width=width_selected,
+            )
+        )
+        if with_dependencies:
             for dependency in sorted(relation.dependencies):
-                if dependency in relation_map:
-                    print(
-                        "  #> {relation.identifier:{width}s} # level={relation.level:3d}".format(
-                            relation=relation_map[dependency], width=max_len
-                        )
+                print(
+                    dependency_template.format(
+                        identifier=dependency.identifier, level=current_level[dependency.identifier], width=width_dep
                     )
-                else:
-                    # Dependencies that are not described as relations are "external".
-                    print("  #> {relation.identifier:{width}s} # level=  0".format(relation=dependency, width=max_len))
+                )
+        if with_dependents:
+            for dependent in sorted(dependents[relation.identifier], key=lambda x: current_index[x]):
+                print(
+                    dependent_template.format(
+                        identifier=dependent,
+                        index=current_index[dependent],
+                        level=current_level[dependent],
+                        width=width_dep,
+                    )
+                )
 
 
 def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):
