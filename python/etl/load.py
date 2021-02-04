@@ -707,7 +707,7 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         if relation.is_required:
             logger.error("Exception information for required relation {:x}: {}".format(relation, message))
         else:
-            logger.warning("Exception information for relation {:x}: {}".format(relation, message))
+            logger.error("Exception information for relation {:x}: {}".format(relation, message))
         pool.putconn(conn, close=True)
         raise
     else:
@@ -913,7 +913,7 @@ def create_source_tables_when_ready(
 
     failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
-        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
@@ -972,7 +972,7 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
 
     failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
-        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
@@ -1009,7 +1009,7 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
 
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
-        logger.warning("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
     skipped = [
         relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation
     ]
