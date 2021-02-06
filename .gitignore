@@ -5,6 +5,9 @@
 *.pyc
 *.RData
 
+# NOTE that adding buildinfo here forces a full build when checking out a new branch
+/docs/.buildinfo
+
 # release information is created by upload_env.sh
 /python/etl/config/release.txt
 
@@ -14,7 +17,7 @@
 /schemas
 /tmp/
 
-# virtual environment and local install
+# virtual environment, local install and documentation build
 Brewfile.lock.json
 arthur_venv/
 venv/
@@ -22,8 +25,9 @@ venv/
 /dist/
 *.egg-info
 /.mypy_cache
+venv/
 
-# In case you accidentally download your credentials here
+# in case you accidentally download your credentials here
 credentials*
 
 # ignore jars

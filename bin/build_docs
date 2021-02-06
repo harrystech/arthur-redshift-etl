@@ -1,0 +1,29 @@
+#! /usr/bin/env bash
+
+set -o errexit -o nounset
+
+if [[ "${1-}" == "-h" ]]; then
+    cat <<USAGE
+    Usage: $0 [sphinx opts]
+
+Build or update documentation using Sphinx. Any commmand line args are passed to Sphinx.
+
+USAGE
+    exit 1
+fi
+
+echo "Updating documentation into ./docs"
+
+set -o verbose
+sphinx-build -b html ./docs_src ./build "$@"
+cp -a "./build/" "./docs/"
+
+set +o verbose
+echo "The HTML pages were copied into docs."
+
+cat <<OPEN_HTML
+
+To view the documentation, run:
+
+open docs/index.html
+OPEN_HTML
