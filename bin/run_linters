@@ -1,0 +1,8 @@
+#! /usr/bin/env bash
+
+set -o errexit -o nounset -o verbose
+
+black --config ./etc/pyproject.toml --check python/ setup.py
+isort --settings-path ./etc --check-only python/ setup.py
+flake8 python setup.py
+mypy python
