@@ -5,10 +5,13 @@
 *.pyc
 *.RData
 
-# NOTE that adding buildinfo here forces a full build when checking out a new branch
+# NOTE Adding buildinfo here forces a full build when checking out a new branch.
 /docs/.buildinfo
 
-# release information is created by upload_env.sh
+# Our github pages setup is broken. Until we fix it, ignore generated docs.
+/docs/
+
+# Release information is created by upload_env.sh
 /python/etl/config/release.txt
 
 # temp data (including generated files)
@@ -27,10 +30,10 @@ venv/
 /.mypy_cache
 venv/
 
-# in case you accidentally download your credentials here
+# In case you accidentally downloaded your credentials here.
 credentials*
 
-# ignore jars
+# Java packages (for drivers etc.)
 jars/
 
 # Mac stuff
