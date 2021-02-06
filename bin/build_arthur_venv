@@ -1,0 +1,18 @@
+#! /usr/bin/env bash
+
+set -o errexit -o nounset
+
+if [[ $# -ne 0 ]]; then
+    echo "Usage: $0 -- builds or updates your virtual environment in 'arthur_venv'"
+    exit 1
+fi
+
+echo "Creating or upating virutal environment in ./arthur_venv"
+python3 -m venv ./arthur_venv
+source arthur_venv/bin/activate
+
+echo "Creating or upating packages using pip..."
+python3 -m pip install --upgrade --requirement ./requirements-dev.txt
+
+echo "# To use this setup, You need to run:"
+echo "source arthur_venv/bin/activate"
