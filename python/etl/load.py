@@ -162,6 +162,10 @@ class LoadableRelation:
         self._relation_description = relation
         self.info = info
         self.skip_copy = skip_copy or relation.is_view_relation
+        # Special edition for 2021-02-07
+        if relation.source_name in ("email", "staging_email", "analytics"):
+            logger.error("Refusing to load data into '%s'", relation.identifier)
+            self.skip_copy = True
         self.failed = False
         self.use_staging = use_staging
         self.in_transaction = in_transaction
