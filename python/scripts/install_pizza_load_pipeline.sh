@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 
 START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+DEFAULT_TIMEOUT=6
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
+if [[ $# -lt 1 || $# -gt 3 || "$1" = "-h" ]]; then
     cat <<USAGE
 
 Pizza delivery! Right on time or it's free! Runs once, starting now.
 Expects S3 folder under prefix to already have all necessary manifests for source data.
 
-Usage: `basename $0` <environment> [<continue-from>]
+Usage: `basename $0` <environment> [<continue-from> [timeout]]
 
 If no relation is specified, this will run the loader for all relations.
 If a "continue-from" relation is specified, then the loader will start from that relation.
 (Use this option when the ETL just failed and you've fixed the reason for the failure.)
 If you specify ":transformations", then sources will be skipped and all transformations will be loaded.
+Optional timeout should be the number of hours pipeline is allowed to run. Defaults to $DEFAULT_TIMEOUT.
 
 Example: `basename $0` development :transformations
 
@@ -35,6 +37,7 @@ PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
 PROJ_ENVIRONMENT="$1"
 CONTINUE_FROM_RELATION="${2:-*}"
 START_DATE_TIME="$START_NOW"
+TIMEOUT="${4:-$DEFAULT_TIMEOUT}"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -74,6 +77,7 @@ aws datapipeline put-pipeline-definition \
     --parameter-values \
         myStartDateTime="$START_DATE_TIME" \
         mySelection="$CONTINUE_FROM_RELATION" \
+        myTimeout="$TIMEOUT" \
     --pipeline-id "$PIPELINE_ID"
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
