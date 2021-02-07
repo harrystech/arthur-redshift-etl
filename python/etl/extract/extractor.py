@@ -19,7 +19,7 @@ from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError
 from etl.relation import RelationDescription
 from etl.text import join_with_quotes
 from etl.timer import Timer
-from etl.util import call_with_retry
+from etl.util.retry import call_with_retry
 
 
 class Extractor:
