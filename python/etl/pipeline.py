@@ -16,7 +16,53 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
+class DataPipelineInstance:
+    def __init__(self, description):
+        self.instance_id = description["id"]
+        self.name = description["name"]
+        self.fields = {field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field}
+
+    def __lt__(self, other):
+        if self.actual_end_time != other.actual_end_time:
+            if self.actual_end_time is None:
+                return False
+            if other.actual_end_time is None:
+                return True
+            return self.actual_end_time < other.actual_end_time
+        if self.actual_start_time != other.actual_start_time:
+            if self.actual_start_time is None:
+                return False
+            if other.actual_start_time is None:
+                return True
+            return self.actual_start_time < other.actual_start_time
+        if self.status != other.status:
+            return self.status < other.status
+        return self.name < other.name
+
+    @property
+    def actual_end_time(self):
+        return self.fields.get("@actualEndTime")
+
+    @property
+    def actual_start_time(self):
+        return self.fields.get("@actualStartTime")
+
+    @property
+    def attempt_count(self):
+        return self.fields.get("@attemptCount")
+
+    @property
+    def instance_type(self):
+        return self.fields.get("type")
+
+    @property
+    def status(self):
+        return self.fields.get("@status")
+
+
 class DataPipeline:
+    client = boto3.client("datapipeline")
+
     def __init__(self, description):
         self.pipeline_id = description["pipelineId"]
         self.name = description["name"]
@@ -37,6 +83,36 @@ class DataPipeline:
     def state(self):
         return self.fields.get("@pipelineState", "---")
 
+    @classmethod
+    def list_all_pipelines(cls):
+        paginator = cls.client.get_paginator("list_pipelines")
+        response_iterator = paginator.paginate()
+        return response_iterator.search("pipelineIdList[].id")
+
+    @classmethod
+    def describe_pipelines(cls, pipeline_ids: List[str]):
+        chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
+        for ids_chunk in funcy.chunks(chunk_size, pipeline_ids):
+            resp = cls.client.describe_pipelines(pipelineIds=ids_chunk)
+            for description in resp["pipelineDescriptionList"]:
+                yield description
+
+    def _instance_ids(self):
+        paginator = self.client.get_paginator("query_objects")
+        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere="INSTANCE")
+        for response in response_iterator:
+            for id in response["ids"]:
+                yield id
+
+    def instances(self):
+        chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
+        object_ids = self._instance_ids()
+        paginator = self.client.get_paginator("describe_objects")
+        for ids_chunk in funcy.chunks(chunk_size, object_ids):
+            response_iterator = paginator.paginate(pipelineId=self.pipeline_id, objectIds=ids_chunk)
+            for pipeline_object in response_iterator.search("pipelineObjects[]"):
+                yield DataPipelineInstance(pipeline_object)
+
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     """
@@ -45,10 +121,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     The :selection should be a list of glob patterns to select specific pipelines by their ID.
     If the selection is an empty list, then all pipelines are used.
     """
-    client = boto3.client("datapipeline")
-    paginator = client.get_paginator("list_pipelines")
-    response_iterator = paginator.paginate()
-    all_pipeline_ids = response_iterator.search("pipelineIdList[].id")
+    all_pipeline_ids = DataPipeline.list_all_pipelines()
     if selection:
         selected_pipeline_ids = [
             pipeline_id for pipeline_id in all_pipeline_ids for glob in selection if fnmatch.fnmatch(pipeline_id, glob)
@@ -56,15 +129,13 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     else:
         selected_pipeline_ids = list(all_pipeline_ids)
 
-    dw_pipelines = []
-    chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
-    for ids_chunk in funcy.chunks(chunk_size, selected_pipeline_ids):
-        resp = client.describe_pipelines(pipelineIds=ids_chunk)
-        for description in resp["pipelineDescriptionList"]:
-            for tag in description["tags"]:
-                if tag["key"] == "user:project" and tag["value"] == "data-warehouse":
-                    dw_pipelines.append(DataPipeline(description))
-    return sorted(dw_pipelines, key=attrgetter("name"))
+    pipelines = []
+    for description in DataPipeline.describe_pipelines(selected_pipeline_ids):
+        for tag in description["tags"]:
+            if tag["key"] == "user:project" and tag["value"] == "data-warehouse":
+                pipelines.append(DataPipeline(description))
+                break
+    return sorted(pipelines, key=attrgetter("name"))
 
 
 def show_pipelines(selection: List[str]) -> None:
@@ -88,12 +159,12 @@ def show_pipelines(selection: List[str]) -> None:
         if len(pipelines) > 1:
             logger.warning("Selection matched more than one pipeline")
         logger.info(
-            "Currently active and selected pipelines: %s",
+            "Currently selected pipelines: %s",
             join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
         )
     else:
         logger.info(
-            "Currently active pipelines: %s",
+            "Available pipelines: %s",
             join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
         )
 
@@ -110,8 +181,44 @@ def show_pipelines(selection: List[str]) -> None:
         print()
         print(
             etl.text.format_lines(
-                [[key, pipeline.fields[key]] for key in sorted(pipeline.fields)],
+                [
+                    [key, pipeline.fields[key]]
+                    for key in sorted(
+                        funcy.project(
+                            pipeline.fields,
+                            [
+                                "@creationTime",
+                                "@healthStatus",
+                                "@healthStatusUpdatedTime",
+                                "@id",
+                                "@lastActivationTime",
+                                "@latestRunTime",
+                                "@pipelineState",
+                                "@scheduledEndTime",
+                                "@scheduledStartTime",
+                                "uniqueId",
+                            ],
+                        )
+                    )
+                ],
                 header_row=["Key", "Value"],
+            )
+        )
+        print()
+        print(
+            etl.text.format_lines(
+                [
+                    (
+                        instance.name,
+                        instance.instance_type,
+                        instance.status,
+                        instance.actual_start_time or "---",
+                        instance.actual_end_time or "---",
+                    )
+                    for instance in sorted(pipeline.instances())
+                ],
+                header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time"],
+                max_column_width=80,
             )
         )
 
