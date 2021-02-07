@@ -295,6 +295,13 @@ def ping(dsn):
             print(f"{cx.info.dbname} is alive")
 
 
+def single_statement(dsn, stmt, readonly=True):
+    """Run a single statement and return query results."""
+    with closing(connection(dsn, autocommit=True, readonly=readonly)) as cx:
+        with log_error():
+            return query(cx, stmt)
+
+
 def log_sql_error(exc):
     """
     Send information from psycopg2.Error instance to logfile.

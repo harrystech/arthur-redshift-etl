@@ -1,3 +1,15 @@
+"""
+Utilities to deal with templates.
+
+There are two families of templates: text and sql [*].
+
+"text" templates: these are used for configuration files and can access settings using a ${}
+    notation.
+
+"SQL" templates: these are similar to text templates but should evaluate to workign SQL code.
+
+[*] We play both flavors of music here, Country and Western.
+"""
 import fnmatch
 import logging
 import os.path
@@ -51,6 +63,11 @@ def list_templates(compact=False) -> None:
             print("{name:{width}s}: {filename}".format(name=name, filename=filename, width=width))
 
 
+def list_sql_templates(compact=False) -> None:
+    """Print available templates with SQL queries to stdout."""
+    print("...")
+
+
 def render_from_config(template_string, context=None):
     try:
         config_mapping = etl.config.get_config_map()
@@ -90,6 +107,10 @@ def render(template_name: str, compact=False) -> None:
             print(json.dumps(obj, indent="    ", sort_keys=True))
     else:
         print(rendered, end="")
+
+
+def render_sql(template_name: str) -> str:
+    return "SELECT 1"
 
 
 def show_value(name: str, default: Optional[str]) -> None:

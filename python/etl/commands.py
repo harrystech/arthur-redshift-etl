@@ -296,12 +296,13 @@ def build_full_parser(prog_name):
         dest="sub_command",
     )
     for klass in [
-        # Commands to deal with data warehouse as admin:
+        # Commands to deal with data warehouse as admin
         InitializeSetupCommand,
         ShowRandomPassword,
         CreateGroupsCommand,
         CreateUserCommand,
         UpdateUserCommand,
+        RunSqlCommand,
         # Commands to help with table designs and uploading them
         BootstrapSourcesCommand,
         BootstrapTransformationsCommand,
@@ -655,6 +656,30 @@ class UpdateUserCommand(SubCommand):
             etl.data_warehouse.update_user(
                 args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
             )
+
+
+class RunSqlCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "run_sql_template",
+            "run one of the canned queries",
+            "Run a query from the templates, optionally with a target relation,"
+            " or list all the available SQL templates.",
+        )
+
+    def add_arguments(self, parser):
+        group = parser.add_mutually_exclusive_group(required=True)
+        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("template", help="name of SQL template", nargs="?")
+
+    def callback(self, args, config):
+        if args.list:
+            etl.render_template.list_sql_templates()
+        else:
+            dsn = config.dsn_etl
+            stmt = etl.render_template.render_sql(args.template)
+            rows = etl.db.single_statement(dsn, stmt)
+            etl.db.print_result("Running template: '{}'".format(args.template), rows)
 
 
 class BootstrapSourcesCommand(SubCommand):
