@@ -73,12 +73,12 @@ from etl.errors import (
     RelationDataError,
     RequiredRelationLoadError,
     UpdateTableError,
-    retry,
 )
 from etl.names import TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.text import join_column_list, join_with_quotes
 from etl.timer import Timer
+from etl.util import call_with_retry
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -422,11 +422,10 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
         compupdate=compupdate,
         dry_run=dry_run,
     )
-
     if relation.in_transaction:
         copy_func()
     else:
-        retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), copy_func, logger)
+        call_with_retry(etl.config.get_config_int("arthur_settings.copy_data_retries"), copy_func)
 
 
 def insert_from_query(
@@ -453,11 +452,10 @@ def insert_from_query(
     insert_func = partial(
         etl.dialect.redshift.insert_from_query, conn, table_name, columns, query_stmt, dry_run=dry_run
     )
-
     if relation.in_transaction:
         insert_func()
     else:
-        retry(etl.config.get_config_int("arthur_settings.insert_data_retries"), insert_func, logger)
+        call_with_retry(etl.config.get_config_int("arthur_settings.insert_data_retries"), insert_func)
 
 
 def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
