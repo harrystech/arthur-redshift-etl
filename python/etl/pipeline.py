@@ -77,36 +77,35 @@ def show_pipelines(selection: List[str]) -> None:
     pipelines = list_pipelines(selection)
 
     if not pipelines:
-        logger.warning("Found no pipelines")
+        if selection:
+            logger.warning("Found no pipelines matching glob pattern")
+        else:
+            logger.warning("Found no pipelines")
         print("*** No pipelines found ***")
         return
 
-    if selection and len(pipelines) > 1:
-        logger.warning("Selection matches more than one pipeline")
-
-    if pipelines:
-        if selection:
-            logger.info(
-                "Currently active and selected pipelines: %s",
-                join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
-            )
-        else:
-            logger.info(
-                "Currently active pipelines: %s",
-                join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
-            )
-        print(
-            etl.text.format_lines(
-                [
-                    (pipeline.pipeline_id, pipeline.name, pipeline.health_status, pipeline.state)
-                    for pipeline in pipelines
-                ],
-                header_row=["Pipeline ID", "Name", "Health", "State"],
-                max_column_width=80,
-            )
+    if selection:
+        if len(pipelines) > 1:
+            logger.warning("Selection matched more than one pipeline")
+        logger.info(
+            "Currently active and selected pipelines: %s",
+            join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
         )
-    # Show additional details if we're looking at a specific pipeline.
-    if selection and len(pipelines) == 1:
+    else:
+        logger.info(
+            "Currently active pipelines: %s",
+            join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
+        )
+
+    print(
+        etl.text.format_lines(
+            [(pipeline.pipeline_id, pipeline.name, pipeline.health_status, pipeline.state) for pipeline in pipelines],
+            header_row=["Pipeline ID", "Name", "Health", "State"],
+            max_column_width=80,
+        )
+    )
+    # Show additional details only if we're looking at a single pipeline.
+    if len(pipelines) == 1:
         pipeline = pipelines[0]
         print()
         print(
