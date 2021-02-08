@@ -668,6 +668,7 @@ class RunSqlCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix"])
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument("-l", "--list", help="list available templates", action="store_true")
         group.add_argument("template", help="name of SQL template", nargs="?")
