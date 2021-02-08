@@ -6,7 +6,7 @@ There are two families of templates: text and sql [*].
 "text" templates: these are used for configuration files and can access settings using a ${}
     notation.
 
-"SQL" templates: these are similar to text templates but should evaluate to workign SQL code.
+"SQL" templates: these are similar to text templates but should evaluate to working SQL code.
 
 [*] We play both flavors of music here, Country and Western.
 """
@@ -113,7 +113,8 @@ def render(template_name: str, compact=False) -> None:
 
 def render_sql(template_name: str) -> str:
     """Return SQL query after filling in template."""
-    return render_string(template_name, "sql")
+    stmt = render_string(template_name, "sql")
+    return etl.text.whitespace_cleanup(stmt).rstrip(";")
 
 
 def show_value(name: str, default: Optional[str]) -> None:
