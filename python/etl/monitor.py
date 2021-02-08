@@ -603,10 +603,9 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
         ":epoch_seconds": epoch_seconds,
         ":finish_event": STEP_FINISH,
     }
-    if step is not None:
-        attribute_values[":step"] = step
     filter_exp = "event = :finish_event"
     if step is not None:
+        attribute_values[":step"] = step
         filter_exp += " and step = :step"
 
     ddb = DynamoDBStorage.factory()
@@ -822,16 +821,33 @@ def recently_extracted_targets(source_relations, start_time):
     return extracted_targets
 
 
-def summarize_events(relations, step: Optional[str] = None) -> None:
-    """Summarize latest ETL step for the given relations by showing elapsed time and row count."""
-    etl_info = _query_for_etls(step=step, days_ago=7)
-    if not len(etl_info):
-        logger.warning("Found no ETLs within the last 7 days")
-        return
-    latest_etl = sorted(etl_info, key=itemgetter("timestamp"))[-1]
-    latest_start = latest_etl["timestamp"]
-    logger.info("Latest ETL: %s", latest_etl)
+def summarize_events(
+    relations, step: Optional[str] = None, etl_id: Optional[str] = None, sort_order: Optional[str] = None
+) -> None:
+    """
+    Summarize latest ETL step for the given relations by showing elapsed time and row count.
 
+    This will pick through all events tied to one of:
+    * The specific ETL if the ETL ID is provided.
+    * The latest ETL of a specific step (e.g. load or extract).
+    * The latest ETL (any ID and any step).
+    """
+    if not etl_id:
+        etl_info = _query_for_etls(step=step, days_ago=7)
+        if not len(etl_info):
+            logger.warning("Found no ETLs within the last 7 days")
+            return
+        latest_etl = sorted(etl_info, key=itemgetter("timestamp"))[-1]
+    else:
+        raise NotImplementedError()
+    sort_key = sort_order or "timestamp"
+
+    logger.info(
+        "Selected ETL: %s (step: '%s', start: %s)",
+        latest_etl["etl_id"],
+        latest_etl["step"],
+        _format_output_column("timestamp", latest_etl["timestamp"]),
+    )
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
     query = EventsQuery(step)
@@ -839,7 +855,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     events = []
     schema_events = dict()  # type: Dict[str, Dict[str, Union[str, Decimal]]]
     for relation in tqdm(relations):
-        event = query(table, relation.identifier, latest_start)
+        event = query(table, relation.identifier, latest_etl["timestamp"])
         if event:
             event["rowcount"] = event.pop("extra.rowcount")
             events.append(dict(event, kind=relation.kind))
@@ -847,10 +863,10 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
             if schema not in schema_events:
                 schema_events[schema] = {
                     "target": schema,
-                    "kind": "---",
+                    "kind": "schema",
                     "step": event["step"],
                     "timestamp": Decimal(0),
-                    "event": "complete",
+                    "event": "sum",
                     "elapsed": Decimal(0),
                     "rowcount": Decimal(0),
                 }
@@ -864,7 +880,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
 
     keys = ["target", "kind", "step", "timestamp", "event", "elapsed", "rowcount"]
     rows = [[_format_output_column(key, info[key]) for key in keys] for info in events]
-    rows.sort(key=itemgetter(keys.index("timestamp")))
+    rows.sort(key=itemgetter(keys.index(sort_key), keys.index("target")))
     print(etl.text.format_lines(rows, header_row=keys))
 
 
