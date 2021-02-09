@@ -31,6 +31,7 @@ _arthur_completion()
                 promote_schemas
                 query_events
                 render_template
+                run_query
                 selftest
                 settings
                 show_ddl

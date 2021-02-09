@@ -239,10 +239,9 @@ def build_basic_parser(prog_name, description=None):
     Similarly, '--submit-to-cluster' is shared for all sub-commands.
     """
     parser = FancyArgumentParser(prog=prog_name, description=description, fromfile_prefix_chars="@")
-    group = parser.add_mutually_exclusive_group()
-
-    # Show different help message depending whether user has already set the environment variable.
     default_config = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
+
+    group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "-c",
         "--config",
@@ -293,6 +292,7 @@ def build_full_parser(prog_name):
         BootstrapTransformationsCommand,
         ValidateDesignsCommand,
         ExplainQueryCommand,
+        RunQueryCommand,
         ShowDdlCommand,
         SyncWithS3Command,
         # ETL commands to extract, load (or update), or transform
@@ -397,6 +397,13 @@ def add_standard_arguments(parser, options):
             "pattern",
             help="glob pattern or identifier to select table(s) or view(s)",
             nargs="*",
+            action=StorePatternAsSelector,
+        )
+    if "one-pattern" in options:
+        parser.add_argument(
+            "pattern",
+            help="glob pattern or identifier to select table or view",
+            nargs=1,
             action=StorePatternAsSelector,
         )
 
@@ -773,7 +780,7 @@ class ExtractToS3Command(MonitoredSubCommand):
     def callback(self, args, config):
         max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
         if max_partitions < 1:
-            raise InvalidArgumentError("Option for max partitions must be >= 1")
+            raise InvalidArgumentError("option for max partitions must be >= 1")
         if args.extractor not in ("sqoop", "spark", "manifest-only"):
             raise ETLSystemError("bad extractor value: {}".format(args.extractor))
 
@@ -1101,6 +1108,30 @@ class ValidateDesignsCommand(SubCommand):
             skip_sources=args.skip_sources_check,
             skip_dependencies=args.skip_dependencies_check,
         )
+
+
+class RunQueryCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "run_query",
+            "run transformation and print result",
+            "Run the query for a transformation and show results in a pretty table.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["one-pattern", "prefix", "scheme"])
+        parser.add_argument(
+            "-n",
+            "--limit",
+            help="limit the number of rows returned by the query",
+        )
+
+    def callback(self, args, config):
+        relations = self.find_relation_descriptions(args)
+        transformations = [relation for relation in relations if relation.is_transformation]
+        if len(transformations) != 1:
+            raise InvalidArgumentError("selected %d transformations" % len(transformations))
+        etl.load.run_query(transformations[0], args.limit)
 
 
 class ExplainQueryCommand(SubCommand):

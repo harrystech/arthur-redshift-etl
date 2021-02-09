@@ -136,6 +136,7 @@ def format_lines(value_rows, header_row=None, has_header=False, max_column_width
     Traceback (most recent call last):
     ValueError: unexpected row length: got 1, expected 2
     """
+    # TODO(tom): Open issue - Use tabulate from pypi #79
     if header_row is not None and has_header is True:
         raise ValueError("cannot have separate header row and mark first row as header")
     # Make sure that we are working with a list of lists of strings (and not generators and such).

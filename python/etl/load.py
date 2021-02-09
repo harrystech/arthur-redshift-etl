@@ -55,6 +55,7 @@ from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
 from psycopg2.extensions import connection  # only for type annotation
+from tabulate import tabulate
 
 import etl
 import etl.data_warehouse
@@ -1041,6 +1042,8 @@ def create_relations(
 
 # --- Section 5: "Callbacks" (functions that implement commands)
 
+# --- Section 5A: commands that modify tables and views
+
 
 def load_data_warehouse(
     all_relations: List[RelationDescription],
@@ -1200,6 +1203,26 @@ def update_data_warehouse(
 
     if run_vacuum:
         vacuum(tables, dry_run=dry_run)
+
+
+# --- Section 5B: commands that provide information about relations
+
+
+def run_query(relation: RelationDescription, limit=None):
+    """Run the query for the relation (which must be a transformation, not a source)."""
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    query_stmt = relation.query_stmt + "\nLIMIT %s"
+
+    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+        logger.info(
+            "Running query underlying '%s' (with 'LIMIT %s')",
+            relation.identifier,
+            limit if limit is not None else "NULL",
+        )
+        results = etl.db.query(conn, query_stmt, (limit,))
+    logger.info("Ran query underlying '%s' and received %d row(s) (%s)", relation.identifier, len(results), timer)
+
+    print(tabulate(results, headers=relation.unquoted_columns, tablefmt="psql"))
 
 
 def show_downstream_dependents(
