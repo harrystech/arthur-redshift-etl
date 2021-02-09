@@ -22,14 +22,15 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 class DataPipelineObject:
     def __init__(self, description):
-        self.object_id = description["id"]
         self.name = description.get("name")
+        self.object_id = description["id"]
+        self.ref_values = {field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field}
         self.string_values = {
             field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
-        self.ref_values = {field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field}
 
     def __lt__(self, other):
+        """Sort by actual end time, then start time, then status, finally on name."""
         if self.actual_end_time != other.actual_end_time:
             if self.actual_end_time is None:
                 return False
@@ -59,8 +60,16 @@ class DataPipelineObject:
         return self.string_values.get("@attemptCount")
 
     @property
+    def component_parent(self):
+        return self.ref_values.get("@componentParent")
+
+    @property
     def object_type(self):
         return self.string_values.get("type")
+
+    @property
+    def scheduled_start_time(self):
+        return self.string_values.get("@scheduledStartTime")
 
     @property
     def status(self):
@@ -71,8 +80,8 @@ class DataPipeline:
     client = boto3.client("datapipeline")
 
     def __init__(self, description):
-        self.pipeline_id = description["pipelineId"]
         self.name = description["name"]
+        self.pipeline_id = description["pipelineId"]
         self.string_values = {
             field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
@@ -81,40 +90,45 @@ class DataPipeline:
     def __str__(self):
         return "DataPipeline('{}','{}')".format(self.pipeline_id, self.name)
 
-    def describe_objects(self) -> dict:
+    def describe_objects(self, evaluate_expressions=False) -> dict:
         """Desribe all objects (components, instances, and attempts) for this pipeline."""
         return {
             sphere.lower(): {
                 object.object_id: {
-                    "string_values": object.string_values.copy(),
                     "name": object.name,
                     "ref_values": object.ref_values.copy(),
+                    "string_values": object.string_values.copy(),
                 }
-                for object in self.objects(sphere)
+                for object in self.objects(sphere, evaluate_expressions)
             }
             for sphere in ("COMPONENT", "INSTANCE", "ATTEMPT")
         }
 
-    @staticmethod
-    def as_json(pipelines) -> str:
-        """Return information about pipelines in JSON-formatted string."""
-        obj = {
-            "pipelines": {
-                pipeline.pipeline_id: {
-                    "name": pipeline.name,
-                    "string_values": pipeline.string_values.copy(),
-                    "tags": pipeline.tags.copy(),
-                    "objects": pipeline.describe_objects(),
-                }
-                for pipeline in pipelines
-            }
-        }
-        return json.dumps(obj, indent="    ", sort_keys=True)
+    def latest_instances(self):
+        """Group instances by their component and and return latest within each group."""
+        instances = self.objects("INSTANCE")
+        grouped = funcy.group_by(attrgetter("component_parent"), instances)
+        logger.info(
+            "Pipeline '%s' has %d components and %d instances, looking for latest instances",
+            self.pipeline_id,
+            len(grouped),
+            sum(map(len, grouped.values())),  # sum based on "grouped" b/c "instances" is generator
+        )
+        for component_parent in sorted(grouped):
+            yield sorted(grouped[component_parent], key=attrgetter("scheduled_start_time"))[0]
 
-    @classmethod
-    def delete_pipeline(cls, pipeline_id) -> str:
-        response = cls.client.delete_pipeline(pipelineId=pipeline_id)
-        return response["ResponseMetadata"]["RequestId"]
+    def objects(self, sphere, evaluate_expressions=False):
+        chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
+        object_ids = self._instance_ids(sphere)
+        paginator = self.client.get_paginator("describe_objects")
+        # Evaluation fails for components so block the flag here.
+        evaluate_expressions = evaluate_expressions and sphere in ("ATTEMPT", "INSTANCE")
+        for ids_chunk in funcy.chunks(chunk_size, object_ids):
+            response_iterator = paginator.paginate(
+                pipelineId=self.pipeline_id, objectIds=ids_chunk, evaluateExpressions=evaluate_expressions
+            )
+            for pipeline_object in response_iterator.search("pipelineObjects[]"):
+                yield DataPipelineObject(pipeline_object)
 
     @property
     def finished_time(self):
@@ -128,11 +142,36 @@ class DataPipeline:
     def state(self):
         return self.string_values.get("@pipelineState")
 
+    def _instance_ids(self, sphere):
+        paginator = self.client.get_paginator("query_objects")
+        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere=sphere)
+        for response in response_iterator:
+            for id in response["ids"]:
+                yield id
+
+    @staticmethod
+    def as_json(pipelines) -> str:
+        """Return information about pipelines in JSON-formatted string."""
+        # We avoid a dict comprehension here so that we can log per pipeline.
+        obj = {"pipelines": []}
+        for pipeline in pipelines:
+            logger.info("Collecting all objects belonging to pipeline '%s'", pipeline.pipeline_id)
+            obj["pipelines"].append(
+                {
+                    pipeline.pipeline_id: {
+                        "name": pipeline.name,
+                        "objects": pipeline.describe_objects(evaluate_expressions=True),
+                        "string_values": pipeline.string_values,
+                        "tags": pipeline.tags,
+                    }
+                }
+            )
+        return json.dumps(obj, indent="    ", sort_keys=True)
+
     @classmethod
-    def list_all_pipelines(cls):
-        paginator = cls.client.get_paginator("list_pipelines")
-        response_iterator = paginator.paginate()
-        return response_iterator.search("pipelineIdList[].id")
+    def delete_pipeline(cls, pipeline_id) -> str:
+        response = cls.client.delete_pipeline(pipelineId=pipeline_id)
+        return response["ResponseMetadata"]["RequestId"]
 
     @classmethod
     def describe_pipelines(cls, pipeline_ids: List[str]):
@@ -142,21 +181,11 @@ class DataPipeline:
             for description in resp["pipelineDescriptionList"]:
                 yield description
 
-    def _instance_ids(self, sphere):
-        paginator = self.client.get_paginator("query_objects")
-        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere=sphere)
-        for response in response_iterator:
-            for id in response["ids"]:
-                yield id
-
-    def objects(self, sphere):
-        chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
-        object_ids = self._instance_ids(sphere)
-        paginator = self.client.get_paginator("describe_objects")
-        for ids_chunk in funcy.chunks(chunk_size, object_ids):
-            response_iterator = paginator.paginate(pipelineId=self.pipeline_id, objectIds=ids_chunk)
-            for pipeline_object in response_iterator.search("pipelineObjects[]"):
-                yield DataPipelineObject(pipeline_object)
+    @classmethod
+    def list_all_pipelines(cls):
+        paginator = cls.client.get_paginator("list_pipelines")
+        response_iterator = paginator.paginate()
+        return response_iterator.search("pipelineIdList[].id")
 
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
@@ -235,7 +264,8 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
         return
 
     pipeline = pipelines.pop()
-    print()
+    instances = sorted(pipeline.latest_instances())
+
     print(
         etl.text.format_lines(
             [
@@ -272,7 +302,7 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
                     instance.actual_start_time or "---",
                     instance.actual_end_time or "---",
                 )
-                for instance in sorted(pipeline.objects("INSTANCE"))
+                for instance in sorted(instances)
             ],
             header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time"],
             max_column_width=80,
