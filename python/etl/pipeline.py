@@ -9,6 +9,7 @@ from typing import List
 
 import boto3
 import funcy
+import simplejson as json
 
 import etl.text
 from etl.text import join_with_quotes
@@ -19,11 +20,14 @@ logger.addHandler(logging.NullHandler())
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 
-class DataPipelineInstance:
+class DataPipelineObject:
     def __init__(self, description):
-        self.instance_id = description["id"]
-        self.name = description["name"]
-        self.fields = {field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field}
+        self.object_id = description["id"]
+        self.name = description.get("name")
+        self.string_values = {
+            field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
+        }
+        self.ref_values = {field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field}
 
     def __lt__(self, other):
         if self.actual_end_time != other.actual_end_time:
@@ -44,23 +48,23 @@ class DataPipelineInstance:
 
     @property
     def actual_end_time(self):
-        return self.fields.get("@actualEndTime")
+        return self.string_values.get("@actualEndTime")
 
     @property
     def actual_start_time(self):
-        return self.fields.get("@actualStartTime")
+        return self.string_values.get("@actualStartTime")
 
     @property
     def attempt_count(self):
-        return self.fields.get("@attemptCount")
+        return self.string_values.get("@attemptCount")
 
     @property
-    def instance_type(self):
-        return self.fields.get("type")
+    def object_type(self):
+        return self.string_values.get("type")
 
     @property
     def status(self):
-        return self.fields.get("@status")
+        return self.string_values.get("@status")
 
 
 class DataPipeline:
@@ -69,22 +73,60 @@ class DataPipeline:
     def __init__(self, description):
         self.pipeline_id = description["pipelineId"]
         self.name = description["name"]
-        self.fields = {
-            field["key"]: field["stringValue"]
-            for field in description["fields"]
-            if field["key"] != "*tags"  # tags are an ugly list of dicts
+        self.string_values = {
+            field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
+        self.tags = description["tags"]
 
     def __str__(self):
         return "DataPipeline('{}','{}')".format(self.pipeline_id, self.name)
 
+    def describe_objects(self) -> dict:
+        """Desribe all objects (components, instances, and attempts) for this pipeline."""
+        return {
+            sphere.lower(): {
+                object.object_id: {
+                    "string_values": object.string_values.copy(),
+                    "name": object.name,
+                    "ref_values": object.ref_values.copy(),
+                }
+                for object in self.objects(sphere)
+            }
+            for sphere in ("COMPONENT", "INSTANCE", "ATTEMPT")
+        }
+
+    @staticmethod
+    def as_json(pipelines) -> str:
+        """Return information about pipelines in JSON-formatted string."""
+        obj = {
+            "pipelines": {
+                pipeline.pipeline_id: {
+                    "name": pipeline.name,
+                    "string_values": pipeline.string_values.copy(),
+                    "tags": pipeline.tags.copy(),
+                    "objects": pipeline.describe_objects(),
+                }
+                for pipeline in pipelines
+            }
+        }
+        return json.dumps(obj, indent="    ", sort_keys=True)
+
+    @classmethod
+    def delete_pipeline(cls, pipeline_id) -> str:
+        response = cls.client.delete_pipeline(pipelineId=pipeline_id)
+        return response["ResponseMetadata"]["RequestId"]
+
+    @property
+    def finished_time(self):
+        return self.string_values.get("@finishedTime")
+
     @property
     def health_status(self):
-        return self.fields.get("@healthStatus", "---")
+        return self.string_values.get("@healthStatus")
 
     @property
     def state(self):
-        return self.fields.get("@pipelineState", "---")
+        return self.string_values.get("@pipelineState")
 
     @classmethod
     def list_all_pipelines(cls):
@@ -100,21 +142,21 @@ class DataPipeline:
             for description in resp["pipelineDescriptionList"]:
                 yield description
 
-    def _instance_ids(self):
+    def _instance_ids(self, sphere):
         paginator = self.client.get_paginator("query_objects")
-        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere="INSTANCE")
+        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere=sphere)
         for response in response_iterator:
             for id in response["ids"]:
                 yield id
 
-    def instances(self):
+    def objects(self, sphere):
         chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
-        object_ids = self._instance_ids()
+        object_ids = self._instance_ids(sphere)
         paginator = self.client.get_paginator("describe_objects")
         for ids_chunk in funcy.chunks(chunk_size, object_ids):
             response_iterator = paginator.paginate(pipelineId=self.pipeline_id, objectIds=ids_chunk)
             for pipeline_object in response_iterator.search("pipelineObjects[]"):
-                yield DataPipelineInstance(pipeline_object)
+                yield DataPipelineObject(pipeline_object)
 
 
 def list_pipelines(selection: List[str]) -> List[DataPipeline]:
@@ -141,12 +183,15 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     return sorted(pipelines, key=attrgetter("name"))
 
 
-def show_pipelines(selection: List[str]) -> None:
+def show_pipelines(selection: List[str], as_json=False) -> None:
     """
     List the currently installed pipelines, possibly using a subset based on the selection pattern.
 
+    If "as json" is chosen, then the output is JSON-formatted
+    and includes all fields, not just the ones shown in the tables.
+
     Without a selection, prints an overview of the pipelines.
-    With a selection, digs into details of each selected pipeline.
+    With selection of a single pipeline, digs into details of that selected pipeline.
     """
     pipelines = list_pipelines(selection)
 
@@ -155,7 +200,8 @@ def show_pipelines(selection: List[str]) -> None:
             logger.warning("Found no pipelines matching glob pattern")
         else:
             logger.warning("Found no pipelines")
-        print("*** No pipelines found ***")
+        if not as_json:
+            print("*** No pipelines found ***")
         return
 
     if selection:
@@ -170,60 +216,68 @@ def show_pipelines(selection: List[str]) -> None:
             "Available pipelines: %s",
             join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
         )
+    if as_json:
+        print(DataPipeline.as_json(pipelines))
+        return
 
     print(
         etl.text.format_lines(
-            [(pipeline.pipeline_id, pipeline.name, pipeline.health_status, pipeline.state) for pipeline in pipelines],
+            [
+                (pipeline.pipeline_id, pipeline.name, pipeline.health_status or "---", pipeline.state or "---")
+                for pipeline in pipelines
+            ],
             header_row=["Pipeline ID", "Name", "Health", "State"],
             max_column_width=80,
         )
     )
     # Show additional details only if we're looking at a single pipeline.
-    if len(pipelines) == 1:
-        pipeline = pipelines[0]
-        print()
-        print(
-            etl.text.format_lines(
-                [
-                    [key, pipeline.fields[key]]
-                    for key in sorted(
-                        funcy.project(
-                            pipeline.fields,
-                            [
-                                "@creationTime",
-                                "@healthStatus",
-                                "@healthStatusUpdatedTime",
-                                "@id",
-                                "@lastActivationTime",
-                                "@latestRunTime",
-                                "@pipelineState",
-                                "@scheduledEndTime",
-                                "@scheduledStartTime",
-                                "uniqueId",
-                            ],
-                        )
+    if len(pipelines) != 1:
+        return
+
+    pipeline = pipelines.pop()
+    print()
+    print(
+        etl.text.format_lines(
+            [
+                [key, pipeline.string_values[key]]
+                for key in sorted(
+                    funcy.project(
+                        pipeline.string_values,
+                        [
+                            "@creationTime",
+                            "@healthStatus",
+                            "@healthStatusUpdatedTime",
+                            "@id",
+                            "@lastActivationTime",
+                            "@latestRunTime",
+                            "@pipelineState",
+                            "@scheduledEndTime",
+                            "@scheduledStartTime",
+                            "uniqueId",
+                        ],
                     )
-                ],
-                header_row=["Key", "Value"],
-            )
+                )
+            ],
+            header_row=["Key", "Value"],
         )
-        print()
-        print(
-            etl.text.format_lines(
-                [
-                    (
-                        instance.name,
-                        instance.instance_type,
-                        instance.status,
-                        instance.actual_start_time or "---",
-                        instance.actual_end_time or "---",
-                    )
-                    for instance in sorted(pipeline.instances())
-                ],
-                header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time"],
-                max_column_width=80,
-            )
+    )
+    print()
+    print(
+        etl.text.format_lines(
+            [
+                (
+                    instance.name,
+                    instance.object_type,
+                    instance.status,
+                    instance.actual_start_time or "---",
+                    instance.actual_end_time or "---",
+                )
+                for instance in sorted(pipeline.objects("INSTANCE"))
+            ],
+            header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time"],
+            max_column_width=80,
         )
+    )
 
 
 def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
@@ -240,22 +294,20 @@ def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
     pipelines = [
         pipeline
         for pipeline in list_pipelines(selection)
-        if pipeline.fields["@pipelineState"] == "FINISHED"
-        and pipeline.fields.get("@finishedTime") < earliest_finished_time
+        if pipeline.state == "FINISHED" and pipeline.finished_time < earliest_finished_time
     ]
     if not pipelines:
         logger.warning("Found no finished pipelines (older than %s)", earliest_finished_time)
         return
 
-    client = boto3.client("datapipeline")
     for pipeline in pipelines:
         if dry_run:
             logger.info("Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
         else:
             logger.info("Trying to delete pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
-            response = client.delete_pipeline(pipelineId=pipeline.pipeline_id)
+            response = DataPipeline.delete_pipeline(pipeline.pipeline_id)
             logger.info(
                 "Succeeded to delete '%s' (request_id=%s)",
                 pipeline.pipeline_id,
-                response["ResponseMetadata"]["RequestId"],
+                response,
             )
