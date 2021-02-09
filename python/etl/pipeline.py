@@ -3,9 +3,10 @@
 import fnmatch
 import logging
 import os
+import textwrap
 from datetime import datetime, timedelta
 from operator import attrgetter
-from typing import List
+from typing import Dict, List
 
 import boto3
 import funcy
@@ -64,6 +65,16 @@ class DataPipelineObject:
         return self.ref_values.get("@componentParent")
 
     @property
+    def error_id(self):
+        return self.string_values.get("errorId")
+
+    @property
+    def error_message(
+        self,
+    ):
+        return self.string_values.get("errorMessage")
+
+    @property
     def object_type(self):
         return self.string_values.get("type")
 
@@ -103,6 +114,16 @@ class DataPipeline:
             }
             for sphere in ("COMPONENT", "INSTANCE", "ATTEMPT")
         }
+
+    def find_attempts_with_errors(self, instances):
+        """Return head attempts for given instances when there was an error."""
+        attempts = self.objects("ATTEMPT")
+        head_attempts = frozenset(
+            instance.ref_values["@headAttempt"] for instance in instances if "@headAttempt" in instance.ref_values
+        )
+        for attempt in attempts:
+            if attempt.object_id in head_attempts and "errorId" in attempt.string_values:
+                yield attempt
 
     def latest_instances(self):
         """Group instances by their component and and return latest within each group."""
@@ -153,7 +174,7 @@ class DataPipeline:
     def as_json(pipelines) -> str:
         """Return information about pipelines in JSON-formatted string."""
         # We avoid a dict comprehension here so that we can log per pipeline.
-        obj = {"pipelines": []}
+        obj: Dict[str, List] = {"pipelines": []}
         for pipeline in pipelines:
             logger.info("Collecting all objects belonging to pipeline '%s'", pipeline.pipeline_id)
             obj["pipelines"].append(
@@ -265,6 +286,7 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
 
     pipeline = pipelines.pop()
     instances = sorted(pipeline.latest_instances())
+    attempts_with_errors = sorted(pipeline.find_attempts_with_errors(instances))
 
     print(
         etl.text.format_lines(
@@ -308,6 +330,12 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             max_column_width=80,
         )
     )
+
+    for i, attempt in enumerate(attempts_with_errors):
+        if i == 0:
+            print()
+        print("*** {}: {} ***".format(attempt.name, attempt.error_id))
+        print(textwrap.indent(attempt.error_message, "| ", lambda line: True))
 
 
 def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
