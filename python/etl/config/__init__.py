@@ -158,7 +158,7 @@ def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     logger.info('Command line: "%s"', " ".join(sys.argv))
     logger.debug("Current working directory: '%s'", os.getcwd())
     logger.info(get_release_info())
-    logger.info(get_python_info())
+    logger.debug(get_python_info())
 
 
 def load_environ_file(filename: str) -> None:
@@ -267,7 +267,7 @@ def load_config(config_files: Sequence[str], default_file: str = "default_settin
             load_settings_file(filename, settings)
             count_settings += 1
         else:
-            logger.info("Skipping unknown config file '%s'", filename)
+            logger.debug("Skipping unknown config file '%s'", filename)
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:

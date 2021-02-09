@@ -12,8 +12,9 @@ set -e -u
 show_usage_and_exit() {
     cat <<USAGE
 
-Usage: `basename $0` [<environment>]
+Usage: $(basename $0) [<environment>]
 
+Start a new EC2 instance tied to the given environment.
 The environment defaults to "$DEFAULT_PREFIX".
 
 USAGE
@@ -21,15 +22,15 @@ USAGE
 }
 
 while getopts ":h" opt; do
-  case $opt in
-    h)
-      show_usage_and_exit
-      ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
-      exit 1
-      ;;
-  esac
+    case $opt in
+        h)
+            show_usage_and_exit
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
 done
 
 if [[ $# -gt 1 ]]; then
@@ -40,17 +41,18 @@ set -x
 
 # === Basic configuration ===
 
-PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix )
+PROJ_BUCKET=$(arthur.py show_value object_store.s3.bucket_name)
+PROJ_ENVIRONMENT=$(arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix)
 
 # === Derived configuration ===
 
-INSTANCE_NAME="Arthur (env=$PROJ_ENVIRONMENT\, user=$DEFAULT_PREFIX\, `date '+%s'`)"
+# This is more specific and allows us to see who started the instance.
+INSTANCE_NAME="Arthur ETL ($PROJ_BUCKET\, $PROJ_ENVIRONMENT\, user=$DEFAULT_PREFIX\, $(date '+%s'))"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
-if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
+if ! aws s3 ls "$BOOTSTRAP" >/dev/null; then
     set +x
     echo "Failed to find \"$BOOTSTRAP\""
     echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
@@ -59,17 +61,19 @@ fi
 
 # === Fill in config templates ===
 
-CLI_INPUT_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_instance )
-USER_DATA_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact cloud_init )
+CLI_INPUT_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_instance)
+USER_DATA_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact cloud_init)
 
 # ===  Start instance ===
 
 INSTANCE_ID_FILE="/tmp/instance_id_${USER}$$.json"
 trap "rm -f \"$INSTANCE_ID_FILE\"" EXIT
 
-aws ec2 run-instances --cli-input-json "$CLI_INPUT_JSON" --user-data "$USER_DATA_JSON" | tee "$INSTANCE_ID_FILE"
+aws ec2 run-instances --cli-input-json "$CLI_INPUT_JSON" --user-data "$USER_DATA_JSON" |
+    tee "$INSTANCE_ID_FILE" |
+    jq '.Instances[] | {Monitoring: .Monitoring, InstanceId: .InstanceId, ImageId: .ImageId}'
 
-INSTANCE_ID=`jq --raw-output < "$INSTANCE_ID_FILE" '.Instances[0].InstanceId'`
+INSTANCE_ID=$(jq --raw-output '.Instances[0].InstanceId' <"$INSTANCE_ID_FILE")
 
 if [[ -z "$INSTANCE_ID" ]]; then
     set +x
@@ -79,13 +83,16 @@ fi
 
 aws ec2 wait instance-exists --instance-ids "$INSTANCE_ID"
 aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+aws ec2 create-tags --resources "$INSTANCE_ID" --tags "Key=Name,Value=$INSTANCE_NAME"
 
-PUBLIC_DNS_NAME=`aws ec2 describe-instances --instance-ids "$INSTANCE_ID" |
-    jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'`
+PUBLIC_DNS_NAME=$(
+    aws ec2 describe-instances --instance-ids "$INSTANCE_ID" |
+    jq --raw-output '.Reservations[0].Instances[0].PublicDnsName'
+)
 
 set +x +v
 
-KEYPAIR=$( arthur.py show_value resources.key_name )
+KEYPAIR=$(arthur.py show_value resources.key_name)
 
 cat <<EOF
 # Give the EC2 instance a few more seconds to bootstrap before you try logging in with:
