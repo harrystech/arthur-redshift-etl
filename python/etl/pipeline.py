@@ -304,9 +304,12 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
     # Show additional details only if we're looking at a single pipeline.
     if len(pipelines) != 1:
         return
-    print()
 
     pipeline = pipelines.pop()
+    instances = sorted(pipeline.latest_instances())
+    attempts_with_errors = sorted(pipeline.find_attempts_with_errors(instances))
+
+    print()
     print(
         etl.text.format_lines(
             [
@@ -334,7 +337,7 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
         )
     )
 
-    instances = sorted(pipeline.latest_instances())
+    print()
     print(
         etl.text.format_lines(
             [
@@ -351,12 +354,11 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             max_column_width=80,
         )
     )
-    attempts_with_errors = sorted(pipeline.find_attempts_with_errors(instances))
     for i, attempt in enumerate(attempts_with_errors):
         if i == 0:
             print()
         print("*** {}: {} ***".format(attempt.name, attempt.error_id))
-        print(textwrap.indent(attempt.error_stack_trace, "| ", lambda line: True))
+        print(textwrap.indent(attempt.error_stack_trace, "|  ", lambda line: True))
 
 
 def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
