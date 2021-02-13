@@ -69,10 +69,10 @@ class DataPipelineObject:
         return self.string_values.get("errorId")
 
     @property
-    def error_message(
+    def error_stack_trace(
         self,
     ):
-        return self.string_values.get("errorMessage")
+        return self.string_values.get("errorStackTrace")
 
     @property
     def object_type(self):
@@ -136,7 +136,7 @@ class DataPipeline:
             sum(map(len, grouped.values())),  # sum based on "grouped" b/c "instances" is generator
         )
         for component_parent in sorted(grouped):
-            yield sorted(grouped[component_parent], key=attrgetter("scheduled_start_time"))[0]
+            yield sorted(grouped[component_parent], key=attrgetter("scheduled_start_time"))[-1]
 
     def objects(self, sphere, evaluate_expressions=False):
         chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
@@ -158,6 +158,21 @@ class DataPipeline:
     @property
     def health_status(self):
         return self.string_values.get("@healthStatus")
+
+    @property
+    def next_run_time(self):
+        value = self.string_values.get("@nextRunTime")
+        if not value:
+            return value
+
+        next_run_utc = datetime.fromisoformat(value)
+        minutes_remaining = int((next_run_utc - datetime.utcnow()).total_seconds() / 60)
+        if minutes_remaining < 3:
+            return "about to start"
+        if minutes_remaining < 100:
+            return f"{minutes_remaining} minutes"
+
+        return value
 
     @property
     def state(self):
@@ -273,21 +288,25 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
     print(
         etl.text.format_lines(
             [
-                (pipeline.pipeline_id, pipeline.name, pipeline.health_status or "---", pipeline.state or "---")
+                (
+                    pipeline.pipeline_id,
+                    pipeline.name,
+                    pipeline.health_status or "---",
+                    pipeline.state or "---",
+                    pipeline.next_run_time or "---",
+                )
                 for pipeline in pipelines
             ],
-            header_row=["Pipeline ID", "Name", "Health", "State"],
+            header_row=["Pipeline ID", "Name", "Health", "State", "Next Run Time"],
             max_column_width=80,
         )
     )
     # Show additional details only if we're looking at a single pipeline.
     if len(pipelines) != 1:
         return
+    print()
 
     pipeline = pipelines.pop()
-    instances = sorted(pipeline.latest_instances())
-    attempts_with_errors = sorted(pipeline.find_attempts_with_errors(instances))
-
     print(
         etl.text.format_lines(
             [
@@ -302,6 +321,7 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
                             "@id",
                             "@lastActivationTime",
                             "@latestRunTime",
+                            "@nextRunTime",
                             "@pipelineState",
                             "@scheduledEndTime",
                             "@scheduledStartTime",
@@ -313,7 +333,8 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             header_row=["Key", "Value"],
         )
     )
-    print()
+
+    instances = sorted(pipeline.latest_instances())
     print(
         etl.text.format_lines(
             [
@@ -330,12 +351,12 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             max_column_width=80,
         )
     )
-
+    attempts_with_errors = sorted(pipeline.find_attempts_with_errors(instances))
     for i, attempt in enumerate(attempts_with_errors):
         if i == 0:
             print()
         print("*** {}: {} ***".format(attempt.name, attempt.error_id))
-        print(textwrap.indent(attempt.error_message, "| ", lambda line: True))
+        print(textwrap.indent(attempt.error_stack_trace, "| ", lambda line: True))
 
 
 def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
