@@ -2,21 +2,22 @@
 
 set -o errexit -o nounset
 
-if [[ "${1-}" == "-h" ]]; then
-    cat <<USAGE
-    Usage: $0 [sphinx opts]
+case "${1-}" in
+    -h|--help|help)
+        cat <<USAGE
+Usage: $0 [sphinx opts]
 
 Build or update documentation using Sphinx. Any commmand line args are passed to Sphinx.
 
 USAGE
-    exit 1
-fi
+    exit
+esac
 
 echo "Updating documentation into ./docs"
 
 set -o verbose
-sphinx-build -b html ./docs_src ./build "$@"
-cp -a "./build/" "./docs/"
+sphinx-build -M html ./docs_src ./build "$@"
+cp -a "./build/html/" "./docs/"
 
 set +o verbose
 echo "The HTML pages were copied into docs."
@@ -25,5 +26,5 @@ cat <<OPEN_HTML
 
 To view the documentation, run:
 
-open docs/index.html
+open docs/html/index.html
 OPEN_HTML
