@@ -14,7 +14,7 @@ For user management, we require to have passwords for all declared users in a ~/
 
 import logging
 from contextlib import closing
-from typing import List
+from typing import List, Optional
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -163,7 +163,34 @@ def revoke_schema_permissions(conn: connection, schema: DataWarehouseSchema) -> 
         etl.db.revoke_select_and_write_on_all_tables_in_schema(conn, schema.name, writer_group)
 
 
-def _create_or_update_cluster_user(conn, user, only_update=False, dry_run=False):
+def create_groups(groups: Optional[List[str]] = None, dry_run=False) -> None:
+    """Create all groups from the data warehouse configuration or just those passed in."""
+    config = etl.config.get_dw_config()
+    config_groups = frozenset(group for schema in config.schemas for group in schema.groups)
+    if groups is None:
+        selected_groups = sorted(config_groups)
+    else:
+        for group in groups:
+            if group not in config_groups:
+                raise ValueError("group has not been configured: '{}'".format(group))
+        selected_groups = sorted(groups)
+    with closing(etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)) as conn:
+        _create_groups(conn, selected_groups, dry_run=dry_run)
+
+
+def _create_groups(conn: connection, groups: List[str], dry_run=False) -> None:
+    """Make sure that all groups in the list exist."""
+    with conn:
+        for group in groups:
+            if not etl.db.group_exists(conn, group):
+                if dry_run:
+                    logger.info("Dry-run: Skipping creating group '%s'", group)
+                else:
+                    logger.info("Creating group '%s'", group)
+                    etl.db.create_group(conn, group)
+
+
+def _create_or_update_cluster_user(conn: connection, user, only_update=False, dry_run=False):
     """
     Create user in its group, or add user to its group.
 
@@ -171,13 +198,8 @@ def _create_or_update_cluster_user(conn, user, only_update=False, dry_run=False)
     The connection may point to 'dev' database since users are not tied to a database (but the
     cluster).
     """
+    _create_groups(conn, [user.group], dry_run=dry_run)
     with conn:
-        if not etl.db.group_exists(conn, user.group):
-            if dry_run:
-                logger.info("Dry-run: Skipping creating group '%s'", user.group)
-            else:
-                logger.info("Creating group '%s'", user.group)
-                etl.db.create_group(conn, user.group)
         if only_update or etl.db.user_exists(conn, user.name):
             if dry_run:
                 logger.info("Dry-run: Skipping adding user '%s' to group '%s'", user.name, user.group)
