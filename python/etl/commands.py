@@ -285,6 +285,7 @@ def build_full_parser(prog_name):
         # Commands to deal with data warehouse as admin:
         InitializeSetupCommand,
         ShowRandomPassword,
+        CreateGroupsCommand,
         CreateUserCommand,
         UpdateUserCommand,
         # Commands to help with table designs and uploading them
@@ -566,6 +567,23 @@ class ShowRandomPassword(SubCommand):
         random_password = uuid.uuid4().hex
         example_password = random_password[:16].upper() + random_password[16:].lower()
         print(example_password)
+
+
+class CreateGroupsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "create_groups",
+            "create all groups from the configuration",
+            "Make sure that all groups mentioned in the configuration file actually exist."
+            " This allows to specify a group where the user is not also in the configuration.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+
+    def callback(self, args, config):
+        with etl.db.log_error():
+            etl.data_warehouse.create_groups(dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
