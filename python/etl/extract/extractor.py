@@ -5,7 +5,6 @@ Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data fil
 """
 import concurrent.futures
 import logging
-from functools import partial
 from itertools import groupby
 from operator import attrgetter
 from typing import Dict, List, Set
@@ -16,10 +15,11 @@ import etl.file_sets
 import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError, retry
+from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError
 from etl.relation import RelationDescription
 from etl.text import join_with_quotes
 from etl.timer import Timer
+from etl.util.retry import call_with_retry
 
 
 class Extractor:
@@ -53,9 +53,6 @@ class Extractor:
         self.logger = logging.getLogger(__name__)
         self.failed_sources = set()  # type: Set[str]
 
-    def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
-        raise NotImplementedError("Forgot to implement extract_table in {}".format(self.__class__.__name__))
-
     def options_info(self) -> List[str]:
         """
         Return list of "options" that describe the extract.
@@ -77,51 +74,69 @@ class Extractor:
             "table": relation.source_table_name.table,
         }
 
-    def extract_source(
-        self, source: DataWarehouseSchema, relations: List[RelationDescription]
-    ) -> List[RelationDescription]:
-        """For a given upstream source, iterate through given relations to extract the data."""
-        self.logger.info("Extracting %d relation(s) from source '%s'", len(relations), source.name)
-        failed = []
+    def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
+        raise NotImplementedError("forgot to implement extract_table in {}".format(self.__class__.__name__))
+
+    def extract_table_with_retry(
+        self, source: DataWarehouseSchema, relation: RelationDescription, current_index, final_index
+    ) -> bool:
+        """
+        Extract a single table and return whether that was successful.
+
+        Failing to extract a "required" table will raise an exception instead of returning False,
+        unless the "keep going" option was selected.
+        """
         extract_retries = etl.config.get_config_int("arthur_settings.extract_retries")
+        try:
+            with etl.monitor.Monitor(
+                relation.identifier,
+                "extract",
+                options=self.options_info(),
+                source=self.source_info(source, relation),
+                destination={"bucket_name": relation.bucket_name, "object_key": relation.manifest_file_name},
+                index={"current": current_index, "final": final_index, "name": source.name},
+                dry_run=self.dry_run,
+            ):
+                call_with_retry(extract_retries, self.extract_table, source, relation)
+        except ETLRuntimeError:
+            self.failed_sources.add(source.name)
+            if not relation.is_required:
+                self.logger.warning(
+                    "Extract failed for non-required relation '%s':", relation.identifier, exc_info=True
+                )
+                return False
+            if self.keep_going:
+                self.logger.warning(
+                    "Ignoring failure of required relation '%s' and proceeding as requested:",
+                    relation.identifier,
+                    exc_info=True,
+                )
+                return False
+            self.logger.error("Extract failed for required relation '%s'", relation.identifier)
+            raise
+        return True
+
+    def extract_source(self, source: DataWarehouseSchema, relations: List[RelationDescription]) -> List[str]:
+        """
+        Iterate through given relations to extarct data from (upstream) source schemas.
+
+        This will return a list of tables that failed to extract or raise an exception
+        if there was just one relation failing, it was required, and "keep going" was not active.
+        """
+        self.logger.info("Extracting %d relation(s) from source '%s'", len(relations), source.name)
+        failed_tables = []
         with Timer() as timer:
             for i, relation in enumerate(relations):
-                try:
-                    extract_func = partial(self.extract_table, source, relation)
-                    with etl.monitor.Monitor(
-                        relation.identifier,
-                        "extract",
-                        options=self.options_info(),
-                        source=self.source_info(source, relation),
-                        destination={"bucket_name": relation.bucket_name, "object_key": relation.manifest_file_name},
-                        index={"current": i + 1, "final": len(relations), "name": source.name},
-                        dry_run=self.dry_run,
-                    ):
-                        retry(extract_retries, extract_func, self.logger)
-                except ETLRuntimeError:
-                    self.failed_sources.add(source.name)
-                    failed.append(relation)
-                    if not relation.is_required:
-                        self.logger.warning(
-                            "Extract failed for non-required relation '%s':", relation.identifier, exc_info=True
-                        )
-                    elif self.keep_going:
-                        self.logger.warning(
-                            "Ignoring failure of required relation '%s' and proceeding as requested:",
-                            relation.identifier,
-                            exc_info=True,
-                        )
-                    else:
-                        self.logger.error("Extract failed for required relation '%s'", relation.identifier)
-                        raise
+                if not self.extract_table_with_retry(source, relation, i + 1, len(relations)):
+                    failed_tables.append(relation.identifier)
             self.logger.info(
                 "Finished extract from source '%s': %d succeeded, %d failed (%s)",
                 source.name,
-                len(relations) - len(failed),
-                len(failed),
+                len(relations) - len(failed_tables),
+                len(failed_tables),
                 timer,
             )
-        return failed
+        return failed_tables
 
     def extract_sources(self) -> None:
         """Iterate over sources to be extracted and parallelize extraction at the source level."""
@@ -129,8 +144,9 @@ class Extractor:
         self.failed_sources.clear()
         max_workers = len(self.schemas)
 
-        # TODO With Python 3.6, we should pass in a thread_name_prefix
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="extract-source"
+        ) as executor:
             futures = []
             for source_name, relation_group in groupby(self.relations, attrgetter("source_name")):
                 future = executor.submit(self.extract_source, self.schemas[source_name], list(relation_group))
@@ -140,11 +156,12 @@ class Extractor:
             else:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
         if self.failed_sources:
-            self.logger.warning("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
+            self.logger.error("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
 
-        # Note that iterating over result of futures may raise an exception (which surfaces
-        # exceptions from threads)
-        missing_tables = []  # type: List
+        # Note that iterating over result of futures may raise an exception which surfaces
+        # exceptions from threads. This happens when there is (at least) one required table
+        # that failed to extract.
+        missing_tables: List[str] = []
         for future in done:
             missing_tables.extend(future.result())
 
@@ -152,7 +169,7 @@ class Extractor:
             self.logger.warning(
                 "Failed to extract %d relation(s): %s",
                 len(missing_tables),
-                join_with_quotes(table_name.identifier for table_name in missing_tables),
+                join_with_quotes(missing_tables),
             )
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))

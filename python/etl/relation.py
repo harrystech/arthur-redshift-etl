@@ -144,9 +144,12 @@ class RelationDescription:
     @staticmethod
     def load_in_parallel(relations: List["RelationDescription"]) -> None:
         """Load all relations' table design file in parallel."""
+        max_workers = 8
+        logger.debug("Starting parallel load of %d table design file(s) on %d workers.", len(relations), max_workers)
         with etl.timer.Timer() as timer:
-            # TODO With Python 3.6, we should pass in a thread_name_prefix
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers, thread_name_prefix="load-parallel"
+            ) as executor:
                 executor.map(lambda relation: relation.load(), relations)
         logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
 

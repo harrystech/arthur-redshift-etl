@@ -6,12 +6,13 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional
 
 import funcy as fy
+import psycopg2
 
 import etl.config
 import etl.db
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import SqoopExecutionError
+from etl.errors import DataExtractError, SqoopExecutionError
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.relation import RelationDescription
 
@@ -51,7 +52,10 @@ class SqoopExtractor(DatabaseExtractor):
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop."""
-        table_size = self.fetch_source_table_size(source.dsn, relation)
+        try:
+            table_size = self.fetch_source_table_size(source.dsn, relation)
+        except psycopg2.OperationalError as exc:
+            raise DataExtractError("failed to fetch table size for '%s'" % relation.identifier) from exc
 
         connection_params_file_path = self.write_connection_params()
         password_file_path = self.write_password_file(source.dsn["password"])
@@ -59,10 +63,10 @@ class SqoopExtractor(DatabaseExtractor):
             source.dsn, relation, table_size, connection_params_file_path, password_file_path
         )
         options_file = self.write_options_file(args)
+        # TODO(tom): Guard against failure in S3
         self._delete_directory_before_write(relation)
 
         self.run_sqoop(options_file)
-
         self.write_manifest_file(relation, relation.bucket_name, relation.data_directory())
 
     def write_password_file(self, password: str) -> str:
@@ -210,16 +214,17 @@ class SqoopExtractor(DatabaseExtractor):
         """Need to first delete data directory since Sqoop won't overwrite (and can't delete)."""
         csv_prefix = relation.data_directory()
         deletable = sorted(etl.s3.list_objects_for_prefix(relation.bucket_name, csv_prefix))
-        if deletable:
-            if self.dry_run:
-                self.logger.info(
-                    "Dry-run: Skipping deletion of %d existing CSV file(s) in 's3://%s/%s'",
-                    len(deletable),
-                    relation.bucket_name,
-                    csv_prefix,
-                )
-            else:
-                etl.s3.delete_objects(relation.bucket_name, deletable, wait=True)
+        if not deletable:
+            return
+        if self.dry_run:
+            self.logger.info(
+                "Dry-run: Skipping deletion of %d existing CSV file(s) in 's3://%s/%s'",
+                len(deletable),
+                relation.bucket_name,
+                csv_prefix,
+            )
+        else:
+            etl.s3.delete_objects(relation.bucket_name, deletable, wait=True)
 
     def run_sqoop(self, options_file_path: str):
         """Run Sqoop in a sub-process with the help of the given options file."""
