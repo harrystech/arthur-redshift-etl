@@ -259,9 +259,11 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
             "Refused to initialize non-validation database '%s' without the --force option" % database_name
         )
     # Create all defined users which includes the ETL user needed before next step (so that
-    # database is owned by ETL)
+    # database is owned by ETL). Also create all groups referenced in the configuration.
     if with_user_creation:
+        groups = sorted(group for schema in config.schemas for group in schema.groups)
         with closing(etl.db.connection(config.dsn_admin, autocommit=True, readonly=dry_run)) as conn:
+            _create_groups(conn, groups, dry_run=dry_run)
             for user in config.users:
                 _create_or_update_cluster_user(conn, user, dry_run=dry_run)
 
