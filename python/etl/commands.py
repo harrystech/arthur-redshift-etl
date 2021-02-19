@@ -575,7 +575,9 @@ class CreateGroupsCommand(SubCommand):
             "create_groups",
             "create all groups from the configuration",
             "Make sure that all groups mentioned in the configuration file actually exist."
-            " This allows to specify a group where the user is not also in the configuration.",
+            " (This allows to specify a group (as reader or writer) on a schema when that"
+            " group does not appear with a user and thus may not have been previously"
+            " created using a 'create_user' call.)",
         )
 
     def add_arguments(self, parser):
