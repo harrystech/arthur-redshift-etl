@@ -294,6 +294,7 @@ def build_full_parser(prog_name):
         ExplainQueryCommand,
         RunQueryCommand,
         ShowDdlCommand,
+        CreateIndexCommand,
         SyncWithS3Command,
         # ETL commands to extract, load (or update), or transform
         ExtractToS3Command,
@@ -1176,6 +1177,27 @@ class ShowDdlCommand(SubCommand):
             etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
         ]
         etl.dialect.show_ddl(descriptions)
+
+
+class CreateIndexCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "create_index",
+            "create Markdown-formatted index of schemas and tables",
+            "Create an index that lists by schema the tables available."
+            " It is possible to filter by the groups that have access.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern"])
+        parser.add_argument("--group", help="filter by reader group")
+
+    def callback(self, args, config):
+        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
+        descriptions = [
+            etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
+        ]
+        etl.design.create_index(descriptions, group=args.group)
 
 
 class ListFilesCommand(SubCommand):
