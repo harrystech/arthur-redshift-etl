@@ -295,11 +295,12 @@ def ping(dsn):
             print(f"{cx.info.dbname} is alive")
 
 
-def single_statement(dsn, stmt, readonly=True):
-    """Run a single statement and return query results."""
+def run_statement_with_args(dsn, stmt: str, args: Optional[dict] = None, readonly=True):
+    """Run a single statement (possibly with args) and return query results."""
+    # TODO(tom): Switch to named args for all queries.
     with closing(connection(dsn, autocommit=True, readonly=readonly)) as cx:
         with log_error():
-            return query(cx, stmt)
+            return query(cx, stmt, args)
 
 
 def log_sql_error(exc):

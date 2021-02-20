@@ -672,14 +672,33 @@ class RunSqlCommand(SubCommand):
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument("-l", "--list", help="list available templates", action="store_true")
         group.add_argument("template", help="name of SQL template", nargs="?")
+        as_user = parser.add_mutually_exclusive_group()
+        as_user.add_argument(
+            "-a", "--as-admin-user", help="connect as admin user", action="store_true", dest="use_admin"
+        )
+        as_user.add_argument(
+            "-e", "--as-etl-user", help="connect as ETL user (default)", action="store_false", dest="use_admin"
+        )
+        parser.add_argument(
+            action=StorePatternAsSelector,
+            dest="schemas",
+            help="select schemas for the query (not all templates may use this)",
+            nargs="*",
+        )
 
     def callback(self, args, config):
         if args.list:
             etl.render_template.list_sql_templates()
         else:
-            dsn = config.dsn_etl
-            stmt = etl.render_template.render_sql(args.template)
-            rows = etl.db.single_statement(dsn, stmt)
+            try:
+                args.schemas.base_schemas = [schema.name for schema in config.schemas]
+            except ValueError as exc:
+                raise InvalidArgumentError("schemas must be part of configuration") from exc
+
+            dsn = config.dsn_admin_on_etl_db if args.use_admin else config.dsn_etl
+            sql_stmt = etl.render_template.render_sql(args.template)
+            sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
+            rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
             etl.db.print_result("Running template: '{}'".format(args.template), rows)
 
 
