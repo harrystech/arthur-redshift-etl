@@ -12,9 +12,9 @@ files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 
 if [ -n "$files" ]; then
     echo "Checking for code style using black"
-    echo $files | (cd $tmpdir; xargs black --check --config ./etc/pyproject.toml; exit $?) || die "Blocking commit because of black issues"
+    echo $files | (cd $tmpdir; xargs black --check ; exit $?) || die "Blocking commit because of black issues"
     echo "Checking for sorting of imports"
-    echo $files | (cd $tmpdir; xargs isort --settings-path ./etc --check-only; exit $?) || die "Blocking commit because of isort issues"
+    echo $files | (cd $tmpdir; xargs isort --check-only; exit $?) || die "Blocking commit because of isort issues"
     echo "Checking for PEP8 violations"
     echo $files | (cd $tmpdir; xargs flake8; exit $?) || die "Blocking commit because of PEP8 (flake8) issues"
 fi
