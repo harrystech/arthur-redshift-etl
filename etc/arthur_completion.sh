@@ -17,6 +17,7 @@ _arthur_completion()
                 auto_design
                 bootstrap_sources
                 bootstrap_transformations
+                create_index
                 create_schemas
                 create_user
                 delete_finished_pipelines
@@ -31,6 +32,7 @@ _arthur_completion()
                 promote_schemas
                 query_events
                 render_template
+                run_query
                 selftest
                 settings
                 show_ddl

@@ -1,5 +1,11 @@
 import logging
 import re
+from collections import OrderedDict
+from typing import Dict, List, Optional
+
+from tabulate import tabulate
+
+from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -80,3 +86,31 @@ class ColumnDefinition:
             mapping_type,
             attribute.not_null,
         )
+
+
+def create_index(relations: List[RelationDescription], group: Optional[str]) -> None:
+    """
+    Create an "index" pages with Markdown that lists all schemas and their tables.
+
+    The parameter group, when used, filters schemas to those that can be accessed
+    by that group.
+    """
+    # TODO(tom): Make sure that group is valid group if passed in.
+    schemas: Dict[str, dict] = OrderedDict()
+    for relation in relations:
+        if not group or group in relation.schema_config.reader_groups:
+            schema = relation.target_table_name.schema
+            if schema not in schemas:
+                schemas[schema] = {"description": relation.schema_config.description or "", "tables": []}
+            schemas[schema]["tables"].append(
+                (relation.target_table_name.table, relation.table_design.get("description") or "")
+            )
+    if schemas:
+        print("# List Of Tables By Schema\n")
+
+    for i, (schema_name, schema_info) in enumerate(schemas.items()):
+        if i:
+            print()
+        print(f"## {schema_name}\n\n{schema_info['description']}\n")
+
+        print(tabulate(schema_info["tables"], headers=("Table", "Description"), tablefmt="pipe"))

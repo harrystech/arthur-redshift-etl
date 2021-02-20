@@ -61,7 +61,7 @@
         "botocore.credentials": {
             "qualname": "botocore.credentials",
             "handlers": [ "file" ],
-            "level": "DEBUG",
+            "level": "INFO",
             "propagate": 0
         },
         "boto3": {
