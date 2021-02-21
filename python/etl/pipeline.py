@@ -75,6 +75,10 @@ class DataPipelineObject:
         return self.string_values.get("errorStackTrace")
 
     @property
+    def log_location(self):
+        return self.string_values.get("@logLocation")
+
+    @property
     def object_type(self):
         return self.string_values.get("type")
 
@@ -357,8 +361,9 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
     for i, attempt in enumerate(attempts_with_errors):
         if i == 0:
             print()
-        print("*** {}: {} ***".format(attempt.name, attempt.error_id))
+        print(f"*** {attempt.name}: {attempt.error_id} ***")
         print(textwrap.indent(attempt.error_stack_trace, "|  ", lambda line: True))
+        print(f"Log location: {attempt.log_location}")
 
 
 def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
