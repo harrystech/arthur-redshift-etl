@@ -1,5 +1,3 @@
-#! /usr/bin/env python3
-
 """
 Low-level database routines.
 
@@ -18,13 +16,14 @@ import os
 import os.path
 import re
 from contextlib import closing, contextmanager
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 from urllib.parse import unquote
 
 import pgpasslib
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+from psycopg2.extensions import connection as Connection  # only used for typing
 
 import etl.text
 from etl.errors import ETLRuntimeError
@@ -339,7 +338,7 @@ def log_error():
 # ---- DATABASE ----
 
 
-def drop_and_create_database(cx, database, owner):
+def drop_and_create_database(cx: Connection, database: str, owner: str) -> None:
     exists = query(cx, """SELECT 1 FROM pg_catalog.pg_database WHERE datname = '{}'""".format(database))
     if exists:
         execute(cx, """DROP DATABASE {}""".format(database))
@@ -349,11 +348,11 @@ def drop_and_create_database(cx, database, owner):
 # ---- USERS and GROUPS ----
 
 
-def create_group(cx, group):
+def create_group(cx: Connection, group: str) -> None:
     execute(cx, """CREATE GROUP "{}" """.format(group))
 
 
-def group_exists(cx, group) -> bool:
+def group_exists(cx: Connection, group: str) -> bool:
     rows = query(
         cx,
         """
@@ -429,7 +428,10 @@ def user_exists(cx, user) -> bool:
 # ---- SCHEMAS ----
 
 
-def select_schemas(cx, names) -> List[str]:
+def select_schemas(cx: Connection, names: Iterable[str]) -> List[str]:
+    """Return the subset of the schema names that actually exist in the database."""
+    # Make sure to evaluate the names arg only once.
+    names = tuple(names)
     rows = query(
         cx,
         """
@@ -437,60 +439,59 @@ def select_schemas(cx, names) -> List[str]:
           FROM pg_catalog.pg_namespace
          WHERE nspname IN %s
         """,
-        (tuple(names),),
+        (names,),
     )
     found = frozenset(row[0] for row in rows)
     # Instead of an ORDER BY clause, keep original order.
     return [name for name in names if name in found]
 
 
-def drop_schema(cx, name):
-    execute(cx, """DROP SCHEMA IF EXISTS "{}" CASCADE""".format(name))
+def drop_schema(cx: Connection, name: str) -> None:
+    execute(cx, f'DROP SCHEMA IF EXISTS "{name}" CASCADE')
 
 
-def alter_schema_rename(cx, old_name, new_name):
-    execute(cx, """ALTER SCHEMA {} RENAME TO "{}" """.format(old_name, new_name))
+def alter_schema_rename(cx: Connection, old_name: str, new_name: str) -> None:
+    execute(cx, f'ALTER SCHEMA {old_name} RENAME TO "{new_name}"')
 
 
-def create_schema(cx, schema, owner=None):
-    execute(cx, """CREATE SCHEMA IF NOT EXISTS "{}" """.format(schema))
+def create_schema(cx: Connection, schema: str, owner: Optional[str] = None) -> None:
+    execute(cx, f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
     if owner:
         # Because of the "IF NOT EXISTS" we need to expressly set owner in case there's a change
         # in ownership.
-        execute(cx, """ALTER SCHEMA "{}" OWNER TO "{}" """.format(schema, owner))
+        execute(cx, f'ALTER SCHEMA "{schema}" OWNER TO "{owner}"')
 
 
-def grant_usage(cx, schema, group):
-    execute(cx, """GRANT USAGE ON SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
+def grant_usage(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
+    execute(cx, f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_group_list}')
 
 
-def grant_all_on_schema_to_user(cx, schema, user):
-    execute(cx, """GRANT ALL PRIVILEGES ON SCHEMA "{}" TO "{}" """.format(schema, user))
+def grant_all_on_schema_to_user(cx: Connection, schema: str, user: str) -> None:
+    execute(cx, f'GRANT ALL PRIVILEGES ON SCHEMA "{schema}" TO "{user}"')
 
 
-def revoke_usage(cx, schema, group):
-    execute(cx, """REVOKE USAGE ON SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
+def revoke_usage(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
+    execute(cx, f'REVOKE USAGE ON SCHEMA "{schema}" FROM {quoted_group_list}')
 
 
-def grant_select_on_all_tables_in_schema(cx, schema, group):
-    execute(cx, """GRANT SELECT ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group))
+def grant_select_on_all_tables_in_schema(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
+    execute(cx, f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_group_list}')
 
 
-def revoke_select_on_all_tables_in_schema(cx, schema, group):
-    execute(cx, """REVOKE SELECT ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group))
-
-
-def grant_select_and_write_on_all_tables_in_schema(cx, schema, group):
-    execute(
-        cx, """GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" TO GROUP "{}" """.format(schema, group)
-    )
-
-
-def revoke_select_and_write_on_all_tables_in_schema(cx, schema, group):
+def grant_select_and_write_on_all_tables_in_schema(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
     execute(
         cx,
-        """REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{}" FROM GROUP "{}" """.format(schema, group),
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_group_list}',
     )
+
+
+def revoke_all_on_all_tables_in_schema(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
+    execute(cx, f'REVOKE ALL ON ALL TABLES IN SCHEMA "{schema}" FROM {quoted_group_list}')
 
 
 # ---- TABLES ----
@@ -541,18 +542,3 @@ def revoke_select(cx, schema, table, group):
 
 def alter_table_owner(cx, schema, table, owner):
     execute(cx, """ALTER TABLE "{}"."{}" OWNER TO {} """.format(schema, table, owner))
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 2:
-        print("Usage: {} dsn_string".format(sys.argv[0]))
-        print()
-        print('Hint: Try your local machine: {} "postgres://${{USER}}@localhost:5432/${{USER}}"'.format(sys.argv[0]))
-        sys.exit(1)
-
-    logging.basicConfig(level=logging.DEBUG)
-    dsn_dict_ = parse_connection_string(sys.argv[1])
-    with log_error():
-        ping(dsn_dict_)

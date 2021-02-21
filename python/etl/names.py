@@ -15,7 +15,7 @@ from typing import List, Optional
 
 import etl.config
 from etl.errors import ETLSystemError
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 
 def as_staging_name(name):
@@ -463,7 +463,7 @@ class TableSelector:
         if len(self._patterns) == 0:
             return "['*.*']"
         else:
-            return "[{}]".format(join_with_quotes(p.identifier for p in self._patterns))
+            return "[{}]".format(join_with_single_quotes(p.identifier for p in self._patterns))
 
     def match_schema(self, schema) -> bool:
         """

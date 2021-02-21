@@ -76,7 +76,7 @@ from etl.errors import (
 )
 from etl.names import TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
-from etl.text import join_column_list, join_with_quotes
+from etl.text import join_with_double_quotes, join_with_single_quotes
 from etl.timer import Timer
 from etl.util.retry import call_with_retry
 
@@ -203,7 +203,9 @@ class LoadableRelation:
         identifiers = [dependent.identifier for dependent in dependents]
         if identifiers:
             logger.warning(
-                "Continuing while leaving %d relation(s) empty: %s", len(identifiers), join_with_quotes(identifiers)
+                "Continuing while leaving %d relation(s) empty: %s",
+                len(identifiers),
+                join_with_single_quotes(identifiers),
             )
 
     @property
@@ -359,11 +361,11 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
         if dry_run:
             logger.info(
                 "Dry-run: Skipping granting of select access on {:x} to {}".format(
-                    relation, join_with_quotes(reader_groups)
+                    relation, join_with_single_quotes(reader_groups)
                 )
             )
         else:
-            logger.info("Granting select access on {:x} to {}".format(relation, join_with_quotes(reader_groups)))
+            logger.info("Granting select access on {:x} to {}".format(relation, join_with_single_quotes(reader_groups)))
             for reader in reader_groups:
                 etl.db.grant_select(conn, target.schema, target.table, reader)
 
@@ -371,11 +373,11 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
         if dry_run:
             logger.info(
                 "Dry-run: Skipping granting of write access on {:x} to {}".format(
-                    relation, join_with_quotes(writer_groups)
+                    relation, join_with_single_quotes(writer_groups)
                 )
             )
         else:
-            logger.info("Granting write access on {:x} to {}".format(relation, join_with_quotes(writer_groups)))
+            logger.info("Granting write access on {:x} to {}".format(relation, join_with_single_quotes(writer_groups)))
             for writer in writer_groups:
                 etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
 
@@ -507,7 +509,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
         ]
         insert_from_query(conn, relation, table_name=temp_name, columns=temp_columns, dry_run=dry_run)
 
-        inner_stmt = "SELECT {} FROM {}".format(join_column_list(relation.unquoted_columns), temp_name)
+        inner_stmt = "SELECT {} FROM {}".format(join_with_double_quotes(relation.unquoted_columns), temp_name)
         if relation.target_table_name.table.startswith("dim_"):
             missing_dimension = create_missing_dimension_row(relation.table_design["columns"])
             inner_stmt += "\nUNION ALL SELECT {}".format(", ".join(missing_dimension))
@@ -559,7 +561,7 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
 
     for constraint in constraints:
         [[constraint_type, columns]] = constraint.items()  # There will always be exactly one item.
-        quoted_columns = join_column_list(columns)
+        quoted_columns = join_with_double_quotes(columns)
         if constraint_type == "unique":
             condition = " AND ".join('"{}" IS NOT NULL'.format(name) for name in columns)
         else:
@@ -569,14 +571,14 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
         if dry_run:
             logger.info(
                 "Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
-                    constraint_type, relation, join_with_quotes(columns)
+                    constraint_type, relation, join_with_single_quotes(columns)
                 )
             )
             etl.db.skip_query(conn, statement)
         else:
             logger.info(
                 "Checking {} constraint in {:x} on column(s): {}".format(
-                    constraint_type, relation, join_with_quotes(columns)
+                    constraint_type, relation, join_with_single_quotes(columns)
                 )
             )
             results = etl.db.query(conn, statement)
@@ -917,7 +919,7 @@ def create_source_tables_when_ready(
 
     failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
-        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
@@ -976,7 +978,7 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
 
     failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
-        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
@@ -1013,12 +1015,12 @@ def create_transformations_sequentially(relations: List[LoadableRelation], wlm_q
 
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
-        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_quotes(failed))
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
     skipped = [
         relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation
     ]
     if 0 < len(skipped) < len(transformations):
-        logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_quotes(skipped))
+        logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_single_quotes(skipped))
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 

@@ -39,7 +39,7 @@ import etl.timer
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import CyclicDependencyError, ETLRuntimeError, MissingQueryError
 from etl.names import TableName, TableSelector, TempTableName
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -290,7 +290,9 @@ class RelationDescription:
             if file_set.design_file_name is not None:
                 relations.append(cls(file_set))
             else:
-                logger.warning("Found file(s) without matching table design: %s", join_with_quotes(file_set.files))
+                logger.warning(
+                    "Found file(s) without matching table design: %s", join_with_single_quotes(file_set.files)
+                )
 
         if required_relation_selector:
             set_required_relations(relations, required_relation_selector)
@@ -434,7 +436,7 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
             logger.info(
                 "The following dependencies for relation '%s' are not managed by Arthur: %s",
                 description.identifier,
-                join_with_quotes([dep.identifier for dep in unmanaged_dependencies]),
+                join_with_single_quotes([dep.identifier for dep in unmanaged_dependencies]),
             )
         if pg_catalog_dependencies:
             has_pg_catalog_dependencies.add(description.target_table_name)
@@ -442,11 +444,11 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
     if has_unknown_dependencies:
         logger.warning(
             "These relations were unknown during dependency ordering: %s",
-            join_with_quotes([dep.identifier for dep in known_unknowns]),
+            join_with_single_quotes([dep.identifier for dep in known_unknowns]),
         )
         logger.warning(
             "This caused these relations to have dependencies that are not known: %s",
-            join_with_quotes([dep.identifier for dep in has_unknown_dependencies]),
+            join_with_single_quotes([dep.identifier for dep in has_unknown_dependencies]),
         )
 
     # Make tables that depend on tables in pg_catalog depend on all our tables (except those

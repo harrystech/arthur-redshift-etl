@@ -12,7 +12,7 @@ import funcy
 import simplejson as json
 
 import etl.text
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
