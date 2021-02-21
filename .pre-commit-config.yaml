@@ -7,6 +7,7 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v2.3.0
     hooks:
+      - id: check-added-large-files
       - id: check-symlinks
       - id: debug-statements
       - id: end-of-file-fixer
@@ -20,6 +21,10 @@ repos:
     hooks:
       - id: cfn-python-lint
         files: cloudformation/.*\.(json|yml|yaml)$
+  - repo: https://github.com/PrincetonUniversity/blocklint
+    rev: v0.2.3
+    hooks:
+      - id: blocklint
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: v1.7.1
     hooks:
