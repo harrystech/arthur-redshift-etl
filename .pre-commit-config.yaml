@@ -1,11 +1,24 @@
 exclude: "^wiki/|^docs/|^log_processing/kibana/"
 
+# Hooks are sorted to go from basic, file stuff
+# to more and more complex tests.
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v2.3.0
     hooks:
       - id: check-symlinks
+      - id: debug-statements
       - id: end-of-file-fixer
+      - id: requirements-txt-fixer
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.26.0
+    hooks:
+      - id: yamllint
+  - repo: https://github.com/timothycrosley/isort
+    rev: 5.7.0
+    hooks:
+      - id: isort
   - repo: https://github.com/psf/black
     rev: 20.8b1
     hooks:
@@ -17,10 +30,10 @@ repos:
         additional_dependencies:
           - "flake8-docstrings==1.5.0"
           - "flake8-fixme==1.1.1"
-  - repo: https://github.com/timothycrosley/isort
-    rev: 5.7.0
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.7.1
     hooks:
-      - id: isort
+      - id: python-use-type-annotations
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v0.800
     hooks:
@@ -29,7 +42,3 @@ repos:
     rev: v2.10.0
     hooks:
       - id: pyupgrade
-  - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.26.0
-    hooks:
-      - id: yamllint
