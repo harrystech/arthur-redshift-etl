@@ -49,7 +49,7 @@ def update_dns_records(cluster_identifier, hosted_zone_name, hostname):
     leader_node = get_redshift_leader_info(cluster_identifier)
     vpc_id = get_vpc_id(cluster_identifier)
     zones = get_hosted_zones(hosted_zone_name)
-    fqdn = '.'.join((hostname, hosted_zone_name))
+    fqdn = ".".join((hostname, hosted_zone_name))
 
     client = boto3.client("route53")
 
@@ -58,8 +58,12 @@ def update_dns_records(cluster_identifier, hosted_zone_name, hostname):
         if hosted_zone["PrivateZone"]:
             ip_address = leader_node["PrivateIPAddress"]
             print("\n=====\n")
-            print("If you haven't done so already, make sure that the VPC {} is associated with this hosted zone: {}"
-                  .format(vpc_id, hosted_zone_id))
+            print(
+                (
+                    "If you haven't done so already, make sure that the "
+                    "VPC {} is associated with this hosted zone: {}"
+                ).format(vpc_id, hosted_zone_id)
+            )
             print("\n=====\n")
         else:
             ip_address = leader_node["PublicIPAddress"]
@@ -67,22 +71,20 @@ def update_dns_records(cluster_identifier, hosted_zone_name, hostname):
         response = client.change_resource_record_sets(
             HostedZoneId=hosted_zone_id,
             ChangeBatch={
-                'Changes': [
+                "Changes": [
                     {
-                        'Action': 'UPSERT',
-                        'ResourceRecordSet': {
-                            'Name': fqdn,
-                            'Type': 'A',
-                            'TTL': 900,
-                            'ResourceRecords': [
-                                {
-                                    'Value': ip_address
-                                },
-                            ]
-                        }
+                        "Action": "UPSERT",
+                        "ResourceRecordSet": {
+                            "Name": fqdn,
+                            "Type": "A",
+                            "TTL": 900,
+                            "ResourceRecords": [
+                                {"Value": ip_address},
+                            ],
+                        },
                     }
                 ]
-            }
+            },
         )
         print(response["ChangeInfo"])
 

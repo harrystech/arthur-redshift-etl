@@ -116,7 +116,7 @@ DATA_WAREHOUSE_ADMIN=postgres://admin:<password>@<host>:<port>/<dbname>?sslmode=
 The [INSTALL.md](INSTALL.md) file will explain how to setup a Docker image to run _Arthur_.
 
 Once you have that, getting to a prompt is easy:
-```bash
+```shell
 bin/run_arthur.sh ../warehouse-repo/config production
 ```
 
@@ -125,7 +125,7 @@ This command will set the path to the configuration files and default environmen
 ### Copying code into the S3 bucket
 
 From within the Docker container, use:
-```bash
+```shell
 upload_env.sh
 ```
 
@@ -136,7 +136,7 @@ As an alternative, you can use `bin/deploy_arthur.sh` from outside a container.
 ### Starting a cluster and submitting commands
 
 Start a cluster:
-```bash
+```shell
 launch_emr_cluster.sh
 ```
 
@@ -147,7 +147,7 @@ Now check for the output and pick up the cluster ID. There will be a line that l
 
 You can then use `arthur.py --submit "<cluster ID>"` instead of `arthur.py` in the examples below.
 Note that the `--submit` option must be between `arthur.py` and the sub-command in use, e.g.
-```bash
+```shell
 arthur.py --submit "<cluster ID>" load --prolix --prefix $USER
 ```
 
@@ -162,7 +162,7 @@ Don't forget to run `terminate_emr_cluster.sh` when you're done.
 | `initialize`  | Create schemas, groups and users |
 | `create_user`    | Create (or configure) users that are not mentioned in the configuration file |
 
-```bash
+```shell
 # The commands to setup the data warehouse users and groups or any database is by ADMIN (connected to `dev`)
 arthur.py initialize
 arthur.py initialize development --with-user-creation  # Must create users and groups on first call
@@ -178,7 +178,7 @@ arthur.py initialize development --with-user-creation  # Must create users and g
 | `validate`  | After making changes to the design files, validate that changes are consistent with the expected format and with respect to each other |
 | `sync` | Upload your local files to your data lake |
 
-```bash
+```shell
 # This will upload local files related to one schema into your folder inside the S3 bucket:
 arthur.py sync "<schema>"
 # This will upload local files for just one table
@@ -186,7 +186,7 @@ arthur.py sync "<schema>.<table>"
 ```
 
 Note that when running sync that involved changes of source schemas or configurations, you must use:
-```bash
+```shell
 arthur.py sync --force --deploy "<schema>.<table>"
 ```
 
@@ -195,7 +195,7 @@ arthur.py sync --force --deploy "<schema>.<table>"
 We prefer to have a short and succinct way to deploy our data warehouse files (configuration, design files and
 transformations) into production. So instead of starting a bash and running `sync`, just do:
 
-```bash
+```shell
 bin/deploy_with_arthur.sh -p aws-prod-profile ../repo/config_directory/ production
 ```
 
@@ -208,7 +208,7 @@ bin/deploy_with_arthur.sh -p aws-prod-profile ../repo/config_directory/ producti
 | `update` | Move data from upstream sources and let it percolate through |
 | `unload` | Take data from a relation in the data warehouse and extract as CSVs into S3 |
 
-```bash
+```shell
 arthur.py extract
 arthur.py load  # This will automatically create schemas and tables as necessary
 ```
@@ -250,7 +250,7 @@ opportunities to work on a "sub-tree" of the data warehouse.
 
 At the beginning it might be worthwhile to focus just on tables in source schemas -- those
 tables that get loaded using CSV files after `extract`.
-```bash
+```shell
 arthur.py show_downstream_dependents -q | grep 'kind=DATA' | tee sources.txt
 
 # List CSV files and manifests, then continue with upgrade etc.
@@ -261,7 +261,7 @@ Note that you should use the special value `:transformations` when you're intere
 to work with transformations.
 
 Example:
-```bash
+```shell
 arthur.py show_downstream_dependents -q --continue-from=:transformations | tee transformations.txt
 
 arthur.py sync @transformations.txt
@@ -277,7 +277,7 @@ While working on transformations or constraints, it might be useful to focus on 
 set of of tables that feed data into it.
 
 Example:
-```bash
+```shell
 arthur.py show_upstream_dependencies -q www.users | tee www_users.txt
 
 arthur.py sync www.users
@@ -297,7 +297,7 @@ AWS service templates can be filled out based on configuration in the ETL.
 Note this leaves references like `#{parameter}`, which are used by AWS tools, in place.
 
 Example:
-```bash
+```shell
 arthur.py render_template ec2_instance
 arthur.py show_value object_store.s3.bucket_name
 arthur.py show_vars object_store.s3.*
@@ -307,13 +307,13 @@ arthur.py show_vars object_store.s3.*
 
 A staging environment can help with deploying data that you'll be confident to release into production.
 
-```bash
+```shell
 arthur.py initialize staging
 arthur.py initialize staging --dry-run  # In case you want to see what happens but not lose all schemas.
 ```
 
 Once everything is working fine in staging, you can promote the code into production.
-```bash
+```shell
 sync_env.sh "<your S3 bucket>" staging production
 ```
 
@@ -351,14 +351,14 @@ python3 -m pip install --requirement requirements-linters.txt
 
 #### Running formatters locally
 
-```bash
+```shell
 black python/ setup.py
 isort python/ setup.py
 ```
 
 #### Running linters locally
 
-```bash
+```shell
 black --check python/ setup.py
 isort --check-only python/ setup.py
 flake8 python setup.py
@@ -367,9 +367,15 @@ mypy python
 
 ### Adding a pre-commit hook
 
-Use the the git pre-commit hook to run a PEP8 check automatically:
-```bash
-ln -s -f ../../githooks/pre-commit ./.git/hooks/pre-commit
+Use pre-commit to run linters automatically on commit:
+
+```shell
+pre-commit install
+```
+
+You can also run the linters directly:
+```shell
+pre-commit run
 ```
 
 ### References
@@ -445,7 +451,7 @@ git push
 ### Using command completion in the shell
 
 For the bash shell, there is a file to add command completion that allows to tab-complete schemas and table names.
-```bash
+```shell
 source etc/arthur_completion.sh
 ```
 (Within a Docker container, that happens automatically.)
