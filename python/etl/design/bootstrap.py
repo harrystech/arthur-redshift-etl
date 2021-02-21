@@ -229,7 +229,7 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
     (Note that only upstream tables can have constraints derived from inspecting the database.)
     """
     table_design = create_partial_table_design(conn, source_table_name, target_table_name)
-    table_design["source_name"] = "%s.%s" % (target_table_name.schema, source_table_name.identifier)
+    table_design["source_name"] = "{}.{}".format(target_table_name.schema, source_table_name.identifier)
     constraints = fetch_constraints(conn, source_table_name)
     if constraints:
         table_design["constraints"] = constraints
