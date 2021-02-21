@@ -367,11 +367,16 @@ mypy python
 
 ### Adding a pre-commit hook
 
-Use pre-commit to run linters automatically on commit:
+Use pre-commit to run linters automatically on commit.
+
+#### Installation
 
 ```shell
+brew bundle
 pre-commit install
 ```
+
+#### Usage
 
 You can also run the linters directly:
 ```shell
