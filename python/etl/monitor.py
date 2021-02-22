@@ -919,7 +919,7 @@ def test_run():
     index = {"current": 0, "final": len(schema_names) * len(table_names)}
 
     host = MemoryStorage.SERVER_HOST if MemoryStorage.SERVER_HOST else "localhost"
-    print("Creating events ... follow along at http://{0}:{1}/".format(host, MemoryStorage.SERVER_PORT))
+    print("Creating events ... follow along at http://{}:{}/".format(host, MemoryStorage.SERVER_PORT))
 
     with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
         for i, names in enumerate(itertools.product(schema_names, table_names)):

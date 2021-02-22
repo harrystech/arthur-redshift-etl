@@ -249,7 +249,9 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
         try:
             if unloaded.unload_target not in target_lookup:
                 raise TableDesignValidationError(
-                    "invalid target '%s' in unloadable relation '%s'" % (unloaded.unload_target, unloaded.identifier)
+                    "invalid target '{}' in unloadable relation '{}'".format(
+                        unloaded.unload_target, unloaded.identifier
+                    )
                 )
             else:
                 logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
@@ -348,7 +350,9 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     for column in table.table_design["columns"]:
         if column.get("not_null") and column["name"] not in current_is_not_null:
             raise TableDesignValidationError(
-                "not null constraint of column '%s' in '%s' not enforced upstream" % (column["name"], table.identifier)
+                "not null constraint of column '{}' in '{}' not enforced upstream".format(
+                    column["name"], table.identifier
+                )
             )
 
 

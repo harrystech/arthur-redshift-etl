@@ -115,7 +115,7 @@ class LoadableRelation:
         """Grab everything from the contained relation. Fail if it's actually not available."""
         if hasattr(self._relation_description, name):
             return getattr(self._relation_description, name)
-        raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, name))
+        raise AttributeError("'{}' object has no attribute '{}'".format(self.__class__.__name__, name))
 
     # This works although __str__ will get passed a 'LoadableRelation' object instead of a
     # 'RelationDescription' object.
@@ -186,7 +186,7 @@ class LoadableRelation:
     def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
         unpacked = [r._relation_description for r in relations]  # do DAG operations in terms of RelationDescriptions
         dependent_relations = etl.relation.find_dependents(unpacked, [self._relation_description])
-        dependent_relation_identifiers = set(r.identifier for r in dependent_relations)
+        dependent_relation_identifiers = {r.identifier for r in dependent_relations}
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
     def mark_failure(self, relations: List["LoadableRelation"], exc_info=True) -> None:
@@ -1342,7 +1342,7 @@ def show_upstream_dependencies(relations: List[RelationDescription], selector: T
         logger.warning("Found no matching relations for: %s", selector)
         return
 
-    dependencies = set(relation.identifier for relation in selected_relations)
+    dependencies = {relation.identifier for relation in selected_relations}
     for relation in execution_order[::-1]:
         if relation.identifier in dependencies:
             dependencies.update(dep.identifier for dep in relation.dependencies)

@@ -31,10 +31,10 @@ jobs:
         python3 -m pip install --requirement requirements-linters.txt
     - name: Lint with black
       run: |-
-        black --config ./etc/pyproject.toml --check python/ setup.py
+        black --check python/ setup.py
     - name: Lint with isort
       run: |-
-        isort --settings-path ./etc --check-only python/ setup.py
+        isort --check-only python/ setup.py
     - name: Lint with flake8
       run: |-
         flake8 python setup.py

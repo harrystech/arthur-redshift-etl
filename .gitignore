@@ -15,10 +15,11 @@
 /tmp/
 
 # virtual environment and local install
-venv/
+Brewfile.lock.json
 arthur_venv/
-/dist/
+venv/
 /build/
+/dist/
 *.egg-info
 /.mypy_cache
 

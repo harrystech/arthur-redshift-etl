@@ -1,3 +1,3 @@
---requirement requirements.txt
 --requirement requirements-linters.txt
+--requirement requirements.txt
 q>=2.6
