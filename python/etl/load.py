@@ -1206,21 +1206,23 @@ def update_data_warehouse(
 # --- Section 5B: commands that provide information about relations
 
 
-def run_query(relation: RelationDescription, limit=None):
+def run_query(relation: RelationDescription, limit=None, use_staging=False) -> None:
     """Run the query for the relation (which must be a transformation, not a source)."""
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    query_stmt = relation.query_stmt + "\nLIMIT %s"
 
-    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+    loadable_relation = LoadableRelation(relation, {}, use_staging)
+    query_stmt = loadable_relation.query_stmt + "\nLIMIT %(limit)s"
+
+    with Timer() as timer, closing(etl.db.connection(dsn_etl)) as conn:
         logger.info(
             "Running query underlying '%s' (with 'LIMIT %s')",
             relation.identifier,
             limit if limit is not None else "NULL",
         )
-        results = etl.db.query(conn, query_stmt, (limit,))
+        results = etl.db.query(conn, query_stmt, {"limit": limit})
     logger.info("Ran query underlying '%s' and received %d row(s) (%s)", relation.identifier, len(results), timer)
 
-    print(tabulate(results, headers=relation.unquoted_columns, tablefmt="psql"))
+    print(tabulate(results, headers=relation.unquoted_columns, tablefmt="presto"))
 
 
 def show_downstream_dependents(

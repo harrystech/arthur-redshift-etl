@@ -1135,13 +1135,20 @@ class RunQueryCommand(SubCommand):
             help="limit the number of rows returned by the query",
             type=int,
         )
+        parser.add_argument(
+            "--with-staging-schemas",
+            action="store_true",
+            default=False,
+            help="use the relations in staging schemas for the query",
+        )
 
     def callback(self, args, config):
         relations = self.find_relation_descriptions(args)
         transformations = [relation for relation in relations if relation.is_transformation]
         if len(transformations) != 1:
             raise InvalidArgumentError("selected %d transformations" % len(transformations))
-        etl.load.run_query(transformations[0], args.limit)
+        with etl.db.log_error():
+            etl.load.run_query(transformations[0], args.limit, args.with_staging_schemas)
 
 
 class ExplainQueryCommand(SubCommand):
