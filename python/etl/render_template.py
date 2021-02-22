@@ -44,6 +44,8 @@ def _find_templates(template_type: str) -> Dict[str, str]:
     lookup: Dict[str, str] = OrderedDict()
     templates = pkg_resources.resource_listdir("etl", os.path.join("templates", template_type))
     for filename in sorted(templates):
+        if filename == "README.md":
+            continue
         name = os.path.splitext(filename)[0]
         lookup[name] = os.path.join("templates", template_type, filename)
     return lookup
