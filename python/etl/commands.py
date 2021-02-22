@@ -1133,6 +1133,7 @@ class RunQueryCommand(SubCommand):
             "-n",
             "--limit",
             help="limit the number of rows returned by the query",
+            type=int,
         )
 
     def callback(self, args, config):
