@@ -24,6 +24,7 @@ setup(
         "python/scripts/compare_events.py",
         "python/scripts/install_extraction_pipeline.sh",
         "python/scripts/install_pizza_load_pipeline.sh",
+        "python/scripts/install_pizza_pipeline.sh",
         "python/scripts/install_rebuild_pipeline.sh",
         "python/scripts/install_refresh_pipeline.sh",
         "python/scripts/install_upgrade_pipeline.sh",
