@@ -2,11 +2,10 @@
 
 import fnmatch
 import logging
-import os
 import textwrap
 from datetime import datetime, timedelta
 from operator import attrgetter
-from typing import Dict, Iterable, List, Optional
+from typing import Iterable, List, Optional
 
 import boto3
 import funcy
@@ -17,8 +16,6 @@ from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 
 class DataPipelineObject:
@@ -73,9 +70,7 @@ class DataPipelineObject:
         return self.ref_values.get("@componentParent")
 
     @property
-    def error_stack_trace(
-        self,
-    ):
+    def error_stack_trace(self):
         return self.string_values.get("errorStackTrace")
 
     @property
@@ -110,19 +105,29 @@ class DataPipeline:
         """Describe all objects (components, instances, and attempts) for this pipeline."""
         return {
             sphere.lower(): {
-                object.object_id: {
-                    "name": object.name,
-                    "ref_values": object.ref_values.copy(),
-                    "string_values": object.string_values.copy(),
+                object_.object_id: {
+                    "name": object_.name,
+                    "ref_values": object_.ref_values,
+                    "string_values": object_.string_values,
                 }
-                for object in self.objects(sphere, evaluate_expressions)
+                for object_ in self.objects(sphere, evaluate_expressions)
             }
             for sphere in ("COMPONENT", "INSTANCE", "ATTEMPT")
         }
 
+    def describe_pipeline(self, evaluate_expressions=False) -> dict:
+        logger.info("Collecting all objects belonging to pipeline '%s'", self.pipeline_id)
+        return {
+            self.pipeline_id: {
+                "name": self.name,
+                "objects": self.describe_objects(evaluate_expressions=evaluate_expressions),
+                "string_values": self.string_values,
+                "tags": self.tags,
+            }
+        }
+
     def find_attempts_with_errors(self, instances: Iterable[DataPipelineObject]):
         """Return head attempts for given instances when there was an error."""
-        # Map head attempts back to their instance.
         instance_for_head_attempt = {
             instance.ref_values["@headAttempt"]: instance
             for instance in instances
@@ -133,25 +138,31 @@ class DataPipeline:
                 attempt.parent_object = instance_for_head_attempt[attempt.object_id]
                 yield attempt
 
+    def instance_ids(self, sphere: str):
+        paginator = self.client.get_paginator("query_objects")
+        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere=sphere)
+        for response in response_iterator:
+            for id_ in response["ids"]:
+                yield id_
+
     def latest_instances(self):
         """Group instances by their component and and return latest within each group."""
         component_lookup = {component.object_id: component for component in self.objects("COMPONENT")}
-        instances = self.objects("INSTANCE")
-        grouped = funcy.group_by(attrgetter("component_parent"), instances)
+        grouped_instances = funcy.group_by(attrgetter("component_parent"), self.objects("INSTANCE"))
         logger.info(
             "Pipeline '%s' has %d components and %d instances, looking for latest instances",
             self.pipeline_id,
-            len(grouped),
-            sum(map(len, grouped.values())),  # sum based on "grouped" b/c "instances" is generator
+            len(grouped_instances),
+            sum(map(len, grouped_instances.values())),
         )
-        for component_parent in sorted(grouped):
-            latest_instance = sorted(grouped[component_parent], key=attrgetter("scheduled_start_time"))[-1]
+        for component_parent in sorted(grouped_instances):
+            latest_instance = sorted(grouped_instances[component_parent], key=attrgetter("scheduled_start_time"))[-1]
             latest_instance.parent_object = component_lookup[component_parent]
             yield latest_instance
 
     def objects(self, sphere, evaluate_expressions=False):
         chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
-        object_ids = self._instance_ids(sphere)
+        object_ids = self.instance_ids(sphere)
         paginator = self.client.get_paginator("describe_objects")
         # Evaluation fails for components so block the flag here.
         evaluate_expressions = evaluate_expressions and sphere in ("ATTEMPT", "INSTANCE")
@@ -189,36 +200,16 @@ class DataPipeline:
     def state(self):
         return self.string_values.get("@pipelineState")
 
-    def _instance_ids(self, sphere):
-        paginator = self.client.get_paginator("query_objects")
-        response_iterator = paginator.paginate(pipelineId=self.pipeline_id, sphere=sphere)
-        for response in response_iterator:
-            for id in response["ids"]:
-                yield id
-
     @staticmethod
-    def as_json(pipelines, flatten=True) -> str:
+    def as_json(pipelines, evaluate_expressions=True) -> str:
         """
         Return information about pipelines in JSON-formatted string.
 
-        If flatten is True, then expressions are evaluated in th objects, e.g.
+        If evaluate_expressions is True, then expressions are evaluated in the objects, e.g.
         attempts gain referenced values from their instances.
-        If flatten is False, you will have to resolve references yourself.
+        If evaluate_expressions is False, you will have to resolve references yourself.
         """
-        # We could use a dict comprehension here but let's build that dict and log each pipeline.
-        obj: Dict[str, List] = {"pipelines": []}
-        for pipeline in pipelines:
-            logger.info("Collecting all objects belonging to pipeline '%s'", pipeline.pipeline_id)
-            obj["pipelines"].append(
-                {
-                    pipeline.pipeline_id: {
-                        "name": pipeline.name,
-                        "objects": pipeline.describe_objects(evaluate_expressions=flatten),
-                        "string_values": pipeline.string_values,
-                        "tags": pipeline.tags,
-                    }
-                }
-            )
+        obj = {"pipelines": [pipeline.describe_pipeline(evaluate_expressions) for pipeline in pipelines]}
         return json.dumps(obj, indent="    ", sort_keys=True)
 
     @classmethod
@@ -269,11 +260,11 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
     """
     List the currently installed pipelines, possibly using a subset based on the selection pattern.
 
-    If "as json" is chosen, then the output is JSON-formatted
-    and includes all fields, not just the ones shown in the tables.
-
     Without a selection, prints an overview of the pipelines.
     With selection of a single pipeline, digs into details of that selected pipeline.
+
+    If "as json" is chosen, then the output is JSON-formatted
+    and includes all fields, not just the ones shown in the tables.
     """
     pipelines = list_pipelines(selection)
 
@@ -318,11 +309,12 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             max_column_width=80,
         )
     )
-    # Show additional details only if we're looking at a single pipeline.
-    if len(pipelines) != 1:
-        return
+    if len(pipelines) == 1:
+        _show_pipeline_details(pipelines.pop())
 
-    pipeline = pipelines.pop()
+
+def _show_pipeline_details(pipeline) -> None:
+    """Print details for a specific pipeline (object)."""
     instances = sorted(pipeline.latest_instances())
     attempts_with_errors = sorted(pipeline.find_attempts_with_errors(instances))
 
@@ -353,7 +345,6 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             header_row=["Key", "Value"],
         )
     )
-
     print()
     print(
         etl.text.format_lines(

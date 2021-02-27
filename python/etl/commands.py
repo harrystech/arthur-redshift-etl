@@ -45,6 +45,8 @@ from etl.timer import Timer
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+
 
 def croak(error, exit_code):
     """
