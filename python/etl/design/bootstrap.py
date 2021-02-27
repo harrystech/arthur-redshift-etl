@@ -3,7 +3,7 @@ import os.path
 import re
 from contextlib import closing
 from difflib import context_diff
-from typing import List, Mapping, Union
+from typing import Dict, List, Union
 
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
@@ -110,7 +110,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     return [Attribute(**att) for att in attributes]
 
 
-def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str, List[str]]]:
+def fetch_constraints(cx: connection, table_name: TableName) -> List[Dict[str, List[str]]]:
     """
     Retrieve table constraints from database by looking up indices.
 
@@ -158,7 +158,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
         attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
-            constraint: Mapping[str, List[str]] = {constraint_type: columns}
+            constraint: Dict[str, List[str]] = {constraint_type: columns}
             logger.info(
                 "Index '%s' of '%s' adds constraint %s",
                 index_name,
@@ -249,6 +249,9 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     source_attributes = fetch_attributes(conn, source_table_name)
     if not source_attributes:
         raise RuntimeError("failed to find attributes (check your query)")
+    unique_source_attributes = frozenset(attribute.name for attribute in source_attributes)
+    if len(source_attributes) > len(unique_source_attributes):
+        raise RuntimeError(f"found {len(source_attributes)} attributes but there are duplicates")
     target_columns = [
         ColumnDefinition.from_attribute(
             attribute, as_is_attribute_type, cast_needed_attribute_type, default_attribute_type
@@ -290,11 +293,12 @@ def create_partial_table_design_for_transformation(
         - and optionally updates from the existing table design
     """
     table_design = create_partial_table_design(conn, tmp_view_name, relation.target_table_name)
-    # TODO When working with CTAS or VIEW, the type casting doesn't make sense but sometimes sneaks in.
+    # When working with CTAS or VIEW, the type casting doesn't make sense but sometimes sneaks in.
     for column in table_design["columns"]:
         if "expression" in column:
             del column["expression"]
-            del column["source_sql_type"]  # expression and source_sql_type always travel together
+        if "source_sql_type" in column:
+            del column["source_sql_type"]
 
     if tmp_view_name.is_late_binding_view:
         dependencies = fetch_dependency_hints(conn, relation.query_stmt)
