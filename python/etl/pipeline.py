@@ -6,7 +6,7 @@ import os
 import textwrap
 from datetime import datetime, timedelta
 from operator import attrgetter
-from typing import Dict, List
+from typing import Dict, Iterable, List, Optional
 
 import boto3
 import funcy
@@ -22,13 +22,14 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 
 class DataPipelineObject:
-    def __init__(self, description):
+    def __init__(self, description) -> None:
         self.name = description.get("name")
         self.object_id = description["id"]
         self.ref_values = {field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field}
         self.string_values = {
             field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
+        self.parent_object: Optional["DataPipelineObject"] = None
 
     def __lt__(self, other):
         """Sort by actual end time, then start time, then status, finally on name."""
@@ -61,12 +62,15 @@ class DataPipelineObject:
         return self.string_values.get("@attemptCount")
 
     @property
-    def component_parent(self):
-        return self.ref_values.get("@componentParent")
+    def command(self):
+        """Return command of the component (or the parent component for instances and attempts)."""
+        if self.string_values.get("@sphere") in ("ATTEMPT", "INSTANCE"):
+            return self.parent_object.command
+        return self.string_values.get("command")
 
     @property
-    def error_id(self):
-        return self.string_values.get("errorId")
+    def component_parent(self):
+        return self.ref_values.get("@componentParent")
 
     @property
     def error_stack_trace(
@@ -94,7 +98,7 @@ class DataPipelineObject:
 class DataPipeline:
     client = boto3.client("datapipeline")
 
-    def __init__(self, description):
+    def __init__(self, description) -> None:
         self.name = description["name"]
         self.pipeline_id = description["pipelineId"]
         self.string_values = {
@@ -102,11 +106,8 @@ class DataPipeline:
         }
         self.tags = description["tags"]
 
-    def __str__(self):
-        return "DataPipeline('{}','{}')".format(self.pipeline_id, self.name)
-
     def describe_objects(self, evaluate_expressions=False) -> dict:
-        """Desribe all objects (components, instances, and attempts) for this pipeline."""
+        """Describe all objects (components, instances, and attempts) for this pipeline."""
         return {
             sphere.lower(): {
                 object.object_id: {
@@ -119,18 +120,22 @@ class DataPipeline:
             for sphere in ("COMPONENT", "INSTANCE", "ATTEMPT")
         }
 
-    def find_attempts_with_errors(self, instances):
+    def find_attempts_with_errors(self, instances: Iterable[DataPipelineObject]):
         """Return head attempts for given instances when there was an error."""
-        attempts = self.objects("ATTEMPT")
-        head_attempts = frozenset(
-            instance.ref_values["@headAttempt"] for instance in instances if "@headAttempt" in instance.ref_values
-        )
-        for attempt in attempts:
-            if attempt.object_id in head_attempts and "errorId" in attempt.string_values:
+        # Map head attempts back to their instance.
+        instance_for_head_attempt = {
+            instance.ref_values["@headAttempt"]: instance
+            for instance in instances
+            if "@headAttempt" in instance.ref_values
+        }
+        for attempt in self.objects("ATTEMPT"):
+            if attempt.object_id in instance_for_head_attempt and attempt.status != "FINISHED":
+                attempt.parent_object = instance_for_head_attempt[attempt.object_id]
                 yield attempt
 
     def latest_instances(self):
         """Group instances by their component and and return latest within each group."""
+        component_lookup = {component.object_id: component for component in self.objects("COMPONENT")}
         instances = self.objects("INSTANCE")
         grouped = funcy.group_by(attrgetter("component_parent"), instances)
         logger.info(
@@ -140,7 +145,9 @@ class DataPipeline:
             sum(map(len, grouped.values())),  # sum based on "grouped" b/c "instances" is generator
         )
         for component_parent in sorted(grouped):
-            yield sorted(grouped[component_parent], key=attrgetter("scheduled_start_time"))[-1]
+            latest_instance = sorted(grouped[component_parent], key=attrgetter("scheduled_start_time"))[-1]
+            latest_instance.parent_object = component_lookup[component_parent]
+            yield latest_instance
 
     def objects(self, sphere, evaluate_expressions=False):
         chunk_size = 25  # Per AWS documentation, need to go in pages of 25 objects
@@ -190,9 +197,15 @@ class DataPipeline:
                 yield id
 
     @staticmethod
-    def as_json(pipelines) -> str:
-        """Return information about pipelines in JSON-formatted string."""
-        # We avoid a dict comprehension here so that we can log per pipeline.
+    def as_json(pipelines, flatten=True) -> str:
+        """
+        Return information about pipelines in JSON-formatted string.
+
+        If flatten is True, then expressions are evaluated in th objects, e.g.
+        attempts gain referenced values from their instances.
+        If flatten is False, you will have to resolve references yourself.
+        """
+        # We could use a dict comprehension here but let's build that dict and log each pipeline.
         obj: Dict[str, List] = {"pipelines": []}
         for pipeline in pipelines:
             logger.info("Collecting all objects belonging to pipeline '%s'", pipeline.pipeline_id)
@@ -200,7 +213,7 @@ class DataPipeline:
                 {
                     pipeline.pipeline_id: {
                         "name": pipeline.name,
-                        "objects": pipeline.describe_objects(evaluate_expressions=True),
+                        "objects": pipeline.describe_objects(evaluate_expressions=flatten),
                         "string_values": pipeline.string_values,
                         "tags": pipeline.tags,
                     }
@@ -361,8 +374,10 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
     for i, attempt in enumerate(attempts_with_errors):
         if i == 0:
             print()
-        print(f"*** {attempt.name}: {attempt.error_id} ***")
-        print(textwrap.indent(attempt.error_stack_trace, "|  ", lambda line: True))
+        print(f"*** {attempt.name}: {attempt.status} ***")
+        if attempt.error_stack_trace:
+            print(textwrap.indent(attempt.error_stack_trace, "|  ", lambda line: True))
+        print(f"Command: {attempt.command}")
         print(f"Log location: {attempt.log_location}")
 
 
