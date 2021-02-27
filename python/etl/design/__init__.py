@@ -3,11 +3,10 @@ import re
 from collections import OrderedDict
 from typing import Dict, List, Optional
 
+import simplejson as json
 from tabulate import tabulate
 
 from etl.relation import RelationDescription
-
-import simplejson as json
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
