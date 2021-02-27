@@ -398,8 +398,9 @@ def add_standard_arguments(parser, options):
         parser.add_argument(
             "--continue-from",
             help="skip forward in execution until the specified relation, then work forward from it"
-            " (the special token '*' is allowed to signify continuing from the first relation;"
-            " use ':transformations' as the argument to continue from the first transformation)",
+            " (the special token '*' is allowed to signify continuing from the first relation,"
+            " use ':transformations' as the argument to continue from the first transformation,)"
+            " otherwise specify an exact relation or source name)",
         )
     if "pattern" in options:
         parser.add_argument(
