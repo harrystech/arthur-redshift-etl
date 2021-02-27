@@ -2,7 +2,6 @@
 
 import fnmatch
 import logging
-import os
 import textwrap
 from datetime import datetime, timedelta
 from operator import attrgetter
@@ -17,8 +16,6 @@ from etl.text import join_with_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 
 class DataPipelineObject:

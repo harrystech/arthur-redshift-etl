@@ -481,5 +481,5 @@ then these steps will work:
 ```shell
 python3 -m venv arthur_venv
 source arthur_venv/bin/activate
-python3 -m pip install -r requirements-dev.txt
+python3 -m pip install --requirement requirements-dev.txt
 ```
