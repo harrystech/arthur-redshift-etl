@@ -144,39 +144,53 @@ class RelationDescription:
             self._table_design = etl.design.load.load_table_design_from_localfile(
                 self.design_file_name, self.target_table_name
             )
-        if callback:
+        if callback is not None:
             callback()
 
     @staticmethod
     def load_in_parallel(relations: Sequence["RelationDescription"]) -> None:
-        """Load all relations' table design file in parallel."""
+        """
+        Load all relations' table design file in parallel.
+
+        If there no relation left which hasn't loaded the table design, do nothing.
+        If there is only one relation, then that one is loaded directly and without threads.
+        If there are only two relations, then both are loaded directly and without threads.
+        If there are more than two relations, then the first is loaded directly to validate
+        our setup (in particular the schemas of table designs) and then rest is actually
+        loaded in parallel using threads.
+        """
         remaining_relations = [relation for relation in relations if relation._table_design is None]
         if len(remaining_relations) == 0:
             return
 
-        # Show a pretty loading bar but only if this goes to a terminal.
-        tqdm_bar = tqdm(desc="Loading table designs", disable=None, total=len(remaining_relations))
+        # This section loads threads directly up to the "parallel start index".
         timer = etl.timer.Timer()
+        parallel_start_index = 2 if len(remaining_relations) == 2 else 1
+        for relation in remaining_relations[:parallel_start_index]:
+            relation.load()
+        if parallel_start_index == len(remaining_relations):
+            logger.info("Finished loading %d table design file(s) (%s)", len(remaining_relations), timer)
+            return
 
-        # Load one relation. First, because it's silly to run a single relation in parallel.
-        # Second, because this forces a load and validation of the schema for table designs.
-        first_relation = remaining_relations.pop()
-        first_relation.load(tqdm_bar.update)
-
-        if len(remaining_relations):
-            max_workers = 8
-            logger.debug(
-                "Starting parallel load of %d table design file(s) on %d workers.",
-                len(remaining_relations),
-                max_workers,
-            )
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_workers, thread_name_prefix="load-parallel"
-            ) as executor:
-                executor.map(lambda relation: relation.load(tqdm_bar.update), remaining_relations)
+        # This section loads the remaining relations from the "parallel start index" onwards
+        # and shows a pretty loading bar (but only if this goes to a terminal).
+        tqdm_bar = tqdm(desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations))
+        tqdm_bar.update(parallel_start_index)
+        max_workers = 8
+        logger.debug(
+            "Starting parallel load of %d table design file(s) on %d workers.",
+            len(remaining_relations[parallel_start_index:]),
+            max_workers,
+        )
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="load-parallel"
+        ) as executor:
+            executor.map(lambda relation: relation.load(tqdm_bar.update), remaining_relations[parallel_start_index:])
 
         tqdm_bar.close()
-        logger.info("Finished loading %d table design file(s) (%s)", len(remaining_relations), timer)
+        logger.info(
+            "Finished loading %d table design file(s) in %d threads (%s)", len(remaining_relations), max_workers, timer
+        )
 
     @property  # This property is lazily loaded
     def table_design(self) -> Dict[str, Any]:

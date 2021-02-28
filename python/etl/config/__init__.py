@@ -333,6 +333,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     return sorted(settings_with_path)
 
 
+@lru_cache()
 def load_json(filename: str):
     """Load JSON-formatted file into native data structure."""
     return json.loads(pkg_resources.resource_string(__name__, filename))
