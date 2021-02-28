@@ -301,11 +301,7 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
         jsonschema.exceptions.SchemaError,
         json.scanner.JSONDecodeError,
     )
-    try:
-        schema = etl.config.load_json(schema_name)
-        jsonschema.Draft7Validator.check_schema(schema)
-    except validation_internal_errors as exc:
-        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    schema = load_json_schema(schema_name)
     try:
         jsonschema.validate(obj, schema, format_checker=jsonschema.draft7_format_checker)
     except validation_internal_errors as exc:
@@ -336,9 +332,25 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     return sorted(settings_with_path)
 
 
-@lru_cache()
 def load_json(filename: str):
-    return json.loads(pkg_resources.resource_string(__name__, filename))  # type: ignore
+    """Load JSON-formatted file into native data structure."""
+    return json.loads(pkg_resources.resource_string(__name__, filename))
+
+
+@lru_cache()
+def load_json_schema(schema_name: str):
+    """Load JSON-formatted file validate it assuming that it represents a schema."""
+    validation_internal_errors = (
+        jsonschema.exceptions.ValidationError,
+        jsonschema.exceptions.SchemaError,
+        json.scanner.JSONDecodeError,
+    )
+    try:
+        schema = load_json(schema_name)
+        jsonschema.Draft7Validator.check_schema(schema)
+    except validation_internal_errors as exc:
+        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    return schema
 
 
 if __name__ == "__main__":
