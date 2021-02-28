@@ -33,8 +33,8 @@ logger.addHandler(logging.NullHandler())
 
 
 # Global config objects - always use accessors!
-_dw_config = None  # type: Optional[DataWarehouseConfig]
-_mapped_config = None  # type: Optional[Dict[str, str]]
+_dw_config: Optional[DataWarehouseConfig] = None
+_mapped_config: Optional[Dict[str, str]] = None
 
 # Local temp directory used for bootstrap, temp files, etc.
 # TODO(tom): This is a misnomer -- it's also the install dir on EC2 hosts.
@@ -258,7 +258,7 @@ def load_config(config_files: Sequence[str], default_file: str = "default_settin
 
     The settings are validated against their schema.
     """
-    settings = dict()  # type: Dict[str, Any]
+    settings: Dict[str, Any] = dict()
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
@@ -321,7 +321,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
-    settings_found = set()  # type: Set[str]
+    settings_found: Set[str] = set()
     settings_with_path = []
 
     for fullname in yield_config_files(config_files):

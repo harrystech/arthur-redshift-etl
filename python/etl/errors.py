@@ -160,6 +160,7 @@ class FailedConstraintError(RelationDataError):
         self.constraint_type = constraint_type
         self.columns = columns
         self.example_string = ",\n  ".join(map(str, examples))
+        # TODO(tom): Include relation name in output
         self.message = (
             "relation {0.identifier} violates {0.constraint_type} constraint.\n"
             "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self)
