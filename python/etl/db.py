@@ -72,7 +72,7 @@ def unparse_connection(dsn: Dict[str, str]) -> str:
     for key in ("user", "port"):
         if key not in values:
             values[key] = "<default>"
-    return "host={host} port={port} dbname={database} user={user} password=***".format(**values)
+    return "host={host} port={port} dbname={database} user={user} password=***".format_map(values)
 
 
 def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
@@ -137,9 +137,9 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
         {"ApplicationName": __name__, "readOnly": "true" if read_only else "false", "driver": "org.postgresql.Driver"}
     )
     if "port" in dsn_properties:
-        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format_map(dsn_properties)
     else:
-        jdbc_url = "jdbc:postgresql://{host}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:postgresql://{host}/{database}".format_map(dsn_properties)
     return jdbc_url, dsn_properties
 
 
