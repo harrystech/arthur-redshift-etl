@@ -14,6 +14,11 @@ import funcy as fy
 import yaml
 import yaml.parser
 
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader  # type: ignore
+
 import etl
 import etl.config
 import etl.db
@@ -33,7 +38,7 @@ def load_table_design(stream, table_name):
     The table design is validated before being returned.
     """
     try:
-        table_design = yaml.safe_load(stream)
+        table_design = yaml.load(stream, Loader=SafeLoader)
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError(exc) from exc
 

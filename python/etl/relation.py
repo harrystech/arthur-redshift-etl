@@ -22,13 +22,13 @@ import logging
 import os.path
 from contextlib import closing, contextmanager
 from copy import deepcopy
-from functools import partial
 from itertools import chain, dropwhile
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 
 import funcy as fy
+from tqdm import tqdm
 
 import etl.config
 import etl.db
@@ -127,31 +127,56 @@ class RelationDescription:
         else:
             raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
 
-    def load(self) -> None:
+    def load(self, callback=None) -> None:
         """
         Force a loading of the table design (which is normally loaded "on demand").
 
         Strictly speaking, this isn't thread-safe. But if you worry about thread safety here,
         rethink your code.
         """
-        if self._table_design is None:
-            if self.bucket_name:
-                loader = partial(etl.design.load.load_table_design_from_s3, self.bucket_name)
-            else:
-                loader = partial(etl.design.load.load_table_design_from_localfile)
-            self._table_design = loader(self.design_file_name, self.target_table_name)
+        if self._table_design is not None:
+            pass  # previously (pre-)loaded
+        elif self.scheme == "s3":
+            self._table_design = etl.design.load.load_table_design_from_s3(
+                self.bucket_name, self.design_file_name, self.target_table_name
+            )
+        else:
+            self._table_design = etl.design.load.load_table_design_from_localfile(
+                self.design_file_name, self.target_table_name
+            )
+        if callback:
+            callback()
 
     @staticmethod
-    def load_in_parallel(relations: List["RelationDescription"]) -> None:
+    def load_in_parallel(relations: Sequence["RelationDescription"]) -> None:
         """Load all relations' table design file in parallel."""
-        max_workers = 8
-        logger.debug("Starting parallel load of %d table design file(s) on %d workers.", len(relations), max_workers)
-        with etl.timer.Timer() as timer:
+        remaining_relations = [relation for relation in relations if relation._table_design is None]
+        if len(remaining_relations) == 0:
+            return
+
+        # Show a pretty loading bar but only if this goes to a terminal.
+        tqdm_bar = tqdm(desc="Loading table designs", disable=None, total=len(remaining_relations))
+        timer = etl.timer.Timer()
+
+        # Load one relation. First, because it's silly to run a single relation in parallel.
+        # Second, because this forces a load and validation of the schema for table designs.
+        first_relation = remaining_relations.pop()
+        first_relation.load(tqdm_bar.update)
+
+        if len(remaining_relations):
+            max_workers = 8
+            logger.debug(
+                "Starting parallel load of %d table design file(s) on %d workers.",
+                len(remaining_relations),
+                max_workers,
+            )
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=max_workers, thread_name_prefix="load-parallel"
             ) as executor:
-                executor.map(lambda relation: relation.load(), relations)
-        logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
+                executor.map(lambda relation: relation.load(tqdm_bar.update), remaining_relations)
+
+        tqdm_bar.close()
+        logger.info("Finished loading %d table design file(s) (%s)", len(remaining_relations), timer)
 
     @property  # This property is lazily loaded
     def table_design(self) -> Dict[str, Any]:
