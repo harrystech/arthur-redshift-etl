@@ -32,7 +32,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     The list of tables matching the allowlist but not the denylist can be further narrowed
     down by the pattern in :selector.
     """
-    # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
+    # Look for relations ('r', ordinary tables), materialized views ('m'), and views ('v').
     result = etl.db.query(
         cx,
         """
@@ -259,7 +259,7 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
         for attribute in source_attributes
     ]
     table_design = {
-        "name": "%s" % target_table_name.identifier,
+        "name": target_table_name.identifier,
         "description": "",
         "columns": [column.to_dict() for column in target_columns],
     }
@@ -283,7 +283,7 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
 
 def create_partial_table_design_for_transformation(
     conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update_keys: Union[List, None] = None
-):
+) -> dict:
     """
     Create a partial design that's applicable to transformations.
 
@@ -307,68 +307,132 @@ def create_partial_table_design_for_transformation(
     if dependencies:
         table_design["depends_on"] = dependencies
 
-    if update_keys is not None and relation.design_file_name:
-        logger.info("Update of existing table design file in progress...")
-        existing_table_design = relation.table_design
-        if "columns" in update_keys:
-            # If the old design had added an identity column, we carry it forward
-            # here (and always as the first column).
-            identity = [column for column in existing_table_design["columns"] if column.get("identity")]
-            if identity:
-                table_design["columns"][:0] = identity
-                table_design["columns"][0]["encoding"] = "raw"
-            column_lookup = {column["name"]: column for column in existing_table_design["columns"]}
-            for column in table_design["columns"]:
-                update_column_definition(column, column_lookup.get(column["name"], {}))
-        if "description" in update_keys:
-            # Force the "description" to show up to encourage its use, but remove the old
-            # passive-aggressive descriptions.
-            if "description" not in existing_table_design:
-                table_design["description"] = ""
-            elif existing_table_design["description"].startswith(
+    if update_keys is None or relation.design_file_name is None:
+        return table_design
+
+    logger.info("Update of existing table design file for '%s' in progress", relation.identifier)
+    existing_table_design = relation.table_design
+
+    if "description" in update_keys:
+        update_keys.remove("description")
+        if "description" in existing_table_design:
+            # Do not copy the old passive-aggressive descriptions.
+            if not existing_table_design["description"].startswith(
                 ("Automatically generated on", "Automatically updated on")
             ):
-                table_design["description"] = ""
-            else:
                 table_design["description"] = existing_table_design["description"]
-        # Now do the rest of the update keys.
-        for copy_key in (key for key in update_keys if key not in ("columns", "descriptions")):
-            if copy_key in existing_table_design:
-                # TODO(tom): May have to cleanup columns in constraints and attributes!
-                table_design[copy_key] = existing_table_design[copy_key]
+
+    if "columns" in update_keys:
+        update_keys.remove("columns")
+        # If the old design had added an identity column, we carry it forward
+        # here (and always as the first column).
+        identity = [column for column in existing_table_design["columns"] if column.get("identity")]
+        if identity:
+            table_design["columns"][:0] = identity
+            table_design["columns"][0]["encoding"] = "raw"
+
+        existing_column = {column["name"]: column for column in existing_table_design["columns"]}
+        for column in table_design["columns"]:
+            if column["name"] in existing_column:
+                # This modifies in-place until I have more time to fix this.
+                update_column_definition(relation.identifier, column, existing_column[column["name"]])
+
+    # Now do the rest of the update keys which require less attention to details.
+    for copy_key in [key for key in update_keys if key in existing_table_design]:
+        # TODO(tom): May have to cleanup columns in constraints and attributes!
+        table_design[copy_key] = existing_table_design[copy_key]
+
     return table_design
 
 
-def update_column_definition(new_column: dict, old_column: dict):
+def update_column_definition(target_table: str, new_column: dict, old_column: dict) -> dict:
     """
-    Update column definition found automatically with previous information from table design.
+    Update (in place) the bootstrapped column definition with existing information.
 
     This carefully merges the information from inspecting the view created for the transformation
     with information from the existing table design.
 
     Copied directly: "description", "encoding", "references", and "not_null"
     Updated carefully: "sql_type" and "type" (always together)
+
+    >>> update_column_definition("s.t", {
+    ...     "name": "doctest", "sql_type": "integer", "type": "int"
+    ... }, {
+    ...     "name": "doctest", "sql_type": "bigint", "type": "long"
+    ... })
+    {'name': 'doctest', 'sql_type': 'bigint', 'type': 'long'}
+    >>> update_column_definition("s.t", {
+    ...     "name": "doctest", "sql_type": "numeric(18,4)", "type": "string"
+    ... }, {
+    ...     "name": "doctest", "sql_type": "DECIMAL(12, 2)", "type": "string"
+    ... })
+    {'name': 'doctest', 'sql_type': 'numeric(12,2)', 'type': 'string'}
+    >>> update_column_definition("s.t", {
+    ...     "name": "doctest", "sql_type": "character varying(100)", "type": "string"
+    ... }, {
+    ...     "name": "doctest", "sql_type": "Varchar(200)", "type": "string"
+    ... })
+    {'name': 'doctest', 'sql_type': 'character varying(200)', 'type': 'string'}
     """
-    ok_to_copy = frozenset(["description", "encoding", "references", "not_null"])
-    for key in ok_to_copy.intersection(old_column):
-        new_column[key] = old_column[key]
-    if "sql_type" in old_column:
-        old_sql_type = old_column["sql_type"]
-        new_sql_type = new_column["sql_type"]
-        # Upgrade to "larger" type, mostly for keys
+    column_name = new_column["name"]
+    assert old_column["name"] == column_name
+
+    ok_to_copy = frozenset({"description", "encoding", "references", "not_null"})
+    have_old_value = ok_to_copy.intersection(old_column)
+    new_column.update({key: value for key, value in old_column.items() if key in have_old_value})
+
+    # When we update from VIEW to CTAS, there's not much to copy from.
+    if "sql_type" not in old_column:
+        return new_column
+
+    new_sql_type = new_column["sql_type"]
+    old_sql_type = old_column["sql_type"].strip()
+    logger.debug("Trying to update column '%s': new='%s', old='%s'", column_name, new_sql_type, old_sql_type)
+
+    # Upgrade to "larger" type if that was selected previously.
+    if new_sql_type in ("integer", "bigint"):
         if old_sql_type == "bigint" and new_sql_type == "integer":
-            new_column["sql_type"] = "bigint"
-            new_column["type"] = "long"
-        varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)")
-        old_text = varchar_re.search(old_sql_type)
-        new_text = varchar_re.search(new_sql_type)
-        if old_text and new_text:
-            new_column["sql_type"] = "character varying({})".format(old_text.group("size"))
-        numeric_re = re.compile(r"(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
+            new_column.update(sql_type="bigint", type="long")
+            logger.warning("Keeping previous definition of '%s' for column '%s'", new_column["sql_type"], column_name)
+        return new_column
+
+    numeric_re = re.compile(r"(?:numeric|decimal)\(\s*(?P<precision>\d+),\s*(?P<scale>\d+)\)", re.IGNORECASE)
+    new_numeric = numeric_re.search(new_sql_type)
+    if new_numeric:
         old_numeric = numeric_re.search(old_sql_type)
-        new_numeric = numeric_re.search(new_sql_type)
-        if old_numeric and new_numeric:
-            new_column["sql_type"] = "numeric({},{})".format(old_numeric.group("precision"), old_numeric.group("scale"))
+        if old_numeric and new_numeric.groups() != old_numeric.groups():
+            new_column["sql_type"] = "numeric({precision},{scale})".format_map(old_numeric.groupdict())
+            # TODO(tom): Be smarter about precision and scale separately.
+            # TODO(tom): Allow to check for a fixed number of (precision, scale) combinations.
+            logger.warning("Keeping previous definition of '%s' for column '%s'", new_column["sql_type"], column_name)
+        return new_column
+
+    varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)", re.IGNORECASE)
+    new_text = varchar_re.search(new_sql_type)
+    if new_text:
+        old_text = varchar_re.search(old_sql_type)
+        if old_text:
+            new_size = int(new_text.groupdict()["size"])
+            old_size = int(old_text.groupdict()["size"])
+            if new_size < old_size:
+                logger.debug(
+                    "Found for '%s.%s': '%s', used previously: '%s'",
+                    target_table,
+                    column_name,
+                    new_column["sql_type"],
+                    old_column["sql_type"],
+                )
+                new_column["sql_type"] = "character varying({})".format(old_size)
+                logger.warning(
+                    "Re-using old definition for column '%s.%s': '%s' (please add a cast)",
+                    target_table,
+                    column_name,
+                    new_column["sql_type"],
+                )
+        return new_column
+
+    # Those types above are all that we understand how to update.
+    return new_column
 
 
 def create_table_design_for_ctas(
@@ -580,7 +644,7 @@ def bootstrap_transformations(
 
                 if check_only:
                     if relation.table_design != table_design:
-                        print("Change detected in table desing for {:x}".format(relation))
+                        print("Change detected in table design for {:x}".format(relation))
                         before = TableDesign.as_string(relation.table_design)
                         after = TableDesign.as_string(table_design)
                         print(
