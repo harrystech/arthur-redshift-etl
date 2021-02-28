@@ -561,7 +561,7 @@ def bootstrap_transformations(
             assert (source_name or current_source_name) in ("CTAS", "VIEW")
 
             # Use a quick check of the query plan whether we depend on external schemas.
-            with relation.matching_temporary_view(conn, as_late_binding_view=True) as tmp_view_name:
+            with relation.matching_temporary_view(conn, as_late_binding_view=True):
                 has_s3_scans = any(fetch_dependency_hints(conn, relation.query_stmt))
 
             with relation.matching_temporary_view(conn, as_late_binding_view=has_s3_scans) as tmp_view_name:
@@ -600,16 +600,16 @@ def bootstrap_transformations(
                     continue
 
                 source_dir = os.path.join(local_dir, relation.source_name)
-
-                if relation.design_file_name is None:
-                    # TODO(tom): Drop the leading schema name for transformations.
+                # Derive preferred name from the current design or SQL file.
+                if relation.design_file_name is not None:
+                    filename = relation.design_file_name
+                elif relation.sql_file_name is not None:
+                    filename = re.sub(r".sql$", ".yaml", relation.sql_file_name)
+                else:
                     filename = os.path.join(
                         source_dir,
                         "{}-{}.yaml".format(relation.target_table_name.schema, relation.target_table_name.table),
                     )
-                else:
-                    filename = relation.design_file_name
-
                 save_table_design(
                     relation.target_table_name,
                     table_design,
