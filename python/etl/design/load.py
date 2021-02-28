@@ -37,8 +37,6 @@ def load_table_design(stream, table_name):
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError(exc) from exc
 
-    etl.config.validate_with_schema(table_design, "table_design.schema")
-
     # We used to specify constraints using an object (before v0.24.0) and then switched to using
     # an array of objects (with v0.24.0). This rewrites the constraints into the new format
     # as needed.
