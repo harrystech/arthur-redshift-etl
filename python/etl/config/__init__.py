@@ -22,6 +22,7 @@ import jsonschema
 import pkg_resources
 import simplejson as json
 import yaml
+from simplejson.errors import JSONDecodeError
 
 import etl.config.dw
 import etl.monitor
@@ -299,7 +300,7 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
     validation_internal_errors = (
         jsonschema.exceptions.ValidationError,
         jsonschema.exceptions.SchemaError,
-        json.scanner.JSONDecodeError,
+        JSONDecodeError,
     )
     schema = load_json_schema(schema_name)
     try:
@@ -332,6 +333,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     return sorted(settings_with_path)
 
 
+@lru_cache()
 def load_json(filename: str):
     """Load JSON-formatted file into native data structure."""
     return json.loads(pkg_resources.resource_string(__name__, filename))
@@ -343,7 +345,7 @@ def load_json_schema(schema_name: str):
     validation_internal_errors = (
         jsonschema.exceptions.ValidationError,
         jsonschema.exceptions.SchemaError,
-        json.scanner.JSONDecodeError,
+        JSONDecodeError,
     )
     try:
         schema = load_json(schema_name)
