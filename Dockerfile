@@ -7,6 +7,10 @@
 
 FROM amazonlinux:2.0.20201218.1
 
+# AWS Default Region so that building images doesn't stumble over a missing region information.
+ARG AWS_DEFAULT_REGION=us-east-1
+ENV AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION"
+
 # See the same setting in bin/bootstrap.sh
 ARG PROJ_NAME=redshift_etl
 

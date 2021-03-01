@@ -339,6 +339,21 @@ Also, we want to run code through:
 * [flake8](https://flake8.pycqa.org/en/latest/)
 * [type checker](http://mypy-lang.org/)
 
+#### Adding a pre-commit hook
+
+Use `pre-commit` to run linters automatically on commit.
+This is the preferred method of running formatters and linters.
+
+```shell
+brew bundle
+pre-commit install
+```
+
+You can also run the linters directly:
+```shell
+pre-commit run
+```
+
 #### Installing linters locally
 
 To use the linters (`isort`, `black`, `flake8`, `mypy`) locally, install them using:
@@ -349,38 +364,20 @@ python3 -m pip install --upgrade pip==20.3.4
 python3 -m pip install --requirement requirements-linters.txt
 ```
 
-#### Running formatters locally
+##### Running formatters locally
 
 ```shell
 black python/ setup.py
 isort python/ setup.py
 ```
 
-#### Running linters locally
+##### Running linters locally
 
 ```shell
 black --check python/ setup.py
 isort --check-only python/ setup.py
 flake8 python setup.py
 mypy python
-```
-
-### Adding a pre-commit hook
-
-Use pre-commit to run linters automatically on commit.
-
-#### Installation
-
-```shell
-brew bundle
-pre-commit install
-```
-
-#### Usage
-
-You can also run the linters directly:
-```shell
-pre-commit run
 ```
 
 ### References
@@ -484,5 +481,5 @@ then these steps will work:
 ```shell
 python3 -m venv arthur_venv
 source arthur_venv/bin/activate
-python3 -m pip install -r requirements-dev.txt
+python3 -m pip install --requirement requirements-dev.txt
 ```

@@ -36,7 +36,7 @@
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
             "subject": "ETL Extraction Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
-            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nSphere: #{node.@sphere}\\nCancellation reason: #{node.cancellationReason}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nError stacktrace: #{node.errorStackTrace}"
+            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
         },
         {
             "id": "ResourceParent",

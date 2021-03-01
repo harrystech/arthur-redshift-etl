@@ -1381,14 +1381,18 @@ class ShowVarsCommand(SubCommand):
 class ShowPipelinesCommand(SubCommand):
     def __init__(self):
         super().__init__(
-            "show_pipelines", "show installed pipelines", "Show information about currently installed pipelines."
+            "show_pipelines",
+            "show installed pipelines",
+            "Show information about currently installed pipelines."
+            " If you select a single pipeline, more details are revealed.",
         )
 
     def add_arguments(self, parser):
-        parser.add_argument("selection", help="pick pipelines to show more details for", nargs="*")
+        parser.add_argument("-j", "--as-json", help="write output in JSON format", action="store_true", default=False)
+        parser.add_argument("selection", help="pick pipelines using a glob pattern", nargs="*")
 
     def callback(self, args, config):
-        etl.pipeline.show_pipelines(args.selection)
+        etl.pipeline.show_pipelines(args.selection, as_json=args.as_json)
 
 
 class DeleteFinishedPipelinesCommand(SubCommand):

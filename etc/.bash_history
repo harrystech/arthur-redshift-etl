@@ -1,3 +1,4 @@
+develop
 arthur.py bootstrap_sources
 arthur.py sync --deploy
 arthur.py validate -nskq
