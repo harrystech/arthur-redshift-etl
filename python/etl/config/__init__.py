@@ -33,8 +33,8 @@ logger.addHandler(logging.NullHandler())
 
 
 # Global config objects - always use accessors!
-_dw_config = None  # type: Optional[DataWarehouseConfig]
-_mapped_config = None  # type: Optional[Dict[str, str]]
+_dw_config: Optional[DataWarehouseConfig] = None
+_mapped_config: Optional[Dict[str, str]] = None
 
 # Local temp directory used for bootstrap, temp files, etc.
 # TODO(tom): This is a misnomer -- it's also the install dir on EC2 hosts.
@@ -258,7 +258,7 @@ def load_config(config_files: Sequence[str], default_file: str = "default_settin
 
     The settings are validated against their schema.
     """
-    settings = dict()  # type: Dict[str, Any]
+    settings: Dict[str, Any] = dict()
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
@@ -302,11 +302,7 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
         jsonschema.exceptions.SchemaError,
         json.scanner.JSONDecodeError,
     )
-    try:
-        schema = etl.config.load_json(schema_name)
-        jsonschema.Draft7Validator.check_schema(schema)
-    except validation_internal_errors as exc:
-        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    schema = load_json_schema(schema_name)
     try:
         jsonschema.validate(obj, schema, format_checker=jsonschema.draft7_format_checker)
     except validation_internal_errors as exc:
@@ -321,7 +317,7 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
     settings files in separate directories that have the same filename.
     So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
     """
-    settings_found = set()  # type: Set[str]
+    settings_found: Set[str] = set()
     settings_with_path = []
 
     for fullname in yield_config_files(config_files):
@@ -339,7 +335,24 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
 
 @lru_cache()
 def load_json(filename: str):
-    return json.loads(pkg_resources.resource_string(__name__, filename))  # type: ignore
+    """Load JSON-formatted file into native data structure."""
+    return json.loads(pkg_resources.resource_string(__name__, filename))
+
+
+@lru_cache()
+def load_json_schema(schema_name: str):
+    """Load JSON-formatted file validate it assuming that it represents a schema."""
+    validation_internal_errors = (
+        jsonschema.exceptions.ValidationError,
+        jsonschema.exceptions.SchemaError,
+        json.scanner.JSONDecodeError,
+    )
+    try:
+        schema = load_json(schema_name)
+        jsonschema.Draft7Validator.check_schema(schema)
+    except validation_internal_errors as exc:
+        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    return schema
 
 
 if __name__ == "__main__":

@@ -1190,8 +1190,7 @@ def update_data_warehouse(
         logger.info("Attempting to use existing manifests for source relations without verifying recency.")
 
     relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
-    logger.info("Starting to update %d tables(s)", len(relations))
-    # Run update within a transaction:
+    logger.info("Starting to update %d tables(s) within a transaction", len(relations))
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:
         set_redshift_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
