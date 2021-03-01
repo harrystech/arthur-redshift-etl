@@ -38,7 +38,7 @@ PROJ_BUCKET=$(arthur.py show_value object_store.s3.bucket_name)
 PROJ_ENVIRONMENT="$1"
 CONTINUE_FROM_RELATION="${2:-*}"
 START_DATE_TIME="$START_NOW"
-TIMEOUT="${4:-$DEFAULT_TIMEOUT}"
+TIMEOUT="${3:-$DEFAULT_TIMEOUT}"
 
 # Verify that this bucket/environment pair is set up on s3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -61,10 +61,11 @@ trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" pizza_pipeline > "$PIPELINE_DEFINITION_FILE"
 
+# shellcheck disable=SC2086
 aws datapipeline create-pipeline \
     --unique-id dw-etl-pizza-pipeline \
     --name "$PIPELINE_NAME" \
-    --tags "$AWS_TAGS" \
+    --tags $AWS_TAGS \
   | tee "$PIPELINE_ID_FILE"
 
 PIPELINE_ID=$(jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId')
