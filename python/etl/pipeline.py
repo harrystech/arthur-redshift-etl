@@ -362,13 +362,12 @@ def _show_pipeline_details(pipeline) -> None:
             max_column_width=80,
         )
     )
-    for i, attempt in enumerate(attempts_with_errors):
-        if i == 0:
-            print()
+    for attempt in attempts_with_errors:
+        print()
         print(f"*** {attempt.name}: {attempt.status} ***")
         if attempt.error_stack_trace:
             print(textwrap.indent(attempt.error_stack_trace, "|  ", lambda line: True))
-        print(f"Command: {attempt.command}")
+        print(f"Command: {attempt.command or 'N/A'}")
         print(f"Log location: {attempt.log_location}")
 
 

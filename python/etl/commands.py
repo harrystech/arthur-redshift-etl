@@ -119,21 +119,29 @@ def run_arg_as_command(my_name="arthur.py"):
         with execute_or_bail():
             etl.config.load_config(args.config)
 
-            setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
             if hasattr(args, "prefix"):
+                # Any command where we can select the "prefix" also needs the bucket.
+                # TODO(tom): Need to differentiate between object store (schemas) and data lake
+                #     (extracted or unloaded data)
+                setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
                 etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
+
                 # Create name used as prefix for resources, like DynamoDB tables or SNS topics
                 base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
                 etl.config.set_safe_config_value("resource_prefix", "{}-{}".format(base_env, args.prefix))
+
                 if getattr(args, "use_monitor"):
                     etl.monitor.start_monitors(args.prefix)
+
+            # The region must be set for most boto3 calls to succeed.
+            os.environ["AWS_REGION"] = etl.config.get_config_value("resources.VPC.region")
 
             dw_config = etl.config.get_dw_config()
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
                 args.pattern.base_schemas = [s.name for s in dw_config.schemas]
 
-            # TODO Remove dw_config and let sub-commands handle it!
+            # TODO(tom): Remove dw_config and let sub-commands handle it!
             args.func(args, dw_config)
 
 
