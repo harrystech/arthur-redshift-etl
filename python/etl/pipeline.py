@@ -91,8 +91,6 @@ class DataPipelineObject:
 
 
 class DataPipeline:
-    client = boto3.client("datapipeline")
-
     def __init__(self, description) -> None:
         self.name = description["name"]
         self.pipeline_id = description["pipelineId"]
@@ -100,6 +98,11 @@ class DataPipeline:
             field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
         self.tags = description["tags"]
+        self.client = boto3.client("datapipeline")
+
+    def delete_pipeline(self) -> str:
+        response = self.client.delete_pipeline(pipelineId=self.pipeline_id)
+        return response["ResponseMetadata"]["RequestId"]
 
     def describe_objects(self, evaluate_expressions=False) -> dict:
         """Describe all objects (components, instances, and attempts) for this pipeline."""
@@ -212,22 +215,17 @@ class DataPipeline:
         obj = {"pipelines": [pipeline.describe_pipeline(evaluate_expressions) for pipeline in pipelines]}
         return json.dumps(obj, indent="    ", sort_keys=True)
 
-    @classmethod
-    def delete_pipeline(cls, pipeline_id) -> str:
-        response = cls.client.delete_pipeline(pipelineId=pipeline_id)
-        return response["ResponseMetadata"]["RequestId"]
-
-    @classmethod
-    def describe_pipelines(cls, pipeline_ids: List[str]):
+    @staticmethod
+    def describe_pipelines(client, pipeline_ids: List[str]):
         chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
         for ids_chunk in funcy.chunks(chunk_size, pipeline_ids):
-            resp = cls.client.describe_pipelines(pipelineIds=ids_chunk)
+            resp = client.describe_pipelines(pipelineIds=ids_chunk)
             for description in resp["pipelineDescriptionList"]:
                 yield description
 
-    @classmethod
-    def list_all_pipelines(cls):
-        paginator = cls.client.get_paginator("list_pipelines")
+    @staticmethod
+    def list_all_pipelines(client):
+        paginator = client.get_paginator("list_pipelines")
         response_iterator = paginator.paginate()
         return response_iterator.search("pipelineIdList[].id")
 
@@ -239,7 +237,8 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     The :selection should be a list of glob patterns to select specific pipelines by their ID.
     If the selection is an empty list, then all pipelines are used.
     """
-    all_pipeline_ids = DataPipeline.list_all_pipelines()
+    client = boto3.client("datapipeline")
+    all_pipeline_ids = DataPipeline.list_all_pipelines(client)
     if selection:
         selected_pipeline_ids = [
             pipeline_id for pipeline_id in all_pipeline_ids for glob in selection if fnmatch.fnmatch(pipeline_id, glob)
@@ -248,7 +247,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
         selected_pipeline_ids = list(all_pipeline_ids)
 
     pipelines = []
-    for description in DataPipeline.describe_pipelines(selected_pipeline_ids):
+    for description in DataPipeline.describe_pipelines(client, selected_pipeline_ids):
         for tag in description["tags"]:
             if tag["key"] == "user:project" and tag["value"] == "data-warehouse":
                 pipelines.append(DataPipeline(description))
@@ -396,7 +395,7 @@ def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
             logger.info("Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
         else:
             logger.info("Trying to delete pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
-            response = DataPipeline.delete_pipeline(pipeline.pipeline_id)
+            response = pipeline.delete_pipeline()
             logger.info(
                 "Succeeded to delete '%s' (request_id=%s)",
                 pipeline.pipeline_id,
