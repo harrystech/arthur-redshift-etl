@@ -91,14 +91,20 @@ class DataPipelineObject:
 
 
 class DataPipeline:
-    def __init__(self, description) -> None:
+    def __init__(self, client, description) -> None:
+        """
+        Initialize an instance that describes a Data Pipeline in AWS.
+
+        We keep a reference to the client here so that we can pull more information
+        from AWS as needed.
+        """
         self.name = description["name"]
         self.pipeline_id = description["pipelineId"]
         self.string_values = {
             field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
         self.tags = description["tags"]
-        self.client = boto3.client("datapipeline")
+        self.client = client
 
     def delete_pipeline(self) -> str:
         response = self.client.delete_pipeline(pipelineId=self.pipeline_id)
@@ -250,7 +256,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     for description in DataPipeline.describe_pipelines(client, selected_pipeline_ids):
         for tag in description["tags"]:
             if tag["key"] == "user:project" and tag["value"] == "data-warehouse":
-                pipelines.append(DataPipeline(description))
+                pipelines.append(DataPipeline(client, description))
                 break
     return sorted(pipelines, key=attrgetter("name"))
 

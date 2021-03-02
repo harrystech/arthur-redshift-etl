@@ -135,7 +135,7 @@ def run_arg_as_command(my_name="arthur.py"):
                     etl.monitor.start_monitors(args.prefix)
 
             # The region must be set for most boto3 calls to succeed.
-            os.environ["AWS_REGION"] = etl.config.get_config_value("resources.VPC.region")
+            os.environ["AWS_DEFAULT_REGION"] = etl.config.get_config_value("resources.VPC.region")
 
             dw_config = etl.config.get_dw_config()
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
