@@ -132,6 +132,7 @@ def run_arg_as_command(my_name="arthur.py"):
     if args.cluster_id is not None:
         submit_step(args.cluster_id, args.sub_command)
         return
+<<<<<<< HEAD
 
     # We need to configure logging before running context because that context expects
     # logging to be setup.
@@ -146,12 +147,28 @@ def run_arg_as_command(my_name="arthur.py"):
 
         # The region must be set for most boto3 calls to succeed.
         os.environ["AWS_DEFAULT_REGION"] = etl.config.get_config_value("resources.VPC.region")
+=======
+
+    # We need to configure logging before running context because that context expects
+    # logging to be setup.
+    try:
+        etl.config.configure_logging(args.prolix, args.log_level)
+    except Exception as exc:
+        croak(exc, 1)
+
+    with execute_or_bail():
+        etl.config.load_config(args.config)
+>>>>>>> Simplify logic with early returns
 
         if hasattr(args, "prefix"):
             # Any command where we can select the "prefix" also needs the bucket.
             # TODO(tom): Need to differentiate between object store (schemas) and data lake
             #     (extracted or unloaded data)
+<<<<<<< HEAD
             args.bucket_name = etl.config.get_config_value("object_store.s3.bucket_name")
+=======
+            setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
+>>>>>>> Simplify logic with early returns
             etl.config.set_config_value("object_store.s3.prefix", args.prefix)
             etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
 
@@ -534,10 +551,9 @@ class SubCommand(abc.ABC):
         scheme = getattr(args, "scheme", default_scheme)
         if scheme == "file":
             return scheme, "localhost", args.table_design_dir
-        elif scheme == "s3":
+        if scheme == "s3":
             return scheme, args.bucket_name, args.prefix
-        else:
-            raise ETLSystemError("scheme invalid")
+        raise ETLSystemError("scheme invalid")
 
     def find_relation_descriptions(
         self, args, default_scheme=None, required_relation_selector=None, return_all=False
