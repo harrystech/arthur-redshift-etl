@@ -8,7 +8,6 @@
     "insert_data_retries": 3,
     "retriable_error_codes": "8001,15001,15005",
     "redshift": {
-      # Computing column encoding is turned off if all columns have a specified encoding.
       "relation_column_encoding": "ON"
     }
   },
@@ -22,7 +21,6 @@
     "owner": {
       "name": "dw",
       "group": "etl_rw"
-
     },
     "users": [
       {
