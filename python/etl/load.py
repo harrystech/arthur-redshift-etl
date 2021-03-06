@@ -210,10 +210,12 @@ class LoadableRelation:
     def query_stmt(self) -> str:
         stmt = self._relation_description.query_stmt
         if self.use_staging:
-            # Rewrite the query to use staging schemas:
+            # Rewrite the query to use staging schemas by changing identifiers to their staging
+            # version. This requires all tables to be fully qualified. There is a small chance
+            # that we're too aggressive and change a table name inside a string.
             for dependency in self.dependencies:
                 staging_dependency = dependency.as_staging_table_name()
-                stmt = re.sub(r"\b" + dependency.identifier + r"\b", staging_dependency.identifier, stmt)
+                stmt = re.sub(dependency.identifier_as_re, staging_dependency.identifier, stmt)
         return stmt
 
     @property
