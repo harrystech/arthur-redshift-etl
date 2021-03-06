@@ -27,18 +27,19 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
 from operator import itemgetter
-from typing import Dict, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 import boto3
 import botocore.exceptions
 import funcy as fy
 import simplejson as json
+from boto3.dynamodb.types import TypeDeserializer
 from tqdm import tqdm
 
 import etl.assets
 import etl.config
 import etl.text
-from etl.errors import ETLRuntimeError, InvalidArgumentError
+from etl.errors import ETLRuntimeError
 from etl.json_encoder import FancyJsonEncoder
 from etl.timer import Timer, elapsed_seconds, utc_now
 
@@ -239,6 +240,12 @@ class Monitor(metaclass=MetaMonitor):
         return MonitorPayload(monitor, STEP_FINISH, utc_now(), elapsed=0, extra={"is_marker": True})
 
 
+class PayloadDispatcher:
+    def store(self, payload):
+        """Send payload to persistence layer."""
+        raise NotImplementedError("PayloadDispatcher failed to implement store method")
+
+
 class MonitorPayload:
     """
     Simple class to encapsulate data for Monitor events which knows how to morph into JSON etc.
@@ -249,7 +256,7 @@ class MonitorPayload:
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
-    dispatchers = []  # type: List[PayloadDispatcher]
+    dispatchers: List[PayloadDispatcher] = []
 
     def __init__(self, monitor, event, timestamp, elapsed=None, errors=None, extra=None):
         # Basic info
@@ -280,12 +287,6 @@ class MonitorPayload:
             logger.debug("Monitor payload = %s", compact_text)
             for d in MonitorPayload.dispatchers:
                 d.store(payload)
-
-
-class PayloadDispatcher:
-    def store(self, payload):
-        """Send payload to persistence layer."""
-        raise NotImplementedError("PayloadDispatcher failed to implement store method")
 
 
 class DynamoDBStorage(PayloadDispatcher):
@@ -570,30 +571,6 @@ def _format_output_column(key: str, value: str) -> str:
         return value
 
 
-def _flatten_scan_result(result: dict) -> dict:
-    """
-    Remove type annotation from a scan result.
-
-    Careful, this only works for a specific subset of types that DynamoDB may send back.
-
-    >>> result = _flatten_scan_result(
-    ...     {'step': {'S': 'load'}, 'extra': {'M': {'rowcount': {'N': '100'}}}})
-    >>> sorted(result)
-    ['extra', 'step']
-    >>> result['extra']['rowcount']
-    '100'
-    """
-    flat = {}
-    for key, value in result.items():
-        if "S" in value:
-            flat[key] = value["S"]
-        elif "N" in value:
-            flat[key] = value["N"]
-        elif "M" in value:
-            flat[key] = _flatten_scan_result(value["M"])
-    return flat
-
-
 def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
     """Search for ETLs by looking for the "marker" event at the start of an ETL command."""
     start_time = datetime.utcnow() - timedelta(days=days_ago, hours=hours_ago)
@@ -641,21 +618,21 @@ def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
     print(etl.text.format_lines(rows, header_row=keys))
 
 
-def scan_etl_events(etl_id, comma_separated_columns) -> None:
-    """Scan for all events belonging to a specific ETL."""
+def scan_etl_events(etl_id, selected_columns: Optional[Iterable[str]] = None) -> None:
+    """
+    Scan for all events belonging to a specific ETL.
+
+    If a list of columns is provided, then the output is limited to those columns.
+    But note that the target (schema.table) and the event are always present.
+    """
     ddb = DynamoDBStorage.factory()
     table = ddb.get_table(create_if_not_exists=False)
-    all_keys = ["target", "step", "event", "timestamp", "elapsed", "rowcount"]
-    if comma_separated_columns:
-        selected_columns = comma_separated_columns.split(",")
-        invalid_columns = [key for key in selected_columns if key not in all_keys]
-        if invalid_columns:
-            raise InvalidArgumentError("invalid column(s): {}".format(",".join(invalid_columns)))
-        # We will always select "target" and "event" to have a meaningful output.
-        selected_columns = frozenset(selected_columns).union(["target", "event"])
-        keys = [key for key in all_keys if key in selected_columns]
-    else:
-        keys = all_keys
+    available_columns = ["target", "step", "event", "timestamp", "elapsed", "rowcount"]
+    if selected_columns is None:
+        selected_columns = available_columns
+    # We will always select "target" and "event" to have a meaningful output.
+    columns = list(fy.filter(frozenset(selected_columns).union(["target", "event"]), available_columns))
+    keys = ["extra.rowcount" if column == "rowcount" else column for column in columns]
 
     # We need to scan here since the events are stored by "target" and not by "etl_id".
     # TODO Try to find all the "known" relations and query on them with a filter on the etl_id.
@@ -677,22 +654,28 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
         #     "PageSize": 100
         # }
     )
-    logger.info("Scanning events table for elapsed times")
+    logger.info("Scanning events table '%s' for elapsed times", table.name)
     consumed_capacity = 0.0
     scanned_count = 0
-    rows = []  # type: List[List[str]]
+    rows: List[List[str]] = []
+    deserialize = TypeDeserializer().deserialize
+
     for response in response_iterator:
         consumed_capacity += response["ConsumedCapacity"]["CapacityUnits"]
         scanned_count += response["ScannedCount"]
-        items = [_flatten_scan_result(item) for item in response["Items"]]
-        items = [{key: fy.get_in(item, key.split(".")) for key in keys} for item in items]
+        # We need to turn something like "'event': {'S': 'finish'}" into "'event': 'finish'".
+        deserialized = [{key: deserialize(value) for key, value in item.items()} for item in response["Items"]]
+        # Lookup "elapsed" or "extra.rowcount" (the latter as ["extra", "rowcount"]).
+        items = [{key: fy.get_in(item, key.split(".")) for key in keys} for item in deserialized]
+        # Scope down to selected keys and format the columns.
         rows.extend([_format_output_column(key, item[key]) for key in keys] for item in items)
+
     logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
     if "timestamp" in keys:
         rows.sort(key=itemgetter(keys.index("timestamp")))
     else:
         rows.sort(key=itemgetter(keys.index("target")))
-    print(etl.text.format_lines(rows, header_row=keys))
+    print(etl.text.format_lines(rows, header_row=columns))
 
 
 class EventsQuery:
@@ -837,10 +820,11 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     query = EventsQuery(step)
 
     events = []
-    schema_events = dict()  # type: Dict[str, Dict[str, Union[str, Decimal]]]
+    schema_events: Dict[str, Dict[str, Union[str, Decimal]]] = dict()
     for relation in tqdm(relations):
         event = query(table, relation.identifier, latest_start)
         if event:
+            # Make the column for row counts easier to read by dropping "extra.".
             event["rowcount"] = event.pop("extra.rowcount")
             events.append(dict(event, kind=relation.kind))
             schema = relation.target_table_name.schema
