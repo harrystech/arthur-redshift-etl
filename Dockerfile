@@ -59,6 +59,7 @@ COPY --chown=arthur:arthur ./ ./
 RUN source "/opt/local/$PROJ_NAME/venv/bin/activate" && \
     python3 setup.py install && \
     rm -rf build dist && \
+    python3 -m etl.selftest && \
     arthur.py --version
 
 # Whenever there is an ETL running, it offers progress information on port 8086.
