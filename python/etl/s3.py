@@ -39,20 +39,21 @@ def _get_s3_bucket(bucket_name: str):
 class S3Uploader:
     """Upload files from local filesystem into the given S3 folder."""
 
-    def __init__(self, bucket_name: str, dry_run=False) -> None:
+    def __init__(self, bucket_name: str, callback=None, dry_run=False) -> None:
         self.logger = logging.getLogger(__name__)
         self.bucket_name = bucket_name
+        self.callback = callback
         if dry_run:
             self._call = self._skip_upload
         else:
             self._call = self._do_upload
 
     def _skip_upload(self, filename: str, object_key: str) -> None:
-        self.logger.info("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
+        self.logger.debug("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
 
     def _do_upload(self, filename: str, object_key: str) -> None:
         try:
-            self.logger.info("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
+            self.logger.debug("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
             bucket = _get_s3_bucket(self.bucket_name)
             bucket.upload_file(filename, object_key)
         except botocore.exceptions.ClientError as exc:
@@ -64,7 +65,11 @@ class S3Uploader:
             raise
 
     def __call__(self, filename: str, object_key: str) -> None:
-        self._call(filename, object_key)
+        try:
+            self._call(filename, object_key)
+        finally:
+            if self.callback is not None:
+                self.callback()
 
 
 def upload_empty_object(bucket_name: str, object_key: str) -> None:
