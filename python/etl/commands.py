@@ -5,6 +5,7 @@ This can be the entry point for a console script.  Some functions are broken out
 so that they can be leveraged by utilities in addition to the top-level script.
 """
 
+import abc
 import argparse
 import logging
 import os
@@ -166,6 +167,8 @@ def run_arg_as_command(my_name="arthur.py"):
 
         if getattr(args, "use_monitor", False):
             etl.monitor.start_monitors(args.prefix)
+            logger.debug("Setting marker in events table for start of '%s' step", args.sub_command)
+            etl.monitor.Monitor.marker_payload(args.sub_command).emit(dry_run=args.dry_run)
 
         dw_config = etl.config.get_dw_config()
         if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
@@ -305,7 +308,6 @@ def build_basic_parser(prog_name, description=None):
     parser.set_defaults(prolix=None)
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
-    parser.set_defaults(use_monitor=False)
     return parser
 
 
@@ -473,8 +475,8 @@ class StorePatternAsSelector(argparse.Action):
         setattr(namespace, self.dest, selector)
 
 
-class SubCommand:
-    """Instances (of child classes) will setup sub-parsers and have callbacks for those."""
+class SubCommand(abc.ABC):
+    """Abstract parent class for all commands which add sub-parsers and callbacks."""
 
     def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None) -> None:
         self.name = name
@@ -519,10 +521,6 @@ class SubCommand:
 
         self.add_arguments(parser)
         return parser
-
-    def add_arguments(self, parser):
-        """Override this method for sub-classes."""
-        pass
 
     @staticmethod
     def location(args, default_scheme=None):
@@ -576,13 +574,21 @@ class SubCommand:
 
         return descriptions
 
+    @abc.abstractmethod
+    def add_arguments(self, parser):
+        ...
+
+    @abc.abstractmethod
     def callback(self, args):
-        """Override this method for sub-classes."""
-        raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
+        ...
 
 
 class MonitoredSubCommand(SubCommand):
-    """A sub-command that will also use monitors to update some event table."""
+    """
+    A sub-command that will also use monitors to update some event table.
+
+    All sub-command classes must have prefix and dry-run in their arguments.
+    """
 
     def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
         parser = super().add_to_parser(parent_parser)
@@ -994,7 +1000,6 @@ class ExtractToS3Command(MonitoredSubCommand):
         descriptions = self.find_relation_descriptions(
             args, default_scheme="s3", required_relation_selector=dw_config.required_in_full_load_selector
         )
-        etl.monitor.Monitor.marker_payload("extract").emit(dry_run=args.dry_run)
         etl.extract.extract_upstream_sources(
             args.extractor,
             dw_config.schemas,
@@ -1049,7 +1054,6 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             required_relation_selector=dw_config.required_in_full_load_selector,
             return_all=True,
         )
-        etl.monitor.Monitor.marker_payload("load").emit(dry_run=args.dry_run)
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
@@ -1134,7 +1138,6 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             required_relation_selector=dw_config.required_in_full_load_selector,
             return_all=True,
         )
-        etl.monitor.Monitor.marker_payload("upgrade").emit(dry_run=args.dry_run)
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
@@ -1191,7 +1194,6 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
-        etl.monitor.Monitor.marker_payload("update").emit(dry_run=args.dry_run)
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1232,7 +1234,6 @@ class UnloadDataToS3Command(MonitoredSubCommand):
 
     def callback(self, args):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
-        etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
         etl.unload.unload_to_s3(
             descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
         )
