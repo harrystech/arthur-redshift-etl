@@ -676,24 +676,35 @@ class BootstrapTransformationsCommand(SubCommand):
             "bootstrap_transformations",
             "bootstrap schema information from transformations",
             "Download schema information as if transformation had been run in data warehouse."
-            " If there is no local design file, then create one as a starting point.",
+            " If there is no local design file, then create one as a starting point."
+            " (With --check-only, no file is written and only changes in the design are flagged.)",
             aliases=["auto_design"],
         )
 
     def add_arguments(self, parser):
-        parser.add_argument(
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "-c",
+            "--check-only",
+            help="only advise whether bootstrap would make any changes on the table design file",
+            default=False,
+            action="store_true",
+        )
+        group.add_argument(
             "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
         )
-        # FIXME Switch to '[--update|--as-ctas|--as-view]'
-        parser.add_argument(
+        group.add_argument(
             "-u",
             "--update",
-            help="EXPERIMENTAL merge with existing table design if available",
+            help="merge new information with existing table design",
             default=False,
             action="store_true",
         )
         parser.add_argument(
-            "type", choices=["CTAS", "VIEW"], help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+            "type",
+            choices=["CTAS", "VIEW", "update"],
+            help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+            " or update the current relation",
         )
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
@@ -704,8 +715,9 @@ class BootstrapTransformationsCommand(SubCommand):
             config.schemas,
             args.table_design_dir,
             local_files,
-            args.type == "VIEW",
-            update=args.update,
+            args.type if args.type != "update" else None,
+            check_only=args.check_only,
+            update=args.update or args.type == "update",
             replace=args.force,
             dry_run=args.dry_run,
         )

@@ -63,7 +63,7 @@ _arthur_completion()
             COMPREPLY=( $(compgen -A variable -P '$' -- "${cur#'$'}") )
             ;;
         "auto_design"|"bootstrap_transformations")
-            COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
+            COMPREPLY=( $(compgen -W "CTAS VIEW update" -- "$cur") )
             ;;
         "selftest")
             COMPREPLY=( $(compgen -W "all doctest type-check" -- "$cur") )

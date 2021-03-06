@@ -2,8 +2,8 @@ import logging
 import os.path
 import re
 from contextlib import closing
-from datetime import datetime
-from typing import List, Mapping, Union
+from difflib import context_diff
+from typing import Dict, List, Union
 
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
@@ -15,8 +15,8 @@ import etl.file_sets
 import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.design import Attribute, ColumnDefinition
-from etl.names import TableName, TableSelector, join_with_quotes
+from etl.design import Attribute, ColumnDefinition, TableDesign
+from etl.names import TableName, TableSelector, TempTableName, join_with_quotes
 from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     The list of tables matching the allowlist but not the denylist can be further narrowed
     down by the pattern in :selector.
     """
-    # Look for 'r'elations (ordinary tables), 'm'aterialized views, and 'v'iews in the catalog.
+    # Look for relations ('r', ordinary tables), materialized views ('m'), and views ('v').
     result = etl.db.query(
         cx,
         """
@@ -78,7 +78,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     """Retrieve table definition (column names and types)."""
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s`
     # works in the editor.
-    if getattr(table_name, "is_late_binding_view", False):
+    if isinstance(table_name, TempTableName) and table_name.is_late_binding_view:
         stmt = """
             SELECT col_name AS "name"
                  , col_type AS "sql_type"
@@ -110,7 +110,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     return [Attribute(**att) for att in attributes]
 
 
-def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str, List[str]]]:
+def fetch_constraints(cx: connection, table_name: TableName) -> List[Dict[str, List[str]]]:
     """
     Retrieve table constraints from database by looking up indices.
 
@@ -158,16 +158,23 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
         attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
-            constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
+            constraint: Dict[str, List[str]] = {constraint_type: columns}
             logger.info(
-                "Index '%s' of '%s' adds constraint %s", index_name, table_name.identifier, json.dumps(constraint)
+                "Index '%s' of '%s' adds constraint %s",
+                index_name,
+                table_name.identifier,
+                json.dumps(constraint, sort_keys=True),
             )
             found.append(constraint)
     return found
 
 
 def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
-    """Lookup dependencies (other tables)."""
+    """
+    Lookup dependencies (other relations).
+
+    Note that this will return an empty list for a late-binding view.
+    """
     # See https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
     stmt = """
         SELECT DISTINCT
@@ -186,6 +193,41 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
         """
     dependencies = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [TableName(**row).identifier for row in dependencies]
+
+
+def fetch_dependency_hints(cx: connection, stmt: str) -> List[str]:
+    """
+    Parse a query plan for hints of which relations we might depend on.
+
+    This is still a bit under construction.
+    """
+    # Tried re.VERBOSE but escaping every space as \s was cluttering the RE.
+    scan_re = re.compile(
+        r"\s+->  (?:"
+        r"((?:S3 Seq Scan|S3 Nested Subquery) (?P<s3_table>\w+\.\w+)(?: \w+)? location:)|"
+        r"((?:XN Seq Scan on) (?P<xn_table>\w+))"
+        r")"
+    )
+    s3_dependencies = []
+    xn_dependencies = []
+
+    logger.debug("Looking at query plan to find dependencies")
+    plan = etl.db.explain(cx, stmt)
+    for row in plan:
+        match = scan_re.match(row)
+        if match:
+            values = match.groupdict()
+            if values["s3_table"]:
+                s3_dependencies.append(values["s3_table"])
+            elif values["xn_table"]:
+                xn_dependencies.append(values["xn_table"])
+    if s3_dependencies and xn_dependencies:
+        # Unfortunately the tables aren't qualified with a schema so we can't use the info.
+        logger.warning(
+            "Found dependencies in S3 AND these not in S3: %s",
+            join_with_quotes(xn_dependencies),
+        )
+    return sorted(s3_dependencies)
 
 
 def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
@@ -207,6 +249,9 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     source_attributes = fetch_attributes(conn, source_table_name)
     if not source_attributes:
         raise RuntimeError("failed to find attributes (check your query)")
+    unique_source_attributes = frozenset(attribute.name for attribute in source_attributes)
+    if len(source_attributes) > len(unique_source_attributes):
+        raise RuntimeError(f"found {len(source_attributes)} attributes but there are duplicates")
     target_columns = [
         ColumnDefinition.from_attribute(
             attribute, as_is_attribute_type, cast_needed_attribute_type, default_attribute_type
@@ -214,8 +259,8 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
         for attribute in source_attributes
     ]
     table_design = {
-        "name": "%s" % target_table_name.identifier,
-        "description": "Automatically generated on {0:%Y-%m-%d} at {0:%H:%M:%S}".format(datetime.utcnow()),
+        "name": target_table_name.identifier,
+        "description": "",
         "columns": [column.to_dict() for column in target_columns],
     }
     return table_design
@@ -237,8 +282,8 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
 
 
 def create_partial_table_design_for_transformation(
-    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update_keys: Union[List, None] = None
-):
+    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update_keys: Union[List, None] = None
+) -> dict:
     """
     Create a partial design that's applicable to transformations.
 
@@ -248,76 +293,150 @@ def create_partial_table_design_for_transformation(
         - and optionally updates from the existing table design
     """
     table_design = create_partial_table_design(conn, tmp_view_name, relation.target_table_name)
-    # TODO When working with CTAS or VIEW, the type casting doesn't make sense but sometimes sneaks in.
+    # When working with CTAS or VIEW, the type casting doesn't make sense but sometimes sneaks in.
     for column in table_design["columns"]:
         if "expression" in column:
             del column["expression"]
-            del column["source_sql_type"]  # expression and source_sql_type always travel together
+        if "source_sql_type" in column:
+            del column["source_sql_type"]
 
-    dependencies = fetch_dependencies(conn, tmp_view_name)
+    if tmp_view_name.is_late_binding_view:
+        dependencies = fetch_dependency_hints(conn, relation.query_stmt)
+    else:
+        dependencies = fetch_dependencies(conn, tmp_view_name)
     if dependencies:
         table_design["depends_on"] = dependencies
 
-    if update_keys is not None and relation.design_file_name:
-        logger.info("Experimental update of existing table design file in progress...")
-        existing_table_design = relation.table_design
-        if "columns" in update_keys:
-            # If the old design had added an identity column, we carry it forward
-            # here (and always as the first column).
-            identity = [column for column in existing_table_design["columns"] if column.get("identity")]
-            if identity:
-                table_design["columns"][:0] = identity
-                table_design["columns"][0]["encoding"] = "raw"
-            column_lookup = {column["name"]: column for column in existing_table_design["columns"]}
-            for column in table_design["columns"]:
-                update_column_definition(column, column_lookup.get(column["name"], {}))
-        # In case we're updating from an auto-designed file, fix the description to reflect the update.
-        table_design["description"] = table_design["description"].replace("generated", "updated", 1)
-        if "description" in update_keys and "description" in existing_table_design:
-            old_description = existing_table_design["description"]
-            if not old_description.startswith(("Automatically generated on", "Automatically updated on")):
-                table_design["description"] = old_description
-        for copy_key in update_keys:
-            if copy_key in existing_table_design and copy_key not in ("columns", "description"):
-                # TODO may have to cleanup columns in constraints and attributes!
-                table_design[copy_key] = existing_table_design[copy_key]
+    if update_keys is None or relation.design_file_name is None:
+        return table_design
+
+    logger.info("Update of existing table design file for '%s' in progress", relation.identifier)
+    existing_table_design = relation.table_design
+
+    if "description" in update_keys:
+        update_keys.remove("description")
+        if "description" in existing_table_design:
+            # Do not copy the old passive-aggressive descriptions.
+            if not existing_table_design["description"].startswith(
+                ("Automatically generated on", "Automatically updated on")
+            ):
+                table_design["description"] = existing_table_design["description"]
+
+    if "columns" in update_keys:
+        update_keys.remove("columns")
+        # If the old design had added an identity column, we carry it forward
+        # here (and always as the first column).
+        identity = [column for column in existing_table_design["columns"] if column.get("identity")]
+        if identity:
+            table_design["columns"][:0] = identity
+            table_design["columns"][0]["encoding"] = "raw"
+
+        existing_column = {column["name"]: column for column in existing_table_design["columns"]}
+        for column in table_design["columns"]:
+            if column["name"] in existing_column:
+                # This modifies in-place until I have more time to fix this.
+                update_column_definition(relation.identifier, column, existing_column[column["name"]])
+
+    # Now do the rest of the update keys which require less attention to details.
+    for copy_key in [key for key in update_keys if key in existing_table_design]:
+        # TODO(tom): May have to cleanup columns in constraints and attributes!
+        table_design[copy_key] = existing_table_design[copy_key]
+
     return table_design
 
 
-def update_column_definition(new_column: dict, old_column: dict):
+def update_column_definition(target_table: str, new_column: dict, old_column: dict) -> dict:
     """
-    Update column definition found automatically with previous information from table design.
+    Update (in place) the bootstrapped column definition with existing information.
 
     This carefully merges the information from inspecting the view created for the transformation
     with information from the existing table design.
 
     Copied directly: "description", "encoding", "references", and "not_null"
     Updated carefully: "sql_type" and "type" (always together)
+
+    >>> update_column_definition("s.t", {
+    ...     "name": "doctest", "sql_type": "integer", "type": "int"
+    ... }, {
+    ...     "name": "doctest", "sql_type": "bigint", "type": "long"
+    ... })
+    {'name': 'doctest', 'sql_type': 'bigint', 'type': 'long'}
+    >>> update_column_definition("s.t", {
+    ...     "name": "doctest", "sql_type": "numeric(18,4)", "type": "string"
+    ... }, {
+    ...     "name": "doctest", "sql_type": "DECIMAL(12, 2)", "type": "string"
+    ... })
+    {'name': 'doctest', 'sql_type': 'numeric(12,2)', 'type': 'string'}
+    >>> update_column_definition("s.t", {
+    ...     "name": "doctest", "sql_type": "character varying(100)", "type": "string"
+    ... }, {
+    ...     "name": "doctest", "sql_type": "Varchar(200)", "type": "string"
+    ... })
+    {'name': 'doctest', 'sql_type': 'character varying(200)', 'type': 'string'}
     """
-    ok_to_copy = frozenset(["description", "encoding", "references", "not_null"])
-    for key in ok_to_copy.intersection(old_column):
-        new_column[key] = old_column[key]
-    if "sql_type" in old_column:
-        old_sql_type = old_column["sql_type"]
-        new_sql_type = new_column["sql_type"]
-        # Upgrade to "larger" type, mostly for keys
+    column_name = new_column["name"]
+    assert old_column["name"] == column_name
+
+    ok_to_copy = frozenset({"description", "encoding", "references", "not_null"})
+    have_old_value = ok_to_copy.intersection(old_column)
+    new_column.update({key: value for key, value in old_column.items() if key in have_old_value})
+
+    # When we update from VIEW to CTAS, there's not much to copy from.
+    if "sql_type" not in old_column:
+        return new_column
+
+    new_sql_type = new_column["sql_type"]
+    old_sql_type = old_column["sql_type"].strip()
+    logger.debug("Trying to update column '%s': new='%s', old='%s'", column_name, new_sql_type, old_sql_type)
+
+    # Upgrade to "larger" type if that was selected previously.
+    if new_sql_type in ("integer", "bigint"):
         if old_sql_type == "bigint" and new_sql_type == "integer":
-            new_column["sql_type"] = "bigint"
-            new_column["type"] = "long"
-        varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)")
-        old_text = varchar_re.search(old_sql_type)
-        new_text = varchar_re.search(new_sql_type)
-        if old_text and new_text:
-            new_column["sql_type"] = "character varying({})".format(old_text.group("size"))
-        numeric_re = re.compile(r"(?:numeric|decimal)\((?P<precision>\d+),(?P<scale>\d+)\)")
+            new_column.update(sql_type="bigint", type="long")
+            logger.warning("Keeping previous definition of '%s' for column '%s'", new_column["sql_type"], column_name)
+        return new_column
+
+    numeric_re = re.compile(r"(?:numeric|decimal)\(\s*(?P<precision>\d+),\s*(?P<scale>\d+)\)", re.IGNORECASE)
+    new_numeric = numeric_re.search(new_sql_type)
+    if new_numeric:
         old_numeric = numeric_re.search(old_sql_type)
-        new_numeric = numeric_re.search(new_sql_type)
-        if old_numeric and new_numeric:
-            new_column["sql_type"] = "numeric({},{})".format(old_numeric.group("precision"), old_numeric.group("scale"))
+        if old_numeric and new_numeric.groups() != old_numeric.groups():
+            new_column["sql_type"] = "numeric({precision},{scale})".format_map(old_numeric.groupdict())
+            # TODO(tom): Be smarter about precision and scale separately.
+            # TODO(tom): Allow to check for a fixed number of (precision, scale) combinations.
+            logger.warning("Keeping previous definition of '%s' for column '%s'", new_column["sql_type"], column_name)
+        return new_column
+
+    varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)", re.IGNORECASE)
+    new_text = varchar_re.search(new_sql_type)
+    if new_text:
+        old_text = varchar_re.search(old_sql_type)
+        if old_text:
+            new_size = int(new_text.groupdict()["size"])
+            old_size = int(old_text.groupdict()["size"])
+            if new_size < old_size:
+                logger.debug(
+                    "Found for '%s.%s': '%s', used previously: '%s'",
+                    target_table,
+                    column_name,
+                    new_column["sql_type"],
+                    old_column["sql_type"],
+                )
+                new_column["sql_type"] = "character varying({})".format(old_size)
+                logger.warning(
+                    "Re-using old definition for column '%s.%s': '%s' (please add a cast)",
+                    target_table,
+                    column_name,
+                    new_column["sql_type"],
+                )
+        return new_column
+
+    # Those types above are all that we understand how to update.
+    return new_column
 
 
 def create_table_design_for_ctas(
-    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
+    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
 ):
     """
     Create new table design for a CTAS.
@@ -332,7 +451,7 @@ def create_table_design_for_ctas(
 
 
 def create_table_design_for_view(
-    conn: connection, tmp_view_name: TableName, relation: RelationDescription, update: bool
+    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
 ):
     """
     Create (and return) new table design suited for a view.
@@ -351,50 +470,10 @@ def create_table_design_for_view(
     return table_design
 
 
-def make_item_sorter():
-    """
-    Return some value that allows sorting keys that appear in any "object" (JSON-speak for dict).
-
-    The sort order makes the resulting order of keys easier to digest by humans.
-
-    Input to the sorter is a tuple of (key, value) from turning a dict into a list of items.
-    Output (return value) of the sorter is a tuple of (preferred order, key name).
-    If a key is not known, it's sorted alphabetically (ignoring case) after all known ones.
-    """
-    preferred_order = [
-        # always (tables, columns, etc.)
-        "name",
-        "description",
-        # only tables
-        "source_name",
-        "unload_target",
-        "depends_on",
-        "constraints",
-        "attributes",
-        "columns",
-        # only columns
-        "sql_type",
-        "type",
-        "expression",
-        "source_sql_type",
-        "not_null",
-        "identity",
-    ]
-    order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
-    max_index = len(preferred_order)
-
-    def sort_key(item):
-        key, value = item
-        return order_lookup.get(key, (max_index, key))
-
-    return sort_key
-
-
 def save_table_design(
-    source_dir: str,
-    source_table_name: TableName,
     target_table_name: TableName,
     table_design: dict,
+    filename: str,
     overwrite=False,
     dry_run=False,
 ) -> None:
@@ -408,20 +487,19 @@ def save_table_design(
     # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
     etl.design.load.validate_table_design(table_design, target_table_name)
 
-    # FIXME Move this logic into file sets (note that "source_name" is in table_design)
-    filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
     this_table = target_table_name.identifier
     if dry_run:
         logger.info("Dry-run: Skipping writing new table design file for '%s'", this_table)
-    elif os.path.exists(filename) and not overwrite:
+        return
+
+    if os.path.exists(filename) and not overwrite:
         logger.warning("Skipping writing new table design for '%s' since '%s' already exists", this_table, filename)
-    else:
-        logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
-        # We use JSON pretty printing because it is prettier than YAML printing.
-        with open(filename, "w") as o:
-            json.dump(table_design, o, indent="    ", item_sort_key=make_item_sorter())
-            o.write("\n")
-        logger.debug("Completed writing '%s'", filename)
+        return
+
+    logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
+    with open(filename, "w") as o:
+        o.write(TableDesign.as_string(table_design))
+    logger.debug("Completed writing '%s'", filename)
 
 
 def normalize_and_create(directory: str, dry_run=False) -> str:
@@ -470,7 +548,12 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
                 else:
                     target_table_name = TableName(source.name, source_table_name.table)
                     table_design = create_table_design_for_source(conn, source_table_name, target_table_name)
-                    save_table_design(source_dir, source_table_name, target_table_name, table_design, dry_run=dry_run)
+
+                    filename = os.path.join(
+                        source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table)
+                    )
+                    save_table_design(target_table_name, table_design, filename, dry_run=dry_run)
+
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
         logger.error("Error while processing source '%s'", source.name)
@@ -509,41 +592,92 @@ def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=
 
 
 def bootstrap_transformations(
-    dsn_etl, schemas, local_dir, local_files, as_view, update=False, replace=False, dry_run=False
+    dsn_etl, schemas, local_dir, local_files, source_name, check_only=False, update=False, replace=False, dry_run=False
 ):
-    """Download design information for transformations by test-running in the data warehouse."""
+    """
+    Download design information for transformations by test-running in the data warehouse.
+
+    "source_name" should be "CTAS" or "VIEW or None (in which case the relation type currently
+    specified will continue to be used).
+    """
     transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
-    if not (update or replace):
+    if not (check_only or replace or update):
+        # Filter down to new transformations (SQL files without matching YAML file).
         transforms = [file_set for file_set in transforms if not file_set.design_file_name]
     if not transforms:
         logger.warning("Found no new queries without matching design files")
         return
-    relations = [RelationDescription(file_set) for file_set in transforms]
-    if update:
-        logger.info("Loading existing table design file(s)")
-        try:
-            # Unfortunately, this adds warnings about any of the upstream sources being unknown.
-            relations = etl.relation.order_by_dependencies(relations)
-        except ValueError as exc:
-            logger.error("Failed to load existing design file(s) before update: %s", exc)
-            raise
 
-    if as_view:
-        create_func = create_table_design_for_view
-    else:
-        create_func = create_table_design_for_ctas
+    relations = [RelationDescription(file_set) for file_set in transforms]
+    if check_only or update or (replace and source_name is None):
+        logger.info("Loading existing table design file(s)")
+        RelationDescription.load_in_parallel(relations)
+        # TODO(tom): Collect all errors before dying.
+        for relation in relations:
+            if not relation.design_file_name:
+                raise RuntimeError("failed to load existing design file for {:x}".format(relation))
 
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
-            with relation.matching_temporary_view(conn, assume_external_schema=not update) as tmp_view_name:
-                table_design = create_func(conn, tmp_view_name, relation, update)
+            # Be careful not to trigger a load of an unknown design file by accessing "kind".
+            current_source_name = relation.kind if relation.design_file_name else None
+            assert (source_name or current_source_name) in ("CTAS", "VIEW")
+
+            # Use a quick check of the query plan whether we depend on external schemas.
+            with relation.matching_temporary_view(conn, as_late_binding_view=True):
+                has_s3_scans = any(fetch_dependency_hints(conn, relation.query_stmt))
+
+            with relation.matching_temporary_view(conn, as_late_binding_view=has_s3_scans) as tmp_view_name:
+                try:
+                    if (source_name or current_source_name) == "CTAS":
+                        table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update)
+                    else:
+                        table_design = create_table_design_for_view(conn, tmp_view_name, relation, update)
+                except RuntimeError as exc:
+                    if check_only:
+                        print(f"Failed to create table design for {relation:x}")
+                        print(f"Error: {exc}")
+                        continue
+                    else:
+                        raise
+
+                if check_only:
+                    if relation.table_design != table_design:
+                        print("Change detected in table design for {:x}".format(relation))
+                        before = TableDesign.as_string(relation.table_design)
+                        after = TableDesign.as_string(table_design)
+                        print(
+                            "".join(
+                                context_diff(
+                                    before.splitlines(keepends=True),
+                                    after.splitlines(keepends=True),
+                                    fromfile=relation.design_file_name,
+                                    tofile="bootstrap",
+                                )
+                            )
+                        )
+                    continue
+
+                if update and relation.table_design == table_design:
+                    logger.info("No updates detected in table design for {:x}, skipping write".format(relation))
+                    continue
+
                 source_dir = os.path.join(local_dir, relation.source_name)
+                # Derive preferred name from the current design or SQL file.
+                if relation.design_file_name is not None:
+                    filename = relation.design_file_name
+                elif relation.sql_file_name is not None:
+                    filename = re.sub(r".sql$", ".yaml", relation.sql_file_name)
+                else:
+                    filename = os.path.join(
+                        source_dir,
+                        "{}-{}.yaml".format(relation.target_table_name.schema, relation.target_table_name.table),
+                    )
                 save_table_design(
-                    source_dir,
-                    relation.target_table_name,
                     relation.target_table_name,
                     table_design,
+                    filename,
                     overwrite=update or replace,
                     dry_run=dry_run,
                 )
