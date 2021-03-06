@@ -682,7 +682,7 @@ class BootstrapTransformationsCommand(SubCommand):
         )
         parser.add_argument(
             "type",
-            choices=["CTAS", "VIEW", "UPDATE"],
+            choices=["CTAS", "VIEW", "update"],
             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
             " or update the current relation",
         )
@@ -695,9 +695,9 @@ class BootstrapTransformationsCommand(SubCommand):
             config.schemas,
             args.table_design_dir,
             local_files,
-            args.type if args.type != "UPDATE" else None,
+            args.type if args.type != "update" else None,
             check_only=args.check_only,
-            update=args.update or args.type == "UPDATE",
+            update=args.update or args.type == "update",
             replace=args.force,
             dry_run=args.dry_run,
         )
