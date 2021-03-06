@@ -1,0 +1,20 @@
+extends: default
+
+rules:
+
+  document-end:
+    present: false
+
+  document-start:
+    present: false
+
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+
+  line-length:
+    max: 100
+    level: warning
+
+  truthy:
+    check-keys: false

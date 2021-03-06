@@ -198,7 +198,7 @@ def validate_semantics_of_table(table_design):
     for constraint_type in constraint_types_in_design:
         if constraint_type in ("natural_key", "surrogate_key"):
             raise TableDesignSemanticError(
-                "upstream table '%s' has unexpected %s constraint" % (table_design["name"], constraint_type)
+                "upstream table '{}' has unexpected {} constraint".format(table_design["name"], constraint_type)
             )
 
     [split_by_name] = table_design.get("extract_settings", {}).get("split_by", [None])
@@ -229,17 +229,21 @@ def validate_table_design_semantics(table_design, table_name):
         validate_semantics_of_view(table_design)
         if schema.is_upstream_source:
             raise TableDesignSemanticError(
-                "invalid upstream source '%s' in view '%s'" % (table_name.schema, table_name.identifier)
+                "invalid upstream source '{}' in view '{}'".format(table_name.schema, table_name.identifier)
             )
     elif table_design["source_name"] == "CTAS":
         validate_semantics_of_ctas(table_design)
         if schema.is_upstream_source:
             raise TableDesignSemanticError(
-                "invalid source name '%s' in upstream table '%s'" % (table_design["source_name"], table_name.identifier)
+                "invalid source name '{}' in upstream table '{}'".format(
+                    table_design["source_name"], table_name.identifier
+                )
             )
     else:
         validate_semantics_of_table(table_design)
         if not schema.is_upstream_source:
             raise TableDesignSemanticError(
-                "invalid source name '%s' in transformation '%s'" % (table_design["source_name"], table_name.identifier)
+                "invalid source name '{}' in transformation '{}'".format(
+                    table_design["source_name"], table_name.identifier
+                )
             )
