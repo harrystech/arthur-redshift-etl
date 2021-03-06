@@ -75,14 +75,27 @@ def unparse_connection(dsn: Dict[str, str]) -> str:
     return "host={host} port={port} dbname={database} user={user} password=***".format_map(values)
 
 
-def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
+def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str) -> dict:
     """
     Return a dictionary of parameters that can be used to open a db connection.
 
-    This includes popping "subprotocol" from our dictionary of paramters extracted
+    This includes popping "subprotocol" from our dictionary of parameters extracted
     from the connection string, which is not expected by psycopg2.connect().
+
+    We also set some basic connection parameters here, including connection timeout and
+    keepalives settings.
     """
-    dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
+    # See https://www.postgresql.org/docs/10/libpq-connect.html for the keepalive* args.
+    # and https://docs.aws.amazon.com/redshift/latest/mgmt/connecting-firewall-guidance.html
+    dsn_values = dict(
+        application_name=application_name,
+        connect_timeout=30,
+        cursor_factory=psycopg2.extras.DictCursor,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=60,
+    )
+    dsn_values.update(dsn_dict)
     dsn_values.pop("subprotocol", None)
     return dsn_values
 
@@ -99,7 +112,6 @@ def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, aut
     """
     dsn_values = _dsn_connection_values(dsn_dict, application_name)
     logger.info("Connecting to: %s", unparse_connection(dsn_values))
-    dsn_values.update(keepalives=1, keepalives_idle=30)
     cx = psycopg2.connect(**dsn_values)
     cx.set_session(autocommit=autocommit, readonly=readonly)
     logger.debug(
