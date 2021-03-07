@@ -1208,7 +1208,7 @@ def update_data_warehouse(
 def run_query(relation: RelationDescription, limit=None):
     """Run the query for the relation (which must be a transformation, not a source)."""
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    query_stmt = relation.query_stmt + "\nLIMIT %s"
+    query_stmt = f"-- run_query:{relation.identifier}\n" + relation.query_stmt + "\nLIMIT %s"
 
     with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         logger.info(

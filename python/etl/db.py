@@ -23,6 +23,7 @@ from urllib.parse import unquote
 
 import pgpasslib
 import psycopg2
+import psycopg2.extensions
 import psycopg2.extras
 import psycopg2.pool
 
@@ -32,6 +33,9 @@ from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+# Allow Ctrl-C to interrupt a query. See https://www.psycopg.org/docs/faq.html#faq-interrupt-query
+psycopg2.extensions.set_wait_callback(psycopg2.extras.wait_select)
 
 
 def parse_connection_string(dsn: str) -> Dict[str, str]:
