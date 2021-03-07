@@ -18,6 +18,7 @@ from typing import List, Optional
 
 import boto3
 import simplejson as json
+from termcolor import colored
 
 import etl.config
 import etl.config.env
@@ -39,7 +40,7 @@ import etl.selftest
 import etl.sync
 import etl.unload
 import etl.validate
-from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentError
+from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -51,15 +52,14 @@ def croak(error, exit_code):
     Print first line of exception and then bail out with the exit code.
 
     When you have a large stack trace, it's easy to miss the trigger and
-    so we call it out here again, on stderr.
+    so we call it out here again on stderr.
     """
-    full_tb = "\n".join(traceback.format_exception_only(type(error), error))
-    header = full_tb.split("\n")[0]
+    exception_only = traceback.format_exception_only(type(error), error)[0]
+    header = exception_only.splitlines()[0]
+    # Make sure to not send random ASCII sequences to a log file.
     if sys.stderr.isatty():
-        message = "Bailing out: \033[01;31m{}\033[0m".format(header)
-    else:
-        message = "Bailing out: {}".format(header)
-    print(message, file=sys.stderr)
+        header = colored(header, color="red", attrs=["bold"])
+    print(f"Bailing out: {header}", file=sys.stderr)
     sys.exit(exit_code)
 
 
@@ -75,13 +75,19 @@ def execute_or_bail():
     try:
         yield
     except InvalidArgumentError as exc:
-        logger.exception("ETL never got off the ground:")
+        logger.debug("Caught exception:", exc_info=True)
+        logger.error("ETL never got off the ground: %r", exc)
         croak(exc, 1)
     except ETLError as exc:
-        if isinstance(exc, ETLDelayedExit):
-            logger.critical("Something bad happened in the ETL: %s", str(exc))
-        else:
-            logger.critical("Something bad happened in the ETL:", exc_info=True)
+        logger.debug("Caught exception:", exc_info=True)
+        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc)
+        if exc.__cause__ is not None:
+            exc_cause_type = type(exc.__cause__)
+            logger.info(
+                "The direct cause of this exception was: '%s.%s'",
+                exc_cause_type.__module__,
+                exc_cause_type.__qualname__,
+            )
         logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
         croak(exc, 2)
     except Exception as exc:
