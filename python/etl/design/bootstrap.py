@@ -3,7 +3,7 @@ import os.path
 import re
 from contextlib import closing
 from difflib import context_diff
-from typing import Dict, List, Union
+from typing import Dict, Iterable, List, Optional
 
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
@@ -282,7 +282,10 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
 
 
 def create_partial_table_design_for_transformation(
-    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update_keys: Union[List, None] = None
+    conn: connection,
+    tmp_view_name: TempTableName,
+    relation: RelationDescription,
+    update_keys: Optional[Iterable[str]] = None,
 ) -> dict:
     """
     Create a partial design that's applicable to transformations.
@@ -312,9 +315,9 @@ def create_partial_table_design_for_transformation(
 
     logger.info("Update of existing table design file for '%s' in progress", relation.identifier)
     existing_table_design = relation.table_design
+    selected_update_keys = frozenset(update_keys)
 
-    if "description" in update_keys:
-        update_keys.remove("description")
+    if "description" in selected_update_keys:
         if "description" in existing_table_design:
             # Do not copy the old passive-aggressive descriptions.
             if not existing_table_design["description"].startswith(
@@ -322,8 +325,7 @@ def create_partial_table_design_for_transformation(
             ):
                 table_design["description"] = existing_table_design["description"]
 
-    if "columns" in update_keys:
-        update_keys.remove("columns")
+    if "columns" in selected_update_keys:
         # If the old design had added an identity column, we carry it forward
         # here (and always as the first column).
         identity = [column for column in existing_table_design["columns"] if column.get("identity")]
@@ -338,7 +340,8 @@ def create_partial_table_design_for_transformation(
                 update_column_definition(relation.identifier, column, existing_column[column["name"]])
 
     # Now do the rest of the update keys which require less attention to details.
-    for copy_key in [key for key in update_keys if key in existing_table_design]:
+    remaining_keys = selected_update_keys.difference(("columns", "description")).intersection(existing_table_design)
+    for copy_key in sorted(remaining_keys):
         # TODO(tom): May have to cleanup columns in constraints and attributes!
         table_design[copy_key] = existing_table_design[copy_key]
 
@@ -461,12 +464,14 @@ def create_table_design_for_view(
 
     If :update is True, try to merge additional information from any existing table design file.
     """
-    update_keys = ["description", "unload_target"] if update else None
-    # This creates a full column description with types (testing the type-maps), then drop all of
-    # it but their names.
+    update_keys = ["description", "unload_target", "columns"] if update else None
+    # This creates a full column description with types (testing the type-maps), then drops all of
+    # that except for names and descriptions.
     table_design = create_partial_table_design_for_transformation(conn, tmp_view_name, relation, update_keys)
+    table_design["columns"] = [
+        dict(name=column["name"], description=column["description"]) for column in table_design["columns"]
+    ]
     table_design["source_name"] = "VIEW"
-    table_design["columns"] = [{"name": column["name"]} for column in table_design["columns"]]
     return table_design
 
 

@@ -181,11 +181,10 @@ def validate_single_transform(conn: Connection, relation: RelationDescription, k
             validate_dependencies(conn, relation, tmp_view_name)
             validate_column_ordering(conn, relation, tmp_view_name)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
-        if keep_going:
-            _error_occurred.set()
-            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier)
-        else:
+        if not keep_going:
             raise
+        _error_occurred.set()
+        logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier)
 
 
 def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool = False) -> None:
