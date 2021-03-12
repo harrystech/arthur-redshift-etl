@@ -5,6 +5,7 @@ from contextlib import closing
 from difflib import context_diff
 from typing import Dict, Iterable, List, Optional
 
+import psycopg2.errors
 import simplejson as json
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -195,32 +196,67 @@ def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
     return [TableName(**row).identifier for row in dependencies]
 
 
-def fetch_dependency_hints(cx: connection, stmt: str) -> List[str]:
+def _search_query_step(line: str) -> Optional[Dict[str, str]]:
     """
-    Parse a query plan for hints of which relations we might depend on.
+    Return any S3-based tables found in the query step (part of a query plan).
 
-    This is still a bit under construction.
+    >>> plan = '-> S3 Nested Subquery ex_schema.table location:"s3://bucket/..."'
+    >>> _search_query_step(plan)
+    {'s3_table': 'ex_schema.table'}
+    >>> plan = '-> S3 Seq Scan ex_schema.table location:'
+    >>> _search_query_step(plan)
+    {'s3_table': 'ex_schema.table'}
+    >>> plan = '-> S3 Seq Scan ex_schema.table alias location:'
+    >>> _search_query_step(plan)
+    {'s3_table': 'ex_schema.table'}
+    >>> plan = '-> XN Seq Scan on table'
+    >>> _search_query_step(plan)
+    {'xn_table': 'table'}
     """
-    # Tried re.VERBOSE but escaping every space as \s was cluttering the RE.
+    ws_re = re.compile(r"\s+")
+    # Note that in the regex below, whitespace outside '[ ]' or '\ ' is ignored.
     scan_re = re.compile(
-        r"\s+->  (?:"
-        r"((?:S3 Seq Scan|S3 Nested Subquery) (?P<s3_table>\w+\.\w+)(?: \w+)? location:)|"
-        r"((?:XN Seq Scan on) (?P<xn_table>\w+))"
-        r")"
+        r"""->[ ]
+            S3\ Nested\ Subquery\ (?P<s3_table_nested>\w+\.\w+)\ location:
+            | S3\ Seq\ Scan\ (?P<s3_table_seq>\w+\.\w+)(?:\ \w+)?\ location:
+            | XN\ Seq\ Scan\ on\ (?P<xn_table>\w+)
+        """,
+        re.VERBOSE,
     )
+    match = scan_re.search(ws_re.sub(" ", line))
+    if not match:
+        return None
+    values = match.groupdict()
+    if values["s3_table_nested"]:
+        return {"s3_table": values["s3_table_nested"]}
+    if values["s3_table_seq"]:
+        return {"s3_table": values["s3_table_seq"]}
+    if values["xn_table"]:
+        return {"xn_table": values["xn_table"]}
+    return None
+
+
+def fetch_dependency_hints(cx: connection, stmt: str) -> Optional[List[str]]:
+    """Parse a query plan for hints of which relations we might depend on."""
     s3_dependencies = []
     xn_dependencies = []
 
     logger.debug("Looking at query plan to find dependencies")
-    plan = etl.db.explain(cx, stmt)
-    for row in plan:
-        match = scan_re.match(row)
-        if match:
-            values = match.groupdict()
-            if values["s3_table"]:
-                s3_dependencies.append(values["s3_table"])
-            elif values["xn_table"]:
-                xn_dependencies.append(values["xn_table"])
+    try:
+        plan = etl.db.explain(cx, stmt)
+    except psycopg2.errors.InvalidSchemaName as exc:
+        logger.warning("Cannot fetch dependencies: %s", str(exc).strip())
+        return None
+
+    for line in plan:
+        maybe = _search_query_step(line)
+        if maybe is None:
+            continue
+        if "s3_table" in maybe:
+            s3_dependencies.append(maybe["s3_table"])
+        if "xn_table" in maybe:
+            xn_dependencies.append(maybe["xn_table"])
+
     if s3_dependencies and xn_dependencies:
         # Unfortunately the tables aren't qualified with a schema so we can't use the info.
         logger.warning(
@@ -317,13 +353,14 @@ def create_partial_table_design_for_transformation(
     existing_table_design = relation.table_design
     selected_update_keys = frozenset(update_keys)
 
-    if "description" in selected_update_keys:
-        if "description" in existing_table_design:
-            # Do not copy the old passive-aggressive descriptions.
-            if not existing_table_design["description"].startswith(
-                ("Automatically generated on", "Automatically updated on")
-            ):
-                table_design["description"] = existing_table_design["description"]
+    if (
+        "description" in selected_update_keys
+        and "description" in existing_table_design
+        and not existing_table_design["description"].startswith(
+            ("Automatically generated on", "Automatically updated on")
+        )
+    ):
+        table_design["description"] = existing_table_design["description"].strip()
 
     if "columns" in selected_update_keys:
         # If the old design had added an identity column, we carry it forward
@@ -469,7 +506,8 @@ def create_table_design_for_view(
     # that except for names and descriptions.
     table_design = create_partial_table_design_for_transformation(conn, tmp_view_name, relation, update_keys)
     table_design["columns"] = [
-        dict(name=column["name"], description=column["description"]) for column in table_design["columns"]
+        {key: value for key, value in column.items() if key in ("name", "description")}
+        for column in table_design["columns"]
     ]
     table_design["source_name"] = "VIEW"
     return table_design
@@ -641,7 +679,12 @@ def bootstrap_transformations(
 
             # Use a quick check of the query plan whether we depend on external schemas.
             with relation.matching_temporary_view(conn, as_late_binding_view=True):
-                has_s3_scans = any(fetch_dependency_hints(conn, relation.query_stmt))
+                dependencies = fetch_dependency_hints(conn, relation.query_stmt)
+                if dependencies is None:
+                    raise RuntimeError("failed to query for dependencies")
+                has_s3_scans = any(dependencies)
+            if has_s3_scans:
+                logger.info("Looks like %s has external dependencies, proceeding with caution", relation.identifier)
 
             with relation.matching_temporary_view(conn, as_late_binding_view=has_s3_scans) as tmp_view_name:
                 try:

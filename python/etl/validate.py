@@ -118,18 +118,19 @@ def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_v
     """Download the dependencies (based on a temporary view) and compare with table design."""
     if tmp_view_name.is_late_binding_view:
         dependencies = etl.design.bootstrap.fetch_dependency_hints(conn, relation.query_stmt)
-        method = "query plan"
+        if dependencies is None:
+            logger.warning("Unable to validate '%s' which depends on external tables", relation.identifier)
+            return
+        logger.info("Dependencies of '%s' per query plan: %s", relation.identifier, join_with_quotes(dependencies))
     else:
         dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
-        method = "catalog"
-    logger.info("Dependencies of '%s' per %s: %s", relation.identifier, method, join_with_quotes(dependencies))
+        logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, join_with_quotes(dependencies))
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
         logger.error("Mismatch in dependencies of '{}': {}".format(relation.identifier, difference))
         raise TableDesignValidationError("mismatched dependencies in '%s'" % relation.identifier)
-    else:
-        logger.info("Dependencies listing in design file for '%s' matches SQL", relation.identifier)
+    logger.info("Dependencies listing in design file for '%s' matches SQL", relation.identifier)
 
 
 def validate_column_ordering(conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
