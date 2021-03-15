@@ -158,7 +158,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Mapping[str
         attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
             columns = list(att["name"] for att in attributes)
-            constraint = {constraint_type: columns}  # type: Mapping[str, List[str]]
+            constraint: Mapping[str, List[str]] = {constraint_type: columns}
             logger.info(
                 "Index '%s' of '%s' adds constraint %s", index_name, table_name.identifier, json.dumps(constraint)
             )

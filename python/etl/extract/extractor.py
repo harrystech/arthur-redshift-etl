@@ -51,7 +51,7 @@ class Extractor:
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
-        self.failed_sources = set()  # type: Set[str]
+        self.failed_sources: Set[str] = set()
 
     def options_info(self) -> List[str]:
         """

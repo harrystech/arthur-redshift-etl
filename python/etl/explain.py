@@ -72,7 +72,7 @@ def explain_queries(dsn: dict, relations: List[RelationDescription]) -> None:
         return
 
     queries_with_temps = 0
-    counter = Counter()  # type: Dict[str, int]
+    counter: Dict[str, int] = Counter()
 
     # We can't use a read-only connection here because Redshift needs to (or wants to) create
     # temporary tables when building the query plan if temporary tables (probably from CTEs)

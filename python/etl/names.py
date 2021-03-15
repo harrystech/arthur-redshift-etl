@@ -82,8 +82,8 @@ class TableName:
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._is_staging = is_staging
-        self._managed_schemas = None  # type: Optional[frozenset]
-        self._external_schemas = None  # type: Optional[frozenset]
+        self._managed_schemas: Optional[frozenset] = None
+        self._external_schemas: Optional[frozenset] = None
 
     @property
     def schema(self):

@@ -82,13 +82,13 @@ class RelationDescription:
         self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
         # Lazy-loading of table design and query statement and any derived information from the
         # table design.
-        self._table_design = None  # type: Optional[Dict[str, Any]]
-        self._query_stmt = None  # type: Optional[str]
+        self._table_design: Optional[Dict[str, Any]] = None
+        self._query_stmt: Optional[str] = None
 
-        self._dependencies = None  # type: Optional[FrozenSet[TableName]]
-        self._execution_level = None  # type: Union[None, int]
-        self._execution_order = None  # type: Union[None, int]
-        self._is_required = None  # type: Union[None, bool]
+        self._dependencies: Optional[FrozenSet[TableName]] = None
+        self._execution_level: Optional[int] = None
+        self._execution_order: Optional[int] = None
+        self._is_required: Optional[bool] = None
 
     @property
     def target_table_name(self) -> TableName:
@@ -405,8 +405,8 @@ class SortableRelationDescription:
         self.identifier = original_description.identifier
         self.dependencies = set(original_description.dependencies)
         self.target_table_name = original_description.target_table_name
-        self.order = None  # type: Optional[int]
-        self.level = None  # type: Optional[int]
+        self.order: Optional[int] = None
+        self.level: Optional[int] = None
 
 
 def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> None:
@@ -465,7 +465,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
     """
     # The queue has tuples of (min expected order number, original sort order to break ties,
     # relation description).
-    queue = PriorityQueue()  # type: PriorityQueue[Tuple[int, int, SortableRelationDescription]]
+    queue: PriorityQueue[Tuple[int, int, SortableRelationDescription]] = PriorityQueue()
     for initial_order, description in enumerate(descriptions):
         queue.put((1, initial_order + 1, description))
 

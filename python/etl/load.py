@@ -590,7 +590,7 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
 
 def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWarehouseSchema]:
     """Return schemas traversed when refreshing relations (in order that they are needed)."""
-    got_it = set()  # type: Set[str]
+    got_it: Set[str] = set()
     traversed_in_order = []
     for relation in relations:
         this_schema = relation.schema_config
@@ -937,7 +937,7 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
-    futures = {}  # type: Dict[str, concurrent.futures.Future]
+    futures: Dict[str, concurrent.futures.Future] = {}
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
             for relation in source_relations:

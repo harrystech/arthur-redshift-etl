@@ -76,7 +76,7 @@ def extract_upstream_sources(
         return
 
     if extract_type == "manifest-only":
-        database_extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)  # type: Extractor
+        database_extractor: Extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)
     elif extract_type == "spark":
         database_extractor = SparkExtractor(
             database_sources,
