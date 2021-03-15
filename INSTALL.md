@@ -12,9 +12,9 @@ The following sections simply add more explanations (or variations).
     The software _can_ be installed directly into a virtual environment. But we no longer recommend that.
 * You will also need an account with AWS and access using a profile. Be sure to have your access already configured:
     * If you have to work with multiple access keys, check out the support of profiles in the CLI.
-    * It is important to setup a **default region** since the start scripts do not specify one.
+    * It is important to setup a **default region** in case you are not using `us-east-1`.
     * Leave the `output` alone or set it to `json`.
-```bash
+```shell
 aws configure
 ```
 
@@ -22,13 +22,13 @@ aws configure
 
 ### Cloning the repo
 
-```bash
+```shell
 git clone git@github.com:harrystech/arthur-redshift-etl.git
 ```
 
 ## Building the Docker image
 
-```bash
+```shell
 cd ../arthur-redshift-etl
 git pull
 
@@ -38,8 +38,9 @@ You will now have an image `arthur-redshift-etl:latest`.
 
 ## Using the Docker container
 
-It's easiest to set these environment variables, _e.g._ in your `~/.bashrc` or file:
-```bash
+It's easiest to set these environment variables,
+_e.g._ in your `~/.bashrc` or `~/.zshrc` file:
+```shell
 export DATA_WAREHOUSE_CONFIG= ...
 export ARTHUR_DEFAULT_PREFIX= ...
 export AWS_DEFAULT_PROFILE= ...
@@ -47,24 +48,24 @@ export AWS_DEFAULT_REGION= ...
 ```
 
 Then you can simply run:
-```bash
+```shell
 bin/run_arthur.sh
 ```
 
 You can set or override the settings on the command line:
-```bash
+```shell
 bin/run_arthur.sh -p aws_profile ../warehouse-repo/config-dir wip
 ```
 
 When in doubt, ask for help:
-```bash
+```shell
 bin/run_arthur.sh -h
 ```
 
 ## Deploying to S3
 
 You should now try to deploy your code into the object store in S3:
-```bash
+```shell
 bin/deploy_arthur.sh
 ```
 
@@ -78,14 +79,6 @@ This section describes what *else* you should do when you want to develop here.
 #### Spark
 
 **NOTE** Using Spark to extract data has been deprecated -- use Sqoop in an EMR cluster instead.
-
-Install Spark if you'd like to be able to test jobs on your local machine.
-On a Mac, simply use `brew install apache-spark`.
-
-Our ETL code base includes everything to run the ETL in a Spark cluster on AWS
-using [Amazon EMR](https://aws.amazon.com/elasticmapreduce/) so that local testing may be less important to you.
-Running it locally offers shorter development cycles while running it in AWS means less network activity (going in
-and out of your VPC).
 
 #### Drivers (JAR files)
 
@@ -113,21 +106,6 @@ _Hint_: There is a download script in `bin/download_jars.sh` to pull the version
 
 The EMR releases 4.5 and later include `python3` so there's no need to install Python 3 using a bootstrap action.
 
-##### Adding PySpark to your IDE
-
-The easiest way to add PySpark so that code completion and type checking works while working on ETL code
-might be to just add a pointer in the virtual environment.
-
-First, activate your Python virtual environment so that the `VIRTUAL_ENV` environment variable is set.
-
-Then, with Spark 2.1.1, try this for example:
-```bash
-cat > $VIRTUAL_ENV/lib/python3.5/site-packages/_spark_python.pth <<EOF
-/usr/local/Cellar/apache-spark/2.1.1/libexec/python
-/usr/local/Cellar/apache-spark/2.1.1/libexec/python/lib/py4j-0.10.4-src.zip
-EOF
-```
-
 #### Additional packages
 
 While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
@@ -136,12 +114,7 @@ file are installed when building the Docker image.
 
 ### Running unit tests and type checker
 
-Here is how to run the static type checker [mypy](http://mypy-lang.org/) and doctest:
-```bash
-run_tests.py
-```
+See the [Formatting code](https://github.com/harrystech/arthur-redshift-etl/blob/next/README.md#formatting-code)
+section in the README file.
 
 Keep this [cheat sheet](http://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html) close by for help with types etc.
-
-See also the [Formatting code](https://github.com/harrystech/arthur-redshift-etl/blob/next/README.md#formatting-code)
-section in the README file.
