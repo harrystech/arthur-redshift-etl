@@ -8,8 +8,7 @@ setup(
     description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
     entry_points={
         "console_scripts": [
-            "arthur = etl.commands:run_arg_as_command",
-            # We keep this second option since a lot of documentation refers to it.
+            # TODO(tom): Remove .py extension.
             "arthur.py = etl.commands:run_arg_as_command",
         ]
     },
