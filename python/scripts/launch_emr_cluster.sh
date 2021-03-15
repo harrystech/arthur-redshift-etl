@@ -15,13 +15,13 @@ set -e -u
 show_usage_and_exit() {
     cat <<USAGE
 
-Usage: `basename $0` [<environment>]
+Usage: $(basename "$0") [<environment>]
 
 Start an EMR cluster in AWS for running ETL steps.
 The environment defaults to "$DEFAULT_PREFIX".
 
 USAGE
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 while getopts ":h" opt; do
@@ -44,17 +44,17 @@ set -x
 
 # === Basic configuration ===
 
-PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
-PROJ_ENVIRONMENT=$( arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix )
+PROJ_BUCKET=$(arthur.py show_value object_store.s3.bucket_name)
+PROJ_ENVIRONMENT=$(arthur.py show_value --prefix "${1-$DEFAULT_PREFIX}" object_store.s3.prefix)
 
-CLUSTER_RELEASE_LABEL=$( arthur.py show_value resources.EMR.release_label )
+CLUSTER_RELEASE_LABEL=$( arthur.py show_value resources.EMR.release_label)
 CLUSTER_APPLICATIONS='[{"Name":"Spark"},{"Name":"Ganglia"},{"Name":"Zeppelin"},{"Name":"Sqoop"}]'
-CLUSTER_REGION=$( arthur.py show_value resources.VPC.region )
+CLUSTER_REGION=$(arthur.py show_value resources.VPC.region)
 
 # === Derived configuration ===
 
 CLUSTER_LOGS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/logs/"
-CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, `date +'%Y-%m-%d %H:%M'`)"
+CLUSTER_NAME="ETL Cluster ($PROJ_ENVIRONMENT, $(date +'%Y-%m-%d %H:%M'))"
 
 # === Validate bucket and environment information (sanity check on args) ===
 
@@ -68,15 +68,16 @@ fi
 
 # === Fill in config templates ===
 
-INSTANCE_GROUPS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact instance_groups )
-APPLICATION_ENV_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact application_env )
-EC2_ATTRIBUTES_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_attributes )
-BOOTSTRAP_ACTIONS_JSON=$( arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact bootstrap_actions )
-EMR_SERVICE_ROLE=$( arthur.py show_value resources.DataPipeline.role )
+INSTANCE_GROUPS_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact instance_groups)
+APPLICATION_ENV_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact application_env)
+EC2_ATTRIBUTES_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact ec2_attributes)
+BOOTSTRAP_ACTIONS_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compact bootstrap_actions)
+EMR_SERVICE_ROLE=$(arthur.py show_value resources.DataPipeline.role)
 
 # ===  Start cluster ===
 
 CLUSTER_ID_FILE="/tmp/cluster_id_${USER}$$.json"
+# shellcheck disable=SC2064
 trap "rm -f \"$CLUSTER_ID_FILE\"" EXIT
 
 aws emr create-cluster \
@@ -95,7 +96,7 @@ aws emr create-cluster \
         --no-auto-terminate --termination-protected \
         | tee "$CLUSTER_ID_FILE"
 
-CLUSTER_ID=`jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId'`
+CLUSTER_ID=$(jq --raw-output < "$CLUSTER_ID_FILE" '.ClusterId')
 
 if [[ -z "$CLUSTER_ID" ]]; then
     set +x
@@ -114,7 +115,7 @@ type say 2>/dev/null &&
 say "Your cluster is now running. All functions appear normal." ||
 echo "Your cluster is now running. All functions appear normal."
 
-KEYPAIR=$( arthur.py show_value resources.key_name )
+KEYPAIR=$(arthur.py show_value resources.key_name)
 
 cat <<EOF
 # If you want to proxy into the cluster to enjoy port forwarding, use:
