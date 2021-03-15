@@ -43,7 +43,7 @@ class SparkExtractor(DatabaseExtractor):
         Import of classes from
         pyspark has to be pushed down into this method as Spark needs to be available
         in order for the libraries to be imported successfully. Since Spark is not available
-        when the ETL is started initally, we delay the import until the ETL has restarted
+        when the ETL is started initially, we delay the import until the ETL has restarted
         under Spark.
 
         Side-effect: Logging is configured by the time that pyspark is loaded

@@ -153,7 +153,7 @@ class RelationDescription:
                 executor.map(lambda relation: relation.load(), relations)
         logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
 
-    @property  # This property is lazily loaded
+    @property  # This property is lazily loaded.
     def table_design(self) -> Dict[str, Any]:
         self.load()
         return deepcopy(self._table_design)  # type: ignore

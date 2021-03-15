@@ -321,8 +321,8 @@ class TempTableName(TableName):
 
         Leaks Redshift spec in that we make sure that names are less than 127 characters long.
 
-        >>> table = "public.speakeasy"
-        >>> tn = TableName.from_identifier(table)
+        >>> example = "public.speakeasy"
+        >>> tn = TableName.from_identifier(example)
         >>> temp = TempTableName.for_table(tn)
         >>> temp.identifier
         '#public$speakeasy'

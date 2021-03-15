@@ -6,33 +6,30 @@ end_of_line = lf
 insert_final_newline = true
 max_line_length = 100
 
-[*.json]
-indent_size = 4
-indent_style = space
-tab_width = 4
-trim_trailing_whitespace = true
-
 [*.md]
 indent_size = 4
 indent_style = space
-max_line_length = 100
+max_line_length = 80
 tab_width = 4
 trim_trailing_whitespace = true
 
 [*.py]
 indent_size = 4
 indent_style = space
+# Goal: change this to 100.
+max_line_length = 120
 tab_width = 4
 trim_trailing_whitespace = true
 
 [*.sh]
-indent_size = 2
+# Goal: change this to 2.
+indent_size = 4
 indent_style = space
-tab_width = 2
+tab_width = 4
 trim_trailing_whitespace = true
 
-[*.yaml,yml]
-indent_size = 2
+[*.{json,yaml,yml}]
+indent_size = 4
 indent_style = space
-tab_width = 2
+tab_width = 4
 trim_trailing_whitespace = true
