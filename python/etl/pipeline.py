@@ -287,12 +287,12 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
             logger.warning("Selection matched more than one pipeline")
         logger.info(
             "Currently selected pipelines: %s",
-            join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
+            join_with_single_quotes(pipeline.pipeline_id for pipeline in pipelines),
         )
     else:
         logger.info(
             "Available pipelines: %s",
-            join_with_quotes(pipeline.pipeline_id for pipeline in pipelines),
+            join_with_single_quotes(pipeline.pipeline_id for pipeline in pipelines),
         )
     if as_json:
         print(DataPipeline.as_json(pipelines))
