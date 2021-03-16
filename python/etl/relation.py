@@ -20,13 +20,15 @@ import codecs
 import concurrent.futures
 import logging
 import os.path
+from collections import OrderedDict
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Union
 
 import funcy as fy
+from tabulate import tabulate
 from tqdm import tqdm
 
 import etl.config
@@ -716,6 +718,36 @@ def select_in_execution_order(
         return [relation for relation in execution_order if relation in combined]
 
     raise InvalidArgumentError("found no matching relations to continue from")
+
+
+def create_index(relations: List[RelationDescription], groups: Iterable[str]) -> None:
+    """
+    Create an "index" page with Markdown that lists all schemas and their tables.
+
+    The parameter group, when used, filters schemas to those that can be accessed
+    by that group.
+    """
+    group_set = frozenset(groups)
+    schemas: Dict[str, dict] = OrderedDict()
+    for relation in relations:
+        if not group_set or group_set.intersection(relation.schema_config.reader_groups):
+            schema = relation.target_table_name.schema
+            if schema not in schemas:
+                schemas[schema] = {"description": relation.schema_config.description or "", "tables": []}
+            schemas[schema]["tables"].append(
+                (relation.target_table_name.table, relation.table_design.get("description") or "")
+            )
+    if schemas:
+        print("# List Of Tables By Schema\n")
+
+    for i, (schema_name, schema_info) in enumerate(schemas.items()):
+        if i:
+            print()
+        print(f"## {schema_name}\n")
+        if schema_info["description"]:
+            print(f"{schema_info['description']}\n")
+
+        print(tabulate(schema_info["tables"], headers=("Table", "Description"), tablefmt="pipe"))
 
 
 if __name__ == "__main__":
