@@ -25,7 +25,7 @@ from contextlib import closing, contextmanager
 from copy import deepcopy
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Union
 
 import funcy as fy
 from tabulate import tabulate
@@ -202,6 +202,10 @@ class RelationDescription:
     def table_design(self) -> Dict[str, Any]:
         self.load()
         return deepcopy(self._table_design)  # type: ignore
+
+    @property
+    def description(self) -> str:
+        return self.table_design.get("description", "")
 
     @property
     def kind(self) -> str:
@@ -723,32 +727,63 @@ def select_in_execution_order(
     raise InvalidArgumentError("found no matching relations to continue from")
 
 
-def create_index(relations: List[RelationDescription], group: Optional[str]) -> None:
+def create_index(relations: List[RelationDescription], groups: Iterable[str], with_columns: Optional[bool]) -> None:
     """
     Create an "index" page with Markdown that lists all schemas and their tables.
 
-    The parameter group, when used, filters schemas to those that can be accessed
-    by that group.
+    The parameter groups filters schemas to those that can be accessed by those groups.
     """
-    # TODO(tom): Make sure that group is valid group if passed in.
+    group_set = frozenset(groups)
+    show_details = True if with_columns else False
+
+    # We iterate of the list of relations so that we preserve their order with respect to schemas.
     schemas: Dict[str, dict] = OrderedDict()
     for relation in relations:
-        if not group or group in relation.schema_config.reader_groups:
-            schema = relation.target_table_name.schema
-            if schema not in schemas:
-                schemas[schema] = {"description": relation.schema_config.description or "", "tables": []}
-            schemas[schema]["tables"].append(
-                (relation.target_table_name.table, relation.table_design.get("description") or "")
-            )
-    if schemas:
-        print("# List Of Tables By Schema")
+        if not group_set.intersection(relation.schema_config.reader_groups):
+            continue
+        schema_name = relation.target_table_name.schema
+        if schema_name not in schemas:
+            schemas[schema_name] = {"description": relation.schema_config.description, "relations": []}
+        schemas[schema_name]["relations"].append(relation)
 
+    if not schemas:
+        logger.info("List of schemas is empty, selected groups: %s", join_with_single_quotes(group_set))
+        return
+
+    print("# List Of Relations By Schema")
     for schema_name, schema_info in schemas.items():
-        print(f"\n## {schema_name}\n")
+        print(f"""\n## Schema: "{schema_name}"\n""")
         if schema_info["description"]:
             print(f"{schema_info['description']}\n")
 
-        print(tabulate(schema_info["tables"], headers=("Table", "Description"), tablefmt="pipe"))
+        rows = ([relation.target_table_name.table, relation.description] for relation in schema_info["relations"])
+        print(tabulate(rows, headers=["Relation", "Description"], tablefmt="pipe"))
+
+        if not show_details:
+            continue
+
+        for relation in schema_info["relations"]:
+            relation_kind = "View" if relation.is_view_relation else "Table"
+            print(f"""\n### {relation_kind}: "{relation.identifier}"\n""")
+            if relation.description:
+                print(f"{relation.description}\n")
+
+            key_columns: FrozenSet[str] = frozenset()
+            for constraint in relation.table_design.get("constraints", []):
+                for constraint_name, constraint_columns in constraint.items():
+                    if constraint_name in ("primary_key", "surrogate_key"):
+                        key_columns = frozenset(constraint_columns)
+                        break
+            rows = (
+                [
+                    ":key:" if column["name"] in key_columns else "",
+                    column["name"],
+                    column.get("type", ""),
+                    column.get("description", ""),
+                ]
+                for column in relation.table_design["columns"]
+            )
+            print(tabulate(rows, headers=["Key?", "Column Name", "Column Type", "Column Description"], tablefmt="pipe"))
 
 
 if __name__ == "__main__":
