@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+START_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S")
 DEFAULT_TIMEOUT=6
 
 if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
@@ -8,7 +8,7 @@ if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
 
 Rebuild ETL to extract, load (including transforms), and unload data.
 
-Usage: `basename $0` <environment> <startdatetime> <occurrences> [timeout]
+Usage: $(basename "$0") <environment> <startdatetime> <occurrences> [timeout]
 
 Start time should be 'now' or take the ISO8601 format like: $START_NOW
 Optional timeout should be the number of hours pipeline is allowed to run. Defaults to $DEFAULT_TIMEOUT.
@@ -27,7 +27,7 @@ if [[ ! -d "$DEFAULT_CONFIG" ]]; then
     exit 1
 fi
 
-PROJ_BUCKET=$( arthur.py show_value object_store.s3.bucket_name )
+PROJ_BUCKET=$(arthur.py show_value object_store.s3.bucket_name)
 PROJ_ENVIRONMENT="$1"
 
 if [[ "$2" == "now" ]]; then
@@ -53,17 +53,19 @@ AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-et
 PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
+# shellcheck disable=SC2064
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
 
+# shellcheck disable=SC2086
 aws datapipeline create-pipeline \
     --unique-id dw-etl-rebuild-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
 
-PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
+PIPELINE_ID=$(jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId')
 
 if [[ -z "$PIPELINE_ID" ]]; then
     set +x

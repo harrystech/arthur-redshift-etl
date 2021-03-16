@@ -7,7 +7,7 @@ set -o errexit -o nounset
 show_usage_and_exit () {
     cat <<EOF
 
-Usage: `basename $0` [-y] <bucket_name> <source_env> <target_env>
+Usage: $(basename "$0") [-y] <bucket_name> <source_env> <target_env>
 
 This will sync the target environment with the source environment.
 You normally specify environments by their prefix in S3.
@@ -16,7 +16,7 @@ Unless you pass in '-y', you will have to confirm the sync operation since
 it is potentially destructive.
 
 EOF
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 CONFIRMED_YES=no

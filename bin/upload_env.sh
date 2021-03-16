@@ -16,7 +16,7 @@ DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 show_usage_and_exit () {
     cat <<USAGE
 
-Usage: `basename $0` [-y] [[<bucket_name>] <target_env>]
+Usage: $(basename "$0") [-y] [[<bucket_name>] <target_env>]
 
 This creates a new distribution and uploads it into S3.
 The <target_env> defaults to "$DEFAULT_PREFIX".
@@ -26,7 +26,7 @@ If the bucket name is not specified, the variable DATA_WAREHOUSE_CONFIG must be 
 You can specify "-y" to skip the confirmation question.
 
 USAGE
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 ask_to_confirm () {
@@ -87,9 +87,9 @@ fi
 
 set -o nounset
 
-DIR_NAME=`dirname $0`
+DIR_NAME=$(dirname "$0")
 BIN_PATH=$(\cd "$DIR_NAME" && \pwd)
-TOP_PATH=`dirname "$BIN_PATH"`
+TOP_PATH=$(dirname "$BIN_PATH")
 DOCKER_IMAGE_PATH=/opt/src/arthur-redshift-etl
 
 if [[ ! -r ./setup.py ]]; then
@@ -132,7 +132,7 @@ echo "Creating Python dist file, then uploading files (including configuration, 
 set -o xtrace
 
 python3 setup.py sdist
-LATEST_TAR_FILE=`ls -1t dist/redshift_etl*tar.gz | head -1`
+LATEST_TAR_FILE=$(ls -1t dist/redshift_etl*tar.gz | head -1)
 for FILE in requirements.txt "$LATEST_TAR_FILE"
 do
     aws s3 cp "$FILE" "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars/"

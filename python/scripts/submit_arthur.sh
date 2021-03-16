@@ -9,14 +9,14 @@ set -e -u
 # CAVEAT If you make changes here, be sure to re-install the package to make sure changes
 # propagate to the copy of this script in your path.
 
-BIN_DIR=`dirname $0`
-TOP_DIR=`\cd $BIN_DIR/../.. && \pwd`
+BIN_DIR=$(dirname "$0")
+TOP_DIR=$(\cd "$BIN_DIR/../.." && \pwd)
 PYTHON3="$BIN_DIR/python3"
 
 JARS_PATH="./jars $TOP_DIR/jars"
 for JARS_LOCATION in $JARS_PATH; do
     if [[ -d "$JARS_LOCATION" ]]; then
-        JARS_DIR=`\cd "$JARS_LOCATION" && \pwd`
+        JARS_DIR=$(\cd "$JARS_LOCATION" && \pwd)
         break
     fi
 done
@@ -24,8 +24,8 @@ if [[ -z "${JARS_DIR:-}" ]]; then
     echo "Directory for JAR files not found (searched: $JARS_PATH)"
     exit 1
 fi
-JAR_FILES=`ls -1 "$JARS_DIR"/*.jar`
-JAR_LIST=`echo $JAR_FILES | sed 's: :,:g'`
+JAR_FILES=$(ls -1 "$JARS_DIR"/*.jar)
+JAR_LIST=$(echo "$JAR_FILES" | sed 's: :,:g')
 
 if [[ ! -x "$PYTHON3" ]]; then
     echo "Cannot find Python executable: $PYTHON3"
@@ -37,7 +37,7 @@ if [[ $# -lt 1 ]]; then
     exit 2
 fi
 
-COMMAND=`which $1`
+COMMAND=$(which "$1")
 if [[ "$COMMAND" = "" ]]; then
     echo "Cannot find: $1"
     exit 2

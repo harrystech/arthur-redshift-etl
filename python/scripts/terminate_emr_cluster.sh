@@ -3,7 +3,6 @@
 # Terminate an EMR cluster in AWS (or list all active ones to find the one to terminate).
 
 USER="${USER-nobody}"
-DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 set -o errexit -o nounset
 
@@ -12,13 +11,13 @@ set -o errexit -o nounset
 show_usage_and_exit() {
     cat <<USAGE
 
-Usage: `basename $0` [<cluster_id>]
+Usage: $(basename "$0") [<cluster_id>]
 
 This will terminate the cluster with the given cluster ID.
 If no cluster ID is provided, all active clusters are listed.
 
 USAGE
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 while getopts ":h" opt; do
@@ -51,10 +50,10 @@ elif [[ $# -eq 0 ]]; then
     fi
 else
     set -o xtrace
-    CLUSTERID="$1"
+    CLUSTER_ID="$1"
     # This will fail for us if the cluster ID is invalid.
-    aws emr modify-cluster-attributes --no-termination-protected --cluster-id "$CLUSTERID"
-    aws emr terminate-clusters --cluster-ids "$CLUSTERID"
-    aws emr list-clusters --active --query "Clusters[?Id=='$CLUSTERID']" |
+    aws emr modify-cluster-attributes --no-termination-protected --cluster-id "$CLUSTER_ID"
+    aws emr terminate-clusters --cluster-ids "$CLUSTER_ID"
+    aws emr list-clusters --active --query "Clusters[?Id=='$CLUSTER_ID']" |
         jq --raw-output '.[] | [.Id, .Name, .Status.State] | @tsv'
 fi

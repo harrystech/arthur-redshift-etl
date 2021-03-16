@@ -1,32 +1,32 @@
 {
-    "data_warehouse": {
-        "transformations": [
-            {
-                "name": "common",
-                "description": "common views and tables such as numbers or days",
-                "groups": [ "etl_ro" ]
-            }
-        ]
-    },
-    "sources": [
-        {
-            "name": "webapp",
-            "description": "Main web application",
-            "read_access": "WEBAPP_PRODUCTION",
-            "include_tables": [
-                "public.orders",
-             ],
-             "exclude_tables": [
-                "public.migration_*"
-             ],
-             "readers": [ "etl_ro" ]
-        },
-        {
-            "name": "uploads",
-            "description": "Random uploads in S3",
-            "s3_bucket": "your-random-stuff-bucket",
-            "s3_path_template": "prefix",
-            "readers": [ "etl_ro" ]
-        }
+  "data_warehouse": {
+    "transformations": [
+      {
+        "name": "common",
+        "description": "common views and tables such as numbers or days",
+        "groups": ["etl_ro"]
+      }
     ]
+  },
+  "sources": [
+    {
+      "name": "webapp",
+      "description": "Main web application",
+      "read_access": "WEBAPP_PRODUCTION",
+      "include_tables": [
+        "public.orders",
+      ],
+      "exclude_tables": [
+        "public.migration_*"
+      ],
+      "readers": ["etl_ro"]
+    },
+    {
+      "name": "uploads",
+      "description": "Random uploads in S3",
+      "s3_bucket": "your-random-stuff-bucket",
+      "s3_path_template": "prefix",
+      "readers": ["etl_ro"]
+    }
+  ]
 }

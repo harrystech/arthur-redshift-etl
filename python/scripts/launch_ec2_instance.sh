@@ -12,13 +12,13 @@ set -e -u
 show_usage_and_exit() {
     cat <<USAGE
 
-Usage: $(basename $0) [<environment>]
+Usage: $(basename "$0") [<environment>]
 
 Start a new EC2 instance tied to the given environment.
 The environment defaults to "$DEFAULT_PREFIX".
 
 USAGE
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 while getopts ":h" opt; do
@@ -67,6 +67,7 @@ USER_DATA_JSON=$(arthur.py render_template --prefix "$PROJ_ENVIRONMENT" --compac
 # ===  Start instance ===
 
 INSTANCE_ID_FILE="/tmp/instance_id_${USER}$$.json"
+# shellcheck disable=SC2064
 trap "rm -f \"$INSTANCE_ID_FILE\"" EXIT
 
 aws ec2 run-instances --cli-input-json "$CLI_INPUT_JSON" --user-data "$USER_DATA_JSON" |

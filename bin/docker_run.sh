@@ -30,7 +30,7 @@ BUILD_SCRIPT="${0%/*}/build_arthur.sh"
 show_usage_and_exit () {
     cat <<EOF
 
-Usage: `basename $0` [-p aws_profile] [-t image_tag] [-w] [<config_dir> [<target_env>]]
+Usage: $(basename "$0") [-p aws_profile] [-t image_tag] [-w] [<config_dir> [<target_env>]]
 
 This will $action_description inside a Docker container
 with Arthur installed and configured to use <config_dir>.
@@ -45,7 +45,7 @@ or \$AWS_DEFAULT_PROFILE is used if set and \$AWS_PROFILE isn't.
 With the -w flag, port 8086 is published to access the HTTP server in the ETL.
 
 EOF
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 profile="${AWS_PROFILE-${AWS_DEFAULT_PROFILE-}}"
@@ -100,8 +100,8 @@ if [[ ! -d "$config_arg" ]]; then
     exit 1
 fi
 config_abs_path=$(\cd "$config_arg" && \pwd)
-data_warehouse_path=`dirname "$config_abs_path"`
-config_path=`basename "$config_abs_path"`
+data_warehouse_path=$(dirname "$config_abs_path")
+config_path=$(basename "$config_abs_path")
 
 if [[ -n "$profile" ]]; then
     profile_arg="--env AWS_PROFILE=$profile"
@@ -110,7 +110,7 @@ else
 fi
 
 # The commands below bind the following directories
-#   - the "data warehouse" directory as /opt/data-warhouse, which is the parent of the chosen
+#   - the "data warehouse" directory as /opt/data-warehouse, which is the parent of the chosen
 #     configuration directory (always read-write when we need to write an arthur.log file)
 #   - the '~/.aws' directory which contains the config and credentials needed (always read-write
 #     when we need to write to the cli cache)
@@ -127,7 +127,7 @@ if ! grep 'name="redshift_etl"' setup.py >/dev/null 2>&1; then
     if [[ "$action" = "run" ]]; then
         action="run-ro"
         echo "Did not find source path (looked for setup.py) -- switching to standalone mode."
-        echo "Changes to code in /opt/src/arthur-redshift-etl will not be preservd between runs."
+        echo "Changes to code in /opt/src/arthur-redshift-etl will not be preserved between runs."
         echo "However, changes to your schemas or config will be reflected in your local filesystem."
     fi
 fi
@@ -150,6 +150,7 @@ fi
 case "$action" in
     deploy)
         set -o xtrace
+        # shellcheck disable=SC2086
         docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
             --volume ~/.aws:/home/arthur/.aws \
@@ -161,10 +162,11 @@ case "$action" in
         ;;
     run)
         set -o xtrace
+        # shellcheck disable=SC2086
         docker run --rm --interactive --tty \
             $publish_arg \
             --volume "$data_warehouse_path":/opt/data-warehouse \
-            --volume `pwd`:/opt/src/arthur-redshift-etl \
+            --volume "$(pwd):/opt/src/arthur-redshift-etl" \
             --volume ~/.aws:/home/arthur/.aws \
             --volume ~/.ssh:/home/arthur/.ssh:ro \
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
@@ -174,6 +176,7 @@ case "$action" in
         ;;
     run-ro)
         set -o xtrace
+        # shellcheck disable=SC2086
         docker run --rm --interactive --tty \
             $publish_arg \
             --volume "$data_warehouse_path":/opt/data-warehouse \
@@ -186,6 +189,7 @@ case "$action" in
         ;;
     upload)
         set -o xtrace
+        # shellcheck disable=SC2086
         docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
             --volume ~/.aws:/home/arthur/.aws \
@@ -197,6 +201,7 @@ case "$action" in
         ;;
     validate)
         set -o xtrace
+        # shellcheck disable=SC2086
         docker run --rm --tty \
             --volume "$data_warehouse_path":/opt/data-warehouse \
             --volume ~/.aws:/home/arthur/.aws \

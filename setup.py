@@ -8,9 +8,8 @@ setup(
     description="ETL code to ferry data from PostgreSQL databases or S3 files to Redshift clusters",
     entry_points={
         "console_scripts": [
-            # NB The script must end in ".py" so that spark submit accepts it as a Python script.
+            # TODO(tom): Remove .py extension.
             "arthur.py = etl.commands:run_arg_as_command",
-            "run_tests.py = etl.selftest:run_tests",
         ]
     },
     keywords="redshift postgresql ETL ELT extract transform load",

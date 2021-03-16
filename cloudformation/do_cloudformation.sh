@@ -5,11 +5,11 @@
 
 set -e -u
 
-SCRIPT=`basename $0 .sh`
+SCRIPT=$(basename "$0" .sh)
 
 if [[ "$SCRIPT" = "do_cloudformation" ]]; then
     if [[ $# -lt 3 || "$1" = "-h" ]]; then
-        echo "Usage: `basename $0` 'verb' 'object' 'env' [...]"
+        echo "Usage: $(basename "$0") 'verb' 'object' 'env' [...]"
         exit 1
     fi
     DW_VERB="$1"
@@ -32,7 +32,7 @@ EOF
     exit 0
 fi
 
-BINDIR=`dirname $0`
+BINDIR=$(dirname "$0")
 TEMPLATE_FILE="$DW_OBJECT.yaml"
 if [[ ! -r "$TEMPLATE_FILE" ]]; then
     TEMPLATE_FILE="$BINDIR/$DW_OBJECT.yaml"
@@ -79,7 +79,7 @@ aws cloudformation validate-template --template-body "$TEMPLATE_URI" >/dev/null
 case "$DW_VERB" in
 
   create)
-
+    # shellcheck disable=SC2086
     aws cloudformation create-stack \
         --stack-name "$STACK_NAME" \
         --template-body "$TEMPLATE_URI" \
@@ -92,6 +92,7 @@ case "$DW_VERB" in
     ;;
 
   create-change-set)
+    # shellcheck disable=SC2086
     aws cloudformation create-change-set \
         --stack-name "$STACK_NAME" \
         --change-set-name "DW-$(date -u '+%Y-%m-%d-%H-%M-%S')" \
@@ -104,7 +105,7 @@ case "$DW_VERB" in
     ;;
 
   update)
-
+    # shellcheck disable=SC2086
     aws cloudformation update-stack \
         --stack-name "$STACK_NAME" \
         --template-body "$TEMPLATE_URI" \
@@ -116,7 +117,6 @@ case "$DW_VERB" in
     ;;
 
   delete)
-
     aws cloudformation delete-stack \
         --stack-name "$STACK_NAME"
     ;;
