@@ -10,9 +10,9 @@ set -e -u
 # === Command line args ===
 
 show_usage_and_exit() {
-    echo "Usage: `basename $0` [<environment>] <email_address>"
+    echo "Usage: $(basename "$0") [<environment>] <email_address>"
     echo "The environment defaults to \"$DEFAULT_PREFIX\"."
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 while getopts ":h" opt; do
@@ -50,11 +50,12 @@ VALIDATION_PAGE_NAME="$ENV_PREFIX-validation-page"
 # ===  Create topic and subscription ===
 
 TOPIC_ARN_FILE="/tmp/topic_arn_${USER}$$.json"
+# shellcheck disable=SC2064
 trap "rm -f \"$TOPIC_ARN_FILE\"" EXIT
 
 for TOPIC in "$STATUS_NAME" "$PAGE_NAME" "$VALIDATION_NAME" "$VALIDATION_PAGE_NAME"; do
     aws sns create-topic --name "$TOPIC" | tee "$TOPIC_ARN_FILE"
-    TOPIC_ARN=`jq --raw-output < "$TOPIC_ARN_FILE" '.TopicArn'`
+    TOPIC_ARN=$(jq --raw-output < "$TOPIC_ARN_FILE" '.TopicArn')
     if [[ -z "$TOPIC_ARN" ]]; then
         set +x
         echo "Failed to find topic arn in output. Check your settings, including VPN etc."

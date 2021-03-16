@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+START_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S")
 USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
@@ -9,12 +9,12 @@ if [[ $# -lt 1 || "$1" = "-h" ]]; then
 
 Single-shot extraction pipeline. You get to pick the arguments to 'extract' command.
 
-Usage: `basename $0` extract_arg [extract_arg ...]
+Usage: $(basename "$0") extract_arg [extract_arg ...]
 
 The commandline arguments will be passed to 'extract'.
 The environment defaults to "$DEFAULT_PREFIX".
 
-Example: `basename $0` dw
+Example: $(basename "$0") dw
 
 USAGE
     exit 0
@@ -54,17 +54,19 @@ AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-et
 PIPELINE_NAME="Extraction Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
+# shellcheck disable=SC2064
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" extraction_pipeline > "$PIPELINE_DEFINITION_FILE"
 
+# shellcheck disable=SC2086
 aws datapipeline create-pipeline \
     --unique-id dw-etl-extraction-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
 
-PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
+PIPELINE_ID=$(jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId')
 
 if [[ -z "$PIPELINE_ID" ]]; then
     set +x

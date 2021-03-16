@@ -51,7 +51,7 @@ class Extractor:
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
-        self.failed_sources = set()  # type: Set[str]
+        self.failed_sources: Set[str] = set()
 
     def options_info(self) -> List[str]:
         """
@@ -118,7 +118,7 @@ class Extractor:
 
     def extract_source(self, source: DataWarehouseSchema, relations: List[RelationDescription]) -> List[str]:
         """
-        Iterate through given relations to extarct data from (upstream) source schemas.
+        Iterate through given relations to extract data from (upstream) source schemas.
 
         This will return a list of tables that failed to extract or raise an exception
         if there was just one relation failing, it was required, and "keep going" was not active.

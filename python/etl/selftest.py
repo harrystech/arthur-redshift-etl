@@ -124,6 +124,6 @@ def run_tests() -> None:
 
 
 if __name__ == "__main__":
-    # Running "python3 -m python.etl.selftest" will only run doc tests.
+    # Running "python3 -m etl.selftest" will only run doc tests.
     # Use "run_tests.py" to run all of the tests.
     run_doctest()

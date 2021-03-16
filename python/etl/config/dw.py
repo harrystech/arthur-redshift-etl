@@ -193,7 +193,7 @@ class DataWarehouseConfig:
 
     def _check_access_to_cluster(self):
         """
-        Make sure that ETL user and admin may connect and connect to differenet databases.
+        Make sure that ETL user and admin may connect and connect to different databases.
 
         This makes sure that the ETL and Admin access point to the same cluster (identified by host
         and port), but they must point to different databases in the cluster.

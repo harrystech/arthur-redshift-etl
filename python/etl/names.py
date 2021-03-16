@@ -82,8 +82,8 @@ class TableName:
         self._schema = schema.lower() if schema else None
         self._table = table.lower()
         self._is_staging = is_staging
-        self._managed_schemas = None  # type: Optional[frozenset]
-        self._external_schemas = None  # type: Optional[frozenset]
+        self._managed_schemas: Optional[frozenset] = None
+        self._external_schemas: Optional[frozenset] = None
 
     @property
     def schema(self):
@@ -321,8 +321,8 @@ class TempTableName(TableName):
 
         Leaks Redshift spec in that we make sure that names are less than 127 characters long.
 
-        >>> table = "public.speakeasy"
-        >>> tn = TableName.from_identifier(table)
+        >>> example = "public.speakeasy"
+        >>> tn = TableName.from_identifier(example)
         >>> temp = TempTableName.for_table(tn)
         >>> temp.identifier
         '#public$speakeasy'

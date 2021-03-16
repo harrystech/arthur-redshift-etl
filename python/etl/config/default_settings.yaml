@@ -1,113 +1,113 @@
 {
-    # General settings controlling how Arthur itself behaves
-    "arthur_settings": {
-        # If an extract from an upstream source or copy from S3 files fails due to some transient error,
-        # retry the extract at most this many times. Zero disables retries.
-        "extract_retries": 1,
-        "copy_data_retries": 3,
-        "insert_data_retries": 3,
-        "retriable_error_codes": "8001,15001,15005",
-        "redshift": {
-            # Computing column encoding is turned off if all columns have a specified encoding.
-            "relation_column_encoding": "ON"
-        }
-    },
-    # Target (Redshift) cluster
-    "data_warehouse": {
-        # The environment variable must contain a full connection string for an admin user to create a database.
-        "admin_access": "DATA_WAREHOUSE_ADMIN",
-        # The environment variable must contain a full connection string for an ETL user.
-        "etl_access": "DATA_WAREHOUSE_ETL",
-        # All schemas, tables, etc. will be assigned to this user.  The owner's group will be the ETL group.
-        "owner": {
-            "name": "dw",
-            "group": "etl_rw"
-
-        },
-        "users": [
-            {
-                # Default group specified as group of pseudo-user "default"
-                "name": "default",
-                "group": "analyst_ro"
-            }
-        ]
-    },
-    # Logging of the ETL into events tables
-    "etl_events": {
-        "enabled": True,  # required to be enabled for concurrent extract/load
-        "read_capacity": 3,
-        "write_capacity": 3
-    },
-    # AWS resource configuration
-    "resources": {
-        "VPC": {
-            "region": "us-east-1"
-        },
-        "EC2": {
-            "image_id": "ami-0be2609ba883822ec",
-            "instance_type": "t2.small"
-        },
-        "EMR": {
-            "release_label": "emr-6.1.0",
-            "master": {
-                "bid_price": 10.0,
-                "instance_type": "m4.2xlarge",
-                "instance_count": 1
-            },
-            "core": {
-                # Set a default value for spot instances that is high enough that engineers do not need
-                # to think about it for most use cases.
-                "bid_price": 10.0,
-                "instance_type": "m4.4xlarge",
-                "instance_count": 4
-            },
-            "max_partitions": 32
-        }
-    },
-    # Type information from source (PostgreSQL) to target (Redshift)
-    "type_maps": {
-        # Types that may be used "as-is", see also
-        # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
-        # The keys are regular expression (with escaped backslashes!) and the
-        # values are the serialization formats in Avro files.
-        "as_is_att_type": {
-            "smallint": "int",
-            "integer": "int",
-            "bigint": "long",
-            "real": "double",
-            "double precision": "double",
-            "numeric\\(\\d+,\\d+\\)": "string",
-            "boolean": "boolean",
-            "character\\(\\d+\\)": "string",
-            "character varying\\(\\d+\\)": "string",
-            "date": "date",
-            "timestamp without time zone": "timestamp"
-        },
-        # Map of known PostgreSQL attribute types to usable types in Redshift.
-        # The first element in the list is the new type, the second element is the necessary cast expression,
-        # the third element is the serialization format in Avro files.
-        # Note that in every expression, %s is replaced by the column name within quotes.
-        "cast_needed_att_type": {
-            "int4range": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            "bigint\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            # NOTE varchar counts characters but Redshift is byte limitations.
-            # We are setting the max here to 10k ... you need to evaluate on live table what that the limit should be.
-            "character varying": ["varchar(10000)", "%s::varchar(10000)", "string"],
-            "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
-            "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
-            # CAVEAT EMPTOR This only works if your database is running in UTC.
-            "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "timestamp"],
-            "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
-            # N.B. This requires a PostgreSQL version of 9.3 or better.
-            "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
-            "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
-            # The numeric data type without precision and scale should not be used upstream!
-            "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
-            # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
-            "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"]
-        },
-        # Default type as a fallback solution. Example use case is for enumeration types.
-        "default_att_type": ["varchar(10000)", "%s::varchar(10000)", "string"],
+  # General settings controlling how Arthur itself behaves
+  "arthur_settings": {
+    # If an extract from an upstream source or copy from S3 files fails due to some transient error,
+    # retry the extract at most this many times. Zero disables retries.
+    "extract_retries": 1,
+    "copy_data_retries": 3,
+    "insert_data_retries": 3,
+    "retriable_error_codes": "8001,15001,15005",
+    "redshift": {
+      # Computing column encoding is turned off if all columns have a specified encoding.
+      "relation_column_encoding": "ON"
     }
+  },
+  # Target (Redshift) cluster
+  "data_warehouse": {
+    # The environment variable must contain a full connection string for an admin user to create a database.
+    "admin_access": "DATA_WAREHOUSE_ADMIN",
+    # The environment variable must contain a full connection string for an ETL user.
+    "etl_access": "DATA_WAREHOUSE_ETL",
+    # All schemas, tables, etc. will be assigned to this user.  The owner's group will be the ETL group.
+    "owner": {
+      "name": "dw",
+      "group": "etl_rw"
+
+    },
+    "users": [
+      {
+        # Default group specified as group of pseudo-user "default"
+        "name": "default",
+        "group": "analyst_ro"
+      }
+    ]
+  },
+  # Logging of the ETL into events tables
+  "etl_events": {
+    "enabled": True,  # required to be enabled for concurrent extract/load
+    "read_capacity": 3,
+    "write_capacity": 3
+  },
+  # AWS resource configuration
+  "resources": {
+    "VPC": {
+      "region": "us-east-1"
+    },
+    "EC2": {
+      "image_id": "ami-0be2609ba883822ec",
+      "instance_type": "t2.small"
+    },
+    "EMR": {
+      "release_label": "emr-6.1.0",
+      "master": {
+        "bid_price": 10.0,
+        "instance_type": "m4.2xlarge",
+        "instance_count": 1
+      },
+      "core": {
+        # Set a default value for spot instances that is high enough that engineers do not need
+        # to think about it for most use cases.
+        "bid_price": 10.0,
+        "instance_type": "m4.4xlarge",
+        "instance_count": 4
+      },
+      "max_partitions": 32
+    }
+  },
+  # Type information from source (PostgreSQL) to target (Redshift)
+  "type_maps": {
+    # Types that may be used "as-is", see also
+    # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
+    # The keys are regular expression (with escaped backslashes!) and the
+    # values are the serialization formats in Avro files.
+    "as_is_att_type": {
+      "smallint": "int",
+      "integer": "int",
+      "bigint": "long",
+      "real": "double",
+      "double precision": "double",
+      "numeric\\(\\d+,\\d+\\)": "string",
+      "boolean": "boolean",
+      "character\\(\\d+\\)": "string",
+      "character varying\\(\\d+\\)": "string",
+      "date": "date",
+      "timestamp without time zone": "timestamp"
+    },
+    # Map of known PostgreSQL attribute types to usable types in Redshift.
+    # The first element in the list is the new type, the second element is the necessary cast expression,
+    # the third element is the serialization format in Avro files.
+    # Note that in every expression, %s is replaced by the column name within quotes.
+    "cast_needed_att_type": {
+      "int4range": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      "bigint\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      # NOTE varchar counts characters but Redshift is byte limitations.
+      # We are setting the max here to 10k ... you need to evaluate on live table what that the limit should be.
+      "character varying": ["varchar(10000)", "%s::varchar(10000)", "string"],
+      "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
+      "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
+      # CAVEAT EMPTOR This only works if your database is running in UTC.
+      "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "timestamp"],
+      "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      # N.B. This requires a PostgreSQL version of 9.3 or better.
+      "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
+      "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
+      # The numeric data type without precision and scale should not be used upstream!
+      "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
+      # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
+      "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"]
+    },
+    # Default type as a fallback solution. Example use case is for enumeration types.
+    "default_att_type": ["varchar(10000)", "%s::varchar(10000)", "string"],
+  }
 }

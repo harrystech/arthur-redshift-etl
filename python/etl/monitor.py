@@ -239,6 +239,12 @@ class Monitor(metaclass=MetaMonitor):
         return MonitorPayload(monitor, STEP_FINISH, utc_now(), elapsed=0, extra={"is_marker": True})
 
 
+class PayloadDispatcher:
+    def store(self, payload):
+        """Send payload to persistence layer."""
+        raise NotImplementedError("PayloadDispatcher failed to implement store method")
+
+
 class MonitorPayload:
     """
     Simple class to encapsulate data for Monitor events which knows how to morph into JSON etc.
@@ -249,7 +255,7 @@ class MonitorPayload:
     """
 
     # Append instances with a 'store' method here (skipping writing a metaclass this time)
-    dispatchers = []  # type: List[PayloadDispatcher]
+    dispatchers: List[PayloadDispatcher] = []
 
     def __init__(self, monitor, event, timestamp, elapsed=None, errors=None, extra=None):
         # Basic info
@@ -280,12 +286,6 @@ class MonitorPayload:
             logger.debug("Monitor payload = %s", compact_text)
             for d in MonitorPayload.dispatchers:
                 d.store(payload)
-
-
-class PayloadDispatcher:
-    def store(self, payload):
-        """Send payload to persistence layer."""
-        raise NotImplementedError("PayloadDispatcher failed to implement store method")
 
 
 class DynamoDBStorage(PayloadDispatcher):
@@ -680,7 +680,7 @@ def scan_etl_events(etl_id, comma_separated_columns) -> None:
     logger.info("Scanning events table for elapsed times")
     consumed_capacity = 0.0
     scanned_count = 0
-    rows = []  # type: List[List[str]]
+    rows: List[List[str]] = []
     for response in response_iterator:
         consumed_capacity += response["ConsumedCapacity"]["CapacityUnits"]
         scanned_count += response["ScannedCount"]
@@ -837,7 +837,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     query = EventsQuery(step)
 
     events = []
-    schema_events = dict()  # type: Dict[str, Dict[str, Union[str, Decimal]]]
+    schema_events: Dict[str, Dict[str, Union[str, Decimal]]] = {}
     for relation in tqdm(relations):
         event = query(table, relation.identifier, latest_start)
         if event:

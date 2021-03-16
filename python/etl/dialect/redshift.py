@@ -296,7 +296,7 @@ def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry
         etl.db.skip_query(conn, stmt)
     else:
         rows = etl.db.query(conn, stmt)
-        summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format(**row) for row in rows)
+        summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
         logger.debug(
             "Copied %d file(s) into '%s' using manifest '%s':\n%s", len(rows), table_name.identifier, s3_uri, summary
         )

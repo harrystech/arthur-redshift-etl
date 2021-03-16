@@ -72,14 +72,14 @@ def unparse_connection(dsn: Dict[str, str]) -> str:
     for key in ("user", "port"):
         if key not in values:
             values[key] = "<default>"
-    return "host={host} port={port} dbname={database} user={user} password=***".format(**values)
+    return "host={host} port={port} dbname={database} user={user} password=***".format_map(values)
 
 
-def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str):
+def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str) -> dict:
     """
-    Return a dictionary of parameters that can be used to open a db connection.
+    Return a dictionary of parameters that can be used to open a db connection with psycopg2.
 
-    This includes popping "subprotocol" from our dictionary of paramters extracted
+    This includes popping "subprotocol" from our dictionary of parameters extracted
     from the connection string, which is not expected by psycopg2.connect().
     """
     dsn_values = dict(dsn_dict, application_name=application_name, cursor_factory=psycopg2.extras.DictCursor)
@@ -137,16 +137,10 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
         {"ApplicationName": __name__, "readOnly": "true" if read_only else "false", "driver": "org.postgresql.Driver"}
     )
     if "port" in dsn_properties:
-        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format_map(dsn_properties)
     else:
-        jdbc_url = "jdbc:postgresql://{host}/{database}".format(**dsn_properties)
+        jdbc_url = "jdbc:postgresql://{host}/{database}".format_map(dsn_properties)
     return jdbc_url, dsn_properties
-
-
-def dbname(cx):
-    """Return name of database that this connection points to."""
-    dsn = dict(kv.split("=") for kv in cx.dsn.split(" "))
-    return dsn["dbname"]
 
 
 def remove_password(s):
@@ -270,7 +264,7 @@ def test_connection(cx):
     """Send a test query to our connection."""
     is_alive = False
     try:
-        result = run(cx, "Ping {}!".format(dbname(cx)), "SELECT 1 AS connection_test", return_result=True)
+        result = run(cx, f"Ping '{cx.info.dbname}'!", "SELECT 1 AS connection_test", return_result=True)
         if len(result) == 1 and "connection_test" in result[0]:
             is_alive = cx.closed == 0
     except psycopg2.OperationalError:
@@ -283,7 +277,7 @@ def ping(dsn):
     """Give me a ping to the database, Vasili; one ping only, please."""
     with closing(connection(dsn, readonly=True)) as cx:
         if test_connection(cx):
-            print("{} is alive".format(dbname(cx)))
+            print(f"{cx.info.dbname} is alive")
 
 
 def log_sql_error(exc):

@@ -6,7 +6,7 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 import pkg_resources
-import simplejson
+import simplejson as json
 import yaml
 
 import etl.config
@@ -29,7 +29,7 @@ class DottedNameTemplate(string.Template):
 
 def _find_templates() -> Dict[str, str]:
     """Find all templates and return a map from short name to full name."""
-    lookup = OrderedDict()  # type: Dict[str, str]
+    lookup: Dict[str, str] = OrderedDict()
     templates = pkg_resources.resource_listdir("etl", "templates")
     for filename in sorted(templates):
         name = os.path.splitext(filename)[0]
@@ -85,9 +85,9 @@ def render(template_name: str, compact=False) -> None:
         # But since we don't support anything that couldn't be done in JSON, dump the (prettier)
         # JSON format.
         if compact:
-            print(simplejson.dumps(obj, separators=(",", ":"), sort_keys=True))
+            print(json.dumps(obj, separators=(",", ":"), sort_keys=True))
         else:
-            print(simplejson.dumps(obj, indent="    ", sort_keys=True))
+            print(json.dumps(obj, indent="    ", sort_keys=True))
     else:
         print(rendered, end="")
 
