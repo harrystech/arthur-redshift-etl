@@ -3,21 +3,21 @@
 set -o errexit -o nounset
 
 case "${1-}" in
-    -h|--help|help)
-        cat <<USAGE
+  -h|--help|help)
+    cat <<USAGE
 Usage: $0 [sphinx opts]
 
 Build or update documentation using Sphinx. Any commmand line args are passed to Sphinx.
 
 USAGE
-    exit
+  exit
 esac
 
 echo "Updating documentation into ./docs"
 
 set -o verbose
 sphinx-build -M html ./docs_src ./build "$@"
-cp -a "./build/html/" "./docs/"
+cp -a "./build/html" "./docs/"
 
 set +o verbose
 echo "The HTML pages were copied into docs."

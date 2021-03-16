@@ -23,8 +23,8 @@ copyright = "2017-%s, Harry's, Inc." % time.strftime("%Y")
 author = "Data Engineering at Harry's"
 
 # TODO(tom): Extract from setup.py
-version = "1.37.0"
-release = "1.37.0"
+version = "1.42.0"
+release = "1.42.0"
 
 # -- General configuration ---------------------------------------------------
 
@@ -46,7 +46,7 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["README.md"]
 
-needs_sphinx = "3.4"
+needs_sphinx = "3.5"
 nitpicky = True
 
 # -- Options for HTML output -------------------------------------------------
