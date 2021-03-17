@@ -59,8 +59,7 @@ def get_config_value(name: str, default: Optional[str] = None) -> Optional[str]:
     assert _mapped_config is not None, "attempted to get config value before reading config map"
     if default is None:
         return _mapped_config.setdefault(name)
-    else:
-        return _mapped_config.setdefault(name, default)
+    return _mapped_config.setdefault(name, default)
 
 
 def get_config_int(name: str, default: Optional[int] = None) -> int:
