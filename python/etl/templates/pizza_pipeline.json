@@ -29,21 +29,21 @@
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
             "subject": "ETL Rebuild Success (Pizza): ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
-            "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
+            "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nContinue-from parameter: #{mySelection}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
         },
         {
             "id": "FailureNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
             "subject": "ETL Rebuild Failure (Pizza): ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
-            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
+            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nContinue-from parameter: #{mySelection}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
         },
         {
             "id": "PagerNotification",
             "type": "SnsAlarm",
             "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-page",
             "subject": "ETL Rebuild Failure (Pizza): ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
-            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
+            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nContinue-from parameter: #{mySelection}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
         },
         {
             "id": "ResourceParent",
