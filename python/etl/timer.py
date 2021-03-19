@@ -1,4 +1,4 @@
-"""Timer class for when you need the time elapsed in seconds."""
+"""Timer class for when you need to measure the elapsed time in seconds."""
 
 import datetime
 

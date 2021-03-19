@@ -32,6 +32,6 @@ jobs:
         python3 setup.py develop
     - name: Run doctests
       env:
-          AWS_DEFAULT_REGION: us-east-1
+        AWS_DEFAULT_REGION: us-east-1
       run: |-
         python3 -m python.etl.selftest

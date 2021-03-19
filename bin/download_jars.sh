@@ -2,8 +2,8 @@
 
 set -e -x
 
-\cd `dirname $0`/../jars
-echo "Downloading JAR files to `\pwd`"
+\cd "$(dirname "$0")/../jars"
+echo "Downloading JAR files to $(\pwd)"
 
 # For deployment
 # NB If you make changes here, also update upload_env.sh which "knows" these versions (and also update the README)

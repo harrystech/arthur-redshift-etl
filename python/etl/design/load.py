@@ -42,6 +42,7 @@ def load_table_design(stream, table_name):
     # We used to specify constraints using an object (before v0.24.0) and then switched to using
     # an array of objects (with v0.24.0). This rewrites the constraints into the new format
     # as needed.
+    # TODO(tom): Rewrite current design files and remove this logic!
     constraints = table_design.get("constraints")
     if isinstance(constraints, dict):
         table_design["constraints"] = [

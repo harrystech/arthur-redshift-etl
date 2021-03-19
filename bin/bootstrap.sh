@@ -11,14 +11,14 @@ PROJ_TEMP="/tmp/$PROJ_NAME"
 show_usage_and_exit() {
     cat <<USAGE
 
-Usage: $(basename $0) <bucket_name> <environment>
+Usage: $(basename "$0") <bucket_name> <environment>
 
 Download files from the S3 bucket into $PROJ_TEMP on this instance
 and install the Python code in a virtual environment.
 
 If we find this instance is part of an EMR cluster, we'll update the tag "Name" accordingly.
 USAGE
-    exit ${1-0}
+    exit "${1-0}"
 }
 
 log() {
@@ -44,6 +44,7 @@ log "Starting $PROJ_NAME bootstrap from bucket \"$BUCKET_NAME\" and prefix \"$EN
 
 set -o xtrace
 
+# shellcheck disable=SC2086
 sudo yum install --assumeyes $PROJ_PACKAGES
 
 # Set creation mask to: u=rwx,g=rx,o=
@@ -88,6 +89,7 @@ python3 -m pip install --upgrade "./jars/$LATEST_TAR_FILE"
 
 # Update instance name to tie it back to the EMR cluster
 TMP_DOCUMENT="$PROJ_TEMP/document"
+# shellcheck disable=SC2064
 trap "rm -f '$TMP_DOCUMENT'" EXIT
 curl --silent --show-error http://169.254.169.254/latest/dynamic/instance-identity/document |
 tee "$TMP_DOCUMENT"

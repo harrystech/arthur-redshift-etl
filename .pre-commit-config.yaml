@@ -1,4 +1,4 @@
-exclude: "^wiki/|^docs/|^log_processing/kibana/"
+exclude: "^cloudformation/|^docs/|^log_processing/kibana/|^wiki/"
 
 # Hooks are sorted to go from basic, file stuff
 # to more and more complex tests.

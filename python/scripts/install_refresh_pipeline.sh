@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-START_NOW=`date -u +"%Y-%m-%dT%H:%M:%S"`
+START_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S")
 
 if [[ $# -lt 4 || "$1" = "-h" ]]; then
     cat <<USAGE
 
 Refresh ETL to extract and update data.
 
-Usage: `basename $0` <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]
+Usage: $(basename "$0") <environment> <startdatetime> <occurrences> <source table selection> [<source table selection> ...]
 
 Start time should be 'now' or take the ISO8601 format like: $START_NOW
 Specify source tables using space-delimited arthur pattern globs.
@@ -57,17 +57,19 @@ AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-et
 PIPELINE_NAME="ETL Refresh Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
+# shellcheck disable=SC2064
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" refresh_pipeline > "$PIPELINE_DEFINITION_FILE"
 
+# shellcheck disable=SC2086
 aws datapipeline create-pipeline \
     --unique-id dw-etl-refresh-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
 
-PIPELINE_ID=`jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId'`
+PIPELINE_ID=$(jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId')
 
 if [[ -z "$PIPELINE_ID" ]]; then
     set +x

@@ -403,11 +403,14 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
                 "relation '{}' is missing manifest file '{}'".format(relation.identifier, s3_uri)
             )
 
-    compupdate_setting = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding")
+    compupdate_setting = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
     if not relation.is_missing_encoding:
         compupdate = "OFF"
+    elif compupdate_setting == "AUTO":
+        # Override the AUTO option which is allowed in the settings file but not fully implemented.
+        compupdate = "ON"
     else:
-        compupdate = compupdate_setting or "ON"
+        compupdate = compupdate_setting
 
     copy_func = partial(
         etl.dialect.redshift.copy_from_uri,
@@ -590,7 +593,7 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
 
 def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWarehouseSchema]:
     """Return schemas traversed when refreshing relations (in order that they are needed)."""
-    got_it = set()  # type: Set[str]
+    got_it: Set[str] = set()
     traversed_in_order = []
     for relation in relations:
         this_schema = relation.schema_config
@@ -937,7 +940,7 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
-    futures = {}  # type: Dict[str, concurrent.futures.Future]
+    futures: Dict[str, concurrent.futures.Future] = {}
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
             for relation in source_relations:
@@ -1191,8 +1194,7 @@ def update_data_warehouse(
         logger.info("Attempting to use existing manifests for source relations without verifying recency.")
 
     relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
-    logger.info("Starting to update %d tables(s)", len(relations))
-    # Run update within a transaction:
+    logger.info("Starting to update %d tables(s) within a transaction", len(relations))
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:
         set_redshift_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
