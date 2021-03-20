@@ -1,0 +1,23 @@
+name: Publish Docker image
+on:
+  push:
+    branches:
+    - next
+    paths:
+    - ".github/workflows/publish_latest.yaml"
+jobs:
+  push_to_registry:
+    name: Push Docker image to GitHub Packages
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out the repo
+      uses: actions/checkout@v2
+    - name: Push to GitHub Packages
+      uses: docker/build-push-action@v1
+      with:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        registry: docker.pkg.github.com
+        repository: harrystech/arthur-redshift-etl/arthur-etl
+        # If code is pushed to next branch, this updates "arthur-etl:latest".
+        tags: latest
