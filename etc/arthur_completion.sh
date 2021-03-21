@@ -64,9 +64,6 @@ _arthur_completion()
         "auto_design"|"bootstrap_transformations")
             COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
             ;;
-        "selftest")
-            COMPREPLY=( $(compgen -W "all doctest type-check" -- "$cur") )
-            ;;
         *)
             case "$cur" in
                 "@"*)
