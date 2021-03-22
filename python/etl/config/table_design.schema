@@ -39,14 +39,15 @@
             "description": "Generic type modeled loosely after Avro and Hive with easy mapping to those",
             "enum": [
                 "boolean",
+                "date",
+                "decimal",
+                "double",
+                "float",
                 "int",
                 "long",
-                "float",
-                "double",
-                "decimal",
                 "string",
                 "timestamp",
-                "date"
+                "uuid"
             ]
         },
         "compression_encoding": {

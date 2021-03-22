@@ -101,7 +101,7 @@
       "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
       # N.B. This requires a PostgreSQL version of 9.3 or better.
       "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
-      "uuid": ["varchar(36)", "%s::varchar(36)", "string"],
+      "uuid": ["varchar(36)", "%s::varchar(36)", "uuid"],
       # The numeric data type without precision and scale should not be used upstream!
       "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
       # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
