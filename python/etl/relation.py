@@ -23,7 +23,6 @@ import os.path
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from functools import partial
-from itertools import chain, dropwhile
 from operator import attrgetter
 from queue import PriorityQueue
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
@@ -37,7 +36,7 @@ import etl.file_sets
 import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import CyclicDependencyError, ETLRuntimeError, MissingQueryError
+from etl.errors import CyclicDependencyError, ETLRuntimeError, InvalidArgumentError, MissingQueryError
 from etl.names import TableName, TableSelector, TempTableName
 from etl.text import join_with_single_quotes
 
@@ -615,33 +614,67 @@ def select_in_execution_order(
     Return list of relations that were selected, optionally adding dependents or skipping forward.
 
     The values supported for skipping forward are:
-      - '*' to start from the first relation (which is the same behavior as passing in None)
-      - ':transformations' to start with the first transformation (i.e. non-source) relation
-      - other value to skip forward to the first matching relation
+      - '*' to start from the beginning
+      - ':transformations' to only run transformations of selected relations
+      - a specific relation to continue from that one in the original execution order
+      - a specific schema to include all relations in that source schema as well as
+          any originally selected transformation
+
+    Note that these operate on the list of relations selected by the selector patterns.
+    The option of '*' exists to we can have a default value in our pipeline definitions.
+    The last option of specifying a schema is most useful with a source schema when you want
+    to restart the load step followed by all transformations.
+
+    No error is raised when the selector does not select any relations.
+    An error is raised when the "continue from" condition does not resolve to a list of relations.
     """
     logger.info("Pondering execution order of %d relation(s)", len(relations))
     execution_order = order_by_dependencies(relations)
+
     selected = find_matches(execution_order, selector)
-    if include_dependents:
-        dependents = find_dependents(execution_order, selected)
-        combined = frozenset(relation.identifier for relation in chain(selected, dependents))
-        selected = [relation for relation in execution_order if relation.identifier in combined]
     if not selected:
         logger.warning("Found no relations matching: %s", selector)
-    elif continue_from == "*":
-        logger.info("Continuing from first (selected) relation since '*' was used")
-    elif continue_from in (":transformations", ":transformation"):
-        selected = list(dropwhile(lambda relation: not relation.is_transformation, selected))
-        if selected:
-            logger.info("Continuing from first transformation in (selected) relations")
-        else:
-            logger.warning("Found no transformations in list of relations to continue from")
-    elif continue_from is not None:
-        logger.info("Trying to fast forward to '%s'", continue_from)
-        selected = list(dropwhile(lambda relation: relation.identifier != continue_from, selected))
-        if not selected:
-            logger.warning("Found no relation to continue from while matching '%s'", continue_from)
-    return selected
+        return []
+
+    if include_dependents:
+        dependents = find_dependents(execution_order, selected)
+        combined = frozenset(selected).union(dependents)
+        selected = [relation for relation in execution_order if relation in combined]
+
+    if continue_from is None or continue_from == "*":
+        return selected
+
+    transformations = [relation for relation in selected if relation.is_transformation]
+    if continue_from in (":transformations", ":transformation"):
+        if transformations:
+            logger.info("Continuing with %d transformation(s) in selected relations", len(transformations))
+            return transformations
+        raise InvalidArgumentError("found no transformations to continue from")
+
+    logger.info("Trying to fast forward to '%s' within %d relation(s)", continue_from, len(selected))
+    starting_from_match = list(fy.dropwhile(lambda relation: relation.identifier != continue_from, selected))
+    if starting_from_match:
+        logger.info(
+            "Continuing with %d relation(s) after skipping %d",
+            len(starting_from_match),
+            len(selected) - len(starting_from_match),
+        )
+        return starting_from_match
+
+    single_schema = frozenset(fy.filter(lambda relation: relation.source_name == continue_from, selected))
+    if single_schema.intersection(transformations):
+        raise InvalidArgumentError(f"schema '{continue_from}' contains transformations")
+    if single_schema:
+        combined = single_schema.union(transformations)
+        logger.info(
+            "Continuing with %d relation(s) in '%s' and %d transformation(s)",
+            len(single_schema),
+            continue_from,
+            len(combined) - len(single_schema),
+        )
+        return [relation for relation in execution_order if relation in combined]
+
+    raise InvalidArgumentError("found no matching relations to continue from")
 
 
 if __name__ == "__main__":
