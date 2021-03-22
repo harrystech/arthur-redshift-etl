@@ -261,7 +261,7 @@ def fetch_dependency_hints(cx: connection, stmt: str) -> Optional[List[str]]:
         # Unfortunately the tables aren't qualified with a schema so we can't use the info.
         logger.warning(
             "Found dependencies in S3 AND these not in S3: %s",
-            join_with_quotes(xn_dependencies),
+            join_with_single_quotes(xn_dependencies),
         )
     return sorted(s3_dependencies)
 
@@ -665,7 +665,11 @@ def bootstrap_transformations(
     relations = [RelationDescription(file_set) for file_set in transforms]
     if check_only or update or (replace and source_name is None):
         logger.info("Loading existing table design file(s)")
-        RelationDescription.load_in_parallel(relations)
+        try:
+            RelationDescription.load_in_parallel(relations)
+        except Exception:
+            logger.warning("Make sure that table design files exist and are valid before trying to update")
+            raise
         # TODO(tom): Collect all errors before dying.
         for relation in relations:
             if not relation.design_file_name:

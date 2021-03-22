@@ -26,7 +26,6 @@ from operator import attrgetter
 from typing import Iterable, List, Optional
 
 import psycopg2
-import simplejson as json
 from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl.db
@@ -121,10 +120,12 @@ def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_v
         if dependencies is None:
             logger.warning("Unable to validate '%s' which depends on external tables", relation.identifier)
             return
-        logger.info("Dependencies of '%s' per query plan: %s", relation.identifier, join_with_quotes(dependencies))
+        logger.info(
+            "Dependencies of '%s' per query plan: %s", relation.identifier, join_with_single_quotes(dependencies)
+        )
     else:
         dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
-        logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, join_with_quotes(dependencies))
+        logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, join_with_single_quotes(dependencies))
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
