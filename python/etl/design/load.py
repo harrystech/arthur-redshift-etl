@@ -14,6 +14,11 @@ import funcy as fy
 import yaml
 import yaml.parser
 
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader  # type: ignore
+
 import etl
 import etl.config
 import etl.db
@@ -33,11 +38,9 @@ def load_table_design(stream, table_name):
     The table design is validated before being returned.
     """
     try:
-        table_design = yaml.safe_load(stream)
+        table_design = yaml.load(stream, Loader=SafeLoader)
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError(exc) from exc
-
-    etl.config.validate_with_schema(table_design, "table_design.schema")
 
     # We used to specify constraints using an object (before v0.24.0) and then switched to using
     # an array of objects (with v0.24.0). This rewrites the constraints into the new format
