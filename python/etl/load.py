@@ -1095,6 +1095,7 @@ def load_data_warehouse(
         tx_info = etl.data_warehouse.list_open_transactions(conn)
         etl.db.print_result("List of sessions that have open transactions:", tx_info)
 
+    etl.data_warehouse.create_groups(dry_run=dry_run)
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
         create_relations(
