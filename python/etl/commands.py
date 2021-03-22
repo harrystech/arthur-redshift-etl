@@ -1451,7 +1451,13 @@ class QueryEventsCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
-        parser.add_argument("--columns", help="comma-separated list of output columns")
+        parser.add_argument(
+            "--column",
+            action="append",
+            choices=["step", "event", "elapsed", "rowcount"],
+            help="select output column (in addition to target and timestamp),"
+            " use multiple times so add more columns",
+        )
         parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
     def callback(self, args, config):
@@ -1460,7 +1466,7 @@ class QueryEventsCommand(SubCommand):
             # Going back two days should cover at least one complete and one running rebuild ETL.
             etl.monitor.query_for_etl_ids(days_ago=2)
         else:
-            etl.monitor.scan_etl_events(args.etl_id, args.columns)
+            etl.monitor.scan_etl_events(args.etl_id, args.column)
 
 
 class SummarizeEventsCommand(SubCommand):
