@@ -20,7 +20,7 @@ import etl.db
 import etl.file_sets
 import etl.s3
 from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -139,7 +139,7 @@ def validate_column_references(table_design):
             cols = [col for constraint in constraints for col in constraint.get(key, [])]
         else:  # 'attributes'
             cols = table_design.get(obj, {}).get(key, [])
-        unknown = join_with_quotes(frozenset(cols).difference(valid_columns))
+        unknown = join_with_single_quotes(frozenset(cols).difference(valid_columns))
         if unknown:
             raise TableDesignSemanticError(
                 "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key, unknown=unknown)

@@ -42,7 +42,7 @@ from etl.errors import (
 )
 from etl.names import TableName, TempTableName
 from etl.relation import RelationDescription
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -101,8 +101,8 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
     actual = frozenset(from_query)
     design = frozenset(from_design)
 
-    not_in_design = join_with_quotes(actual - design)
-    not_in_query = join_with_quotes(design - actual)
+    not_in_design = join_with_single_quotes(actual - design)
+    not_in_query = join_with_single_quotes(design - actual)
 
     if not_in_design and not_in_query:
         return "not listed in design = {}; not found from query = {}".format(not_in_design, not_in_query)
@@ -164,7 +164,7 @@ def validate_column_ordering(conn: connection, relation: RelationDescription, tm
         logger.error(
             "You need to replace, insert and/or delete in '%s' some column(s): %s",
             relation.identifier,
-            join_with_quotes(diff),
+            join_with_single_quotes(diff),
         )
         raise TableDesignValidationError("invalid columns or column order in '%s'" % relation.identifier)
     else:
@@ -271,7 +271,7 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
                         logger.error(
                             "You need to replace, insert and/or delete in '%s' some column(s): %s",
                             relation.identifier,
-                            join_with_quotes(diff),
+                            join_with_single_quotes(diff),
                         )
                         raise TableDesignValidationError(
                             "unloaded relation '%s' failed to match counterpart" % unloaded.identifier
@@ -325,7 +325,7 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
     if missing_required_columns:
         raise UpstreamValidationError(
             "design of '%s' has columns that do not exist upstream: %s"
-            % (source_table_name.identifier, join_with_quotes(missing_required_columns))
+            % (source_table_name.identifier, join_with_single_quotes(missing_required_columns))
         )
 
     extra_design_columns = design_columns.difference(current_columns)
@@ -334,7 +334,7 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
             "Column(s) that are in the design of '%s' but do not exist upstream in '%s': %s",
             table.identifier,
             table.source_name,
-            join_with_quotes(extra_design_columns),
+            join_with_single_quotes(extra_design_columns),
         )
 
     missing_design_columns = current_columns.difference(design_columns)
@@ -343,7 +343,7 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
             "Column(s) that exist upstream in '%s' but not in the design '%s': %s",
             table.source_name,
             table.identifier,
-            join_with_quotes(missing_design_columns),
+            join_with_single_quotes(missing_design_columns),
         )
 
     current_is_not_null = {column.name for column in columns_info if column.not_null}
@@ -385,12 +385,16 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
         elif current_primary_key:
             raise TableDesignValidationError(
                 "the primary_key constraint in '%s' (%s) does not match upstream (%s)"
-                % (table.identifier, join_with_quotes(design_primary_key), join_with_quotes(current_primary_key))
+                % (
+                    table.identifier,
+                    join_with_single_quotes(design_primary_key),
+                    join_with_single_quotes(current_primary_key),
+                )
             )
         else:
             raise TableDesignValidationError(
                 "the primary key constraint in '%s' (%s) is not enforced upstream"
-                % (table.identifier, join_with_quotes(design_primary_key))
+                % (table.identifier, join_with_single_quotes(design_primary_key))
             )
 
     for design_unique in design_uniques:
@@ -407,7 +411,7 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
         if current_primary_key != design_unique and design_unique not in current_uniques:
             raise TableDesignValidationError(
                 "the unique constraint in '%s' (%s) is not enforced upstream"
-                % (table.identifier, join_with_quotes(design_unique))
+                % (table.identifier, join_with_single_quotes(design_unique))
             )
 
     for constraint in not_used:
@@ -415,7 +419,7 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
             logger.warning(
                 "Upstream source has additional %s constraint (%s) for '%s'",
                 constraint_type,
-                join_with_quotes(columns),
+                join_with_single_quotes(columns),
                 table.table_design["source_name"],
             )
 
