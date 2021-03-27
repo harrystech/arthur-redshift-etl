@@ -69,7 +69,7 @@ def sync_with_s3(
             files.append((local_filename, remote_filename))
 
     timer = etl.timer.Timer()
-    tqdm_bar = tqdm(desc="Upoading files to S3", disable=None, leave=False, total=len(files))
+    tqdm_bar = tqdm(desc="Uploading files to S3", disable=None, leave=False, total=len(files), unit="file")
 
     uploader = etl.s3.S3Uploader(bucket_name, callback=tqdm_bar.update, dry_run=dry_run)
     max_workers = 8

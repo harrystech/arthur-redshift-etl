@@ -173,7 +173,9 @@ class RelationDescription:
 
         # This section loads the remaining relations from the "parallel start index" onwards
         # and shows a pretty loading bar (but only if this goes to a terminal).
-        tqdm_bar = tqdm(desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations))
+        tqdm_bar = tqdm(
+            desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations), unit="file"
+        )
         tqdm_bar.update(parallel_start_index)
         max_workers = 8
         logger.debug(
