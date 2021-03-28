@@ -14,59 +14,66 @@ arthur.py query_events -p development 96BE11B234F84F39 -q > 96BE11B234F84F39.eve
 
 * Usage
 
-Then you can compare those two ETLs using:
+Once you have the files, you use this script:
 ```
 compare_events.py 37ACEC7440AB4620.events 96BE11B234F84F39.events
 ```
 
-(These should be "older ETL events" before "newer ETL events").
+The order of those two files is: "older ETL" => "newer ETL".
 """
 
 import csv
 import re
 import sys
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from math import isclose
 
 from tabulate import tabulate
 
 
 def read_file(filename):
-    """Read output from query_events command which must contain "elapsed" and "rowcount" columns."""
-    # The file is expected to be formatted such that there's a header line, a separator, then the
-    # data. Also Arthur prints a summary after the table, like "(100 rows)" which will be skipped
-    # if present.
-    _column_spacing = re.compile(r"\s+\|\s+")
-    _row_count_re = re.compile(r"\(\d+\s*rows\)")
+    """
+    Read output from query_events command.
 
-    print("Reading events from {filename}".format(filename=filename))
+    The file is expected to be formatted such that there's a header line, a separator, then the
+    data. The column set must contain "elapsed" and "rowcount" for later processing.
+    Also Arthur prints a summary after the table, like "(100 rows)" which will be skipped if present.
+    """
+    column_spacing_re = re.compile(r"\s+\|\s+")
+    row_count_re = re.compile(r"\(\d+\s*rows\)")
+
+    print(f"Reading events from {filename}...")
     with open(filename) as f:
         for i, line in enumerate(f.readlines()):
-            if i == 1 or _row_count_re.match(line):
+            if i == 1 or row_count_re.match(line):
+                # Found the separator line or the final row tally.
                 continue
-            yield _column_spacing.sub("|", line).strip()
+            yield column_spacing_re.sub("|", line).strip()
 
 
 def parse_file(filename):
-    """Parse the input as |-delimited columns."""
+    """Parse the input as '|'-delimited columns."""
     lines = read_file(filename)
-    for row in csv.DictReader(lines, delimiter="|"):
-        yield row
+    reader = csv.reader(lines, delimiter="|")
+    row_class = namedtuple("CsvRow", next(reader), rename=True)
+    for row in reader:
+        yield row_class._make(row)
 
 
 def extract_values(filename):
     """Find elapsed time and rowcount for each target relation."""
-    # The "lambda: None" trick allows us to use '.[]' instead of '.get()'.
+    # The "lambda: None" trick allows us to use 'd[]' instead of 'd.get()' later.
     elapsed = defaultdict(lambda: None)
     rowcount = defaultdict(lambda: None)
     for row in parse_file(filename):
-        elapsed[(row["step"], row["target"])] = float(row["elapsed"]) if row["elapsed"] != "---" else None
-        rowcount[(row["step"], row["target"])] = int(row["rowcount"]) if row["rowcount"] != "---" else None
-    return {"elapsed": elapsed, "rowcount": rowcount}
+        elapsed[row.step, row.target] = float(row.elapsed) if row.elapsed != "---" else None
+        rowcount[row.step, row.target] = int(row.rowcount) if row.rowcount != "---" else None
+    return elapsed, rowcount
 
 
 def delta(a, b):
-    """Return change in percent (or None if undefined).
+    """
+    Return change in percent (or None if undefined).
 
     The delta in percent is rounded to one decimal.
     """
@@ -79,7 +86,8 @@ def delta(a, b):
 
 
 def show_delta(previous_value, current_value, column):
-    """Return whether the change from previous event to current event is "significant".
+    """
+    Return whether the change from previous event to current event is "significant".
 
     If the values appear to be equal or almost equal, there's no need to report a delta.
     Also, if the values are really small and any change is inflated, skip reporting the delta.
@@ -94,7 +102,7 @@ def show_delta(previous_value, current_value, column):
         # Decrease trigger-happiness for quick loads:
         if previous_value < 10.0 and current_value < 10.0:
             return False
-        if previous_value < 10.0 or current_value < 10.0:
+        if previous_value < 30.0 or current_value < 30.0:
             return not isclose(previous_value, current_value, abs_tol=20.0)
         if previous_value < 60.0 or current_value < 60.0:
             return not isclose(previous_value, current_value, rel_tol=0.5)
@@ -112,7 +120,7 @@ def show_delta(previous_value, current_value, column):
     return not isclose(previous_value, current_value, rel_tol=0.1)
 
 
-def print_table(previous_values, current_values, column):
+def print_comparison_table(previous_values, current_values, column):
     """Print differences between runs, sorted by relation."""
     all_events = frozenset(previous_values).union(current_values)
     has_large_diff = frozenset(
@@ -131,7 +139,10 @@ def print_table(previous_values, current_values, column):
         ],
         key=lambda row: row[:2],  # Avoid comparison with None values in the columns
     )
-    print(tabulate(table, headers=("target", "step", "prev. " + column, "cur. " + column, "delta %"), tablefmt="psql"))
+    print("Differences for '{}':\n".format(column))
+    print(
+        tabulate(table, headers=("target", "step", "prev. " + column, "cur. " + column, "delta %"), tablefmt="presto")
+    )
 
 
 def main():
@@ -139,16 +150,19 @@ def main():
         print(__doc__)
         sys.exit(0)
     if len(sys.argv) != 3:
-        print("Usage: {prog} previous_events current_events".format(prog=sys.argv[0]), file=sys.stderr)
+        print(
+            "Usage: {prog} previous_events current_events".format(prog=sys.argv[0]),
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     previous_events_file, current_events_file = sys.argv[1:3]
-    previous_events = extract_values(previous_events_file)
-    current_events = extract_values(current_events_file)
+    previous_elapsed, previous_rowcount = extract_values(previous_events_file)
+    current_elapsed, current_rowcount = extract_values(current_events_file)
 
-    print_table(previous_events["elapsed"], current_events["elapsed"], "elapsed")
+    print_comparison_table(previous_elapsed, current_elapsed, "elapsed")
     print()
-    print_table(previous_events["rowcount"], current_events["rowcount"], "rowcount")
+    print_comparison_table(previous_rowcount, current_rowcount, "rowcount")
 
 
 if __name__ == "__main__":

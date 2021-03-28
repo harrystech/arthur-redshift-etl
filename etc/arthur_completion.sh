@@ -17,6 +17,7 @@ _arthur_completion()
                 auto_design
                 bootstrap_sources
                 bootstrap_transformations
+                create_groups
                 create_index
                 create_schemas
                 create_user

@@ -18,6 +18,7 @@ from typing import List, Optional
 
 import boto3
 import simplejson as json
+from termcolor import colored
 
 import etl.config
 import etl.config.env
@@ -39,7 +40,7 @@ import etl.selftest
 import etl.sync
 import etl.unload
 import etl.validate
-from etl.errors import ETLDelayedExit, ETLError, ETLSystemError, InvalidArgumentError
+from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -51,15 +52,14 @@ def croak(error, exit_code):
     Print first line of exception and then bail out with the exit code.
 
     When you have a large stack trace, it's easy to miss the trigger and
-    so we call it out here again, on stderr.
+    so we call it out here again on stderr.
     """
-    full_tb = "\n".join(traceback.format_exception_only(type(error), error))
-    header = full_tb.split("\n")[0]
+    exception_only = traceback.format_exception_only(type(error), error)[0]
+    header = exception_only.splitlines()[0]
+    # Make sure to not send random ASCII sequences to a log file.
     if sys.stderr.isatty():
-        message = "Bailing out: \033[01;31m{}\033[0m".format(header)
-    else:
-        message = "Bailing out: {}".format(header)
-    print(message, file=sys.stderr)
+        header = colored(header, color="red", attrs=["bold"])
+    print(f"Bailing out: {header}", file=sys.stderr)
     sys.exit(exit_code)
 
 
@@ -75,13 +75,19 @@ def execute_or_bail():
     try:
         yield
     except InvalidArgumentError as exc:
-        logger.exception("ETL never got off the ground:")
+        logger.debug("Caught exception:", exc_info=True)
+        logger.error("ETL never got off the ground: %r", exc)
         croak(exc, 1)
     except ETLError as exc:
-        if isinstance(exc, ETLDelayedExit):
-            logger.critical("Something bad happened in the ETL: %s", str(exc))
-        else:
-            logger.critical("Something bad happened in the ETL:", exc_info=True)
+        logger.debug("Caught exception:", exc_info=True)
+        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc)
+        if exc.__cause__ is not None:
+            exc_cause_type = type(exc.__cause__)
+            logger.info(
+                "The direct cause of this exception was: '%s.%s'",
+                exc_cause_type.__module__,
+                exc_cause_type.__qualname__,
+            )
         logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
         croak(exc, 2)
     except Exception as exc:
@@ -293,6 +299,7 @@ def build_full_parser(prog_name):
         # Commands to deal with data warehouse as admin:
         InitializeSetupCommand,
         ShowRandomPassword,
+        CreateGroupsCommand,
         CreateUserCommand,
         UpdateUserCommand,
         # Commands to help with table designs and uploading them
@@ -398,8 +405,9 @@ def add_standard_arguments(parser, options):
         parser.add_argument(
             "--continue-from",
             help="skip forward in execution until the specified relation, then work forward from it"
-            " (the special token '*' is allowed to signify continuing from the first relation;"
-            " use ':transformations' as the argument to continue from the first transformation)",
+            " (the special token '*' is allowed to signify continuing from the first relation,"
+            " use ':transformations' as the argument to continue from the first transformation,)"
+            " otherwise specify an exact relation or source name)",
         )
     if "pattern" in options:
         parser.add_argument(
@@ -574,6 +582,25 @@ class ShowRandomPassword(SubCommand):
         random_password = uuid.uuid4().hex
         example_password = random_password[:16].upper() + random_password[16:].lower()
         print(example_password)
+
+
+class CreateGroupsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "create_groups",
+            "create all groups from the configuration",
+            "Make sure that all groups mentioned in the configuration file actually exist."
+            " (This allows to specify a group (as reader or writer) on a schema when that"
+            " group does not appear with a user and thus may not have been previously"
+            " created using a 'create_user' call.)",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+
+    def callback(self, args, config):
+        with etl.db.log_error():
+            etl.data_warehouse.create_groups(dry_run=args.dry_run)
 
 
 class CreateUserCommand(SubCommand):
@@ -1431,7 +1458,13 @@ class QueryEventsCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
-        parser.add_argument("--columns", help="comma-separated list of output columns")
+        parser.add_argument(
+            "--column",
+            action="append",
+            choices=["step", "event", "elapsed", "rowcount"],
+            help="select output column (in addition to target and timestamp),"
+            " use multiple times so add more columns",
+        )
         parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
     def callback(self, args, config):
@@ -1440,7 +1473,7 @@ class QueryEventsCommand(SubCommand):
             # Going back two days should cover at least one complete and one running rebuild ETL.
             etl.monitor.query_for_etl_ids(days_ago=2)
         else:
-            etl.monitor.scan_etl_events(args.etl_id, args.columns)
+            etl.monitor.scan_etl_events(args.etl_id, args.column)
 
 
 class SummarizeEventsCommand(SubCommand):

@@ -16,7 +16,7 @@ import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.design import Attribute, ColumnDefinition
-from etl.names import TableName, TableSelector, join_with_quotes
+from etl.names import TableName, TableSelector, join_with_single_quotes
 from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
@@ -480,10 +480,14 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
     upstream = frozenset(name.identifier for name in source_tables)
     not_found = upstream.difference(existent)
     if not_found:
-        logger.warning("New table(s) in source '%s' without local design: %s", source.name, join_with_quotes(not_found))
+        logger.warning(
+            "New table(s) in source '%s' without local design: %s", source.name, join_with_single_quotes(not_found)
+        )
     too_many = existent.difference(upstream)
     if too_many:
-        logger.error("Local table design(s) without table in source '%s': %s", source.name, join_with_quotes(too_many))
+        logger.error(
+            "Local table design(s) without table in source '%s': %s", source.name, join_with_single_quotes(too_many)
+        )
 
     return len(source_tables)
 

@@ -45,7 +45,7 @@ def load_tests(loader, tests, pattern):
     See https://docs.python.org/3.5/library/unittest.html#load-tests-protocol
     """
     etl_modules = sorted(mod for mod in sys.modules if mod.startswith("etl"))
-    logger.info("Adding tests from %s", etl.names.join_with_quotes(etl_modules))
+    logger.info("Adding tests from %s", etl.names.join_with_single_quotes(etl_modules))
     for mod in etl_modules:
         tests.addTests(doctest.DocTestSuite(mod))
     return tests
