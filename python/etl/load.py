@@ -55,7 +55,6 @@ from functools import partial
 from typing import Any, Dict, List, Optional, Set
 
 from psycopg2.extensions import connection  # only for type annotation
-from tabulate import tabulate
 
 import etl
 import etl.data_warehouse
@@ -76,7 +75,7 @@ from etl.errors import (
 )
 from etl.names import TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
-from etl.text import join_with_double_quotes, join_with_single_quotes
+from etl.text import format_lines, join_with_double_quotes, join_with_single_quotes
 from etl.timer import Timer
 from etl.util.retry import call_with_retry
 
@@ -1213,21 +1212,31 @@ def update_data_warehouse(
 # --- Section 5B: commands that provide information about relations
 
 
-def run_query(relation: RelationDescription, limit=None):
+def run_query(relation: RelationDescription, limit=None, use_staging=False) -> None:
     """Run the query for the relation (which must be a transformation, not a source)."""
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    query_stmt = relation.query_stmt + "\nLIMIT %s"
+    loadable_relation = LoadableRelation(relation, {}, use_staging)
 
-    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+    # We cannot use psycopg2's '%s' with LIMIT since the query may contain
+    # arbitrary text, including "LIKE '%something%', which would break mogrify.
+    limit_clause = "LIMIT NULL" if limit is None else f"LIMIT {limit:d}"
+    query_stmt = loadable_relation.query_stmt + f"\n{limit_clause}\n"
+
+    with Timer() as timer, closing(etl.db.connection(dsn_etl)) as conn:
         logger.info(
-            "Running query underlying '%s' (with 'LIMIT %s')",
+            "Running query underlying '%s' (with '%s')",
             relation.identifier,
-            limit if limit is not None else "NULL",
+            limit_clause,
         )
-        results = etl.db.query(conn, query_stmt, (limit,))
+        results = etl.db.query(conn, query_stmt)
     logger.info("Ran query underlying '%s' and received %d row(s) (%s)", relation.identifier, len(results), timer)
 
-    print(tabulate(results, headers=relation.unquoted_columns, tablefmt="psql"))
+    # TODO(tom): This should grab the column names from the query to help with debugging.
+    if relation.has_identity_column:
+        columns = relation.unquoted_columns[1:]
+    else:
+        columns = relation.unquoted_columns
+    print(format_lines(results, header_row=columns))
 
 
 def show_downstream_dependents(
