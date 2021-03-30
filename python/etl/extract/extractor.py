@@ -17,7 +17,7 @@ import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError
 from etl.relation import RelationDescription
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 from etl.timer import Timer
 from etl.util.retry import call_with_retry
 
@@ -156,7 +156,9 @@ class Extractor:
             else:
                 done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
         if self.failed_sources:
-            self.logger.error("Failed to extract from these source(s): %s", join_with_quotes(self.failed_sources))
+            self.logger.error(
+                "Failed to extract from these source(s): %s", join_with_single_quotes(self.failed_sources)
+            )
 
         # Note that iterating over result of futures may raise an exception which surfaces
         # exceptions from threads. This happens when there is (at least) one required table
@@ -169,7 +171,7 @@ class Extractor:
             self.logger.warning(
                 "Failed to extract %d relation(s): %s",
                 len(missing_tables),
-                join_with_quotes(missing_tables),
+                join_with_single_quotes(missing_tables),
             )
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))

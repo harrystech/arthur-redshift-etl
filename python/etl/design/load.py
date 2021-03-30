@@ -14,13 +14,18 @@ import funcy as fy
 import yaml
 import yaml.parser
 
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader  # type: ignore
+
 import etl
 import etl.config
 import etl.db
 import etl.file_sets
 import etl.s3
 from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -33,11 +38,9 @@ def load_table_design(stream, table_name):
     The table design is validated before being returned.
     """
     try:
-        table_design = yaml.safe_load(stream)
+        table_design = yaml.load(stream, Loader=SafeLoader)
     except yaml.parser.ParserError as exc:
         raise TableDesignParseError(exc) from exc
-
-    etl.config.validate_with_schema(table_design, "table_design.schema")
 
     # We used to specify constraints using an object (before v0.24.0) and then switched to using
     # an array of objects (with v0.24.0). This rewrites the constraints into the new format
@@ -139,7 +142,7 @@ def validate_column_references(table_design):
             cols = [col for constraint in constraints for col in constraint.get(key, [])]
         else:  # 'attributes'
             cols = table_design.get(obj, {}).get(key, [])
-        unknown = join_with_quotes(frozenset(cols).difference(valid_columns))
+        unknown = join_with_single_quotes(frozenset(cols).difference(valid_columns))
         if unknown:
             raise TableDesignSemanticError(
                 "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key, unknown=unknown)

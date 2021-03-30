@@ -36,7 +36,7 @@ from etl.extract.spark import SparkExtractor
 from etl.extract.sqoop import SqoopExtractor
 from etl.extract.static import StaticExtractor
 from etl.relation import RelationDescription
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -105,5 +105,5 @@ def filter_relations_for_sources(
     selected = [relation for relation in relations if relation.source_name in source_lookup]
     if selected:
         sources = frozenset(relation.source_name for relation in selected)
-        logger.info("Selected %d relation(s) from source(s): %s", len(selected), join_with_quotes(sources))
+        logger.info("Selected %d relation(s) from source(s): %s", len(selected), join_with_single_quotes(sources))
     return selected

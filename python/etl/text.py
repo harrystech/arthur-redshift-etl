@@ -1,11 +1,11 @@
 """
 Deal with text, mostly around iterables of texts which we want to pretty print.
 
-Should not import Arthur modules (so that etl.errors remains widely importable)
+Should not import other Arthur modules so that etl.text remains widely importable.
 """
 
 import textwrap
-from typing import List
+from typing import Iterable
 
 from tabulate import tabulate
 
@@ -45,7 +45,7 @@ def approx_pretty_size(total_bytes) -> str:
     return "{:d}{}".format(div, unit)
 
 
-def join_with_quotes(names):
+def join_with_single_quotes(names: Iterable[str]) -> str:
     """
     Individually wrap the names in quotes and return comma-separated names in a string.
 
@@ -53,22 +53,29 @@ def join_with_quotes(names):
     If the input is a list of names, the order of the list is respected.
     If the input is cheese, the order is for more red wine.
 
-    >>> join_with_quotes(["foo", "bar"])
+    >>> join_with_single_quotes(["foo", "bar"])
     "'foo', 'bar'"
-    >>> join_with_quotes({"foo", "bar"})
+    >>> join_with_single_quotes({"foo", "bar"})
     "'bar', 'foo'"
-    >>> join_with_quotes(frozenset(["foo", "bar"]))
+    >>> join_with_single_quotes(frozenset(["foo", "bar"]))
     "'bar', 'foo'"
     """
     if isinstance(names, (set, frozenset)):
         return ", ".join("'{}'".format(name) for name in sorted(names))
-    else:
-        return ", ".join("'{}'".format(name) for name in names)
+    return ", ".join("'{}'".format(name) for name in names)
 
 
-def join_column_list(columns: List[str], sep=", ") -> str:
-    """Return string with comma-separated, delimited column names."""
-    return sep.join('"{}"'.format(column) for column in columns)
+def join_with_double_quotes(names: Iterable[str], sep=", ", prefix="") -> str:
+    """
+    Return string with comma-separated, delimited names.
+
+    This step ensures that our identifiers are wrapped in double quotes.
+    >>> join_with_double_quotes(["foo", "bar"])
+    '"foo", "bar"'
+    >>> join_with_double_quotes(["foo", "bar"], sep=", USER ", prefix="USER ")
+    'USER "foo", USER "bar"'
+    """
+    return prefix + sep.join('"{}"'.format(name) for name in names)
 
 
 def whitespace_cleanup(value: str) -> str:

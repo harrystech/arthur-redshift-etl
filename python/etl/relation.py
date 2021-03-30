@@ -22,13 +22,12 @@ import logging
 import os.path
 from contextlib import closing, contextmanager
 from copy import deepcopy
-from functools import partial
-from itertools import chain, dropwhile
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 
 import funcy as fy
+from tqdm import tqdm
 
 import etl.config
 import etl.db
@@ -37,9 +36,9 @@ import etl.file_sets
 import etl.s3
 import etl.timer
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import CyclicDependencyError, ETLRuntimeError, MissingQueryError
+from etl.errors import CyclicDependencyError, ETLRuntimeError, InvalidArgumentError, MissingQueryError
 from etl.names import TableName, TableSelector, TempTableName
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -127,31 +126,72 @@ class RelationDescription:
         else:
             raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
 
-    def load(self) -> None:
+    def load(self, callback=None) -> None:
         """
         Force a loading of the table design (which is normally loaded "on demand").
 
         Strictly speaking, this isn't thread-safe. But if you worry about thread safety here,
         rethink your code.
         """
-        if self._table_design is None:
-            if self.bucket_name:
-                loader = partial(etl.design.load.load_table_design_from_s3, self.bucket_name)
-            else:
-                loader = partial(etl.design.load.load_table_design_from_localfile)
-            self._table_design = loader(self.design_file_name, self.target_table_name)
+        if self._table_design is not None:
+            pass  # previously (pre-)loaded
+        elif self.scheme == "s3":
+            self._table_design = etl.design.load.load_table_design_from_s3(
+                self.bucket_name, self.design_file_name, self.target_table_name
+            )
+        else:
+            self._table_design = etl.design.load.load_table_design_from_localfile(
+                self.design_file_name, self.target_table_name
+            )
+        if callback is not None:
+            callback()
 
     @staticmethod
-    def load_in_parallel(relations: List["RelationDescription"]) -> None:
-        """Load all relations' table design file in parallel."""
+    def load_in_parallel(relations: Sequence["RelationDescription"]) -> None:
+        """
+        Load all relations' table design file in parallel.
+
+        If there no relation left which hasn't loaded the table design, do nothing.
+        If there is only one relation, then that one is loaded directly and without threads.
+        If there are only two relations, then both are loaded directly and without threads.
+        If there are more than two relations, then the first is loaded directly to validate
+        our setup (in particular the schemas of table designs) and then rest is actually
+        loaded in parallel using threads.
+        """
+        remaining_relations = [relation for relation in relations if relation._table_design is None]
+        if len(remaining_relations) == 0:
+            return
+
+        # This section loads threads directly up to the "parallel start index".
+        timer = etl.timer.Timer()
+        parallel_start_index = 2 if len(remaining_relations) == 2 else 1
+        for relation in remaining_relations[:parallel_start_index]:
+            relation.load()
+        if parallel_start_index == len(remaining_relations):
+            logger.info("Finished loading %d table design file(s) (%s)", len(remaining_relations), timer)
+            return
+
+        # This section loads the remaining relations from the "parallel start index" onwards
+        # and shows a pretty loading bar (but only if this goes to a terminal).
+        tqdm_bar = tqdm(
+            desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations), unit="file"
+        )
+        tqdm_bar.update(parallel_start_index)
         max_workers = 8
-        logger.debug("Starting parallel load of %d table design file(s) on %d workers.", len(relations), max_workers)
-        with etl.timer.Timer() as timer:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_workers, thread_name_prefix="load-parallel"
-            ) as executor:
-                executor.map(lambda relation: relation.load(), relations)
-        logger.info("Finished loading %d table design file(s) (%s)", len(relations), timer)
+        logger.debug(
+            "Starting parallel load of %d table design file(s) on %d workers.",
+            len(remaining_relations[parallel_start_index:]),
+            max_workers,
+        )
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="load-parallel"
+        ) as executor:
+            executor.map(lambda relation: relation.load(tqdm_bar.update), remaining_relations[parallel_start_index:])
+
+        tqdm_bar.close()
+        logger.info(
+            "Finished loading %d table design file(s) in %d threads (%s)", len(remaining_relations), max_workers, timer
+        )
 
     @property  # This property is lazily loaded.
     def table_design(self) -> Dict[str, Any]:
@@ -290,7 +330,9 @@ class RelationDescription:
             if file_set.design_file_name is not None:
                 relations.append(cls(file_set))
             else:
-                logger.warning("Found file(s) without matching table design: %s", join_with_quotes(file_set.files))
+                logger.warning(
+                    "Found file(s) without matching table design: %s", join_with_single_quotes(file_set.files)
+                )
 
         if required_relation_selector:
             set_required_relations(relations, required_relation_selector)
@@ -434,7 +476,7 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
             logger.info(
                 "The following dependencies for relation '%s' are not managed by Arthur: %s",
                 description.identifier,
-                join_with_quotes([dep.identifier for dep in unmanaged_dependencies]),
+                join_with_single_quotes([dep.identifier for dep in unmanaged_dependencies]),
             )
         if pg_catalog_dependencies:
             has_pg_catalog_dependencies.add(description.target_table_name)
@@ -442,11 +484,11 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
     if has_unknown_dependencies:
         logger.warning(
             "These relations were unknown during dependency ordering: %s",
-            join_with_quotes([dep.identifier for dep in known_unknowns]),
+            join_with_single_quotes([dep.identifier for dep in known_unknowns]),
         )
         logger.warning(
             "This caused these relations to have dependencies that are not known: %s",
-            join_with_quotes([dep.identifier for dep in has_unknown_dependencies]),
+            join_with_single_quotes([dep.identifier for dep in has_unknown_dependencies]),
         )
 
     # Make tables that depend on tables in pg_catalog depend on all our tables (except those
@@ -613,33 +655,67 @@ def select_in_execution_order(
     Return list of relations that were selected, optionally adding dependents or skipping forward.
 
     The values supported for skipping forward are:
-      - '*' to start from the first relation (which is the same behavior as passing in None)
-      - ':transformations' to start with the first transformation (i.e. non-source) relation
-      - other value to skip forward to the first matching relation
+      - '*' to start from the beginning
+      - ':transformations' to only run transformations of selected relations
+      - a specific relation to continue from that one in the original execution order
+      - a specific schema to include all relations in that source schema as well as
+          any originally selected transformation
+
+    Note that these operate on the list of relations selected by the selector patterns.
+    The option of '*' exists to we can have a default value in our pipeline definitions.
+    The last option of specifying a schema is most useful with a source schema when you want
+    to restart the load step followed by all transformations.
+
+    No error is raised when the selector does not select any relations.
+    An error is raised when the "continue from" condition does not resolve to a list of relations.
     """
     logger.info("Pondering execution order of %d relation(s)", len(relations))
     execution_order = order_by_dependencies(relations)
+
     selected = find_matches(execution_order, selector)
-    if include_dependents:
-        dependents = find_dependents(execution_order, selected)
-        combined = frozenset(relation.identifier for relation in chain(selected, dependents))
-        selected = [relation for relation in execution_order if relation.identifier in combined]
     if not selected:
         logger.warning("Found no relations matching: %s", selector)
-    elif continue_from == "*":
-        logger.info("Continuing from first (selected) relation since '*' was used")
-    elif continue_from in (":transformations", ":transformation"):
-        selected = list(dropwhile(lambda relation: not relation.is_transformation, selected))
-        if selected:
-            logger.info("Continuing from first transformation in (selected) relations")
-        else:
-            logger.warning("Found no transformations in list of relations to continue from")
-    elif continue_from is not None:
-        logger.info("Trying to fast forward to '%s'", continue_from)
-        selected = list(dropwhile(lambda relation: relation.identifier != continue_from, selected))
-        if not selected:
-            logger.warning("Found no relation to continue from while matching '%s'", continue_from)
-    return selected
+        return []
+
+    if include_dependents:
+        dependents = find_dependents(execution_order, selected)
+        combined = frozenset(selected).union(dependents)
+        selected = [relation for relation in execution_order if relation in combined]
+
+    if continue_from is None or continue_from == "*":
+        return selected
+
+    transformations = [relation for relation in selected if relation.is_transformation]
+    if continue_from in (":transformations", ":transformation"):
+        if transformations:
+            logger.info("Continuing with %d transformation(s) in selected relations", len(transformations))
+            return transformations
+        raise InvalidArgumentError("found no transformations to continue from")
+
+    logger.info("Trying to fast forward to '%s' within %d relation(s)", continue_from, len(selected))
+    starting_from_match = list(fy.dropwhile(lambda relation: relation.identifier != continue_from, selected))
+    if starting_from_match:
+        logger.info(
+            "Continuing with %d relation(s) after skipping %d",
+            len(starting_from_match),
+            len(selected) - len(starting_from_match),
+        )
+        return starting_from_match
+
+    single_schema = frozenset(fy.filter(lambda relation: relation.source_name == continue_from, selected))
+    if single_schema.intersection(transformations):
+        raise InvalidArgumentError(f"schema '{continue_from}' contains transformations")
+    if single_schema:
+        combined = single_schema.union(transformations)
+        logger.info(
+            "Continuing with %d relation(s) in '%s' and %d transformation(s)",
+            len(single_schema),
+            continue_from,
+            len(combined) - len(single_schema),
+        )
+        return [relation for relation in execution_order if relation in combined]
+
+    raise InvalidArgumentError("found no matching relations to continue from")
 
 
 if __name__ == "__main__":

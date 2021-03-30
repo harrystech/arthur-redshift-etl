@@ -18,7 +18,7 @@ import etl.config
 import etl.db
 from etl.errors import ETLRuntimeError, ETLSystemError, TransientETLError
 from etl.names import TableName
-from etl.text import join_column_list, whitespace_cleanup
+from etl.text import join_with_double_quotes, whitespace_cleanup
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -96,7 +96,9 @@ def build_table_constraints(table_design: dict) -> List[str]:
     ddl_for_constraints = []
     for constraint in table_constraints:
         [[constraint_type, column_list]] = constraint.items()
-        ddl_for_constraints.append("{} ( {} )".format(type_lookup[constraint_type], join_column_list(column_list)))
+        ddl_for_constraints.append(
+            "{} ( {} )".format(type_lookup[constraint_type], join_with_double_quotes(column_list))
+        )
     return ddl_for_constraints
 
 
@@ -121,13 +123,13 @@ def build_table_attributes(table_design: dict) -> List[str]:
     if distribution:
         if isinstance(distribution, list):
             ddl_attributes.append("DISTSTYLE KEY")
-            ddl_attributes.append("DISTKEY ( {} )".format(join_column_list(distribution)))
+            ddl_attributes.append("DISTKEY ( {} )".format(join_with_double_quotes(distribution)))
         else:
             ddl_attributes.append("DISTSTYLE {}".format(distribution.upper()))
     if compound_sort:
-        ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_column_list(compound_sort)))
+        ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_with_double_quotes(compound_sort)))
     elif interleaved_sort:
-        ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_column_list(interleaved_sort)))
+        ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_with_double_quotes(interleaved_sort)))
     return ddl_attributes
 
 
@@ -152,7 +154,7 @@ def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) ->
 
 def build_view_ddl(view_name: TableName, columns: List[str], query_stmt: str) -> str:
     """Assemble the DDL of a view in a Redshift data warehouse."""
-    comma_separated_columns = join_column_list(columns, sep=",\n            ")
+    comma_separated_columns = join_with_double_quotes(columns, sep=",\n            ")
     ddl_initial = """
         CREATE VIEW {view_name} (
             {columns}
@@ -165,7 +167,7 @@ def build_view_ddl(view_name: TableName, columns: List[str], query_stmt: str) ->
 
 def build_insert_ddl(table_name: TableName, column_list, query_stmt) -> str:
     """Assemble the statement to insert data based on a query."""
-    columns = join_column_list(column_list)
+    columns = join_with_double_quotes(column_list)
     insert_stmt = """
         INSERT INTO {table} (
             {columns}
@@ -265,7 +267,7 @@ def copy_using_manifest(
         COMPUPDATE {compupdate}
         """.format(
         table=table_name,
-        columns=join_column_list(column_list),
+        columns=join_with_double_quotes(column_list),
         data_format_parameters=data_format_parameters,
         compupdate=compupdate,
     )

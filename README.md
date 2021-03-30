@@ -335,9 +335,8 @@ Please format your code using:
 * [isort](https://github.com/timothycrosley/isort)
 
 Also, we want to run code through:
-* [pycodestyle](https://www.python.org/dev/peps/pep-0008/) (see [local config](setup.cfg))
 * [flake8](https://flake8.pycqa.org/en/latest/)
-* [type checker](http://mypy-lang.org/)
+* [mypy](http://mypy-lang.org/)
 
 #### Adding a pre-commit hook
 

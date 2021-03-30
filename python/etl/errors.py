@@ -1,4 +1,4 @@
-from etl.text import join_with_quotes
+from etl.text import join_with_single_quotes
 
 
 class ETLError(Exception):
@@ -147,7 +147,7 @@ class MissingExtractEventError(RelationDataError):
         missing_relations = [relation for relation in source_relations if relation.identifier not in extracted_targets]
         self.message = (
             "Some source relations did not have extract events after the step start time: "
-            + join_with_quotes(missing_relations)
+            + join_with_single_quotes(missing_relations)
         )
 
     def __str__(self):
@@ -172,7 +172,7 @@ class FailedConstraintError(RelationDataError):
 
 class RequiredRelationLoadError(ETLRuntimeError):
     def __init__(self, failed_relations, bad_apple=None):
-        self.message = "required relation(s) with failure: " + join_with_quotes(failed_relations)
+        self.message = "required relation(s) with failure: " + join_with_single_quotes(failed_relations)
         if bad_apple:
             self.message += ", triggered by load failure of '{}'".format(bad_apple)
 
