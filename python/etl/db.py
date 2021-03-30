@@ -158,7 +158,7 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     return jdbc_url, dsn_properties
 
 
-def remove_password(s):
+def remove_password(line):
     """
     Remove any password or credentials information from a query string.
 
@@ -172,12 +172,12 @@ def remove_password(s):
     >>> remove_password(s)
     "COPY LISTING FROM 's3://mybucket/data/listing/' CREDENTIALS '';"
     """
-    match = re.search(r"(CREDENTIALS|PASSWORD)\s*'([^']*)'", s, re.IGNORECASE)
+    match = re.search(r"(CREDENTIALS|PASSWORD)\s*'([^']*)'", line, re.IGNORECASE)
     if match:
         start, end = match.span()
         creds = match.groups()[0]
-        s = s[:start] + creds + " ''" + s[end:]
-    return s
+        line = line[:start] + creds + " ''" + line[end:]
+    return line
 
 
 def mogrify(cursor, stmt, args=()):
@@ -343,7 +343,7 @@ def log_error():
 
 
 def drop_and_create_database(cx: Connection, database: str, owner: str) -> None:
-    exists = query(cx, """SELECT 1 FROM pg_catalog.pg_database WHERE datname = '{}'""".format(database))
+    exists = query(cx, f"SELECT 1 AS check_database FROM pg_catalog.pg_database WHERE datname = '{database}'")
     if exists:
         execute(cx, """DROP DATABASE {}""".format(database))
     execute(cx, """CREATE DATABASE {} WITH OWNER {}""".format(database, owner))
@@ -542,7 +542,3 @@ def grant_all_to_user(cx, schema, table, user):
 
 def revoke_select(cx, schema, table, group):
     execute(cx, """REVOKE SELECT ON "{}"."{}" FROM GROUP "{}" """.format(schema, table, group))
-
-
-def alter_table_owner(cx, schema, table, owner):
-    execute(cx, """ALTER TABLE "{}"."{}" OWNER TO {} """.format(schema, table, owner))

@@ -228,7 +228,7 @@ def _update_search_path(conn, user, dry_run=False):
         etl.db.alter_search_path(conn, user.name, search_path)
 
 
-def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
+def initial_setup(with_user_creation=False, force=False, dry_run=False):
     """
     Place named data warehouse database into initial state.
 
@@ -237,6 +237,7 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
 
     Optionally use `with_user_creation` flag to create users and groups.
     """
+    config = etl.config.get_dw_config()
     try:
         database_name = config.dsn_etl["database"]
     except (KeyError, ValueError) as exc:

@@ -23,13 +23,13 @@ import os
 from contextlib import closing
 from typing import List
 
-from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl
 import etl.db
 import etl.monitor
 import etl.s3
-from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema
 from etl.errors import DataUnloadError, ETLDelayedExit, TableDesignSemanticError
 from etl.relation import RelationDescription
 
@@ -38,7 +38,7 @@ logger.addHandler(logging.NullHandler())
 
 
 def run_redshift_unload(
-    conn: connection, relation: RelationDescription, unload_path: str, aws_iam_role: str, allow_overwrite=False
+    conn: Connection, relation: RelationDescription, unload_path: str, aws_iam_role: str, allow_overwrite=False
 ) -> None:
     """
     Execute the UNLOAD command for the given relation (via a select statement).
@@ -98,7 +98,7 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
 
 
 def unload_relation(
-    conn: connection,
+    conn: Connection,
     relation: RelationDescription,
     schema: DataWarehouseSchema,
     index: dict,
@@ -130,7 +130,6 @@ def unload_relation(
 
 
 def unload_to_s3(
-    config: DataWarehouseConfig,
     relations: List[RelationDescription],
     allow_overwrite: bool,
     keep_going: bool,
@@ -146,6 +145,7 @@ def unload_to_s3(
         return
     logger.info("Starting to unload %s relation(s)", len(unloadable_relations))
 
+    config = etl.config.get_dw_config()
     target_lookup = {schema.name: schema for schema in config.schemas if schema.is_an_unload_target}
     relation_target_tuples = []
     for relation in unloadable_relations:

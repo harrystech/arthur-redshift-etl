@@ -148,8 +148,7 @@ def run_arg_as_command(my_name="arthur.py"):
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
                 args.pattern.base_schemas = [schema.name for schema in dw_config.schemas]
 
-            # TODO(tom): Remove dw_config and let sub-commands handle it!
-            args.func(args, dw_config)
+            args.func(args)
 
 
 def submit_step(cluster_id, sub_command):
@@ -519,7 +518,7 @@ class SubCommand:
 
         return descriptions
 
-    def callback(self, args, config):
+    def callback(self, args):
         """Override this method for sub-classes."""
         raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
 
@@ -561,10 +560,10 @@ class InitializeSetupCommand(SubCommand):
             action="store_true",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.initial_setup(
-                config, with_user_creation=args.with_user_creation, force=args.force, dry_run=args.dry_run
+                with_user_creation=args.with_user_creation, force=args.force, dry_run=args.dry_run
             )
 
 
@@ -579,7 +578,7 @@ class ShowRandomPassword(SubCommand):
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
 
-    def callback(self, args, config):
+    def callback(self, args):
         random_password = uuid.uuid4().hex
         example_password = random_password[:16].upper() + random_password[16:].lower()
         print(example_password)
@@ -599,7 +598,7 @@ class CreateGroupsCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
 
-    def callback(self, args, config):
+    def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.create_groups(dry_run=args.dry_run)
 
@@ -624,7 +623,7 @@ class CreateUserCommand(SubCommand):
         )
         parser.add_argument("username", help="name for new user")
 
-    def callback(self, args, config):
+    def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.create_new_user(
                 args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
@@ -651,7 +650,7 @@ class UpdateUserCommand(SubCommand):
         )
         parser.add_argument("username", help="name of existing user")
 
-    def callback(self, args, config):
+    def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.update_user(
                 args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
@@ -671,10 +670,11 @@ class BootstrapSourcesCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
         etl.design.bootstrap.bootstrap_sources(
-            config.schemas, args.pattern, args.table_design_dir, local_files, dry_run=args.dry_run
+            dw_config.schemas, args.pattern, args.table_design_dir, local_files, dry_run=args.dry_run
         )
 
 
@@ -705,11 +705,12 @@ class BootstrapTransformationsCommand(SubCommand):
         )
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(
-            config.dsn_etl,
-            config.schemas,
+            dw_config.dsn_etl,
+            dw_config.schemas,
             args.table_design_dir,
             local_files,
             args.type == "VIEW",
@@ -747,7 +748,7 @@ class SyncWithS3Command(SubCommand):
             action="store_true",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         if args.deploy_config:
             etl.sync.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
         if args.force:
@@ -814,7 +815,8 @@ class ExtractToS3Command(MonitoredSubCommand):
             action="store_true",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
         if max_partitions < 1:
             raise InvalidArgumentError("option for max partitions must be >= 1")
@@ -835,12 +837,12 @@ class ExtractToS3Command(MonitoredSubCommand):
             sys.exit(1)
 
         descriptions = self.find_relation_descriptions(
-            args, default_scheme="s3", required_relation_selector=config.required_in_full_load_selector
+            args, default_scheme="s3", required_relation_selector=dw_config.required_in_full_load_selector
         )
         etl.monitor.Monitor.marker_payload("extract").emit(dry_run=args.dry_run)
         etl.extract.extract_upstream_sources(
             args.extractor,
-            config.schemas,
+            dw_config.schemas,
             descriptions,
             max_partitions=max_partitions,
             use_sampling=args.use_sampling,
@@ -879,14 +881,18 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             dest="use_staging_schemas",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         try:
             args.pattern.selected_schemas()
         except ValueError as exc:
             raise InvalidArgumentError(exc) from exc
 
         relations = self.find_relation_descriptions(
-            args, default_scheme="s3", required_relation_selector=config.required_in_full_load_selector, return_all=True
+            args,
+            default_scheme="s3",
+            required_relation_selector=dw_config.required_in_full_load_selector,
+            return_all=True,
         )
         etl.monitor.Monitor.marker_payload("load").emit(dry_run=args.dry_run)
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
@@ -937,9 +943,13 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             dest="use_staging_schemas",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
-            args, default_scheme="s3", required_relation_selector=config.required_in_full_load_selector, return_all=True
+            args,
+            default_scheme="s3",
+            required_relation_selector=dw_config.required_in_full_load_selector,
+            return_all=True,
         )
         etl.monitor.Monitor.marker_payload("upgrade").emit(dry_run=args.dry_run)
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
@@ -994,7 +1004,7 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
             action="store_true",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         etl.monitor.Monitor.marker_payload("update").emit(dry_run=args.dry_run)
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
@@ -1035,11 +1045,11 @@ class UnloadDataToS3Command(MonitoredSubCommand):
             action="store_true",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
         etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
         etl.unload.unload_to_s3(
-            config, descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
+            descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
         )
 
 
@@ -1063,9 +1073,10 @@ class CreateSchemasCommand(SubCommand):
             "--with-staging", help="create schemas in staging position", default=False, action="store_true"
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         schema_names = args.pattern.selected_schemas()
-        schemas = [schema for schema in config.schemas if schema.name in schema_names]
+        schemas = [schema for schema in dw_config.schemas if schema.name in schema_names]
         with etl.db.log_error():
             if args.with_backup:
                 etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
@@ -1092,9 +1103,10 @@ class PromoteSchemasCommand(SubCommand):
             required=True,
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         schema_names = args.pattern.selected_schemas()
-        schemas = [schema for schema in config.schemas if schema.name in schema_names]
+        schemas = [schema for schema in dw_config.schemas if schema.name in schema_names]
         with etl.db.log_error():
             if args.from_position == "staging":
                 etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
@@ -1135,11 +1147,10 @@ class ValidateDesignsCommand(SubCommand):
             action="store_true",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         # This does not pick up all designs to speed things up but that may lead to false positives.
         descriptions = self.find_relation_descriptions(args)
         etl.validate.validate_designs(
-            config,
             descriptions,
             keep_going=args.keep_going,
             skip_sources=args.skip_sources_check,
@@ -1170,7 +1181,7 @@ class RunQueryCommand(SubCommand):
             help="use the relations in staging schemas for the query",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         relations = self.find_relation_descriptions(args)
         transformations = [relation for relation in relations if relation.is_transformation]
         if len(transformations) != 1:
@@ -1190,7 +1201,8 @@ class ExplainQueryCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         if args.scheme == "file":
             # When running locally, we accept that there be only a SQL file.
             local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
@@ -1201,7 +1213,7 @@ class ExplainQueryCommand(SubCommand):
             # When running with S3, we expect full sets of files (SQL plus table design)
             descriptions = self.find_relation_descriptions(args)
         with etl.db.log_error():
-            etl.explain.explain_queries(config.dsn_etl, descriptions)
+            etl.explain.explain_queries(dw_config.dsn_etl, descriptions)
 
 
 class ShowDdlCommand(SubCommand):
@@ -1215,7 +1227,7 @@ class ShowDdlCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern"])
 
-    def callback(self, args, config):
+    def callback(self, args):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
             etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
@@ -1236,12 +1248,12 @@ class CreateIndexCommand(SubCommand):
         add_standard_arguments(parser, ["pattern"])
         parser.add_argument("--group", help="filter by reader group")
 
-    def callback(self, args, config):
+    def callback(self, args):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
             etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
         ]
-        etl.design.create_index(descriptions, group=args.group)
+        etl.relation.create_index(descriptions, group=args.group)
 
 
 class ListFilesCommand(SubCommand):
@@ -1263,7 +1275,7 @@ class ListFilesCommand(SubCommand):
             "-t", "--sort-by-time", help="sort files by timestamp (and list in single column)", action="store_true"
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
         etl.file_sets.list_files(file_sets, long_format=args.long_format, sort_by_time=args.sort_by_time)
 
@@ -1291,7 +1303,8 @@ class PingCommand(SubCommand):
             nargs="+",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        config = etl.config.get_dw_config()
         if args.for_schema is None:
             dsns = [config.dsn_admin if args.use_admin else config.dsn_etl]
         else:
@@ -1322,7 +1335,7 @@ class TerminateSessionsCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
 
-    def callback(self, args, config):
+    def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.terminate_sessions(dry_run=args.dry_run)
 
@@ -1352,9 +1365,10 @@ class ShowDownstreamDependentsCommand(SubCommand):
             "--with-dependents", help="show list of dependents (upstream) for every relation", action="store_true"
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
-            args, required_relation_selector=config.required_in_full_load_selector, return_all=True
+            args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
         )
         etl.load.show_downstream_dependents(
             relations,
@@ -1377,9 +1391,10 @@ class ShowUpstreamDependenciesCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
-            args, required_relation_selector=config.required_in_full_load_selector, return_all=True
+            args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
         )
         etl.load.show_upstream_dependencies(relations, args.pattern)
 
@@ -1401,7 +1416,7 @@ class RenderTemplateCommand(SubCommand):
         group.add_argument("template", help="name of template", nargs="?")
         parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
 
-    def callback(self, args, config):
+    def callback(self, args):
         if args.list:
             etl.render_template.list_templates(compact=args.compact)
         elif args.template:
@@ -1420,7 +1435,7 @@ class ShowValueCommand(SubCommand):
         parser.add_argument("name", help="print the value for the chosen setting")
         parser.add_argument("default", nargs="?", help="set default in case the setting is unset")
 
-    def callback(self, args, config):
+    def callback(self, args):
         etl.render_template.show_value(args.name, args.default)
 
 
@@ -1439,7 +1454,7 @@ class ShowVarsCommand(SubCommand):
         add_standard_arguments(parser, ["prefix"])
         parser.add_argument("name", help="print just the value for the chosen setting", nargs="*")
 
-    def callback(self, args, config):
+    def callback(self, args):
         etl.render_template.show_vars(args.name)
 
 
@@ -1456,7 +1471,7 @@ class ShowPipelinesCommand(SubCommand):
         parser.add_argument("-j", "--as-json", help="write output in JSON format", action="store_true", default=False)
         parser.add_argument("selection", help="pick pipelines using a glob pattern", nargs="*")
 
-    def callback(self, args, config):
+    def callback(self, args):
         etl.pipeline.show_pipelines(args.selection, as_json=args.as_json)
 
 
@@ -1472,7 +1487,7 @@ class DeleteFinishedPipelinesCommand(SubCommand):
         add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("selection", help="pick specific pipelines", nargs="*")
 
-    def callback(self, args, config):
+    def callback(self, args):
         etl.pipeline.delete_finished_pipelines(args.selection, dry_run=args.dry_run)
 
 
@@ -1497,7 +1512,7 @@ class QueryEventsCommand(SubCommand):
         )
         parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
-    def callback(self, args, config):
+    def callback(self, args):
         # TODO(tom): This is starting to become awkward: make finding latest ETL a separate command.
         if args.etl_id is None:
             # Going back two days should cover at least one complete and one running rebuild ETL.
@@ -1523,7 +1538,7 @@ class SummarizeEventsCommand(SubCommand):
             help="pick which step to summarize",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
         relations = self.find_relation_descriptions(args)
         etl.monitor.summarize_events(relations, args.step)
 
@@ -1550,7 +1565,7 @@ class TailEventsCommand(SubCommand):
         )
         parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
 
-    def callback(self, args, config):
+    def callback(self, args):
         start_time = args.start_time or (datetime.utcnow() - timedelta(seconds=15 * 60))
         if args.follow:
             update_interval = 30
@@ -1583,7 +1598,7 @@ class ShowHelpCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         parser.add_argument("topic", help="select topic", choices=self.topics)
 
-    def callback(self, args, config):
+    def callback(self, args):
         print(sys.modules["etl." + args.topic].__doc__.strip())
 
 
@@ -1596,7 +1611,7 @@ class SelfTestCommand(SubCommand):
         # doesn't mix with test output.
         parser.set_defaults(log_level="CRITICAL")
 
-    def callback(self, args, config):
+    def callback(self, args):
         etl.selftest.run_doctest("etl", args.log_level)
 
 
