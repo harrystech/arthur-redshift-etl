@@ -1246,18 +1246,14 @@ class CreateIndexCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern"])
-        parser.add_argument("--group", action="append", default=[], help="filter by reader group (repeat as needed)")
+        parser.add_argument("--group", help="filter by reader group")
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
             etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
         ]
-        unknown = frozenset(args.group).difference(dw_config.groups)
-        if unknown:
-            raise InvalidArgumentError(f"unknown group(s): {join_with_single_quotes(unknown)}")
-        etl.relation.create_index(descriptions, args.group)
+        etl.relation.create_index(descriptions, group=args.group)
 
 
 class ListFilesCommand(SubCommand):
