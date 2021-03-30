@@ -192,7 +192,10 @@ class RelationDescription:
 
         tqdm_bar.close()
         logger.info(
-            "Finished loading %d table design file(s) in %d threads (%s)", len(remaining_relations), max_workers, timer
+            "Finished loading %d table design file(s) using %d threads (%s)",
+            len(remaining_relations),
+            max_workers,
+            timer,
         )
 
     @property  # This property is lazily loaded.

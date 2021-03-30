@@ -27,12 +27,12 @@ from typing import Iterable, List, Optional
 
 import psycopg2
 import simplejson as json
-from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl.db
 import etl.design.bootstrap
 import etl.relation
-from etl.config.dw import DataWarehouseConfig, DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema
 from etl.errors import (
     ETLConfigError,
     ETLDelayedExit,
@@ -114,7 +114,7 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
         return None
 
 
-def validate_dependencies(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
+def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
     """Download the dependencies (based on a temporary view) and compare with table design."""
     if tmp_view_name.is_late_binding_view:
         logger.warning(
@@ -135,7 +135,7 @@ def validate_dependencies(conn: connection, relation: RelationDescription, tmp_v
         logger.info("Dependencies listing in design file for '%s' matches SQL", relation.identifier)
 
 
-def validate_column_ordering(conn: connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
+def validate_column_ordering(conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
     """Download the column order (using the temporary view) and compare with table design."""
     attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
@@ -171,7 +171,7 @@ def validate_column_ordering(conn: connection, relation: RelationDescription, tm
         logger.info("Order of columns in design of '%s' matches result of running SQL query", relation.identifier)
 
 
-def validate_single_transform(conn: connection, relation: RelationDescription, keep_going: bool = False) -> None:
+def validate_single_transform(conn: Connection, relation: RelationDescription, keep_going: bool = False) -> None:
     """
     Test-run a relation (CTAS or VIEW) by creating a temporary view.
 
@@ -284,17 +284,17 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
                 raise
 
 
-def check_select_permission(conn: connection, table_name: TableName):
+def check_select_permission(conn: Connection, table_name: TableName):
     """Check whether permissions on table will allow us to read from database."""
     # Why mess with querying the permissions table when you can just try to read (EAFP).
-    statement = """SELECT 1 FROM {} WHERE FALSE""".format(table_name)
+    statement = """SELECT 1 AS check_permission FROM {} WHERE FALSE""".format(table_name)
     try:
         etl.db.execute(conn, statement)
     except psycopg2.Error as exc:
         raise UpstreamValidationError("failed to read from upstream table '%s'" % table_name.identifier) from exc
 
 
-def validate_upstream_columns(conn: connection, table: RelationDescription) -> None:
+def validate_upstream_columns(conn: Connection, table: RelationDescription) -> None:
     """
     Compare columns in upstream table to the table design file.
 
@@ -356,7 +356,7 @@ def validate_upstream_columns(conn: connection, table: RelationDescription) -> N
             )
 
 
-def validate_upstream_constraints(conn: connection, table: RelationDescription) -> None:
+def validate_upstream_constraints(conn: Connection, table: RelationDescription) -> None:
     """
     Compare table constraints between database and table design file.
 
@@ -424,7 +424,7 @@ def validate_upstream_constraints(conn: connection, table: RelationDescription) 
             )
 
 
-def validate_upstream_table(conn: connection, table: RelationDescription, keep_going: bool = False) -> None:
+def validate_upstream_table(conn: Connection, table: RelationDescription, keep_going: bool = False) -> None:
     """Validate table design of an upstream table against its source database."""
     try:
         with etl.db.log_error():
@@ -491,7 +491,6 @@ def validate_execution_order(relations: List[RelationDescription], keep_going=Fa
 
 
 def validate_designs(
-    config: DataWarehouseConfig,
     relations: List[RelationDescription],
     keep_going=False,
     skip_sources=False,
@@ -502,6 +501,7 @@ def validate_designs(
 
     See module documentation for list of checks.
     """
+    config = etl.config.get_dw_config()
     _error_occurred.clear()
 
     valid_descriptions = validate_semantics(relations, keep_going=keep_going)

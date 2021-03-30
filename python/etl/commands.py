@@ -561,10 +561,9 @@ class InitializeSetupCommand(SubCommand):
         )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         with etl.db.log_error():
             etl.data_warehouse.initial_setup(
-                dw_config, with_user_creation=args.with_user_creation, force=args.force, dry_run=args.dry_run
+                with_user_creation=args.with_user_creation, force=args.force, dry_run=args.dry_run
             )
 
 
@@ -599,7 +598,7 @@ class CreateGroupsCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["dry-run"])
 
-    def callback(self, args, config):
+    def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.create_groups(dry_run=args.dry_run)
 
@@ -1047,11 +1046,10 @@ class UnloadDataToS3Command(MonitoredSubCommand):
         )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
         etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
         etl.unload.unload_to_s3(
-            dw_config, descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
+            descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
         )
 
 
@@ -1150,11 +1148,9 @@ class ValidateDesignsCommand(SubCommand):
         )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         # This does not pick up all designs to speed things up but that may lead to false positives.
         descriptions = self.find_relation_descriptions(args)
         etl.validate.validate_designs(
-            dw_config,
             descriptions,
             keep_going=args.keep_going,
             skip_sources=args.skip_sources_check,
@@ -1260,7 +1256,7 @@ class CreateIndexCommand(SubCommand):
         ]
         unknown = frozenset(args.group).difference(dw_config.groups)
         if unknown:
-            raise InvalidArgumentError(f"unknown group(s): {', '.join(sorted(unknown))}")
+            raise InvalidArgumentError(f"unknown group(s): {join_with_single_quotes(unknown)}")
         etl.relation.create_index(descriptions, args.group)
 
 
@@ -1312,9 +1308,9 @@ class PingCommand(SubCommand):
         )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
+        config = etl.config.get_dw_config()
         if args.for_schema is None:
-            dsns = [dw_config.dsn_admin if args.use_admin else dw_config.dsn_etl]
+            dsns = [config.dsn_admin if args.use_admin else config.dsn_etl]
         else:
             try:
                 args.for_schema.base_schemas = [schema.name for schema in config.schemas if schema.is_database_source]

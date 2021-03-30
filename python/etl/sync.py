@@ -92,7 +92,7 @@ def sync_with_s3(
         logger.info("Dry-run: Skipped uploading %d file(s) to 's3://%s/%s (%s)", len(files), bucket_name, prefix, timer)
     else:
         logger.info(
-            "Uploaded %d of %d file(s) to 's3://%s/%s' in %d threads (%s)",
+            "Uploaded %d of %d file(s) to 's3://%s/%s' using %d threads (%s)",
             len(files) - errors,
             len(files),
             bucket_name,
