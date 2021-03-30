@@ -9,8 +9,7 @@ SELECT sqs.query
      , sqs.rows
 FROM svl_query_summary AS sqs
 JOIN stl_query AS sq ON sqs.query = sq.query AND sqs.userid = sq.userid
--- TODO(tom): use $data_warehouse.owner.name to identify the user
-WHERE sqs.userid = current_user_id
+WHERE sqs.userid = (SELECT usesysid FROM pg_user WHERE usename = '${data_warehouse.owner.name}')
   AND sqs.is_diskbased = 't'
   AND sq.starttime > '${date.yesterday}'
 ORDER BY sq.starttime

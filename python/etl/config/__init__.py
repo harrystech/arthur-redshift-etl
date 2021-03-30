@@ -282,11 +282,13 @@ def load_config(config_files: Sequence[str], default_file: str = "default_settin
     date_settings.setdefault("today", today.strftime("%Y/%m/%d"))
     date_settings.setdefault("yesterday", (today - datetime.timedelta(days=1)).strftime("%Y/%m/%d"))
 
-    global _mapped_config
-    _mapped_config = _build_config_map(settings)
-
     global _dw_config
     _dw_config = etl.config.dw.DataWarehouseConfig(settings)
+
+    global _mapped_config
+    _mapped_config = _build_config_map(settings)
+    if _mapped_config is not None:
+        _mapped_config["data_warehouse.owner.name"] = _dw_config.owner.name
 
     set_config_value("version", package_version())
 

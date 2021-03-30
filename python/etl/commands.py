@@ -686,16 +686,17 @@ class RunSqlCommand(SubCommand):
             nargs="*",
         )
 
-    def callback(self, args, config):
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         if args.list:
             etl.render_template.list_sql_templates()
         else:
             try:
-                args.schemas.base_schemas = [schema.name for schema in config.schemas]
+                args.schemas.base_schemas = [schema.name for schema in dw_config.schemas]
             except ValueError as exc:
                 raise InvalidArgumentError("schemas must be part of configuration") from exc
 
-            dsn = config.dsn_admin_on_etl_db if args.use_admin else config.dsn_etl
+            dsn = dw_config.dsn_admin_on_etl_db if args.use_admin else dw_config.dsn_etl
             sql_stmt = etl.render_template.render_sql(args.template)
             sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
             rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
