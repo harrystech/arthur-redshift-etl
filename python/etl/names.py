@@ -11,7 +11,7 @@ by a pattern from the command line.
 import fnmatch
 import re
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import etl.config
 from etl.errors import ETLSystemError
@@ -434,7 +434,7 @@ class TableSelector:
                 split_patterns.append(TableName(pattern, "*"))
         self._patterns = tuple(sorted(split_patterns))
 
-        self._base_schemas = ()
+        self._base_schemas: Tuple[str, ...] = ()
         if base_schemas is not None:
             self.base_schemas = base_schemas
 
@@ -448,6 +448,7 @@ class TableSelector:
         Add base schemas (names, not patterns) to match against.
 
         It is an error to have a pattern that does not match against the base schemas.
+        (So you cannot retroactively reject a pattern by changing the base schemas.)
         """
         # Fun fact: you can't have doctests in docstrings for properties
         self._base_schemas = tuple(name.lower() for name in schemas)
@@ -490,15 +491,17 @@ class TableSelector:
                     return True
             return False
 
-    def selected_schemas(self) -> List[str]:
+    def selected_schemas(self) -> Tuple[str, ...]:
         """
-        Return list of schemas from base schemas that match the selection.
+        Return tuple of schemas from base schemas that match the selection.
 
         It is an error if a pattern tries to select a specific table instead of a schema.
+        This method can thus be called for the side-effect of raising an exception
+        if you want to test whether the pattern only selects schemas.
 
         >>> ts = TableSelector(["www.*", "marketing"], ["factory", "marketing", "www"])
         >>> ts.selected_schemas()
-        ['marketing', 'www']
+        ('marketing', 'www')
         >>> tx = TableSelector(["www.orders"], ["www"])
         >>> tx.selected_schemas()
         Traceback (most recent call last):
@@ -507,7 +510,7 @@ class TableSelector:
         for pattern in self._patterns:
             if pattern.table != "*":
                 raise ValueError("pattern selects table, not schema: '%s'" % pattern)
-        return [schema for schema in self._base_schemas if self.match_schema(schema)]
+        return tuple(str(schema) for schema in self._base_schemas if self.match_schema(schema))
 
     def match(self, table_name):
         """

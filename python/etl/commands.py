@@ -41,6 +41,7 @@ import etl.sync
 import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
+from etl.text import join_with_single_quotes
 from etl.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ def run_arg_as_command(my_name="arthur.py"):
 
             dw_config = etl.config.get_dw_config()
             if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
-                args.pattern.base_schemas = [s.name for s in dw_config.schemas]
+                args.pattern.base_schemas = [schema.name for schema in dw_config.schemas]
 
             # TODO(tom): Remove dw_config and let sub-commands handle it!
             args.func(args, dw_config)
@@ -1262,7 +1263,9 @@ class ListFilesCommand(SubCommand):
 class PingCommand(SubCommand):
     def __init__(self):
         super().__init__(
-            "ping", "ping data warehouse", "Try to connect to the data warehouse to test connection settings."
+            "ping",
+            "ping data warehouse or upstream database",
+            "Try to connect to the data warehouse or upstream databases to test connection settings.",
         )
 
     def add_arguments(self, parser):
@@ -1273,11 +1276,30 @@ class PingCommand(SubCommand):
         group.add_argument(
             "-e", "--as-etl-user", help="try to connect as ETL user (default)", action="store_false", dest="use_admin"
         )
+        group.add_argument(
+            "--for-schema",
+            help="ping upstream database (instead of data warehouse) based on the target schema",
+            action=StorePatternAsSelector,
+            nargs="+",
+        )
 
     def callback(self, args, config):
-        dsn = config.dsn_admin if args.use_admin else config.dsn_etl
+        if args.for_schema is None:
+            dsns = [config.dsn_admin if args.use_admin else config.dsn_etl]
+        else:
+            try:
+                args.for_schema.base_schemas = [schema.name for schema in config.schemas if schema.is_database_source]
+            except ValueError as exc:
+                raise InvalidArgumentError("selected schema is not for upstream database") from exc
+            try:
+                selected = args.for_schema.selected_schemas()
+            except ValueError as exc:
+                raise InvalidArgumentError("pattern must match schemas") from exc
+            logger.info("Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected))
+            dsns = [schema.dsn for schema in config.schemas if schema.name in selected]
         with etl.db.log_error():
-            etl.db.ping(dsn)
+            for dsn in dsns:
+                etl.db.ping(dsn)
 
 
 class TerminateSessionsCommand(SubCommand):
