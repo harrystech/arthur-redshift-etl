@@ -179,7 +179,7 @@ class RelationDescription:
             desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations), unit="file"
         )
         tqdm_bar.update(parallel_start_index)
-        max_workers = 8
+        max_workers = min(len(remaining_relations) - parallel_start_index, 8)
         logger.debug(
             "Starting parallel load of %d table design file(s) on %d workers.",
             len(remaining_relations[parallel_start_index:]),
