@@ -176,7 +176,7 @@ class LoadableRelation:
 
     @property
     def target_table_name(self):
-        # Load context changes our target table
+        # The context changes our target table to be a schema in normal or staging position.
         if self.use_staging:
             return self._relation_description.target_table_name.as_staging_table_name()
         else:
@@ -1119,6 +1119,7 @@ def upgrade_data_warehouse(
     max_concurrency=1,
     wlm_query_slots=1,
     only_selected=False,
+    include_immediate_views=False,
     continue_from: Optional[str] = None,
     use_staging=False,
     skip_copy=False,
@@ -1137,12 +1138,30 @@ def upgrade_data_warehouse(
         3 Unless skip_copy is true (else leave tables empty):
             3.1 Load data into tables
             3.2 Verify constraints
+
+    Since views that directly hang off tables are deleted when their tables are deleted, the option
+    exists to include those immediate views in the upgrade.
     """
     selected_relations = etl.relation.select_in_execution_order(
-        all_relations, selector, include_dependents=not only_selected, continue_from=continue_from
+        all_relations,
+        selector,
+        include_dependents=not only_selected,
+        include_immediate_views=include_immediate_views,
+        continue_from=continue_from,
     )
     if not selected_relations:
         return
+
+    if only_selected and not include_immediate_views:
+        immediate_views = [
+            view.identifier for view in etl.relation.find_immediate_dependencies(all_relations, selector)
+        ]
+        if immediate_views:
+            logger.warning("These views are not part of the upgrade: %s", join_with_single_quotes(immediate_views))
+            logger.info(
+                "Any views that depend in their query on tables that are part of the upgrade but"
+                " are not selected will be missing once the upgrade completes."
+            )
 
     relations = LoadableRelation.from_descriptions(
         selected_relations, "upgrade", skip_copy=skip_copy, use_staging=use_staging

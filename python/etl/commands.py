@@ -962,7 +962,7 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
     def __init__(self):
         super().__init__(
             "upgrade",
-            "load data into source or CTAS tables, create dependent VIEWS along the way",
+            "load data into source or CTAS tables and create dependent VIEWS along the way",
             "Delete selected tables and views, then rebuild them along with all of relations"
             " that depend on the selected ones. This is for debugging since the rebuild is"
             " visible to users (i.e. outside a transaction).",
@@ -974,21 +974,29 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
         )
         parser.add_argument(
             "--only-selected",
+            action="store_true",
+            default=False,
             help="skip rebuilding relations that depend on the selected ones"
             " (leaves warehouse in inconsistent state, for debugging only)",
-            default=False,
+        )
+        parser.add_argument(
+            "--include-immediate-views",
             action="store_true",
+            help="include views that are downstream of selected relations without any CTAS before"
+            " (this is the default and only useful with '--only-selected', for debugging only)",
         )
         parser.add_argument(
             "--with-staging-schemas",
-            help="do all the work in hidden schemas and publish to standard names on completion"
-            " (default: do not use staging schemas, note this is the opposite of load command)",
-            default=False,
             action="store_true",
+            default=False,
             dest="use_staging_schemas",
+            help="do all the work using hidden schemas (default: do not use staging schemas,"
+            " note this is the opposite of 'load' command)",
         )
 
     def callback(self, args):
+        if args.include_immediate_views and not args.only_selected:
+            logger.warning("Option '--include-immediate-views' is default unless '--only-selected' is used!")
         dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
             args,
@@ -1009,6 +1017,7 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
             only_selected=args.only_selected,
+            include_immediate_views=args.include_immediate_views,
             continue_from=args.continue_from,
             use_staging=args.use_staging_schemas,
             skip_copy=args.skip_copy,
