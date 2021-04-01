@@ -309,6 +309,7 @@ def build_full_parser(prog_name):
         ValidateDesignsCommand,
         ExplainQueryCommand,
         RunQueryCommand,
+        CheckConstraintsCommand,
         ShowDdlCommand,
         CreateIndexCommand,
         SyncWithS3Command,
@@ -1233,6 +1234,29 @@ class RunQueryCommand(SubCommand):
             raise InvalidArgumentError("selected %d transformations" % len(transformations))
         with etl.db.log_error():
             etl.load.run_query(transformations[0], args.limit, args.with_staging_schemas)
+
+
+class CheckConstraintsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "check_constraints",
+            "check constraints of selected relations",
+            "Run all the table constraints for the selected relations",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
+        parser.add_argument(
+            "--with-staging-schemas",
+            action="store_true",
+            default=False,
+            help="use the relations in staging schemas for the query",
+        )
+
+    def callback(self, args):
+        relations = self.find_relation_descriptions(args)
+        with etl.db.log_error():
+            etl.load.check_constraints(relations, args.with_staging_schemas)
 
 
 class ExplainQueryCommand(SubCommand):

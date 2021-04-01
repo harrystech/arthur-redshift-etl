@@ -460,7 +460,7 @@ class SortableRelationDescription:
         self.level: Optional[int] = None
 
 
-def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> None:
+def _sanitize_dependencies(descriptions: Sequence[SortableRelationDescription]) -> None:
     """
     Pass 1 of ordering -- make sure to drop unknown dependencies.
 
@@ -508,7 +508,7 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
             description.dependencies.update(has_no_internal_dependencies)
 
 
-def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> None:
+def _sort_by_dependencies(descriptions: Sequence[SortableRelationDescription]) -> None:
     """
     Pass 2 of ordering -- sort such that dependencies are built before the relation itself is built.
 
@@ -544,7 +544,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
             queue.put((max(latest_order, minimum_order) + 1, tie_breaker, description))
 
 
-def order_by_dependencies(relation_descriptions: List[RelationDescription]) -> List[RelationDescription]:
+def order_by_dependencies(relation_descriptions: Sequence[RelationDescription]) -> List[RelationDescription]:
     """
     Sort the relations such that any dependents surely are loaded afterwards.
 
@@ -580,7 +580,7 @@ def order_by_dependencies(relation_descriptions: List[RelationDescription]) -> L
     return [description for description in sorted(relation_descriptions, key=attrgetter("execution_order"))]
 
 
-def set_required_relations(relations: List[RelationDescription], required_selector: TableSelector) -> None:
+def set_required_relations(relations: Sequence[RelationDescription], required_selector: TableSelector) -> None:
     """
     Set the "required" property based on the selector.
 
@@ -609,13 +609,13 @@ def set_required_relations(relations: List[RelationDescription], required_select
     logger.info("Marked %d relation(s) as required based on selector: %s", len(required_relations), required_selector)
 
 
-def find_matches(relations: List[RelationDescription], selector: TableSelector):
+def find_matches(relations: Sequence[RelationDescription], selector: TableSelector):
     """Return list of matching relations."""
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
 def find_dependents(
-    relations: List[RelationDescription], seed_relations: List[RelationDescription]
+    relations: Sequence[RelationDescription], seed_relations: Sequence[RelationDescription]
 ) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
@@ -632,7 +632,7 @@ def find_dependents(
 
 
 def find_immediate_dependencies(
-    relations: List[RelationDescription], selector: TableSelector
+    relations: Sequence[RelationDescription], selector: TableSelector
 ) -> List[RelationDescription]:
     """
     Return list of VIEW relations that directly (or chained) hang off the selected relations.
@@ -655,7 +655,7 @@ def find_immediate_dependencies(
 
 
 def select_in_execution_order(
-    relations: List[RelationDescription],
+    relations: Sequence[RelationDescription],
     selector: TableSelector,
     include_dependents=False,
     continue_from: Optional[str] = None,
@@ -727,7 +727,7 @@ def select_in_execution_order(
     raise InvalidArgumentError("found no matching relations to continue from")
 
 
-def create_index(relations: List[RelationDescription], groups: Iterable[str], with_columns: Optional[bool]) -> None:
+def create_index(relations: Sequence[RelationDescription], groups: Iterable[str], with_columns: Optional[bool]) -> None:
     """
     Create an "index" page with Markdown that lists all schemas and their tables.
 
