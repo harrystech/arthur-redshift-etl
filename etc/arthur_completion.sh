@@ -64,7 +64,7 @@ _arthur_completion()
             COMPREPLY=( $(compgen -A variable -P '$' -- "${cur#'$'}") )
             ;;
         "auto_design"|"bootstrap_transformations")
-            COMPREPLY=( $(compgen -W "CTAS VIEW update" -- "$cur") )
+            COMPREPLY=( $(compgen -W "CTAS VIEW update check-only" -- "$cur") )
             ;;
         *)
             case "$cur" in

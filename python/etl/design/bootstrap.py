@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional
 
 import psycopg2.errors
 import simplejson as json
-from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl.config
 import etl.db
@@ -17,6 +17,7 @@ import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.design import Attribute, ColumnDefinition, TableDesign
+from etl.errors import TableDesignValidationError
 from etl.names import TableName, TableSelector, TempTableName, join_with_single_quotes
 from etl.relation import RelationDescription
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
+def fetch_tables(cx: Connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
     """
     Retrieve tables (matching selector) for this source, return as a list of TableName instances.
 
@@ -75,7 +76,7 @@ def fetch_tables(cx: connection, source: DataWarehouseSchema, selector: TableSel
     return found
 
 
-def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
+def fetch_attributes(cx: Connection, table_name: TableName) -> List[Attribute]:
     """Retrieve table definition (column names and types)."""
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s`
     # works in the editor.
@@ -111,7 +112,7 @@ def fetch_attributes(cx: connection, table_name: TableName) -> List[Attribute]:
     return [Attribute(**att) for att in attributes]
 
 
-def fetch_constraints(cx: connection, table_name: TableName) -> List[Dict[str, List[str]]]:
+def fetch_constraints(cx: Connection, table_name: TableName) -> List[Dict[str, List[str]]]:
     """
     Retrieve table constraints from database by looking up indices.
 
@@ -170,7 +171,7 @@ def fetch_constraints(cx: connection, table_name: TableName) -> List[Dict[str, L
     return found
 
 
-def fetch_dependencies(cx: connection, table_name: TableName) -> List[str]:
+def fetch_dependencies(cx: Connection, table_name: TableName) -> List[str]:
     """
     Lookup dependencies (other relations).
 
@@ -236,7 +237,7 @@ def _search_query_step(line: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def fetch_dependency_hints(cx: connection, stmt: str) -> Optional[List[str]]:
+def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
     """Parse a query plan for hints of which relations we might depend on."""
     s3_dependencies = []
     xn_dependencies = []
@@ -266,7 +267,7 @@ def fetch_dependency_hints(cx: connection, stmt: str) -> Optional[List[str]]:
     return sorted(s3_dependencies)
 
 
-def create_partial_table_design(conn: connection, source_table_name: TableName, target_table_name: TableName):
+def create_partial_table_design(conn: Connection, source_table_name: TableName, target_table_name: TableName):
     """
     Start a table design for the relation.
 
@@ -302,7 +303,7 @@ def create_partial_table_design(conn: connection, source_table_name: TableName, 
     return table_design
 
 
-def create_table_design_for_source(conn: connection, source_table_name: TableName, target_table_name: TableName):
+def create_table_design_for_source(conn: Connection, source_table_name: TableName, target_table_name: TableName):
     """
     Create new table design for a table in an upstream source.
 
@@ -310,7 +311,7 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
     (Note that only upstream tables can have constraints derived from inspecting the database.)
     """
     table_design = create_partial_table_design(conn, source_table_name, target_table_name)
-    table_design["source_name"] = "{}.{}".format(target_table_name.schema, source_table_name.identifier)
+    table_design["source_name"] = f"{target_table_name.schema}.{source_table_name.identifier}"
     constraints = fetch_constraints(conn, source_table_name)
     if constraints:
         table_design["constraints"] = constraints
@@ -318,7 +319,7 @@ def create_table_design_for_source(conn: connection, source_table_name: TableNam
 
 
 def create_partial_table_design_for_transformation(
-    conn: connection,
+    conn: Connection,
     tmp_view_name: TempTableName,
     relation: RelationDescription,
     update_keys: Optional[Iterable[str]] = None,
@@ -462,7 +463,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
                     new_column["sql_type"],
                     old_column["sql_type"],
                 )
-                new_column["sql_type"] = "character varying({})".format(old_size)
+                new_column["sql_type"] = f"character varying({old_size})"
                 logger.warning(
                     "Re-using old definition for column '%s.%s': '%s' (please add a cast)",
                     target_table,
@@ -476,7 +477,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
 
 
 def create_table_design_for_ctas(
-    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
+    conn: Connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
 ):
     """
     Create new table design for a CTAS.
@@ -491,7 +492,7 @@ def create_table_design_for_ctas(
 
 
 def create_table_design_for_view(
-    conn: connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
+    conn: Connection, tmp_view_name: TempTableName, relation: RelationDescription, update: bool
 ):
     """
     Create (and return) new table design suited for a view.
@@ -598,9 +599,7 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
                     target_table_name = TableName(source.name, source_table_name.table)
                     table_design = create_table_design_for_source(conn, source_table_name, target_table_name)
 
-                    filename = os.path.join(
-                        source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table)
-                    )
+                    filename = os.path.join(source_dir, f"{source_table_name.schema}-{source_table_name.table}.yaml")
                     save_table_design(target_table_name, table_design, filename, dry_run=dry_run)
 
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
@@ -656,7 +655,7 @@ def bootstrap_transformations(
     transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
     if not (check_only or replace or update):
-        # Filter down to new transformations (SQL files without matching YAML file).
+        # Filter down to new transformations: SQL files without matching YAML file
         transforms = [file_set for file_set in transforms if not file_set.design_file_name]
     if not transforms:
         logger.warning("Found no new queries without matching design files")
@@ -670,11 +669,8 @@ def bootstrap_transformations(
         except Exception:
             logger.warning("Make sure that table design files exist and are valid before trying to update")
             raise
-        # TODO(tom): Collect all errors before dying.
-        for relation in relations:
-            if not relation.design_file_name:
-                raise RuntimeError("failed to load existing design file for {:x}".format(relation))
 
+    check_only_errors = 0
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             # Be careful not to trigger a load of an unknown design file by accessing "kind".
@@ -693,20 +689,21 @@ def bootstrap_transformations(
             with relation.matching_temporary_view(conn, as_late_binding_view=has_s3_scans) as tmp_view_name:
                 try:
                     if (source_name or current_source_name) == "CTAS":
-                        table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update)
+                        table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update or check_only)
                     else:
-                        table_design = create_table_design_for_view(conn, tmp_view_name, relation, update)
+                        table_design = create_table_design_for_view(conn, tmp_view_name, relation, update or check_only)
                 except RuntimeError as exc:
                     if check_only:
-                        print(f"Failed to create table design for {relation:x}")
-                        print(f"Error: {exc}")
+                        print(f"Failed to create table design for {relation:x}: {exc}")
+                        check_only_errors += 1
                         continue
                     else:
                         raise
 
                 if check_only:
                     if relation.table_design != table_design:
-                        print("Change detected in table design for {:x}".format(relation))
+                        check_only_errors += 1
+                        print(f"Change detected in table design for {relation:x}")
                         before = TableDesign.as_string(relation.table_design)
                         after = TableDesign.as_string(table_design)
                         print(
@@ -722,7 +719,7 @@ def bootstrap_transformations(
                     continue
 
                 if update and relation.table_design == table_design:
-                    logger.info("No updates detected in table design for {:x}, skipping write".format(relation))
+                    logger.info(f"No updates detected in table design for {relation:x}, skipping write")
                     continue
 
                 source_dir = os.path.join(local_dir, relation.source_name)
@@ -734,7 +731,7 @@ def bootstrap_transformations(
                 else:
                     filename = os.path.join(
                         source_dir,
-                        "{}-{}.yaml".format(relation.target_table_name.schema, relation.target_table_name.table),
+                        f"{relation.target_table_name.schema}-{relation.target_table_name.table}.yaml",
                     )
                 save_table_design(
                     relation.target_table_name,
@@ -743,3 +740,6 @@ def bootstrap_transformations(
                     overwrite=update or replace,
                     dry_run=dry_run,
                 )
+
+    if check_only_errors:
+        raise TableDesignValidationError(f"found {check_only_errors} table design(s) that would be rewritten")

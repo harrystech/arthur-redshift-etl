@@ -731,38 +731,37 @@ class BootstrapTransformationsCommand(SubCommand):
             "bootstrap schema information from transformations",
             "Download schema information as if transformation had been run in data warehouse."
             " If there is no local design file, then create one as a starting point."
-            " (With --check-only, no file is written and only changes in the design are flagged.)",
+            " (With 'check-only', no file is written and only changes in the design are flagged.)",
             aliases=["auto_design"],
         )
 
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
-            "-c",
-            "--check-only",
-            help="only advise whether bootstrap would make any changes on the table design file",
-            default=False,
+            "-f",
+            "--force",
             action="store_true",
-        )
-        group.add_argument(
-            "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
+            default=False,
+            help="overwrite table design file if it already exists",
         )
         group.add_argument(
             "-u",
             "--update",
-            help="merge new information with existing table design",
-            default=False,
             action="store_true",
+            default=False,
+            help="merge new information with existing table design",
         )
         parser.add_argument(
             "type",
-            choices=["CTAS", "VIEW", "update"],
+            choices=["CTAS", "VIEW", "update", "check-only"],
             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
-            " or update the current relation",
+            " , update the current relation, or check the current designs",
         )
         add_standard_arguments(parser, ["pattern", "dry-run"])
 
     def callback(self, args):
+        if args.update and args.choices not in ("CTAS", "VIEW"):
+            raise InvalidArgumentError("option '--update' should be used with CTAS or VIEW only")
         dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(
@@ -770,8 +769,8 @@ class BootstrapTransformationsCommand(SubCommand):
             dw_config.schemas,
             args.table_design_dir,
             local_files,
-            args.type if args.type != "update" else None,
-            check_only=args.check_only,
+            args.type if args.type in ("CTAS", "VIEW") else None,
+            check_only=args.type == "check-only",
             update=args.update or args.type == "update",
             replace=args.force,
             dry_run=args.dry_run,
