@@ -19,7 +19,6 @@ can be loaded back into the data warehouse using the "load" step.
 """
 
 import logging
-import os
 from contextlib import closing
 from typing import List
 
@@ -74,12 +73,15 @@ def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: 
         "columns": relation.unquoted_columns,
         "columns_with_types": relation.get_columns_with_types(),
     }
-    object_key = os.path.join(prefix, "columns.yaml")
+    object_key = f"{prefix}/columns.yaml"
     if dry_run:
         logger.info("Dry-run: Skipping writing columns file to 's3://%s/%s'", bucket_name, object_key)
-    else:
-        logger.info("Writing columns file to 's3://%s/%s'", bucket_name, object_key)
-        etl.s3.upload_data_to_s3(data, bucket_name, object_key)
+        return
+
+    logger.info("Writing columns file to 's3://%s/%s'", bucket_name, object_key)
+    etl.s3.upload_data_to_s3(data, bucket_name, object_key)
+    # This waits for the file to show up so that we don't move on before all files are ready.
+    etl.s3.wait_until_object_exists(bucket_name, object_key)
 
 
 def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
@@ -89,12 +91,13 @@ def write_success_file(bucket_name: str, prefix: str, dry_run=False) -> None:
     The sentinel file marks the unload as complete. The dump insists on this file before
     writing a manifest for load.
     """
-    object_key = os.path.join(prefix, "_SUCCESS")
+    object_key = f"{prefix}/_SUCCESS"
     if dry_run:
         logger.info("Dry-run: Skipping creation of 's3://%s/%s'", bucket_name, object_key)
-    else:
-        logger.info("Creating 's3://%s/%s'", bucket_name, object_key)
-        etl.s3.upload_empty_object(bucket_name, object_key)
+        return
+
+    logger.info("Creating 's3://%s/%s'", bucket_name, object_key)
+    etl.s3.upload_empty_object(bucket_name, object_key)
 
 
 def unload_relation(
@@ -123,10 +126,11 @@ def unload_relation(
     ):
         if dry_run:
             logger.info("Dry-run: Skipping unload of '%s' to '%s'", relation.identifier, unload_path)
-        else:
-            run_redshift_unload(conn, relation, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
-            write_columns_file(relation, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
-            write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
+            return
+
+        run_redshift_unload(conn, relation, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
+        write_columns_file(relation, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
+        write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
 
 def unload_to_s3(
@@ -139,7 +143,7 @@ def unload_to_s3(
     logger.info("Loading table design for %d relation(s) to look for unloadable relations", len(relations))
     etl.relation.RelationDescription.load_in_parallel(relations)
 
-    unloadable_relations = [d for d in relations if d.is_unloadable]
+    unloadable_relations = [relation for relation in relations if relation.is_unloadable]
     if not unloadable_relations:
         logger.warning("Found no relations that are unloadable.")
         return

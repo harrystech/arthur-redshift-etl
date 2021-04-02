@@ -172,6 +172,11 @@ def object_stat(bucket_name: str, object_key: str) -> Tuple[int, datetime]:
     return s3_object.content_length, s3_object.last_modified
 
 
+def wait_until_object_exists(bucket_name: str, object_key: str) -> None:
+    bucket = _get_s3_bucket(bucket_name)
+    bucket.Object(object_key).wait_until_exists()
+
+
 def get_s3_object_content(bucket_name: str, object_key: str) -> botocore.response.StreamingBody:
     """
     Return stream for content of s3://bucket_name/object_key .
@@ -219,6 +224,7 @@ def test_object_creation(bucket_name: str, prefix: str) -> None:
     object_key = "{}/_s3_test".format(prefix.rstrip("/"))
     logger.info("Testing object creation and deletion using 's3://%s/%s'", bucket_name, object_key)
     upload_empty_object(bucket_name, object_key)
+    wait_until_object_exists(bucket_name, object_key)
     get_s3_object_last_modified(bucket_name, object_key, wait=True)
     delete_objects(bucket_name, [object_key], wait=True)
 
