@@ -390,9 +390,13 @@ class TableSelector:
         >>> ts = TableSelector()
         >>> str(ts)
         "['*.*']"
+        >>> len(ts)
+        0
         >>> ts = TableSelector(["finance", "www"])
         >>> str(ts)
         "['finance.*', 'www.*']"
+        >>> len(ts)
+        2
         >>> ts = TableSelector(["www.orders*"])
         >>> str(ts)
         "['www.orders*']"
@@ -459,7 +463,10 @@ class TableSelector:
             if not found:
                 raise ValueError("bad pattern (no match against base schemas): {}".format(pattern.identifier))
 
-    def __str__(self):
+    def __len__(self) -> int:
+        return len(self._patterns)
+
+    def __str__(self) -> str:
         # See __init__ for tests
         if len(self._patterns) == 0:
             return "['*.*']"

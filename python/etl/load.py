@@ -90,7 +90,7 @@ class LoadableRelation:
     """
     Wrapper for RelationDescription that adds state machinery useful for loading.
 
-    (Load here refers to the step in the ETL, so includes load, upgrade, and update commands).
+    Loading here refers to the step in the ETL, so includes the load, upgrade, and update commands.
 
     We use composition here to avoid copying from the RelationDescription.
     Also, inheritance would work less well given how lazy loading is used in RelationDescription.
@@ -157,30 +157,37 @@ class LoadableRelation:
             raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
     def __init__(
-        self, relation: RelationDescription, info: dict, use_staging=False, skip_copy=False, in_transaction=False
+        self,
+        relation: RelationDescription,
+        info: dict,
+        use_staging=False,
+        target_schema: Optional[str] = None,
+        skip_copy=False,
+        in_transaction=False,
     ) -> None:
         self._relation_description = relation
         self.info = info
-        self.skip_copy = skip_copy or relation.is_view_relation
-        self.failed = False
-        self.use_staging = use_staging
         self.in_transaction = in_transaction
+        self.skip_copy = skip_copy or relation.is_view_relation
+        self.use_staging = use_staging
+        self.failed = False
+
+        if target_schema is not None:
+            self.target_table_name = TableName(target_schema, self._relation_description.target_table_name.table)
+        elif self.use_staging:
+            self.target_table_name = self._relation_description.target_table_name.as_staging_table_name()
+        else:
+            self.target_table_name = self._relation_description.target_table_name
 
     def monitor(self):
         return etl.monitor.Monitor(**self.info)
 
     @property
     def identifier(self) -> str:
-        # Load context does not change the identifier
-        return self._relation_description.identifier
-
-    @property
-    def target_table_name(self):
-        # The context changes our target table to be a schema in normal or staging position.
+        # Load context should not change the identifier for logging.
         if self.use_staging:
-            return self._relation_description.target_table_name.as_staging_table_name()
-        else:
-            return self._relation_description.target_table_name
+            return self._relation_description.identifier
+        return self.target_table_name.identifier
 
     def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
         unpacked = [r._relation_description for r in relations]  # do DAG operations in terms of RelationDescriptions
@@ -239,6 +246,7 @@ class LoadableRelation:
         relations: List[RelationDescription],
         command: str,
         use_staging=False,
+        target_schema: Optional[str] = None,
         skip_copy=False,
         in_transaction=False,
     ) -> List["LoadableRelation"]:
@@ -265,7 +273,7 @@ class LoadableRelation:
                 "options": {"use_staging": use_staging, "skip_copy": skip_copy},
                 "index": dict(base_index, current=i + 1),
             }
-            loadable.append(cls(relation, monitor_info, use_staging, skip_copy, in_transaction=in_transaction))
+            loadable.append(cls(relation, monitor_info, use_staging, target_schema, skip_copy, in_transaction))
 
         return loadable
 
@@ -610,7 +618,7 @@ def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: 
     """
     Create schemas necessary for a full rebuild of data warehouse.
 
-    If `use_staging`, create new staging schemas.
+    If `use_staging`, only create new staging schemas.
     Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
     """
     if use_staging:
@@ -1122,6 +1130,7 @@ def upgrade_data_warehouse(
     include_immediate_views=False,
     continue_from: Optional[str] = None,
     use_staging=False,
+    target_schema: Optional[str] = None,
     skip_copy=False,
     dry_run=False,
 ) -> None:
@@ -1141,6 +1150,9 @@ def upgrade_data_warehouse(
 
     Since views that directly hang off tables are deleted when their tables are deleted, the option
     exists to include those immediate views in the upgrade.
+
+    If a target schema is provided, then the data is loaded into that schema instead of where the
+    relation would normally land.
     """
     selected_relations = etl.relation.select_in_execution_order(
         all_relations,
@@ -1151,6 +1163,9 @@ def upgrade_data_warehouse(
     )
     if not selected_relations:
         return
+
+    if target_schema and any(relation.execution_level > 1 for relation in selected_relations):
+        raise ETLRuntimeError("relations depend on each other while target schema is in effect")
 
     if only_selected and not include_immediate_views:
         immediate_views = [
@@ -1164,13 +1179,16 @@ def upgrade_data_warehouse(
             )
 
     relations = LoadableRelation.from_descriptions(
-        selected_relations, "upgrade", skip_copy=skip_copy, use_staging=use_staging
+        selected_relations, "upgrade", skip_copy=skip_copy, use_staging=use_staging, target_schema=target_schema
     )
 
-    traversed_schemas = find_traversed_schemas(relations)
-    logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+    if target_schema:
+        logger.info("Starting to load %d relation(s) into schema '%s'", len(relations), target_schema)
+    else:
+        traversed_schemas = find_traversed_schemas(relations)
+        logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+        etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
 
-    etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
 
 

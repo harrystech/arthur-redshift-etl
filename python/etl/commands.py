@@ -515,7 +515,9 @@ class SubCommand:
         )
 
         if not return_all and required_relation_selector is not None:
-            descriptions = [d for d in descriptions if args.pattern.match(d.target_table_name)]
+            descriptions = [
+                description for description in descriptions if args.pattern.match(description.target_table_name)
+            ]
 
         return descriptions
 
@@ -985,7 +987,8 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             help="include views that are downstream of selected relations without any CTAS before"
             " (this is the default and only useful with '--only-selected', for debugging only)",
         )
-        parser.add_argument(
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
             "--with-staging-schemas",
             action="store_true",
             default=False,
@@ -993,10 +996,20 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             help="do all the work using hidden schemas (default: do not use staging schemas,"
             " note this is the opposite of 'load' command)",
         )
+        group.add_argument(
+            "--into-schema",
+            dest="target_schema",
+            help="build relations in this target schema (selected relations must not depend on each other)",
+        )
 
     def callback(self, args):
+        if args.target_schema and len(args.pattern) == 0:
+            raise InvalidArgumentError("option '--into-schema' requires that relations are selected")
         if args.include_immediate_views and not args.only_selected:
-            logger.warning("Option '--include-immediate-views' is default unless '--only-selected' is used!")
+            logger.warning("Option '--include-immediate-views' is default unless '--only-selected' is used")
+        if args.target_schema and not args.only_selected:
+            logger.warning("Option '--into-schema' implies '--only-selected'")
+            args.only_selected = True
         dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
             args,
@@ -1020,6 +1033,7 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             include_immediate_views=args.include_immediate_views,
             continue_from=args.continue_from,
             use_staging=args.use_staging_schemas,
+            target_schema=args.target_schema,
             skip_copy=args.skip_copy,
             dry_run=args.dry_run,
         )
