@@ -165,7 +165,7 @@ def run_arg_as_command(my_name="arthur.py"):
             prefix = etl.config.get_config_value("object_store.s3.prefix")
             etl.logs.cloudwatch.add_cloudwatch_logging(prefix)
 
-        if getattr(args, "use_monitor", False):
+        if getattr(args.func, "uses_monitor", False):
             etl.monitor.start_monitors(args.prefix)
             logger.debug("Setting marker in events table for start of '%s' step", args.sub_command)
             etl.monitor.Monitor.marker_payload(args.sub_command).emit(dry_run=args.dry_run)
@@ -581,19 +581,6 @@ class SubCommand(abc.ABC):
         ...
 
 
-class MonitoredSubCommand(SubCommand):
-    """
-    A sub-command that will also use monitors to update some event table.
-
-    All sub-command classes must have prefix and dry-run in their arguments.
-    """
-
-    def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
-        parser = super().add_to_parser(parent_parser)
-        parser.set_defaults(use_monitor=True)
-        return parser
-
-
 class InitializeSetupCommand(SubCommand):
     def __init__(self):
         super().__init__(
@@ -917,7 +904,7 @@ class SyncWithS3Command(SubCommand):
         )
 
 
-class ExtractToS3Command(MonitoredSubCommand):
+class ExtractToS3Command(SubCommand):
     def __init__(self):
         super().__init__(
             "extract",
@@ -1009,8 +996,10 @@ class ExtractToS3Command(MonitoredSubCommand):
             dry_run=args.dry_run,
         )
 
+    setattr(callback, "uses_monitor", True)
 
-class LoadDataWarehouseCommand(MonitoredSubCommand):
+
+class LoadDataWarehouseCommand(SubCommand):
     def __init__(self):
         super().__init__(
             "load",
@@ -1072,8 +1061,10 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             dry_run=args.dry_run,
         )
 
+    setattr(callback, "uses_monitor", True)
 
-class UpgradeDataWarehouseCommand(MonitoredSubCommand):
+
+class UpgradeDataWarehouseCommand(SubCommand):
     def __init__(self):
         super().__init__(
             "upgrade",
@@ -1159,8 +1150,10 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             dry_run=args.dry_run,
         )
 
+    setattr(callback, "uses_monitor", True)
 
-class UpdateDataWarehouseCommand(MonitoredSubCommand):
+
+class UpdateDataWarehouseCommand(SubCommand):
     def __init__(self):
         super().__init__(
             "update",
@@ -1208,8 +1201,10 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
             dry_run=args.dry_run,
         )
 
+    setattr(callback, "uses_monitor", True)
 
-class UnloadDataToS3Command(MonitoredSubCommand):
+
+class UnloadDataToS3Command(SubCommand):
     def __init__(self):
         super().__init__(
             "unload",
@@ -1238,6 +1233,8 @@ class UnloadDataToS3Command(MonitoredSubCommand):
         etl.unload.unload_to_s3(
             descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
         )
+
+    setattr(callback, "uses_monitor", True)
 
 
 class CreateSchemasCommand(SubCommand):
