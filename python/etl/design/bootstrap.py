@@ -408,7 +408,7 @@ def save_table_design(
     # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
     etl.design.load.validate_table_design(table_design, target_table_name)
 
-    # FIXME Move this logic into file sets (note that "source_name" is in table_design)
+    # TODO(tom): Move this logic into file sets (note that "source_name" is in table_design)
     filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
     this_table = target_table_name.identifier
     if dry_run:
