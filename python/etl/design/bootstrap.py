@@ -16,7 +16,7 @@ import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
 from etl.design import Attribute, ColumnDefinition, TableDesign, diff_table_designs
-from etl.errors import TableDesignValidationError
+from etl.errors import ETLSystemError, TableDesignValidationError
 from etl.names import TableName, TableSelector, TempTableName, join_with_single_quotes
 from etl.relation import RelationDescription
 
@@ -196,21 +196,21 @@ def fetch_dependencies(cx: Connection, table_name: TableName) -> List[str]:
     return [TableName(**row).identifier for row in dependencies]
 
 
-def _search_query_step(line: str) -> Optional[Dict[str, str]]:
+def search_query_step(line: str) -> Optional[Dict[str, str]]:
     """
     Return any S3-based tables found in the query step (part of a query plan).
 
     >>> plan = '-> S3 Nested Subquery ex_schema.table location:"s3://bucket/..."'
-    >>> _search_query_step(plan)
+    >>> search_query_step(plan)
     {'s3_table': 'ex_schema.table'}
     >>> plan = '-> S3 Seq Scan ex_schema.table location:'
-    >>> _search_query_step(plan)
+    >>> search_query_step(plan)
     {'s3_table': 'ex_schema.table'}
     >>> plan = '-> S3 Seq Scan ex_schema.table alias location:'
-    >>> _search_query_step(plan)
+    >>> search_query_step(plan)
     {'s3_table': 'ex_schema.table'}
     >>> plan = '-> XN Seq Scan on table'
-    >>> _search_query_step(plan)
+    >>> search_query_step(plan)
     {'xn_table': 'table'}
     """
     ws_re = re.compile(r"\s+")
@@ -249,7 +249,7 @@ def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
         return None
 
     for line in plan:
-        maybe = _search_query_step(line)
+        maybe = search_query_step(line)
         if maybe is None:
             continue
         if "s3_table" in maybe:
@@ -571,6 +571,29 @@ def create_table_design_for_view(
     return table_design
 
 
+def create_table_design_for_transformation(
+    conn: Connection, kind: str, relation: RelationDescription, update=False
+) -> dict:
+    # Use a quick check of the query plan whether we depend on external schemas.
+    if kind not in ("CTAS", "VIEW"):
+        raise ETLSystemError(f"unexpected source name: {kind}")
+
+    with relation.matching_temporary_view(conn, as_late_binding_view=True) as tmp_view_name:
+        dependencies = fetch_dependency_hints(conn, relation.query_stmt)
+        if dependencies is None:
+            raise RuntimeError("failed to query for dependencies")
+        if any(dependencies):
+            logger.info("Looks like %s has external dependencies, proceeding with caution", relation.identifier)
+            if kind == "VIEW":
+                raise RuntimeError("VIEW not supported for transformations that depend on extrenal tables")
+            return create_table_design_for_ctas(conn, tmp_view_name, relation, update)
+
+    with relation.matching_temporary_view(conn, as_late_binding_view=False) as tmp_view_name:
+        if kind == "VIEW":
+            return create_table_design_for_view(conn, tmp_view_name, relation, update)
+        return create_table_design_for_ctas(conn, tmp_view_name, relation, update)
+
+
 def save_table_design(
     target_table_name: TableName,
     table_design: dict,
@@ -587,13 +610,6 @@ def save_table_design(
     """
     # Validate before writing to make sure we don't drift between bootstrap and JSON schema.
     etl.design.load.validate_table_design(table_design, target_table_name)
-
-    # TODO(tom): Move this logic into file sets (note that "source_name" is in table_design)
-    if current_file is None:
-        filename = os.path.join(source_dir, "{}-{}.yaml".format(source_table_name.schema, source_table_name.table))
-    else:
-        filename = current_file
-
     this_table = target_table_name.identifier
     if dry_run:
         logger.info("Dry-run: Skipping writing table design file for '%s' to '%s'", this_table, filename)
@@ -690,6 +706,8 @@ def bootstrap_sources(selector, table_design_dir, local_files, update=False, rep
     This will create new design files locally if they don't already exist for any relations tied
     to upstream database sources. If one already exists locally, the file is update or replaced or
     kept as-is depending on the "update" and "replace" arguments.
+
+    This is a callback of a command.
     """
     dw_config = etl.config.get_dw_config()
     selected_database_schemas = [
@@ -722,6 +740,8 @@ def bootstrap_transformations(
 
     "source_name" should be "CTAS" or "VIEW or None (in which case the relation type currently
     specified will continue to be used).
+
+    This is a callback of a command.
     """
     dw_config = etl.config.get_dw_config()
     transformation_schema = {schema.name for schema in dw_config.schemas if schema.has_transformations}
@@ -745,66 +765,45 @@ def bootstrap_transformations(
     check_only_errors = 0
     with closing(etl.db.connection(dw_config.dsn_etl, autocommit=True)) as conn:
         for relation in relations:
-            # Be careful not to trigger a load of an unknown design file by accessing "kind".
-            current_source_name = relation.kind if relation.design_file_name else None
-            assert (source_name or current_source_name) in ("CTAS", "VIEW")
-
-            # Use a quick check of the query plan whether we depend on external schemas.
-            with relation.matching_temporary_view(conn, as_late_binding_view=True):
-                dependencies = fetch_dependency_hints(conn, relation.query_stmt)
-                if dependencies is None:
-                    raise RuntimeError("failed to query for dependencies")
-                has_s3_scans = any(dependencies)
-            if has_s3_scans:
-                logger.info("Looks like %s has external dependencies, proceeding with caution", relation.identifier)
-
-            with relation.matching_temporary_view(conn, as_late_binding_view=has_s3_scans) as tmp_view_name:
-                try:
-                    if (source_name or current_source_name) == "CTAS":
-                        table_design = create_table_design_for_ctas(conn, tmp_view_name, relation, update or check_only)
-                    else:
-                        table_design = create_table_design_for_view(conn, tmp_view_name, relation, update or check_only)
-                except RuntimeError as exc:
-                    if check_only:
-                        print(f"Failed to create table design for {relation:x}: {exc}")
-                        check_only_errors += 1
-                        continue
-                    else:
-                        raise
-
+            # Be careful to not trigger a load of an unknown design file by accessing "kind".
+            actual_kind = source_name or (relation.kind if relation.design_file_name else None)
+            try:
+                table_design = create_table_design_for_transformation(conn, actual_kind, relation, update or check_only)
+            except RuntimeError as exc:
                 if check_only:
-                    if relation.table_design != table_design:
-                        check_only_errors += 1
-                        print(f"Change detected in table design for {relation:x}")
-                        print(
-                            diff_table_designs(
-                                relation.table_design, table_design, relation.design_file_name, "bootstrap"
-                            )
-                        )
+                    print(f"Failed to create table design for {relation:x}: {exc}")
+                    check_only_errors += 1
                     continue
-
-                if update and relation.table_design == table_design:
-                    logger.info(f"No updates detected in table design for {relation:x}, skipping write")
-                    continue
-
-                source_dir = os.path.join(local_dir, relation.source_name)
-                # Derive preferred name from the current design or SQL file.
-                if relation.design_file_name is not None:
-                    filename = relation.design_file_name
-                elif relation.sql_file_name is not None:
-                    filename = re.sub(r".sql$", ".yaml", relation.sql_file_name)
                 else:
-                    filename = os.path.join(
-                        source_dir,
-                        f"{relation.target_table_name.schema}-{relation.target_table_name.table}.yaml",
+                    raise
+
+            if check_only:
+                if relation.table_design != table_design:
+                    check_only_errors += 1
+                    print(f"Change detected in table design for {relation:x}")
+                    print(
+                        diff_table_designs(relation.table_design, table_design, relation.design_file_name, "bootstrap")
                     )
-                save_table_design(
-                    relation.target_table_name,
-                    table_design,
-                    filename,
-                    overwrite=update or replace,
-                    dry_run=dry_run,
+                continue
+
+            if update and relation.table_design == table_design:
+                logger.info(f"No updates detected in table design for {relation:x}, skipping write")
+                continue
+
+            source_dir = os.path.join(local_dir, relation.source_name)
+            # Derive preferred name from the current design or SQL file.
+            if relation.design_file_name is not None:
+                filename = relation.design_file_name
+            elif relation.sql_file_name is not None:
+                filename = re.sub(r".sql$", ".yaml", relation.sql_file_name)
+            else:
+                filename = os.path.join(
+                    source_dir,
+                    f"{relation.target_table_name.schema}-{relation.target_table_name.table}.yaml",
                 )
+            save_table_design(
+                relation.target_table_name, table_design, filename, overwrite=update or replace, dry_run=dry_run
+            )
 
     if check_only_errors:
         raise TableDesignValidationError(f"found {check_only_errors} table design(s) that would be rewritten")
