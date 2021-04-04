@@ -348,13 +348,21 @@ def create_table_design_for_source(
         # When the expression and SQL type have been adjusted, keep that adjustment
         # but only for cases where the "default" kicked in.
         # TODO(tom): Is there a safer way to keep these modifications?
-        if column["type"] == "string" and column.get("source_sql_type") == existing_column.get("source_sql_type"):
+        if (
+            column["type"] == "string"
+            and column.get("source_sql_type") == existing_column.get("source_sql_type")
+            and column["sql_type"] != existing_column["sql_type"]
+        ):
+            logger.warning("Keeping previous SQL type and expression for '%s.%s'", source_table_name, column_name)
             for key in ("sql_type", "expression"):
                 if key in existing_column:
                     column[key] = existing_column[key]
 
         new_columns.append(column)
     table_design["columns"] = new_columns
+
+    if "extract_settings" in existing_table_design:
+        table_design["extract_settings"] = existing_table_design["extract_settings"]
 
     if "attributes" in existing_table_design:
         # TODO(tom): Should check columns in the attributes here
@@ -491,7 +499,12 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
     if new_sql_type in ("integer", "bigint"):
         if old_sql_type == "bigint" and new_sql_type == "integer":
             new_column.update(sql_type="bigint", type="long")
-            logger.warning("Keeping previous definition of '%s' for column '%s'", new_column["sql_type"], column_name)
+            logger.warning(
+                "Keeping previous definition for column '%s.%s': '%s' (consider a cast)",
+                target_table,
+                column_name,
+                new_column["sql_type"],
+            )
         return new_column
 
     numeric_re = re.compile(r"(?:numeric|decimal)\(\s*(?P<precision>\d+),\s*(?P<scale>\d+)\)", re.IGNORECASE)
@@ -502,7 +515,12 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
             new_column["sql_type"] = "numeric({precision},{scale})".format_map(old_numeric.groupdict())
             # TODO(tom): Be smarter about precision and scale separately.
             # TODO(tom): Allow to check for a fixed number of (precision, scale) combinations.
-            logger.warning("Keeping previous definition of '%s' for column '%s'", new_column["sql_type"], column_name)
+            logger.warning(
+                "Keeping previous definition for column '%s.%s': '%s'",
+                target_table,
+                column_name,
+                new_column["sql_type"],
+            )
         return new_column
 
     varchar_re = re.compile(r"(?:varchar|character varying)\((?P<size>\d+)\)", re.IGNORECASE)
@@ -522,7 +540,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
                 )
                 new_column["sql_type"] = f"character varying({old_size})"
                 logger.warning(
-                    "Re-using old definition for column '%s.%s': '%s' (please add a cast)",
+                    "Keeping previous definition for column '%s.%s': '%s' (please add a cast)",
                     target_table,
                     column_name,
                     new_column["sql_type"],
@@ -764,7 +782,8 @@ def bootstrap_transformations(
 
     check_only_errors = 0
     with closing(etl.db.connection(dw_config.dsn_etl, autocommit=True)) as conn:
-        for relation in relations:
+        for index, relation in enumerate(relations):
+            logger.info("Working on transformation '%s' (%d/%d)", relation.identifier, index + 1, len(relations))
             # Be careful to not trigger a load of an unknown design file by accessing "kind".
             actual_kind = source_name or (relation.kind if relation.design_file_name else None)
             try:
