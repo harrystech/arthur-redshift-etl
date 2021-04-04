@@ -738,7 +738,6 @@ class BootstrapTransformationsCommand(SubCommand):
         parser.add_argument(
             "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
         )
-        # FIXME Switch to '[--update|--as-ctas|--as-view]'
         parser.add_argument(
             "-u",
             "--update",
