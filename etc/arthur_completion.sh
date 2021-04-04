@@ -34,6 +34,7 @@ _arthur_completion()
                 query_events
                 render_template
                 run_query
+                run_sql_template
                 selftest
                 settings
                 show_ddl

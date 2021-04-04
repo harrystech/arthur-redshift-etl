@@ -296,12 +296,13 @@ def build_full_parser(prog_name):
         dest="sub_command",
     )
     for klass in [
-        # Commands to deal with data warehouse as admin:
+        # Commands to deal with data warehouse as admin
         InitializeSetupCommand,
         ShowRandomPassword,
         CreateGroupsCommand,
         CreateUserCommand,
         UpdateUserCommand,
+        RunSqlCommand,
         # Commands to help with table designs and uploading them
         BootstrapSourcesCommand,
         BootstrapTransformationsCommand,
@@ -655,6 +656,51 @@ class UpdateUserCommand(SubCommand):
             etl.data_warehouse.update_user(
                 args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
             )
+
+
+class RunSqlCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "run_sql_template",
+            "run one of the canned queries",
+            "Run a query from the templates, optionally with a target relation,"
+            " or list all the available SQL templates.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix"])
+        group = parser.add_mutually_exclusive_group(required=True)
+        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("template", help="name of SQL template", nargs="?")
+        as_user = parser.add_mutually_exclusive_group()
+        as_user.add_argument(
+            "-a", "--as-admin-user", help="connect as admin user", action="store_true", dest="use_admin"
+        )
+        as_user.add_argument(
+            "-e", "--as-etl-user", help="connect as ETL user (default)", action="store_false", dest="use_admin"
+        )
+        parser.add_argument(
+            action=StorePatternAsSelector,
+            dest="schemas",
+            help="select schemas for the query (not all templates may use this)",
+            nargs="*",
+        )
+
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
+        if args.list:
+            etl.render_template.list_sql_templates()
+        else:
+            try:
+                args.schemas.base_schemas = [schema.name for schema in dw_config.schemas]
+            except ValueError as exc:
+                raise InvalidArgumentError("schemas must be part of configuration") from exc
+
+            dsn = dw_config.dsn_admin_on_etl_db if args.use_admin else dw_config.dsn_etl
+            sql_stmt = etl.render_template.render_sql(args.template)
+            sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
+            rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
+            etl.db.print_result("Running template: '{}'".format(args.template), rows)
 
 
 class BootstrapSourcesCommand(SubCommand):
