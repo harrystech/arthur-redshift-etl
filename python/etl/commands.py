@@ -1292,14 +1292,20 @@ class CreateIndexCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern"])
-        parser.add_argument("--group", help="filter by reader group")
+        parser.add_argument("--group", action="append", default=[], help="filter by reader group (repeat as needed)")
+        parser.add_argument("--with-columns", action="store_true", help="add detailed tables with column information")
 
     def callback(self, args):
+        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
             etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
         ]
-        etl.relation.create_index(descriptions, group=args.group)
+        unknown = frozenset(args.group).difference(dw_config.groups)
+        if unknown:
+            raise InvalidArgumentError(f"unknown group(s): {join_with_single_quotes(unknown)}")
+        selected_groups = args.group or dw_config.groups  # Nothing is everything.
+        etl.relation.create_index(descriptions, selected_groups, args.with_columns)
 
 
 class ListFilesCommand(SubCommand):
@@ -1350,12 +1356,14 @@ class PingCommand(SubCommand):
         )
 
     def callback(self, args):
-        config = etl.config.get_dw_config()
+        dw_config = etl.config.get_dw_config()
         if args.for_schema is None:
-            dsns = [config.dsn_admin if args.use_admin else config.dsn_etl]
+            dsns = [dw_config.dsn_admin if args.use_admin else dw_config.dsn_etl]
         else:
             try:
-                args.for_schema.base_schemas = [schema.name for schema in config.schemas if schema.is_database_source]
+                args.for_schema.base_schemas = [
+                    schema.name for schema in dw_config.schemas if schema.is_database_source
+                ]
             except ValueError as exc:
                 raise InvalidArgumentError("selected schema is not for upstream database") from exc
             try:
@@ -1363,7 +1371,7 @@ class PingCommand(SubCommand):
             except ValueError as exc:
                 raise InvalidArgumentError("pattern must match schemas") from exc
             logger.info("Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected))
-            dsns = [schema.dsn for schema in config.schemas if schema.name in selected]
+            dsns = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
         with etl.db.log_error():
             for dsn in dsns:
                 etl.db.ping(dsn)
