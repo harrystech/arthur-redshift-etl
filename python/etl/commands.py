@@ -1638,7 +1638,7 @@ class TailEventsCommand(SubCommand):
 class ShowHelpCommand(SubCommand):
     def __init__(self):
         super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
-        self.topics = ["extract", "load", "unload", "sync", "validate"]
+        self.topics = ["extract", "load", "unload", "sync", "validate", "pipeline"]
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
