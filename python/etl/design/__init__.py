@@ -1,5 +1,6 @@
 import logging
 import re
+from difflib import context_diff
 
 import simplejson as json
 
@@ -130,3 +131,10 @@ class TableDesign:
     def as_string(table_design: dict) -> str:
         # We use JSON pretty printing because it is prettier than YAML printing.
         return json.dumps(table_design, indent="    ", item_sort_key=TableDesign.make_item_sorter()) + "\n"
+
+
+# TODO(tom): This uses the "dict" interface, not the TableDesign class.
+def diff_table_designs(from_design: dict, to_design: dict, from_file: str, to_file: str) -> str:
+    from_lines = TableDesign.as_string(from_design).splitlines(keepends=True)
+    to_lines = TableDesign.as_string(to_design).splitlines(keepends=True)
+    return "".join(context_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))

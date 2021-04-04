@@ -708,19 +708,38 @@ class BootstrapSourcesCommand(SubCommand):
         super().__init__(
             "bootstrap_sources",
             "bootstrap schema information from sources",
-            "Download schema information from upstream sources and compare against current table designs."
+            "Download schema information from upstream sources for table designs."
             " If there is no current design file, then create one as a starting point.",
             aliases=["design"],
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "-f",
+            "--force",
+            action="store_true",
+            default=False,
+            help="overwrite table design file if it already exists",
+        )
+        group.add_argument(
+            "-u",
+            "--update",
+            action="store_true",
+            default=False,
+            help="merge new information with existing table design",
+        )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
         etl.design.bootstrap.bootstrap_sources(
-            dw_config.schemas, args.pattern, args.table_design_dir, local_files, dry_run=args.dry_run
+            args.pattern,
+            args.table_design_dir,
+            local_files,
+            update=args.update,
+            replace=args.force,
+            dry_run=args.dry_run,
         )
 
 
@@ -736,6 +755,7 @@ class BootstrapTransformationsCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "-f",
@@ -757,16 +777,14 @@ class BootstrapTransformationsCommand(SubCommand):
             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
             " , update the current relation, or check the current designs",
         )
-        add_standard_arguments(parser, ["pattern", "dry-run"])
+        # Note that patterns must follow the choice of CTAS, VIEW, update etc.
+        add_standard_arguments(parser, ["pattern"])
 
     def callback(self, args):
         if args.update and args.choices not in ("CTAS", "VIEW"):
             raise InvalidArgumentError("option '--update' should be used with CTAS or VIEW only")
-        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(
-            dw_config.dsn_etl,
-            dw_config.schemas,
             args.table_design_dir,
             local_files,
             args.type if args.type in ("CTAS", "VIEW") else None,

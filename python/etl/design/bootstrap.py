@@ -2,7 +2,6 @@ import logging
 import os.path
 import re
 from contextlib import closing
-from difflib import context_diff
 from typing import Dict, Iterable, List, Optional
 
 import psycopg2.errors
@@ -16,7 +15,7 @@ import etl.file_sets
 import etl.relation
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
-from etl.design import Attribute, ColumnDefinition, TableDesign
+from etl.design import Attribute, ColumnDefinition, TableDesign, diff_table_designs
 from etl.errors import TableDesignValidationError
 from etl.names import TableName, TableSelector, TempTableName, join_with_single_quotes
 from etl.relation import RelationDescription
@@ -303,18 +302,76 @@ def create_partial_table_design(conn: Connection, source_table_name: TableName, 
     return table_design
 
 
-def create_table_design_for_source(conn: Connection, source_table_name: TableName, target_table_name: TableName):
+def create_table_design_for_source(
+    conn: Connection,
+    source_table_name: TableName,
+    target_table_name: TableName,
+    existing_relation: Optional[RelationDescription],
+) -> dict:
     """
-    Create new table design for a table in an upstream source.
+    Create table design for a table in an upstream source.
 
-    If present, we gather the constraints from the source.
-    (Note that only upstream tables can have constraints derived from inspecting the database.)
+    We gather the constraints from the source. (Note that only upstream tables can have constraints
+    derived from inspecting the database.)
+
+    If there is an existing table design, it is used to update the one bootstrapped from the source.
     """
     table_design = create_partial_table_design(conn, source_table_name, target_table_name)
     table_design["source_name"] = f"{target_table_name.schema}.{source_table_name.identifier}"
     constraints = fetch_constraints(conn, source_table_name)
     if constraints:
         table_design["constraints"] = constraints
+    if existing_relation is None:
+        return table_design
+
+    existing_table_design = existing_relation.table_design
+    if "description" in existing_table_design and not existing_table_design["description"].startswith(
+        ("Automatically generated on", "Automatically updated on")
+    ):
+        table_design["description"] = existing_table_design["description"].strip()
+
+    existing_columns = {column["name"]: column for column in existing_table_design["columns"]}
+    new_columns = []
+    for column in table_design["columns"]:
+        column_name = column["name"]
+        if column_name not in existing_columns:
+            new_columns.append(column)
+            continue
+        existing_column = existing_columns[column_name]
+        if existing_column.get("skipped", False):
+            new_columns.append(existing_column)
+            continue
+        for key in ("description", "encoding"):
+            if key in existing_column:
+                column[key] = existing_column[key]
+
+        # When the expression and SQL type have been adjusted, keep that adjustment
+        # but only for cases where the "default" kicked in.
+        # TODO(tom): Is there a safer way to keep these modifications?
+        if column["type"] == "string" and column.get("source_sql_type") == existing_column.get("source_sql_type"):
+            for key in ("sql_type", "expression"):
+                if key in existing_column:
+                    column[key] = existing_column[key]
+
+        new_columns.append(column)
+    table_design["columns"] = new_columns
+
+    if "attributes" in existing_table_design:
+        # TODO(tom): Should check columns in the attributes here
+        table_design["attributes"] = existing_table_design["attributes"]
+
+    if "constraints" not in table_design:
+        return table_design
+
+    skipped_columns = {column["name"] for column in table_design["columns"] if column.get("skipped")}
+    new_constraints = []
+    for constraint in table_design["constraints"]:
+        [[_, constraint_columns]] = constraint.items()  # unpacking list of single dict
+        if any(column in skipped_columns for column in constraint_columns):
+            logger.info("Dropping constraint using skipped columns: %s", constraint)
+            continue
+        new_constraints.append(constraint)
+    table_design["constraints"] = new_constraints
     return table_design
 
 
@@ -539,7 +596,7 @@ def save_table_design(
 
     this_table = target_table_name.identifier
     if dry_run:
-        logger.info("Dry-run: Skipping writing new table design file for '%s'", this_table)
+        logger.info("Dry-run: Skipping writing table design file for '%s' to '%s'", this_table, filename)
         return
 
     if os.path.exists(filename) and not overwrite:
@@ -568,46 +625,49 @@ def normalize_and_create(directory: str, dry_run=False) -> str:
     return name
 
 
-def create_table_designs_from_source(source, selector, local_dir, local_files, dry_run=False):
+def create_table_designs_from_source(
+    source, selector, local_dir, relations, update=False, replace=False, dry_run=False
+):
     """
-    Create table design files for tables from a single source to local directory.
+    Create table design files for tables from a single upstream source to local directory.
 
-    Whenever some table designs already exist locally, validate them against the information
-    found from upstream.
+    Whenever some table designs already exist locally, validate them, update them or replace
+    them against the information found from the upstream source.
     """
     source_dir = os.path.join(local_dir, source.name)
     normalize_and_create(source_dir, dry_run=dry_run)
+    relation_lookup = {relation.source_table_name: relation for relation in relations}
 
-    source_files = {
-        file_set.source_table_name: file_set
-        for file_set in local_files
-        if file_set.source_name == source.name and file_set.design_file_name
-    }
     try:
         logger.info("Connecting to database source '%s' to look for tables", source.name)
         with closing(etl.db.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             source_tables = fetch_tables(conn, source, selector)
             for source_table_name in source_tables:
-                if source_table_name in source_files:
+                if source_table_name in relation_lookup and not (update or replace):
                     logger.info(
-                        "Skipping '%s' from source '%s' because table design file exists: '%s'",
+                        "Skipping '%s' from source '%s' because table design already exists: '%s'",
                         source_table_name.identifier,
                         source.name,
-                        source_files[source_table_name].design_file_name,
+                        relation_lookup[source_table_name].design_file_name,
                     )
-                else:
-                    target_table_name = TableName(source.name, source_table_name.table)
-                    table_design = create_table_design_for_source(conn, source_table_name, target_table_name)
-
-                    filename = os.path.join(source_dir, f"{source_table_name.schema}-{source_table_name.table}.yaml")
-                    save_table_design(target_table_name, table_design, filename, dry_run=dry_run)
+                    continue
+                relation = relation_lookup.get(source_table_name) if update else None
+                target_table_name = TableName(source.name, source_table_name.table)
+                table_design = create_table_design_for_source(conn, source_table_name, target_table_name, relation)
+                if relation is not None and relation.table_design == table_design:
+                    logger.info(f"No updates detected in table design for {target_table_name:x}, skipping write")
+                    continue
+                filename = os.path.join(source_dir, f"{source_table_name.schema}-{source_table_name.table}.yaml")
+                save_table_design(
+                    target_table_name, table_design, filename, overwrite=update or replace, dry_run=dry_run
+                )
 
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
     except Exception:
         logger.error("Error while processing source '%s'", source.name)
         raise
 
-    existent = frozenset(name.identifier for name in source_files)
+    existent = frozenset(relation.source_table_name.identifier for relation in relations)
     upstream = frozenset(name.identifier for name in source_tables)
     not_found = upstream.difference(existent)
     if not_found:
@@ -623,28 +683,39 @@ def create_table_designs_from_source(source, selector, local_dir, local_files, d
     return len(source_tables)
 
 
-def bootstrap_sources(schemas, selector, table_design_dir, local_files, dry_run=False):
+def bootstrap_sources(selector, table_design_dir, local_files, update=False, replace=False, dry_run=False):
     """
-    Download schemas from database tables and compare against local design files (if available).
+    Download schemas from database tables and write or update local design files.
 
     This will create new design files locally if they don't already exist for any relations tied
-    to upstream database sources.
+    to upstream database sources. If one already exists locally, the file is update or replaced or
+    kept as-is depending on the "update" and "replace" arguments.
     """
+    dw_config = etl.config.get_dw_config()
+    selected_database_schemas = [
+        schema for schema in dw_config.schemas if schema.is_database_source and selector.match_schema(schema.name)
+    ]
+    database_schema_names = {schema.name for schema in selected_database_schemas}
+    existing_relations = [
+        RelationDescription(file_set)
+        for file_set in local_files
+        if file_set.source_name in database_schema_names and file_set.design_file_name
+    ]
+    if existing_relations:
+        RelationDescription.load_in_parallel(existing_relations)
+
     total = 0
-    for schema in schemas:
-        if selector.match_schema(schema.name):
-            if not schema.is_database_source:
-                logger.info("Skipping schema which is not an upstream database source: '%s'", schema.name)
-            else:
-                total += create_table_designs_from_source(
-                    schema, selector, table_design_dir, local_files, dry_run=dry_run
-                )
+    for schema in selected_database_schemas:
+        relations = [relation for relation in existing_relations if relation.source_name == schema.name]
+        total += create_table_designs_from_source(
+            schema, selector, table_design_dir, relations, update, replace, dry_run=dry_run
+        )
     if not total:
         logger.warning("Found no matching tables in any upstream source for '%s'", selector)
 
 
 def bootstrap_transformations(
-    dsn_etl, schemas, local_dir, local_files, source_name, check_only=False, update=False, replace=False, dry_run=False
+    local_dir, local_files, source_name, check_only=False, update=False, replace=False, dry_run=False
 ):
     """
     Download design information for transformations by test-running in the data warehouse.
@@ -652,7 +723,8 @@ def bootstrap_transformations(
     "source_name" should be "CTAS" or "VIEW or None (in which case the relation type currently
     specified will continue to be used).
     """
-    transformation_schema = {schema.name for schema in schemas if schema.has_transformations}
+    dw_config = etl.config.get_dw_config()
+    transformation_schema = {schema.name for schema in dw_config.schemas if schema.has_transformations}
     transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
     if not (check_only or replace or update):
         # Filter down to new transformations: SQL files without matching YAML file
@@ -671,7 +743,7 @@ def bootstrap_transformations(
             raise
 
     check_only_errors = 0
-    with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
+    with closing(etl.db.connection(dw_config.dsn_etl, autocommit=True)) as conn:
         for relation in relations:
             # Be careful not to trigger a load of an unknown design file by accessing "kind".
             current_source_name = relation.kind if relation.design_file_name else None
@@ -704,16 +776,9 @@ def bootstrap_transformations(
                     if relation.table_design != table_design:
                         check_only_errors += 1
                         print(f"Change detected in table design for {relation:x}")
-                        before = TableDesign.as_string(relation.table_design)
-                        after = TableDesign.as_string(table_design)
                         print(
-                            "".join(
-                                context_diff(
-                                    before.splitlines(keepends=True),
-                                    after.splitlines(keepends=True),
-                                    fromfile=relation.design_file_name,
-                                    tofile="bootstrap",
-                                )
+                            diff_table_designs(
+                                relation.table_design, table_design, relation.design_file_name, "bootstrap"
                             )
                         )
                     continue
@@ -743,3 +808,5 @@ def bootstrap_transformations(
 
     if check_only_errors:
         raise TableDesignValidationError(f"found {check_only_errors} table design(s) that would be rewritten")
+    if check_only:
+        print("Congratulations. There were no changes in table design files.")
