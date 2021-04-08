@@ -80,8 +80,7 @@ def execute_or_bail():
         logger.error("ETL never got off the ground: %r", exc)
         croak(exc, 1)
     except ETLError as exc:
-        logger.debug("Caught exception:", exc_info=True)
-        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc)
+        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc, exc_info=True)
         if exc.__cause__ is not None:
             exc_cause_type = type(exc.__cause__)
             logger.info(
