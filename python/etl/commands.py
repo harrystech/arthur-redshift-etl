@@ -135,7 +135,7 @@ def run_arg_as_command(my_name="arthur.py"):
 
                 # Create name used as prefix for resources, like DynamoDB tables or SNS topics
                 base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
-                etl.config.set_safe_config_value("resource_prefix", "{}-{}".format(base_env, args.prefix))
+                etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
 
                 if getattr(args, "use_monitor"):
                     etl.monitor.start_monitors(args.prefix)
@@ -191,6 +191,14 @@ def submit_step(cluster_id, sub_command):
         croak(exc, 1)
 
 
+class WideHelpFormatter(argparse.RawTextHelpFormatter):
+    """Help formatter for argument parser that sets a wider max for help position."""
+
+    # This boldly ignores the message: "Only the name of this class is considered a public API."
+    def __init__(self, prog, indent_increment=2, max_help_position=30, width=None) -> None:
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+
 class FancyArgumentParser(argparse.ArgumentParser):
     """
     Fancier version of the argument parser supporting "@file".
@@ -210,8 +218,9 @@ class FancyArgumentParser(argparse.ArgumentParser):
     """
 
     def __init__(self, **kwargs) -> None:
+        formatter_class = kwargs.pop("formatter_class", WideHelpFormatter)
         fromfile_prefix_chars = kwargs.pop("fromfile_prefix_chars", "@")
-        super().__init__(fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
+        super().__init__(formatter_class=formatter_class, fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
 
     def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
         """
@@ -285,7 +294,7 @@ def build_full_parser(prog_name):
     parser = build_basic_parser(prog_name, description="This command allows to drive the ETL steps.")
 
     package = etl.config.package_version()
-    parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s ({package})")
 
     # Details for sub-commands lives with sub-classes of sub-commands.
     # Hungry? Get yourself a sub-way.
@@ -799,37 +808,52 @@ class SyncWithS3Command(SubCommand):
         super().__init__(
             "sync",
             "copy table design files to S3",
-            "Copy table design files from local directory to S3."
-            " If using the '--force' option, this will delete schema and *data* files."
-            " If using the '--deploy' option, this will also upload files with warehouse settings"
+            "Copy table design files from your local directory to S3."
+            " By default, this also copies configuration files"
             " (*.yaml or *.sh files in config directories, excluding credentials*.sh).",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument(
-            "-f",
-            "--force",
-            help="force sync (deletes all matching files first, including data)",
-            default=False,
-            action="store_true",
-        )
-        parser.add_argument(
             "-d",
             "--deploy-config",
-            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
-            default=False,
             action="store_true",
+            default=True,
+            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder (default)",
+        )
+        parser.add_argument(
+            "--without-deploy-config",
+            action="store_false",
+            dest="deploy_config",
+            help="do not sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
+        )
+        parser.add_argument(
+            "--delete",
+            action="store_true",
+            default=False,
+            help="delete matching table design and SQL files to make sure target has no extraneous files",
+        )
+        parser.add_argument(
+            "-f",
+            "--force",
+            action="store_true",
+            default=False,
+            help="force sync which deletes all matching files, including data",
         )
 
     def callback(self, args):
-        if args.deploy_config:
-            etl.sync.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
-        if args.force:
-            etl.file_sets.delete_files_in_s3(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
-
         relations = self.find_relation_descriptions(args, default_scheme="file")
-        etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        etl.sync.sync_with_s3(
+            relations,
+            args.config,
+            args.bucket_name,
+            args.prefix,
+            deploy_config=args.deploy_config,
+            delete_schemas_pattern=args.pattern if args.delete or args.force else None,
+            delete_data_pattern=args.pattern if args.force else None,
+            dry_run=args.dry_run,
+        )
 
 
 class ExtractToS3Command(MonitoredSubCommand):
@@ -1681,7 +1705,7 @@ class ShowHelpCommand(SubCommand):
         parser.add_argument("topic", help="select topic", choices=self.topics)
 
     def callback(self, args):
-        print(sys.modules["etl." + args.topic].__doc__.strip())
+        print(sys.modules["etl." + args.topic].__doc__.strip() + "\n")
 
 
 class SelfTestCommand(SubCommand):
