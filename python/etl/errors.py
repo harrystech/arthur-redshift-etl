@@ -160,10 +160,9 @@ class FailedConstraintError(RelationDataError):
         self.constraint_type = constraint_type
         self.columns = columns
         self.example_string = ",\n  ".join(map(str, examples))
-        # TODO(tom): Include relation name in output
         self.message = (
-            "relation {0.identifier} violates {0.constraint_type} constraint.\n"
-            "Example duplicate values of {0.columns} are:\n  {0.example_string}".format(self)
+            f"relation '{self.identifier}' violates {self.constraint_type} constraint.\n"
+            f"Example duplicate values of {self.columns} are:\n  {self.example_string}"
         )
 
     def __str__(self):
@@ -172,9 +171,9 @@ class FailedConstraintError(RelationDataError):
 
 class RequiredRelationLoadError(ETLRuntimeError):
     def __init__(self, failed_relations, bad_apple=None):
-        self.message = "required relation(s) with failure: " + join_with_single_quotes(failed_relations)
+        self.message = f"required relation(s) with failure: {join_with_single_quotes(failed_relations)}"
         if bad_apple:
-            self.message += ", triggered by load failure of '{}'".format(bad_apple)
+            self.message += f", triggered by load failure of '{bad_apple}'"
 
     def __str__(self):
         return self.message
