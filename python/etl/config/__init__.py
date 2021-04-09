@@ -16,7 +16,7 @@ import re
 import sys
 from collections import OrderedDict
 from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 import jsonschema
 import pkg_resources
@@ -228,7 +228,7 @@ def get_release_info() -> str:
     return "Release information: " + release_info
 
 
-def yield_config_files(config_files: Sequence[str], default_file: str = None) -> Iterable[str]:
+def yield_config_files(config_files: Iterable[str], default_file: str = None) -> Iterable[str]:
     """
     Generate filenames from the list of files or directories in config_files and default_file.
 
@@ -249,7 +249,7 @@ def yield_config_files(config_files: Sequence[str], default_file: str = None) ->
             yield filename
 
 
-def load_config(config_files: Sequence[str], default_file: str = "default_settings.yaml") -> None:
+def load_config(config_files: Iterable[str], default_file: str = "default_settings.yaml") -> None:
     """
     Load settings and environment from config files and set our global settings.
 
@@ -311,7 +311,7 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
         raise SchemaValidationError("failed to validate against '%s'" % schema_name) from exc
 
 
-def gather_setting_files(config_files: Sequence[str]) -> List[str]:
+def gather_setting_files(config_files: Iterable[str]) -> List[str]:
     """
     Gather all settings files (*.yaml and *.sh files) that should be deployed together.
 
@@ -326,12 +326,12 @@ def gather_setting_files(config_files: Sequence[str]) -> List[str]:
         filename = os.path.basename(fullname)
         if filename.startswith("credentials") and filename.endswith(".sh"):
             continue
-        if filename.endswith((".yaml", ".yml", ".sh")):
-            if filename not in settings_found:
-                settings_found.add(filename)
-            else:
-                raise KeyError("found configuration file in multiple locations: '%s'" % filename)
-            settings_with_path.append(fullname)
+        if not filename.endswith((".yaml", ".yml", ".sh")):
+            continue
+        if filename in settings_found:
+            raise KeyError("found configuration file in multiple locations: '%s'" % filename)
+        settings_found.add(filename)
+        settings_with_path.append(fullname)
     return sorted(settings_with_path)
 
 

@@ -69,7 +69,7 @@ _arthur_completion()
             ;;
         "auto_design"|"bootstrap_transformations")
             # shellcheck disable=SC2207
-            COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
+            COMPREPLY=( $(compgen -W "CTAS VIEW update check-only" -- "$cur") )
             ;;
         *)
             case "$cur" in
