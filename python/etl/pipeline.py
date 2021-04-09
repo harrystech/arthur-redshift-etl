@@ -1,9 +1,9 @@
 """
-Pipelines allow us to coordinate steps of the ETL by running steps.
+Pipelines allow us to coordinate the steps of an ETL.
 
 ETL steps can be run in series, as necessary, or in parallel, when possible,
 while also tracking failures, logs, etc.
-Pipelines are currently based on AWS Data pipeline.
+Pipelines are currently based on AWS Data Pipeline.
 
 Starting pipelines:
   Use one of the installation scripts to put a pipeline on a schedule. Usually, they run on a

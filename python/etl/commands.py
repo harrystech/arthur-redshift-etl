@@ -22,6 +22,8 @@ from termcolor import colored
 
 import etl.config
 import etl.config.env
+import etl.config.log
+import etl.config.settings
 import etl.data_warehouse
 import etl.db
 import etl.design.bootstrap
@@ -35,9 +37,9 @@ import etl.monitor
 import etl.names
 import etl.pipeline
 import etl.relation
-import etl.render_template
 import etl.selftest
 import etl.sync
+import etl.templates
 import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
@@ -118,7 +120,7 @@ def run_arg_as_command(my_name="arthur.py"):
         # We need to configure logging before running context because that context expects
         # logging to be setup.
         try:
-            etl.config.configure_logging(args.prolix, args.log_level)
+            etl.config.log.configure_logging(args.prolix, args.log_level)
         except Exception as exc:
             croak(exc, 1)
 
@@ -698,20 +700,21 @@ class RunSqlCommand(SubCommand):
         )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         if args.list:
-            etl.render_template.list_sql_templates()
-        else:
-            try:
-                args.schemas.base_schemas = [schema.name for schema in dw_config.schemas]
-            except ValueError as exc:
-                raise InvalidArgumentError("schemas must be part of configuration") from exc
+            etl.templates.list_sql_templates()
+            return
 
-            dsn = dw_config.dsn_admin_on_etl_db if args.use_admin else dw_config.dsn_etl
-            sql_stmt = etl.render_template.render_sql(args.template)
-            sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
-            rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
-            etl.db.print_result("Running template: '{}'".format(args.template), rows)
+        dw_config = etl.config.get_dw_config()
+        try:
+            args.schemas.base_schemas = [schema.name for schema in dw_config.schemas]
+        except ValueError as exc:
+            raise InvalidArgumentError("schemas must be part of configuration") from exc
+
+        dsn = dw_config.dsn_admin_on_etl_db if args.use_admin else dw_config.dsn_etl
+        sql_stmt = etl.templates.render_sql(args.template)
+        sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
+        rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
+        etl.db.print_result(f"Running template: '{args.template}'", rows)
 
 
 class BootstrapSourcesCommand(SubCommand):
@@ -1571,9 +1574,10 @@ class RenderTemplateCommand(SubCommand):
 
     def callback(self, args):
         if args.list:
-            etl.render_template.list_templates(compact=args.compact)
-        elif args.template:
-            etl.render_template.render(args.template, compact=args.compact)
+            etl.templates.list_templates(compact=args.compact)
+            return
+
+        etl.templates.render(args.template, compact=args.compact)
 
 
 class ShowValueCommand(SubCommand):
@@ -1589,7 +1593,7 @@ class ShowValueCommand(SubCommand):
         parser.add_argument("default", nargs="?", help="set default in case the setting is unset")
 
     def callback(self, args):
-        etl.render_template.show_value(args.name, args.default)
+        etl.config.settings.show_value(args.name, args.default)
 
 
 class ShowVarsCommand(SubCommand):
@@ -1608,7 +1612,7 @@ class ShowVarsCommand(SubCommand):
         parser.add_argument("name", help="print just the value for the chosen setting", nargs="*")
 
     def callback(self, args):
-        etl.render_template.show_vars(args.name)
+        etl.config.settings.show_vars(args.name)
 
 
 class ShowPipelinesCommand(SubCommand):
@@ -1745,7 +1749,7 @@ class TailEventsCommand(SubCommand):
 class ShowHelpCommand(SubCommand):
     def __init__(self):
         super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
-        self.topics = ["extract", "load", "unload", "sync", "validate", "pipeline"]
+        self.topics = ["extract", "load", "pipeline", "sync", "unload", "validate"]
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
