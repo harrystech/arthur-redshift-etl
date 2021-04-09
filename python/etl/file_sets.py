@@ -310,7 +310,7 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
 
     This is a generic method to collect files from either
     s3://bucket/prefix or file://localhost/directory or ./schemas
-    based on the tuple describing a parsed URI. So that which should be either
+    based on the tuple describing a parsed URI. So that should be either
     ("s3", "bucket", "prefix", ...) or ("file", "localhost", "directory", ...)
 
     The selector (as a bare minimum) should have a reasonable set of base schemas.
@@ -392,18 +392,24 @@ def find_data_files_in_s3(bucket_name: str, prefix: str) -> Iterator[str]:
             yield file_info.filename
 
 
-def delete_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run: bool = False) -> None:
-    """Delete all files that might be relevant given the environment and selected relations."""
-    iterable = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data", prefix + "/schemas")
-    deletable = [file_info.filename for file_info in _find_matching_files_from(iterable, selector)]
-    if dry_run:
-        for key in deletable:
-            logger.info("Dry-run: Skipping deletion of 's3://%s/%s'", bucket_name, key)
-    else:
-        if deletable:
-            etl.s3.delete_objects(bucket_name, deletable)
-        else:
-            logger.info("Found no matching files in 's3://%s/%s' to delete", bucket_name, prefix)
+def delete_data_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run=False) -> None:
+    """Delete all data files that match this prefix and selector pattern."""
+    data_files = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data")
+    deletable = [file_info.filename for file_info in _find_matching_files_from(data_files, selector)]
+    if not deletable:
+        logger.info("Found no matching files in 's3://%s/%s/data' to delete", bucket_name, prefix)
+        return
+    etl.s3.delete_objects(bucket_name, deletable, dry_run=dry_run)
+
+
+def delete_schemas_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run=False) -> None:
+    """Delete all table design and SQL files that match this prefix and selector pattern."""
+    schemas_files = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/schemas")
+    deletable = [file_info.filename for file_info in _find_matching_files_from(schemas_files, selector)]
+    if not deletable:
+        logger.info("Found no matching files in 's3://%s/%s/schemas' to delete", bucket_name, prefix)
+        return
+    etl.s3.delete_objects(bucket_name, deletable, dry_run=dry_run)
 
 
 def list_files(file_sets, long_format=False, sort_by_time=False) -> None:

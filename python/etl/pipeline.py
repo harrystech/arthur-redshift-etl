@@ -1,12 +1,42 @@
-"""Implement commands that interact with AWS Data Pipeline."""
+"""
+Pipelines allow us to coordinate steps of the ETL by running steps.
+
+ETL steps can be run in series, as necessary, or in parallel, when possible,
+while also tracking failures, logs, etc.
+Pipelines are currently based on AWS Data pipeline.
+
+Starting pipelines:
+  Use one of the installation scripts to put a pipeline on a schedule. Usually, they run on a
+  24-hour cycle. When in doubt, use "--help" on the script to see usage information.
+
+Observing pipelines:
+  Use the "show_pipelines" command in Arthur to see a list of currently defined pipelines.
+  If you filter down to just one (by giving the command the pipeline id), you will see
+  more details from instances and latest attempts.
+
+Stopping, re-starting, etc.
+  One-shot pipelines should be 'garbage-collected' periodically using the
+  "delete_finished_pipelines" command in Arthur.
+
+  To delete a pipeline that finished but failed or one that is no longer needed, use the AWS CLI
+  directly:
+      aws datapipeline delete-pipeline --pipeline-id df-0T9R7A0PDPWERD5QXJN4
+
+  If you need to briefly pause a pipeline, you can also fall back the AWS CLI:
+      aws datapipeline deactivate-pipeline --pipeline-id df-02F3R2A1N7C5EZRXR3NR
+      aws datapipeline activate-pipeline --pipeline-id df-02F3R2A1N7C5EZRXR3NR
+
+  The "show_pipelines" command will give you the pipeline ids needed here.
+"""
 
 import fnmatch
 import logging
 import textwrap
 from datetime import datetime, timedelta
 from operator import attrgetter
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence
 
+import arrow
 import boto3
 import funcy
 import simplejson as json
@@ -28,8 +58,27 @@ class DataPipelineObject:
         }
         self.parent_object: Optional["DataPipelineObject"] = None
 
+    STATUS_ORDER = {
+        status: index
+        for index, status in enumerate(
+            [
+                "FINISHED",
+                "FAILED",
+                "CASCADE_FAILED",
+                "CANCELED",
+                "RUNNING",
+                "CREATING",
+                "WAITING_FOR_RUNNER",
+                "WAITING_ON_DEPENDENCIES",
+                "TIMEDOUT",
+            ]
+        )
+    }
+
     def __lt__(self, other):
-        """Sort by actual end time, then start time, then status, finally on name."""
+        """Sort by status, actual end time, then actual start time, finally on name."""
+        if self.status != other.status:
+            return self.STATUS_ORDER.get(self.status, 9) < self.STATUS_ORDER.get(other.status, 9)
         if self.actual_end_time != other.actual_end_time:
             if self.actual_end_time is None:
                 return False
@@ -42,8 +91,6 @@ class DataPipelineObject:
             if other.actual_start_time is None:
                 return True
             return self.actual_start_time < other.actual_start_time
-        if self.status != other.status:
-            return self.status < other.status
         return self.name < other.name
 
     @property
@@ -53,6 +100,26 @@ class DataPipelineObject:
     @property
     def actual_start_time(self):
         return self.string_values.get("@actualStartTime")
+
+    @property
+    def actual_elapsed(self):
+        if self.string_values.get("@status") in ("CREATING", "RUNNING"):
+            end_time = arrow.now()
+        else:
+            end_time = self.actual_end_time
+        start_time = self.actual_start_time
+        if not (end_time and start_time):
+            return None
+
+        parsed_end_time = arrow.get(end_time)
+        parsed_start_time = arrow.get(start_time)
+        elapsed_hours = (parsed_end_time - parsed_start_time).total_seconds() // 60 // 60
+        if elapsed_hours < 1:
+            # TODO(tom): Once we're on Python 3.8, we should add 'Final["minute"]' etc.
+            return parsed_end_time.humanize(parsed_start_time, granularity=["minute"], only_distance=True)
+        if elapsed_hours < 12:
+            return parsed_end_time.humanize(parsed_start_time, granularity=["hour", "minute"], only_distance=True)
+        return parsed_end_time.humanize(parsed_start_time, granularity=["hour"], only_distance=True)
 
     @property
     def attempt_count(self):
@@ -191,19 +258,20 @@ class DataPipeline:
         return self.string_values.get("@healthStatus")
 
     @property
+    def latest_run_time(self):
+        value = self.string_values.get("@latestRunTime")
+        if not value:
+            return value
+        return self.human_delta(value)
+
+    @property
     def next_run_time(self):
+        # TODO(tom): This is the next schedule run time. So if you de-activate a pipeline and
+        #     and then activate it again, this really should point to the latest re-start time.
         value = self.string_values.get("@nextRunTime")
         if not value:
             return value
-
-        next_run_utc = datetime.fromisoformat(value)
-        minutes_remaining = int((next_run_utc - datetime.utcnow()).total_seconds() / 60)
-        if minutes_remaining < 3:
-            return "about to start"
-        if minutes_remaining < 100:
-            return f"{minutes_remaining} minutes"
-
-        return value
+        return self.human_delta(value)
 
     @property
     def state(self):
@@ -222,7 +290,20 @@ class DataPipeline:
         return json.dumps(obj, indent="    ", sort_keys=True)
 
     @staticmethod
-    def describe_pipelines(client, pipeline_ids: List[str]):
+    def human_delta(value):
+        when = arrow.get(value)
+        now = arrow.now()
+        delta_minutes = (when - now).total_seconds() // 60
+        if 0 < delta_minutes < 5:
+            return "about to start"
+        if -60 <= delta_minutes <= 60:
+            return when.humanize(now, granularity=["minute"])
+        if -120 <= delta_minutes <= 120:
+            return when.humanize(now, granularity=["hour", "minute"])
+        return when.naive.isoformat()
+
+    @staticmethod
+    def describe_pipelines(client, pipeline_ids: Sequence[str]):
         chunk_size = 25  # Per AWS documentation, need to go in pages of 25 pipelines
         for ids_chunk in funcy.chunks(chunk_size, pipeline_ids):
             resp = client.describe_pipelines(pipelineIds=ids_chunk)
@@ -236,7 +317,7 @@ class DataPipeline:
         return response_iterator.search("pipelineIdList[].id")
 
 
-def list_pipelines(selection: List[str]) -> List[DataPipeline]:
+def list_pipelines(selection: Sequence[str]) -> List[DataPipeline]:
     """
     Return list of pipelines related to this project (which must have the tag for our project set).
 
@@ -261,7 +342,7 @@ def list_pipelines(selection: List[str]) -> List[DataPipeline]:
     return sorted(pipelines, key=attrgetter("name"))
 
 
-def show_pipelines(selection: List[str], as_json=False) -> None:
+def show_pipelines(selection: Sequence[str], as_json=False) -> None:
     """
     List the currently installed pipelines, possibly using a subset based on the selection pattern.
 
@@ -306,11 +387,12 @@ def show_pipelines(selection: List[str], as_json=False) -> None:
                     pipeline.name,
                     pipeline.health_status or "---",
                     pipeline.state or "---",
+                    pipeline.latest_run_time or "---",
                     pipeline.next_run_time or "---",
                 )
                 for pipeline in pipelines
             ],
-            header_row=["Pipeline ID", "Name", "Health", "State", "Next Run Time"],
+            header_row=["Pipeline ID", "Name", "Health", "State", "Latest Run Time", "Next Run Time"],
             max_column_width=80,
         )
     )
@@ -360,10 +442,11 @@ def _show_pipeline_details(pipeline) -> None:
                     instance.status,
                     instance.actual_start_time or "---",
                     instance.actual_end_time or "---",
+                    instance.actual_elapsed or "---",
                 )
                 for instance in sorted(instances)
             ],
-            header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time"],
+            header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time", "Elapsed"],
             max_column_width=80,
         )
     )
@@ -376,7 +459,7 @@ def _show_pipeline_details(pipeline) -> None:
         print(f"Log location: {attempt.log_location}")
 
 
-def delete_finished_pipelines(selection: List[str], dry_run=False) -> None:
+def delete_finished_pipelines(selection: Sequence[str], dry_run=False) -> None:
     """
     Delete pipelines that finished more than 24 hours ago.
 

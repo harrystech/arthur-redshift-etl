@@ -228,7 +228,7 @@ def _update_search_path(conn, user, dry_run=False):
         etl.db.alter_search_path(conn, user.name, search_path)
 
 
-def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
+def initial_setup(with_user_creation=False, force=False, dry_run=False):
     """
     Place named data warehouse database into initial state.
 
@@ -237,6 +237,7 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
 
     Optionally use `with_user_creation` flag to create users and groups.
     """
+    config = etl.config.get_dw_config()
     try:
         database_name = config.dsn_etl["database"]
     except (KeyError, ValueError) as exc:
@@ -259,12 +260,13 @@ def initial_setup(config, with_user_creation=False, force=False, dry_run=False):
             for user in config.users:
                 _create_or_update_user(conn, user, dry_run=dry_run)
 
+    owner_name = config.owner.name
     if dry_run:
-        logger.info("Dry-run: Skipping drop and create of database '%s' with owner '%s'", database_name, config.owner)
+        logger.info("Dry-run: Skipping drop and create of database '%s' with owner '%s'", database_name, owner_name)
     else:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True)) as conn:
-            logger.info("Dropping and creating database '%s' with owner '%s'", database_name, config.owner)
-            etl.db.drop_and_create_database(conn, database_name, config.owner)
+            logger.info("Dropping and creating database '%s' with owner '%s'", database_name, owner_name)
+            etl.db.drop_and_create_database(conn, database_name, owner_name)
 
     with closing(etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)) as conn:
         if dry_run:

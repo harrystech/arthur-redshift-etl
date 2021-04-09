@@ -212,10 +212,6 @@ class DataWarehouseConfig:
             pass
 
     @property
-    def owner(self) -> DataWarehouseUser:
-        return self.users[0].name
-
-    @property
     def dsn_admin(self) -> Dict[str, str]:
         return etl.db.parse_connection_string(etl.config.env.get(self._admin_access))
 
@@ -227,6 +223,10 @@ class DataWarehouseConfig:
     def dsn_admin_on_etl_db(self) -> Dict[str, str]:
         # To connect as a superuser, but on the same database on which you would ETL
         return dict(self.dsn_admin, database=self.dsn_etl["database"])
+
+    @property
+    def owner(self) -> DataWarehouseUser:
+        return self.users[0]
 
     def schema_lookup(self, schema_name) -> DataWarehouseSchema:
         return self._schema_lookup[schema_name]
