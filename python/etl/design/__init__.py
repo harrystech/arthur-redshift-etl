@@ -1,5 +1,8 @@
 import logging
 import re
+from difflib import context_diff
+
+import simplejson as json
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -80,3 +83,58 @@ class ColumnDefinition:
             mapping_type,
             attribute.not_null,
         )
+
+
+class TableDesign:
+    """Placeholder until we turn dict-based table designs into a class."""
+
+    @staticmethod
+    def make_item_sorter():
+        """
+        Return function that allows sorting keys that appear in any "object" (JSON-speak for dict).
+
+        The sort order makes the resulting order of keys easier to digest by humans.
+
+        Input to the sorter is a tuple of (key, value) from turning a dict into a list of items.
+        Output (return value) of the sorter is a tuple of (preferred order, key name).
+        If a key is not known, it's sorted alphabetically (ignoring case) after all known ones.
+        """
+        preferred_order = [
+            # always (tables, columns, etc.)
+            "name",
+            "description",
+            # only tables
+            "source_name",
+            "unload_target",
+            "depends_on",
+            "constraints",
+            "attributes",
+            "columns",
+            # only columns
+            "sql_type",
+            "type",
+            "expression",
+            "source_sql_type",
+            "not_null",
+            "identity",
+        ]
+        order_lookup = {key: (i, key) for i, key in enumerate(preferred_order)}
+        max_index = len(preferred_order)
+
+        def sort_key(item):
+            key, value = item
+            return order_lookup.get(key, (max_index, key))
+
+        return sort_key
+
+    @staticmethod
+    def as_string(table_design: dict) -> str:
+        # We use JSON pretty printing because it is prettier than YAML printing.
+        return json.dumps(table_design, indent="    ", item_sort_key=TableDesign.make_item_sorter()) + "\n"
+
+
+# TODO(tom): This uses the "dict" interface, not the TableDesign class.
+def diff_table_designs(from_design: dict, to_design: dict, from_file: str, to_file: str) -> str:
+    from_lines = TableDesign.as_string(from_design).splitlines(keepends=True)
+    to_lines = TableDesign.as_string(to_design).splitlines(keepends=True)
+    return "".join(context_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))

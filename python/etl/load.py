@@ -52,7 +52,7 @@ from collections import defaultdict
 from contextlib import closing
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from psycopg2.extensions import connection  # only for type annotation
 
@@ -189,13 +189,13 @@ class LoadableRelation:
             return self._relation_description.identifier
         return self.target_table_name.identifier
 
-    def find_dependents(self, relations: List["LoadableRelation"]) -> List["LoadableRelation"]:
+    def find_dependents(self, relations: Sequence["LoadableRelation"]) -> List["LoadableRelation"]:
         unpacked = [r._relation_description for r in relations]  # do DAG operations in terms of RelationDescriptions
         dependent_relations = etl.relation.find_dependents(unpacked, [self._relation_description])
         dependent_relation_identifiers = {r.identifier for r in dependent_relations}
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
 
-    def mark_failure(self, relations: List["LoadableRelation"], exc_info=True) -> None:
+    def mark_failure(self, relations: Sequence["LoadableRelation"], exc_info=True) -> None:
         """Mark this relation as failed and set dependents (stored in :relations) to skip_copy."""
         self.failed = True
         if self.is_required:
@@ -243,7 +243,7 @@ class LoadableRelation:
     @classmethod
     def from_descriptions(
         cls,
-        relations: List[RelationDescription],
+        relations: Sequence[RelationDescription],
         command: str,
         use_staging=False,
         target_schema: Optional[str] = None,
@@ -446,7 +446,7 @@ def insert_from_query(
     conn: connection,
     relation: LoadableRelation,
     table_name: Optional[TableName] = None,
-    columns: Optional[List[str]] = None,
+    columns: Optional[Sequence[str]] = None,
     query_stmt: Optional[str] = None,
     dry_run=False,
 ) -> None:
@@ -481,7 +481,7 @@ def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=Fal
     insert_from_query(conn, relation, dry_run=dry_run)
 
 
-def create_missing_dimension_row(columns: List[dict]) -> List[str]:
+def create_missing_dimension_row(columns: Sequence[dict]) -> List[str]:
     """Return row that represents missing dimension values."""
     na_values_row = []
     for column in columns:
@@ -602,7 +602,7 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
 # --- Section 2: Functions that work on schemas
 
 
-def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWarehouseSchema]:
+def find_traversed_schemas(relations: Sequence[LoadableRelation]) -> List[DataWarehouseSchema]:
     """Return schemas traversed when refreshing relations (in order that they are needed)."""
     got_it: Set[str] = set()
     traversed_in_order = []
@@ -614,7 +614,7 @@ def find_traversed_schemas(relations: List[LoadableRelation]) -> List[DataWareho
     return traversed_in_order
 
 
-def create_schemas_for_rebuild(schemas: List[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
+def create_schemas_for_rebuild(schemas: Sequence[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
     """
     Create schemas necessary for a full rebuild of data warehouse.
 
@@ -727,7 +727,7 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         pool.putconn(conn, close=False)
 
 
-def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
+def vacuum(relations: Sequence[RelationDescription], dry_run=False) -> None:
     """
     Tidy up the warehouse before guests come over.
 
@@ -745,7 +745,7 @@ def vacuum(relations: List[RelationDescription], dry_run=False) -> None:
 
 
 def create_source_tables_when_ready(
-    relations: List[LoadableRelation],
+    relations: Sequence[LoadableRelation],
     max_concurrency=1,
     look_back_minutes=15,
     idle_termination_seconds=60 * 60,
@@ -933,7 +933,7 @@ def create_source_tables_when_ready(
 # --- Section 4: Functions related to control flow
 
 
-def create_source_tables_in_parallel(relations: List[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
+def create_source_tables_in_parallel(relations: Sequence[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
     """
     Create relations in parallel, using a connection pool, a thread pool, and a kiddie pool.
 
@@ -989,7 +989,9 @@ def create_source_tables_in_parallel(relations: List[LoadableRelation], max_conc
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
-def create_transformations_sequentially(relations: List[LoadableRelation], wlm_query_slots: int, dry_run=False) -> None:
+def create_transformations_sequentially(
+    relations: Sequence[LoadableRelation], wlm_query_slots: int, dry_run=False
+) -> None:
     """
     Create relations one-by-one.
 
@@ -1041,7 +1043,7 @@ def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
 
 
 def create_relations(
-    relations: List[LoadableRelation], max_concurrency=1, wlm_query_slots=1, concurrent_extract=False, dry_run=False
+    relations: Sequence[LoadableRelation], max_concurrency=1, wlm_query_slots=1, concurrent_extract=False, dry_run=False
 ) -> None:
     """Build relations by creating them, granting access, and loading them (if they hold data)."""
     if concurrent_extract:
@@ -1058,7 +1060,7 @@ def create_relations(
 
 
 def load_data_warehouse(
-    all_relations: List[RelationDescription],
+    all_relations: Sequence[RelationDescription],
     selector: TableSelector,
     use_staging=True,
     max_concurrency=1,
@@ -1088,6 +1090,8 @@ def load_data_warehouse(
 
     N.B. If arthur gets interrupted (eg. because the instance is inadvertently shut down),
     then there will be an incomplete state.
+
+    This is a callback of a command.
     """
     selected_relations = etl.relation.select_in_execution_order(all_relations, selector, include_dependents=True)
     if not selected_relations:
@@ -1122,7 +1126,7 @@ def load_data_warehouse(
 
 
 def upgrade_data_warehouse(
-    all_relations: List[RelationDescription],
+    all_relations: Sequence[RelationDescription],
     selector: TableSelector,
     max_concurrency=1,
     wlm_query_slots=1,
@@ -1153,6 +1157,8 @@ def upgrade_data_warehouse(
 
     If a target schema is provided, then the data is loaded into that schema instead of where the
     relation would normally land.
+
+    This is a callback of a command.
     """
     selected_relations = etl.relation.select_in_execution_order(
         all_relations,
@@ -1193,7 +1199,7 @@ def upgrade_data_warehouse(
 
 
 def update_data_warehouse(
-    all_relations: List[RelationDescription],
+    all_relations: Sequence[RelationDescription],
     selector: TableSelector,
     wlm_query_slots=1,
     start_time: Optional[datetime] = None,
@@ -1212,6 +1218,8 @@ def update_data_warehouse(
 
     Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
     Finally, if elected, run vacuum (in new connection) for all tables that were modified.
+
+    This is a callback of a command.
     """
     selected_relations = etl.relation.select_in_execution_order(
         all_relations, selector, include_dependents=not only_selected
@@ -1250,16 +1258,21 @@ def update_data_warehouse(
 
 
 def run_query(relation: RelationDescription, limit=None, use_staging=False) -> None:
-    """Run the query for the relation (which must be a transformation, not a source)."""
+    """
+    Run the query for the relation (which must be a transformation, not a source).
+
+    This is a callback of a command.
+    """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     loadable_relation = LoadableRelation(relation, {}, use_staging)
+    timer = Timer()
 
     # We cannot use psycopg2's '%s' with LIMIT since the query may contain
     # arbitrary text, including "LIKE '%something%', which would break mogrify.
     limit_clause = "LIMIT NULL" if limit is None else f"LIMIT {limit:d}"
     query_stmt = loadable_relation.query_stmt + f"\n{limit_clause}\n"
 
-    with Timer() as timer, closing(etl.db.connection(dsn_etl)) as conn:
+    with closing(etl.db.connection(dsn_etl)) as conn:
         logger.info(
             "Running query underlying '%s' (with '%s')",
             relation.identifier,
@@ -1276,8 +1289,25 @@ def run_query(relation: RelationDescription, limit=None, use_staging=False) -> N
     print(format_lines(results, header_row=columns))
 
 
+def check_constraints(relations: Sequence[RelationDescription], use_staging=False) -> None:
+    """
+    Check the table constraints of selected relations.
+
+    This is a callback of a command.
+    """
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    loadable_relations = [LoadableRelation(relation, {}, use_staging) for relation in relations]
+    timer = Timer()
+
+    with closing(etl.db.connection(dsn_etl)) as conn:
+        for relation in loadable_relations:
+            logger.info("Checking table constraints of '%s'", relation.identifier)
+            verify_constraints(conn, relation)
+    logger.info("Checked table constraints of %d relation(s) (%s)", len(loadable_relations), timer)
+
+
 def show_downstream_dependents(
-    relations: List[RelationDescription],
+    relations: Sequence[RelationDescription],
     selector: TableSelector,
     continue_from: Optional[str] = None,
     with_dependencies: Optional[bool] = False,
@@ -1289,6 +1319,8 @@ def show_downstream_dependents(
     Relations are marked based on whether they were directly selected or selected as
     part of the propagation of new data.
     They are also marked whether they'd lead to a fatal error since they're required for full load.
+
+    This is a callback of a command.
     """
     # Relations are directly selected by pattern or by being somewhere downstream of a selected one.
     selected_relations = etl.relation.select_in_execution_order(
@@ -1387,8 +1419,12 @@ def show_downstream_dependents(
                 )
 
 
-def show_upstream_dependencies(relations: List[RelationDescription], selector: TableSelector):
-    """List the relations upstream (towards sources) from the selected ones in execution order."""
+def show_upstream_dependencies(relations: Sequence[RelationDescription], selector: TableSelector):
+    """
+    List the relations upstream (towards sources) from the selected ones in execution order.
+
+    This is a callback of a command.
+    """
     execution_order = etl.relation.order_by_dependencies(relations)
     selected_relations = etl.relation.find_matches(execution_order, selector)
     if len(selected_relations) == 0:

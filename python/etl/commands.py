@@ -80,8 +80,7 @@ def execute_or_bail():
         logger.error("ETL never got off the ground: %r", exc)
         croak(exc, 1)
     except ETLError as exc:
-        logger.debug("Caught exception:", exc_info=True)
-        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc)
+        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc, exc_info=True)
         if exc.__cause__ is not None:
             exc_cause_type = type(exc.__cause__)
             logger.info(
@@ -136,7 +135,7 @@ def run_arg_as_command(my_name="arthur.py"):
 
                 # Create name used as prefix for resources, like DynamoDB tables or SNS topics
                 base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
-                etl.config.set_safe_config_value("resource_prefix", "{}-{}".format(base_env, args.prefix))
+                etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
 
                 if getattr(args, "use_monitor"):
                     etl.monitor.start_monitors(args.prefix)
@@ -192,6 +191,14 @@ def submit_step(cluster_id, sub_command):
         croak(exc, 1)
 
 
+class WideHelpFormatter(argparse.RawTextHelpFormatter):
+    """Help formatter for argument parser that sets a wider max for help position."""
+
+    # This boldly ignores the message: "Only the name of this class is considered a public API."
+    def __init__(self, prog, indent_increment=2, max_help_position=30, width=None) -> None:
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+
 class FancyArgumentParser(argparse.ArgumentParser):
     """
     Fancier version of the argument parser supporting "@file".
@@ -211,8 +218,9 @@ class FancyArgumentParser(argparse.ArgumentParser):
     """
 
     def __init__(self, **kwargs) -> None:
+        formatter_class = kwargs.pop("formatter_class", WideHelpFormatter)
         fromfile_prefix_chars = kwargs.pop("fromfile_prefix_chars", "@")
-        super().__init__(fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
+        super().__init__(formatter_class=formatter_class, fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
 
     def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
         """
@@ -286,7 +294,7 @@ def build_full_parser(prog_name):
     parser = build_basic_parser(prog_name, description="This command allows to drive the ETL steps.")
 
     package = etl.config.package_version()
-    parser.add_argument("-V", "--version", action="version", version="%(prog)s ({})".format(package))
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s ({package})")
 
     # Details for sub-commands lives with sub-classes of sub-commands.
     # Hungry? Get yourself a sub-way.
@@ -309,6 +317,7 @@ def build_full_parser(prog_name):
         ValidateDesignsCommand,
         ExplainQueryCommand,
         RunQueryCommand,
+        CheckConstraintsCommand,
         ShowDdlCommand,
         CreateIndexCommand,
         SyncWithS3Command,
@@ -710,19 +719,38 @@ class BootstrapSourcesCommand(SubCommand):
         super().__init__(
             "bootstrap_sources",
             "bootstrap schema information from sources",
-            "Download schema information from upstream sources and compare against current table designs."
+            "Download schema information from upstream sources for table designs."
             " If there is no current design file, then create one as a starting point.",
             aliases=["design"],
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "dry-run"])
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "-f",
+            "--force",
+            action="store_true",
+            default=False,
+            help="overwrite table design file if it already exists",
+        )
+        group.add_argument(
+            "-u",
+            "--update",
+            action="store_true",
+            default=False,
+            help="merge new information with existing table design",
+        )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
         etl.design.bootstrap.bootstrap_sources(
-            dw_config.schemas, args.pattern, args.table_design_dir, local_files, dry_run=args.dry_run
+            args.pattern,
+            args.table_design_dir,
+            local_files,
+            update=args.update,
+            replace=args.force,
+            dry_run=args.dry_run,
         )
 
 
@@ -732,36 +760,47 @@ class BootstrapTransformationsCommand(SubCommand):
             "bootstrap_transformations",
             "bootstrap schema information from transformations",
             "Download schema information as if transformation had been run in data warehouse."
-            " If there is no local design file, then create one as a starting point.",
+            " If there is no local design file, then create one as a starting point."
+            " (With 'check-only', no file is written and only changes in the design are flagged.)",
             aliases=["auto_design"],
         )
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "-f", "--force", help="overwrite table design file if it already exists", default=False, action="store_true"
+        add_standard_arguments(parser, ["dry-run"])
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "-f",
+            "--force",
+            action="store_true",
+            default=False,
+            help="overwrite table design file if it already exists",
         )
-        parser.add_argument(
+        group.add_argument(
             "-u",
             "--update",
-            help="EXPERIMENTAL merge with existing table design if available",
-            default=False,
             action="store_true",
+            default=False,
+            help="merge new information with existing table design",
         )
         parser.add_argument(
-            "type", choices=["CTAS", "VIEW"], help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+            "type",
+            choices=["CTAS", "VIEW", "update", "check-only"],
+            help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
+            " , update the current relation, or check the current designs",
         )
-        add_standard_arguments(parser, ["pattern", "dry-run"])
+        # Note that patterns must follow the choice of CTAS, VIEW, update etc.
+        add_standard_arguments(parser, ["pattern"])
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
+        if args.update and args.choices not in ("CTAS", "VIEW"):
+            raise InvalidArgumentError("option '--update' should be used with CTAS or VIEW only")
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(
-            dw_config.dsn_etl,
-            dw_config.schemas,
             args.table_design_dir,
             local_files,
-            args.type == "VIEW",
-            update=args.update,
+            args.type if args.type in ("CTAS", "VIEW") else None,
+            check_only=args.type == "check-only",
+            update=args.update or args.type == "update",
             replace=args.force,
             dry_run=args.dry_run,
         )
@@ -772,37 +811,52 @@ class SyncWithS3Command(SubCommand):
         super().__init__(
             "sync",
             "copy table design files to S3",
-            "Copy table design files from local directory to S3."
-            " If using the '--force' option, this will delete schema and *data* files."
-            " If using the '--deploy' option, this will also upload files with warehouse settings"
+            "Copy table design files from your local directory to S3."
+            " By default, this also copies configuration files"
             " (*.yaml or *.sh files in config directories, excluding credentials*.sh).",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "dry-run"])
         parser.add_argument(
-            "-f",
-            "--force",
-            help="force sync (deletes all matching files first, including data)",
-            default=False,
-            action="store_true",
-        )
-        parser.add_argument(
             "-d",
             "--deploy-config",
-            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
-            default=False,
             action="store_true",
+            default=True,
+            help="sync local settings files (*.yaml, *.sh) to <prefix>/config folder (default)",
+        )
+        parser.add_argument(
+            "--without-deploy-config",
+            action="store_false",
+            dest="deploy_config",
+            help="do not sync local settings files (*.yaml, *.sh) to <prefix>/config folder",
+        )
+        parser.add_argument(
+            "--delete",
+            action="store_true",
+            default=False,
+            help="delete matching table design and SQL files to make sure target has no extraneous files",
+        )
+        parser.add_argument(
+            "-f",
+            "--force",
+            action="store_true",
+            default=False,
+            help="force sync which deletes all matching files, including data",
         )
 
     def callback(self, args):
-        if args.deploy_config:
-            etl.sync.upload_settings(args.config, args.bucket_name, args.prefix, dry_run=args.dry_run)
-        if args.force:
-            etl.file_sets.delete_files_in_s3(args.bucket_name, args.prefix, args.pattern, dry_run=args.dry_run)
-
         relations = self.find_relation_descriptions(args, default_scheme="file")
-        etl.sync.sync_with_s3(relations, args.bucket_name, args.prefix, dry_run=args.dry_run)
+        etl.sync.sync_with_s3(
+            relations,
+            args.config,
+            args.bucket_name,
+            args.prefix,
+            deploy_config=args.deploy_config,
+            delete_schemas_pattern=args.pattern if args.delete or args.force else None,
+            delete_data_pattern=args.pattern if args.force else None,
+            dry_run=args.dry_run,
+        )
 
 
 class ExtractToS3Command(MonitoredSubCommand):
@@ -1258,6 +1312,29 @@ class RunQueryCommand(SubCommand):
             etl.load.run_query(transformations[0], args.limit, args.with_staging_schemas)
 
 
+class CheckConstraintsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "check_constraints",
+            "check constraints of selected relations",
+            "Run all the table constraints for the selected relations",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
+        parser.add_argument(
+            "--with-staging-schemas",
+            action="store_true",
+            default=False,
+            help="use the relations in staging schemas for the query",
+        )
+
+    def callback(self, args):
+        relations = self.find_relation_descriptions(args)
+        with etl.db.log_error():
+            etl.load.check_constraints(relations, args.with_staging_schemas)
+
+
 class ExplainQueryCommand(SubCommand):
     def __init__(self):
         super().__init__(
@@ -1675,7 +1752,7 @@ class ShowHelpCommand(SubCommand):
         parser.add_argument("topic", help="select topic", choices=self.topics)
 
     def callback(self, args):
-        print(sys.modules["etl." + args.topic].__doc__.strip())
+        print(sys.modules["etl." + args.topic].__doc__.strip() + "\n")
 
 
 class SelfTestCommand(SubCommand):

@@ -32,13 +32,13 @@ PROJ_ENVIRONMENT="${1:-$DEFAULT_PREFIX}"
 START_DATE_TIME="${2:-$START_NOW}"
 OCCURRENCES="${3:-1}"
 
-# Verify that this bucket/environment pair is set up on s3 with credentials
-VALIDATION_CREDENTIALS="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/validation/config/credentials_validation.sh"
-if ! aws s3 ls "$VALIDATION_CREDENTIALS" > /dev/null; then
-    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist,"
-    echo "whether you have access to it, and whether credentials_validation.sh was copied into validation/config!"
+# Verify that this bucket/environment pair is set up on S3
+BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
+if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
+    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
     exit 1
 fi
+# NOTE we don't test for the validation folder since that gets created automatically.
 
 set -o xtrace
 
