@@ -36,7 +36,7 @@ UPGRADE_ARGUMENTS="$*"
 
 START_DATE_TIME="$START_NOW"
 
-# Verify that this bucket/environment pair is set up on s3
+# Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
     echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"

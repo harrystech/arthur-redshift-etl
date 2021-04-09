@@ -66,46 +66,47 @@
   },
   # Type information from source (PostgreSQL) to target (Redshift)
   "type_maps": {
-    # Types that may be used "as-is", see also
-    # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
-    # The keys are regular expression (with escaped backslashes!) and the
-    # values are the serialization formats in Avro files.
+    # Types that may be used "as-is"
+    # See also # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
+    # The keys are regular expression (with escaped backslashes!) and the values are
+    # serialization formats (logical types).
     "as_is_att_type": {
-      "smallint": "int",
-      "integer": "int",
       "bigint": "long",
-      "real": "double",
-      "double precision": "double",
-      "numeric\\(\\d+,\\d+\\)": "string",
       "boolean": "boolean",
       "character\\(\\d+\\)": "string",
       "character varying\\(\\d+\\)": "string",
       "date": "date",
+      "double precision": "double",
+      "integer": "int",
+      "numeric\\(\\d+,\\d+\\)": "string",
+      "real": "double",
+      "smallint": "int",
       "timestamp without time zone": "timestamp"
     },
-    # Map of known PostgreSQL attribute types to usable types in Redshift.
-    # The first element in the list is the new type, the second element is the necessary cast expression,
-    # the third element is the serialization format in Avro files.
-    # Note that in every expression, %s is replaced by the column name within quotes.
+    # Map of known PostgreSQL attribute types to usable types in Redshift
+    # -------------------------------------------------------------------
+    # The first element in the list is the new type, the second element is the necessary cast
+    # expression, the third element is a serialization format.
+    # Note that in every expression, %s is replaced by the column name already within quotes.
     "cast_needed_att_type": {
-      "int4range": ["varchar(65535)", "%s::varchar(65535)", "string"],
-      "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
       "bigint\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
+      "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"],
       # NOTE varchar counts characters but Redshift is byte limitations.
       # We are setting the max here to 10k ... you need to evaluate on live table what that the limit should be.
       "character varying": ["varchar(10000)", "%s::varchar(10000)", "string"],
+      # N.B. This requires a PostgreSQL version of 9.3 or better.
+      "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
+      "int4range": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      "integer\\[\\]": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
+      # The numeric data type without precision and scale should not be used upstream!
+      "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
       "text": ["varchar(10000)", "%s::varchar(10000)", "string"],
       "time without time zone": ["varchar(256)", "%s::varchar(256)", "string"],
       # CAVEAT EMPTOR This only works if your database is running in UTC.
       "timestamp with time zone": ["timestamp without time zone", "%s::varchar(256)", "timestamp"],
-      "json": ["varchar(65535)", "%s::varchar(65535)", "string"],
-      # N.B. This requires a PostgreSQL version of 9.3 or better.
-      "hstore": ["varchar(65535)", "public.hstore_to_json(%s)::varchar(65535)", "string"],
-      "uuid": ["varchar(36)", "%s::varchar(36)", "uuid"],
-      # The numeric data type without precision and scale should not be used upstream!
-      "numeric": ["decimal(18,4)", "%s::decimal(18,4)", "string"],
-      # The bytea data type is probably not useful, but we'll try to pull it in base64 format.
-      "bytea": ["varchar(65535)", "encode(%s, 'base64')", "string"]
+      "uuid": ["varchar(36)", "%s::varchar(36)", "uuid"]
     },
     # Default type as a fallback solution. Example use case is for enumeration types.
     "default_att_type": ["varchar(10000)", "%s::varchar(10000)", "string"],

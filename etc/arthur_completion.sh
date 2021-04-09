@@ -17,6 +17,7 @@ _arthur_completion()
                 auto_design
                 bootstrap_sources
                 bootstrap_transformations
+                check_constraints
                 create_groups
                 create_index
                 create_schemas
@@ -34,6 +35,7 @@ _arthur_completion()
                 query_events
                 render_template
                 run_query
+                run_sql_template
                 selftest
                 settings
                 show_ddl
@@ -53,22 +55,27 @@ _arthur_completion()
                 upgrade
                 validate
                 "
+            # shellcheck disable=SC2207
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             ;;
         "-c"|"--config")
             opts=$(find -L  . -maxdepth 2 -name '*.yaml' -or -name '*.sh' | sed -e 's:^\./::')
+            # shellcheck disable=SC2207
             COMPREPLY=( $(compgen -W "$opts" -d -- "$cur") )
             ;;
         "--submit"*)
+            # shellcheck disable=SC2207
             COMPREPLY=( $(compgen -A variable -P '$' -- "${cur#'$'}") )
             ;;
         "auto_design"|"bootstrap_transformations")
-            COMPREPLY=( $(compgen -W "CTAS VIEW" -- "$cur") )
+            # shellcheck disable=SC2207
+            COMPREPLY=( $(compgen -W "CTAS VIEW update check-only" -- "$cur") )
             ;;
         *)
             case "$cur" in
                 "@"*)
                     # compopt -o filenames
+                    # shellcheck disable=SC2207
                     COMPREPLY=( $(compgen -A file -P "@" -- "${cur#@}") )
                     ;;
                 *.*)
@@ -78,6 +85,7 @@ _arthur_completion()
                             sed -n -e 's:^schemas/\([^/]\{1,\}\)/\([^-]*-\)\{0,1\}\([^.]\{1,\}\)[.].*:\1.\3:p' |
                             sort -u
                     )
+                    # shellcheck disable=SC2207
                     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
                     ;;
                 *)
@@ -88,6 +96,7 @@ _arthur_completion()
                             sort -u
                     )
                     # compopt -o nospace
+                    # shellcheck disable=SC2207
                     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
                     ;;
             esac

@@ -1,0 +1,27 @@
+#! /usr/bin/env bash
+
+set -o errexit -o nounset
+
+ARTHUR_VENV="${1-arthur_venv}"
+
+case "$ARTHUR_VENV" in
+    -h|--help|help)
+        cat <<USAGE
+Usage: $0 [virtual_env]
+
+Builds or updates your virtual environment (by default: 'arthur_venv').
+USAGE
+        exit
+        ;;
+esac
+
+echo "Creating or upating virutal environment in $ARTHUR_VENV"
+python3 -m venv "$ARTHUR_VENV"
+source "$ARTHUR_VENV/bin/activate"
+
+echo "Creating or upating packages using pip..."
+python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check
+python3 -m pip install --upgrade --requirement ./requirements-dev.txt --disable-pip-version-check
+
+echo "# To use this setup, you need to run:"
+echo "source '$ARTHUR_VENV/bin/activate'"
