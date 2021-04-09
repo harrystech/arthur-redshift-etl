@@ -658,6 +658,7 @@ def select_in_execution_order(
     relations: Sequence[RelationDescription],
     selector: TableSelector,
     include_dependents=False,
+    include_immediate_views=False,
     continue_from: Optional[str] = None,
 ) -> List[RelationDescription]:
     """
@@ -689,6 +690,10 @@ def select_in_execution_order(
     if include_dependents:
         dependents = find_dependents(execution_order, selected)
         combined = frozenset(selected).union(dependents)
+        selected = [relation for relation in execution_order if relation in combined]
+    elif include_immediate_views:
+        immediate_views = find_immediate_dependencies(execution_order, selector)
+        combined = frozenset(selected).union(immediate_views)
         selected = [relation for relation in execution_order if relation in combined]
 
     if continue_from is None or continue_from == "*":

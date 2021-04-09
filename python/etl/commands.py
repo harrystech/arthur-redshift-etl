@@ -524,7 +524,9 @@ class SubCommand:
         )
 
         if not return_all and required_relation_selector is not None:
-            descriptions = [d for d in descriptions if args.pattern.match(d.target_table_name)]
+            descriptions = [
+                description for description in descriptions if args.pattern.match(description.target_table_name)
+            ]
 
         return descriptions
 
@@ -1016,7 +1018,7 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
     def __init__(self):
         super().__init__(
             "upgrade",
-            "load data into source or CTAS tables, create dependent VIEWS along the way",
+            "load data into source or CTAS tables and create dependent VIEWS along the way",
             "Delete selected tables and views, then rebuild them along with all of relations"
             " that depend on the selected ones. This is for debugging since the rebuild is"
             " visible to users (i.e. outside a transaction).",
@@ -1028,21 +1030,40 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
         )
         parser.add_argument(
             "--only-selected",
+            action="store_true",
+            default=False,
             help="skip rebuilding relations that depend on the selected ones"
             " (leaves warehouse in inconsistent state, for debugging only)",
-            default=False,
-            action="store_true",
         )
         parser.add_argument(
-            "--with-staging-schemas",
-            help="do all the work in hidden schemas and publish to standard names on completion"
-            " (default: do not use staging schemas, note this is the opposite of load command)",
-            default=False,
+            "--include-immediate-views",
             action="store_true",
+            help="include views that are downstream of selected relations without any CTAS before"
+            " (this is the default and only useful with '--only-selected', for debugging only)",
+        )
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(
+            "--with-staging-schemas",
+            action="store_true",
+            default=False,
             dest="use_staging_schemas",
+            help="do all the work using hidden schemas (default: do not use staging schemas,"
+            " note this is the opposite of 'load' command)",
+        )
+        group.add_argument(
+            "--into-schema",
+            dest="target_schema",
+            help="build relations in this target schema (selected relations must not depend on each other)",
         )
 
     def callback(self, args):
+        if args.target_schema and len(args.pattern) == 0:
+            raise InvalidArgumentError("option '--into-schema' requires that relations are selected")
+        if args.include_immediate_views and not args.only_selected:
+            logger.warning("Option '--include-immediate-views' is default unless '--only-selected' is used")
+        if args.target_schema and not args.only_selected:
+            logger.warning("Option '--into-schema' implies '--only-selected'")
+            args.only_selected = True
         dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
             args,
@@ -1063,8 +1084,10 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
             only_selected=args.only_selected,
+            include_immediate_views=args.include_immediate_views,
             continue_from=args.continue_from,
             use_staging=args.use_staging_schemas,
+            target_schema=args.target_schema,
             skip_copy=args.skip_copy,
             dry_run=args.dry_run,
         )
