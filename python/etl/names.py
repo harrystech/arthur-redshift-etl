@@ -210,7 +210,7 @@ class TableName:
         """
         return f'"{self.schema}"."{self.table}"'
 
-    def __format__(self, code):
+    def __format__(self, code) -> str:
         """
         Format name as delimited identifier (with quotes) or just as an identifier.
 
@@ -234,10 +234,9 @@ class TableName:
         """
         if (not code) or (code == "s"):
             return str(self)
-        elif code == "x":
+        if code == "x":
             return "'{:s}'".format(self.identifier)
-        else:
-            raise ValueError("unknown format code '{}' for {}".format(code, self.__class__.__name__))
+        raise ValueError(f"unknown format code '{code}' for {self.__class__.__name__}")
 
     def __eq__(self, other: object):
         if not isinstance(other, TableName):

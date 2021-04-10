@@ -18,13 +18,13 @@ Validating the warehouse schemas (definition of upstream tables and their transf
 import concurrent.futures
 import difflib
 import logging
-import threading
 from contextlib import closing
 from copy import deepcopy
-from itertools import groupby
 from operator import attrgetter
-from typing import Iterable, List, Optional
+from queue import Queue
+from typing import Iterable, List, Optional, Sequence
 
+import funcy
 import psycopg2
 from psycopg2.extensions import connection as Connection  # only for type annotation
 
@@ -47,7 +47,7 @@ from etl.util.timer import Timer
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-_error_occurred = threading.Event()
+_errors_occurred = Queue()  # type: ignore
 
 
 def validate_relation_description(
@@ -60,34 +60,33 @@ def validate_relation_description(
     """
     logger.info("Loading and validating file '%s'", relation.design_file_name)
     try:
-        relation.load()
-    except ETLConfigError:
-        if keep_going:
-            _error_occurred.set()
-            logger.exception(
-                "Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier
-            )
-            return None
-        else:
+        return relation.load()
+    except ETLConfigError as exc:
+        if not keep_going:
             raise
-    return relation
+        _errors_occurred.put((relation.identifier, str(exc)))
+        logger.exception(
+            "Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier
+        )
+        return None
 
 
 def validate_semantics(
-    relations: List[RelationDescription], keep_going=False
+    relations: Sequence[RelationDescription], keep_going=False
 ) -> List[RelationDescription]:
     """
     Load local design files and validate them along the way against schemas and semantics.
 
     Return list of successfully validated relations or raise exception on validation error.
     """
-    # TODO With Python 3.6, we should pass in a thread_name_prefix
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=8, thread_name_prefix="validate-parallel"
+    ) as executor:
         result = executor.map(
             lambda relation: validate_relation_description(relation, keep_going), relations
         )
     # Drop all relations from the result which returned None (meaning they failed validation).
-    return list(filter(None, result))  # type: ignore
+    return list(filter(None, result))
 
 
 def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Optional[str]:
@@ -148,7 +147,7 @@ def validate_dependencies(
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
         logger.error("Mismatch in dependencies of '{}': {}".format(relation.identifier, difference))
-        raise TableDesignValidationError("mismatched dependencies in '%s'" % relation.identifier)
+        raise TableDesignValidationError(f"mismatched dependencies in {relation:x}")
     logger.info("Dependencies listing in design file for '%s' matches SQL", relation.identifier)
 
 
@@ -186,7 +185,7 @@ def validate_column_ordering(
             relation.identifier,
             join_with_single_quotes(diff),
         )
-        raise TableDesignValidationError("invalid columns or column order in '%s'" % relation.identifier)
+        raise TableDesignValidationError(f"invalid columns or column order in {relation:x}")
     else:
         logger.info(
             "Order of columns in design of '%s' matches result of running SQL query", relation.identifier
@@ -209,10 +208,10 @@ def validate_single_transform(
         ) as tmp_view_name:
             validate_dependencies(conn, relation, tmp_view_name)
             validate_column_ordering(conn, relation, tmp_view_name)
-    except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
+    except (ETLConfigError, ETLRuntimeError, psycopg2.Error) as exc:
         if not keep_going:
             raise
-        _error_occurred.set()
+        _errors_occurred.put((relation.identifier, str(exc)))
         logger.exception(
             "Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier
         )
@@ -220,23 +219,26 @@ def validate_single_transform(
 
 def validate_transforms(
     dsn: dict, relations: List[RelationDescription], keep_going: bool = False
-) -> None:
+) -> int:
     """
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
 
     This allows us to check their syntax, their dependencies, etc.
+
+    Returns number of transforms that were validated.
     """
     transforms = [
         relation for relation in relations if relation.is_ctas_relation or relation.is_view_relation
     ]
     if not transforms:
         logger.info("No transforms found or selected, skipping CTAS or VIEW validation")
-        return
+        return 0
 
-    # TODO Parallelize but use separate connections per thread
+    # TODO(tom): Parallelize but use separate connections per thread
     with closing(etl.db.connection(dsn, autocommit=True)) as conn:
         for relation in transforms:
             validate_single_transform(conn, relation, keep_going=keep_going)
+    return len(transforms)
 
 
 def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
@@ -264,7 +266,7 @@ def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
 
 
 def validate_reload(
-    schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool
+    schemas: Iterable[DataWarehouseSchema], relations: Iterable[RelationDescription], keep_going: bool
 ):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
@@ -275,65 +277,59 @@ def validate_reload(
     Note that the order matters for these lists of columns.  (Which is also why we can't take
     the (symmetric) difference between columns but must be careful checking the column lists.)
     """
-    unloaded_relations = [d for d in relations if d.is_unloadable]
     target_lookup = {schema.name for schema in schemas if schema.is_an_unload_target}
-    relations_lookup = {d.identifier: d for d in relations}
+    relations_lookup = {relation.identifier: relation for relation in relations}
+    unloaded_relations = [relation for relation in relations_lookup.values() if relation.is_unloadable]
 
     for unloaded in unloaded_relations:
         try:
             if unloaded.unload_target not in target_lookup:
                 raise TableDesignValidationError(
-                    "invalid target '{}' in unloadable relation '{}'".format(
-                        unloaded.unload_target, unloaded.identifier
-                    )
+                    f"invalid target '{unloaded.unload_target}' in unloadable relation {unloaded:x}"
                 )
-            else:
-                logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
-                reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
-                if reloaded.identifier in relations_lookup:
-                    relation = relations_lookup[reloaded.identifier]
-                    logger.info(
-                        "Checking for consistency between '%s' and '%s'",
+            logger.debug("Checking whether '%s' is loaded back in", unloaded.identifier)
+            reloaded = TableName(unloaded.unload_target, unloaded.target_table_name.table)
+            if reloaded.identifier in relations_lookup:
+                relation = relations_lookup[reloaded.identifier]
+                logger.info(
+                    "Checking for consistency between '%s' and '%s'",
+                    unloaded.identifier,
+                    relation.identifier,
+                )
+                unloaded_columns = unloaded.unquoted_columns
+                reloaded_columns = relation.unquoted_columns
+                if unloaded_columns != reloaded_columns:
+                    diff = get_list_difference(reloaded_columns, unloaded_columns)
+                    logger.error(
+                        "Column difference detected between '%s' and '%s'",
                         unloaded.identifier,
                         relation.identifier,
                     )
-                    unloaded_columns = unloaded.unquoted_columns
-                    reloaded_columns = relation.unquoted_columns
-                    if unloaded_columns != reloaded_columns:
-                        diff = get_list_difference(reloaded_columns, unloaded_columns)
-                        logger.error(
-                            "Column difference detected between '%s' and '%s'",
-                            unloaded.identifier,
-                            relation.identifier,
-                        )
-                        logger.error(
-                            "You need to replace, insert and/or delete in '%s' some column(s): %s",
-                            relation.identifier,
-                            join_with_single_quotes(diff),
-                        )
-                        raise TableDesignValidationError(
-                            "unloaded relation '%s' failed to match counterpart" % unloaded.identifier
-                        )
-        except TableDesignValidationError:
-            if keep_going:
-                _error_occurred.set()
-                logger.exception(
-                    "Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier
-                )
-            else:
+                    logger.error(
+                        "You need to replace, insert and/or delete in '%s' some column(s): %s",
+                        relation.identifier,
+                        join_with_single_quotes(diff),
+                    )
+                    raise TableDesignValidationError(
+                        f"unloaded relation {unloaded:x} failed to match counterpart"
+                    )
+        except TableDesignValidationError as exc:
+            if not keep_going:
                 raise
+            _errors_occurred.put((unloaded.identifier, str(exc)))
+            logger.exception(
+                "Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier
+            )
 
 
 def check_select_permission(conn: Connection, table_name: TableName):
     """Check whether permissions on table will allow us to read from database."""
     # Why mess with querying the permissions table when you can just try to read (EAFP).
-    statement = """SELECT 1 AS check_permission FROM {} WHERE FALSE""".format(table_name)
+    statement = f"SELECT 1 AS check_permission FROM {table_name} WHERE FALSE"
     try:
         etl.db.execute(conn, statement)
     except psycopg2.Error as exc:
-        raise UpstreamValidationError(
-            "failed to read from upstream table '%s'" % table_name.identifier
-        ) from exc
+        raise UpstreamValidationError(f"failed to read from upstream table {table_name:x}") from exc
 
 
 def validate_upstream_columns(conn: Connection, table: RelationDescription) -> None:
@@ -350,9 +346,7 @@ def validate_upstream_columns(conn: Connection, table: RelationDescription) -> N
 
     columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
     if not columns_info:
-        raise UpstreamValidationError(
-            "table '%s' is gone or has no columns left" % source_table_name.identifier
-        )
+        raise UpstreamValidationError(f"table {source_table_name:x} is gone or has no columns left")
     logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
 
     current_columns = frozenset(column.name for column in columns_info)
@@ -370,8 +364,8 @@ def validate_upstream_columns(conn: Connection, table: RelationDescription) -> N
     missing_required_columns = design_required_columns.difference(current_columns)
     if missing_required_columns:
         raise UpstreamValidationError(
-            "design of '%s' has columns that do not exist upstream: %s"
-            % (source_table_name.identifier, join_with_single_quotes(missing_required_columns))
+            f"design of {source_table_name:x} has columns that do not exist upstream: "
+            + join_with_single_quotes(missing_required_columns)
         )
 
     extra_design_columns = design_columns.difference(current_columns)
@@ -480,19 +474,20 @@ def validate_upstream_table(
             validate_upstream_columns(conn, table)
             validate_upstream_constraints(conn, table)
         logger.info("Successfully validated '%s' against its upstream source", table.identifier)
-    except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
-        if keep_going:
-            _error_occurred.set()
-            logger.exception(
-                "Ignoring failure to validate '%s' and proceeding as requested:", table.identifier
-            )
-        else:
+    except (ETLConfigError, ETLRuntimeError, psycopg2.Error) as exc:
+        if not keep_going:
             raise
+        _errors_occurred.put((table.identifier, str(exc)))
+        logger.exception(
+            "Ignoring failure to validate '%s' and proceeding as requested:", table.identifier
+        )
 
 
 def validate_upstream_sources(
-    schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool = False
-) -> None:
+    schemas: Iterable[DataWarehouseSchema],
+    relations: Iterable[RelationDescription],
+    keep_going: bool = False,
+) -> int:
     """
     Validate the designs (and the current configuration) in comparison to upstream databases.
 
@@ -502,6 +497,8 @@ def validate_upstream_sources(
     (3) the upstream table does not exist
     (4) the upstream columns are not a superset of the columns in the table design
     (5) the upstream column does not have the null constraint set while the table design does
+
+    Returns number of upstream sources that were validated.
     """
     source_lookup = {schema.name: schema for schema in schemas if schema.is_database_source}
 
@@ -509,20 +506,24 @@ def validate_upstream_sources(
     upstream_tables = [relation for relation in relations if relation.source_name in source_lookup]
     if not upstream_tables:
         logger.info("No upstream tables found or selected, skipping source validation")
-        return
-    upstream_tables.sort(key=attrgetter("source_name"))
+        return 0
 
-    # TODO Parallelize around sources (like extract)
-    for source_name, table_group in groupby(upstream_tables, attrgetter("source_name")):
-        tables = list(table_group)
+    # TODO(tom): Parallelize around sources (like extract)
+    grouped_by_source_name = funcy.group_by(attrgetter("source_name"), upstream_tables)
+    for source_name in source_lookup:
+        if source_name not in grouped_by_source_name:
+            continue
+        tables = grouped_by_source_name[source_name]
         source = source_lookup[source_name]
         logger.info("Checking %d table(s) in upstream source '%s'", len(tables), source_name)
         with closing(etl.db.connection(source.dsn, autocommit=True, readonly=True)) as conn:
             for table in tables:
                 validate_upstream_table(conn, table, keep_going=keep_going)
 
+    return len(upstream_tables)
 
-def validate_execution_order(relations: List[RelationDescription], keep_going=False):
+
+def validate_execution_order(relations: Sequence[RelationDescription], keep_going=False):
     """
     Make sure we can build an execution order.
 
@@ -531,17 +532,16 @@ def validate_execution_order(relations: List[RelationDescription], keep_going=Fa
     try:
         ordered_relations = etl.relation.order_by_dependencies(relations)
     except ETLConfigError:
-        if keep_going:
-            _error_occurred.set()
-            logger.exception("Failed to determine evaluation order, proceeding as requested:")
-            return relations
-        else:
+        if not keep_going:
             raise
+        logger.exception("Failed to determine evaluation order, proceeding as requested:")
+        # Not added to error queue -- this will lead to other, relation-specific validation errors.
+        return relations
     return ordered_relations
 
 
 def validate_designs(
-    relations: List[RelationDescription],
+    relations: Sequence[RelationDescription],
     keep_going=False,
     skip_sources=False,
     skip_dependencies=False,
@@ -550,28 +550,33 @@ def validate_designs(
     Make sure that all table design files pass the validation checks.
 
     See module documentation for list of checks.
-    """
-    config = etl.config.get_dw_config()
-    _error_occurred.clear()
 
+    This is a callback for a command.
+    """
     valid_descriptions = validate_semantics(relations, keep_going=keep_going)
     ordered_descriptions = validate_execution_order(valid_descriptions, keep_going=keep_going)
 
+    config = etl.config.get_dw_config()
     validate_reload(config.schemas, valid_descriptions, keep_going=keep_going)
 
     if skip_sources:
         logger.info("Skipping validation of designs against upstream sources")
     else:
         with Timer() as timer:
-            validate_upstream_sources(config.schemas, ordered_descriptions, keep_going=keep_going)
-            logger.info("Validated designs against upstream sources (%s)", timer)
+            done = validate_upstream_sources(config.schemas, ordered_descriptions, keep_going=keep_going)
+            logger.info("Validated %d design(s) against upstream sources (%s)", done, timer)
 
     if skip_dependencies:
         logger.info("Skipping validation of transforms against data warehouse")
     else:
         with Timer() as timer:
-            validate_transforms(config.dsn_etl, ordered_descriptions, keep_going=keep_going)
-            logger.info("Validated transforms against data warehouse (%s)", timer)
+            done = validate_transforms(config.dsn_etl, ordered_descriptions, keep_going=keep_going)
+            logger.info("Validated %d transform(s) against data warehouse (%s)", done, timer)
 
-    if _error_occurred.is_set():
-        raise ETLDelayedExit("At least one error occurred while validating with 'keep going' option")
+    errors = []
+    while not _errors_occurred.empty():
+        identifier, message = _errors_occurred.get()
+        errors.append(f"Relation '{identifier}': {message}".strip())
+    if errors:
+        logger.warning(f"Encountered {len(errors)} validation error(s):\n    " + "\n    ".join(errors))
+        raise ETLDelayedExit(f"validate encountered {len(errors)} error(s) while using 'keep going'")
