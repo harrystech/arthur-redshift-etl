@@ -58,7 +58,7 @@ class S3Uploader:
 
     def __init__(self, bucket_name: str, callback=None, dry_run=False) -> None:
         self.bucket_name = bucket_name
-        self.callback = callback or self._no_op()
+        self.callback = callback or self._no_op
         self.dry_run = dry_run
 
     def _no_op(self):
