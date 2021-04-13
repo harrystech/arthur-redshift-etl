@@ -792,7 +792,7 @@ class BootstrapTransformationsCommand(SubCommand):
         add_standard_arguments(parser, ["pattern"])
 
     def callback(self, args):
-        if args.update and args.choices not in ("CTAS", "VIEW"):
+        if args.update and args.type not in ("CTAS", "VIEW"):
             raise InvalidArgumentError("option '--update' should be used with CTAS or VIEW only")
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         etl.design.bootstrap.bootstrap_transformations(
