@@ -821,7 +821,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
 
     events = []
     schema_events: Dict[str, Dict[str, Union[str, Decimal]]] = {}
-    for relation in tqdm(relations):
+    for relation in tqdm(desc="Querying for events", disable=None, iterable=relations, leave=False, unit="table"):
         event = query(table, relation.identifier, latest_start)
         if event:
             # Make the column for row counts easier to read by dropping "extra.".

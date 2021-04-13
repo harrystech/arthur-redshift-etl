@@ -20,13 +20,15 @@ import codecs
 import concurrent.futures
 import logging
 import os.path
+from collections import OrderedDict
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from operator import attrgetter
 from queue import PriorityQueue
-from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Union
 
 import funcy as fy
+from tabulate import tabulate
 from tqdm import tqdm
 
 import etl.config
@@ -177,7 +179,7 @@ class RelationDescription:
             desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations), unit="file"
         )
         tqdm_bar.update(parallel_start_index)
-        max_workers = 8
+        max_workers = min(len(remaining_relations) - parallel_start_index, 8)
         logger.debug(
             "Starting parallel load of %d table design file(s) on %d workers.",
             len(remaining_relations[parallel_start_index:]),
@@ -190,13 +192,20 @@ class RelationDescription:
 
         tqdm_bar.close()
         logger.info(
-            "Finished loading %d table design file(s) in %d threads (%s)", len(remaining_relations), max_workers, timer
+            "Finished loading %d table design file(s) using %d threads (%s)",
+            len(remaining_relations),
+            max_workers,
+            timer,
         )
 
     @property  # This property is lazily loaded.
     def table_design(self) -> Dict[str, Any]:
         self.load()
         return deepcopy(self._table_design)  # type: ignore
+
+    @property
+    def description(self) -> str:
+        return self.table_design.get("description", "")
 
     @property
     def kind(self) -> str:
@@ -411,7 +420,7 @@ class RelationDescription:
         return None
 
     @contextmanager
-    def matching_temporary_view(self, conn, assume_external_schema=False):
+    def matching_temporary_view(self, conn, as_late_binding_view=False):
         """
         Create a temporary view (with a name loosely based around the reference passed in).
 
@@ -421,9 +430,9 @@ class RelationDescription:
 
         with etl.db.log_error():
             ddl_stmt = """CREATE OR REPLACE VIEW {} AS\n{}""".format(temp_view, self.query_stmt)
-            if assume_external_schema or any(dep.is_external for dep in self.dependencies):
-                ddl_stmt += "\nWITH NO SCHEMA BINDING"
+            if as_late_binding_view:
                 temp_view.is_late_binding_view = True
+                ddl_stmt += "\nWITH NO SCHEMA BINDING"
 
             logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)
             etl.db.execute(conn, ddl_stmt)
@@ -451,7 +460,7 @@ class SortableRelationDescription:
         self.level: Optional[int] = None
 
 
-def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> None:
+def _sanitize_dependencies(descriptions: Sequence[SortableRelationDescription]) -> None:
     """
     Pass 1 of ordering -- make sure to drop unknown dependencies.
 
@@ -499,7 +508,7 @@ def _sanitize_dependencies(descriptions: List[SortableRelationDescription]) -> N
             description.dependencies.update(has_no_internal_dependencies)
 
 
-def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> None:
+def _sort_by_dependencies(descriptions: Sequence[SortableRelationDescription]) -> None:
     """
     Pass 2 of ordering -- sort such that dependencies are built before the relation itself is built.
 
@@ -535,7 +544,7 @@ def _sort_by_dependencies(descriptions: List[SortableRelationDescription]) -> No
             queue.put((max(latest_order, minimum_order) + 1, tie_breaker, description))
 
 
-def order_by_dependencies(relation_descriptions: List[RelationDescription]) -> List[RelationDescription]:
+def order_by_dependencies(relation_descriptions: Sequence[RelationDescription]) -> List[RelationDescription]:
     """
     Sort the relations such that any dependents surely are loaded afterwards.
 
@@ -571,7 +580,7 @@ def order_by_dependencies(relation_descriptions: List[RelationDescription]) -> L
     return [description for description in sorted(relation_descriptions, key=attrgetter("execution_order"))]
 
 
-def set_required_relations(relations: List[RelationDescription], required_selector: TableSelector) -> None:
+def set_required_relations(relations: Sequence[RelationDescription], required_selector: TableSelector) -> None:
     """
     Set the "required" property based on the selector.
 
@@ -600,13 +609,13 @@ def set_required_relations(relations: List[RelationDescription], required_select
     logger.info("Marked %d relation(s) as required based on selector: %s", len(required_relations), required_selector)
 
 
-def find_matches(relations: List[RelationDescription], selector: TableSelector):
+def find_matches(relations: Sequence[RelationDescription], selector: TableSelector):
     """Return list of matching relations."""
     return [relation for relation in relations if selector.match(relation.target_table_name)]
 
 
 def find_dependents(
-    relations: List[RelationDescription], seed_relations: List[RelationDescription]
+    relations: Sequence[RelationDescription], seed_relations: Sequence[RelationDescription]
 ) -> List[RelationDescription]:
     """
     Return list of relations that depend on the seed relations (directly or transitively).
@@ -623,7 +632,7 @@ def find_dependents(
 
 
 def find_immediate_dependencies(
-    relations: List[RelationDescription], selector: TableSelector
+    relations: Sequence[RelationDescription], selector: TableSelector
 ) -> List[RelationDescription]:
     """
     Return list of VIEW relations that directly (or chained) hang off the selected relations.
@@ -646,9 +655,10 @@ def find_immediate_dependencies(
 
 
 def select_in_execution_order(
-    relations: List[RelationDescription],
+    relations: Sequence[RelationDescription],
     selector: TableSelector,
     include_dependents=False,
+    include_immediate_views=False,
     continue_from: Optional[str] = None,
 ) -> List[RelationDescription]:
     """
@@ -680,6 +690,10 @@ def select_in_execution_order(
     if include_dependents:
         dependents = find_dependents(execution_order, selected)
         combined = frozenset(selected).union(dependents)
+        selected = [relation for relation in execution_order if relation in combined]
+    elif include_immediate_views:
+        immediate_views = find_immediate_dependencies(execution_order, selector)
+        combined = frozenset(selected).union(immediate_views)
         selected = [relation for relation in execution_order if relation in combined]
 
     if continue_from is None or continue_from == "*":
@@ -718,13 +732,71 @@ def select_in_execution_order(
     raise InvalidArgumentError("found no matching relations to continue from")
 
 
+def create_index(relations: Sequence[RelationDescription], groups: Iterable[str], with_columns: Optional[bool]) -> None:
+    """
+    Create an "index" page with Markdown that lists all schemas and their tables.
+
+    The parameter groups filters schemas to those that can be accessed by those groups.
+    """
+    group_set = frozenset(groups)
+    show_details = True if with_columns else False
+
+    # We iterate of the list of relations so that we preserve their order with respect to schemas.
+    schemas: Dict[str, dict] = OrderedDict()
+    for relation in relations:
+        if not group_set.intersection(relation.schema_config.reader_groups):
+            continue
+        schema_name = relation.target_table_name.schema
+        if schema_name not in schemas:
+            schemas[schema_name] = {"description": relation.schema_config.description, "relations": []}
+        schemas[schema_name]["relations"].append(relation)
+
+    if not schemas:
+        logger.info("List of schemas is empty, selected groups: %s", join_with_single_quotes(group_set))
+        return
+
+    print("# List Of Relations By Schema")
+    for schema_name, schema_info in schemas.items():
+        print(f"""\n## Schema: "{schema_name}"\n""")
+        if schema_info["description"]:
+            print(f"{schema_info['description']}\n")
+
+        rows = ([relation.target_table_name.table, relation.description] for relation in schema_info["relations"])
+        print(tabulate(rows, headers=["Relation", "Description"], tablefmt="pipe"))
+
+        if not show_details:
+            continue
+
+        for relation in schema_info["relations"]:
+            relation_kind = "View" if relation.is_view_relation else "Table"
+            print(f"""\n### {relation_kind}: "{relation.identifier}"\n""")
+            if relation.description:
+                print(f"{relation.description}\n")
+
+            key_columns: FrozenSet[str] = frozenset()
+            for constraint in relation.table_design.get("constraints", []):
+                for constraint_name, constraint_columns in constraint.items():
+                    if constraint_name in ("primary_key", "surrogate_key"):
+                        key_columns = frozenset(constraint_columns)
+                        break
+            rows = (
+                [
+                    ":key:" if column["name"] in key_columns else "",
+                    column["name"],
+                    column.get("type", ""),
+                    column.get("description", ""),
+                ]
+                for column in relation.table_design["columns"]
+            )
+            print(tabulate(rows, headers=["Key?", "Column Name", "Column Type", "Column Description"], tablefmt="pipe"))
+
+
 if __name__ == "__main__":
     import sys
 
     import simplejson as json
 
-    from etl.design.bootstrap import make_item_sorter
-    from etl.json_encoder import FancyJsonEncoder
+    import etl.design
 
     config_dir = os.environ.get("DATA_WAREHOUSE_CONFIG", "./config")
     uri_parts = ("file", "localhost", "schemas")
@@ -746,4 +818,4 @@ if __name__ == "__main__":
         descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
 
     native = [d.table_design for d in descriptions]
-    print(json.dumps(native, cls=FancyJsonEncoder, default=str, indent=4, item_sort_key=make_item_sorter()))
+    print(json.dumps(native, indent="    ", item_sort_key=etl.design.TableDesign.make_item_sorter()))

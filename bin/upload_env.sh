@@ -138,9 +138,9 @@ do
     aws s3 cp "$FILE" "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars/"
 done
 
-aws s3 sync --delete \
-    --exclude '*' --include bootstrap.sh --include send_health_check.sh --include sync_env.sh \
-    bin "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/bin"
+aws s3 sync --delete --exclude '*' \
+    --include bootstrap.sh --include create_validation_credentials --include send_health_check.sh --include sync_env.sh \
+    ./bin "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/bin"
 
 # Users who don't intend to use Spark may not have the jars directory.
 if [[ -d "jars" ]]; then
