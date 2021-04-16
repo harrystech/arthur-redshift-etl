@@ -259,7 +259,7 @@ class LoadableRelation:
         loadable = []
         for i, relation in enumerate(relations):
             target = relation.target_table_name
-            source = dict(bucket_name=relation.bucket_name)
+            source = {"bucket_name": relation.bucket_name}
             if relation.is_view_relation or relation.is_ctas_relation:
                 source["object_key"] = relation.sql_file_name
             else:
@@ -869,7 +869,7 @@ def create_source_tables_when_ready(
     to_poll = queue.Queue()  # type: ignore
     to_load = queue.Queue()  # type: ignore
     threads = []
-    for i in range(max_concurrency):
+    for _ in range(max_concurrency):
         t = threading.Thread(target=load_worker)
         t.start()
         threads.append(t)
@@ -898,7 +898,7 @@ def create_source_tables_when_ready(
         logger.info("Current queue length: %s", checkpoint_queue_size_cutoff)
 
     # When poller is done, send workers a 'stop' event and wait
-    for i in range(max_concurrency):
+    for _ in range(max_concurrency):
         to_load.put(None)
     for t in threads:
         t.join()

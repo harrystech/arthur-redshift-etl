@@ -129,7 +129,7 @@ def run_arg_as_command(my_name="arthur.py"):
                 # Any command where we can select the "prefix" also needs the bucket.
                 # TODO(tom): Need to differentiate between object store (schemas) and data lake
                 #     (extracted or unloaded data)
-                setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
+                args.bucket_name = etl.config.get_config_value("object_store.s3.bucket_name")
                 etl.config.set_config_value("object_store.s3.prefix", args.prefix)
                 etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
 
@@ -137,7 +137,7 @@ def run_arg_as_command(my_name="arthur.py"):
                 base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
                 etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
 
-                if getattr(args, "use_monitor"):
+                if getattr(args, "use_monitor", False):
                     etl.monitor.start_monitors(args.prefix)
 
             # The region must be set for most boto3 calls to succeed.

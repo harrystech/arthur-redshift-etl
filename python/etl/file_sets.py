@@ -298,7 +298,7 @@ def list_local_files(directory):
     if not os.path.isdir(normed_directory):
         raise FileNotFoundError("Failed to find directory: '%s'" % normed_directory)
     logger.info("Looking for files locally in '%s'", normed_directory)
-    for root, dirs, files in os.walk(os.path.normpath(normed_directory)):
+    for root, _, files in os.walk(os.path.normpath(normed_directory)):
         for filename in sorted(files):
             if not filename.endswith((".swp", "~", ".DS_Store")):
                 yield os.path.join(root, filename)
