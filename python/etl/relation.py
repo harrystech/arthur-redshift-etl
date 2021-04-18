@@ -269,7 +269,7 @@ class RelationDescription:
                     query_stmt = f.read()
 
             self._query_stmt = query_stmt.strip().rstrip(";")
-        return str(self._query_stmt)  # The str(...) shuts up the type checker.
+        return self._query_stmt
 
     @property
     def dependencies(self) -> FrozenSet[TableName]:
@@ -316,11 +316,6 @@ class RelationDescription:
         (Should only ever be possible for CTAS, see validation code).
         """
         return any(column.get("identity") for column in self.table_design["columns"])
-
-    @property
-    def is_missing_encoding(self) -> bool:
-        """Return whether any column doesn't have encoding specified."""
-        return any(not column.get("encoding") for column in self.table_design["columns"] if not column.get("skipped"))
 
     @classmethod
     def from_file_sets(cls, file_sets, required_relation_selector=None) -> List["RelationDescription"]:

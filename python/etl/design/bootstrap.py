@@ -76,7 +76,7 @@ def fetch_tables(cx: Connection, source: DataWarehouseSchema, selector: TableSel
 
 
 def fetch_attributes(cx: Connection, table_name: TableName) -> List[Attribute]:
-    """Retrieve table definition (column names and types)."""
+    """Retrieve attribute definition (column names and types)."""
     # Make sure to turn on "User Parameters" in the Database settings of PyCharm so that `%s`
     # works in the editor.
     if isinstance(table_name, TempTableName) and table_name.is_late_binding_view:
@@ -92,7 +92,8 @@ def fetch_attributes(cx: Connection, table_name: TableName) -> List[Attribute]:
                      , col_num int)
              WHERE view_schema LIKE %s
                AND view_name = %s
-             ORDER BY col_num"""
+             ORDER BY col_num
+            """
     else:
         stmt = """
             SELECT a.attname AS "name"
@@ -106,7 +107,8 @@ def fetch_attributes(cx: Connection, table_name: TableName) -> List[Attribute]:
                AND NOT a.attisdropped
                AND ns.nspname LIKE %s
                AND cls.relname = %s
-             ORDER BY a.attnum"""
+             ORDER BY a.attnum
+            """
     attributes = etl.db.query(cx, stmt, (table_name.schema, table_name.table))
     return [Attribute(**att) for att in attributes]
 
