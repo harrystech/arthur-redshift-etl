@@ -473,6 +473,12 @@ def insert_from_query(
         raise
 
 
+def set_wlm_slots(conn: Connection, slots: int, dry_run: bool) -> None:
+    etl.db.run(
+        conn, f"Using {slots} WLM queue slot(s)", f"SET wlm_query_slot_count TO {slots}", dry_run=dry_run
+    )
+
+
 def unload(
     conn: Connection,
     table_name: TableName,

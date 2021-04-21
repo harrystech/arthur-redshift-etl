@@ -765,7 +765,7 @@ def vacuum(relations: Sequence[RelationDescription], dry_run=False) -> None:
         logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
 
 
-# --- Experimental Section: load during extract
+# --- Section 4: Functions related to control flow
 
 
 def create_source_tables_when_ready(
@@ -1047,7 +1047,7 @@ def create_transformations_sequentially(
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        set_redshift_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
+        etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
         for relation in transformations:
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
@@ -1069,15 +1069,6 @@ def create_transformations_sequentially(
             "These %d relation(s) were left empty: %s", len(skipped), join_with_single_quotes(skipped)
         )
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
-
-
-def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
-    etl.db.run(
-        conn,
-        "Using {} WLM queue slot(s) for transformations".format(slots),
-        "SET wlm_query_slot_count TO {}".format(slots),
-        dry_run=dry_run,
-    )
 
 
 def create_relations(
@@ -1317,7 +1308,7 @@ def update_data_warehouse(
     logger.info("Starting to update %d tables(s) within a transaction", len(relations))
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:
-        set_redshift_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
+        etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
         for relation in relations:
             build_one_relation(conn, relation, dry_run=dry_run)
 
