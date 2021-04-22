@@ -52,6 +52,7 @@ from collections import defaultdict
 from contextlib import closing
 from datetime import datetime, timedelta
 from functools import partial
+from queue import PriorityQueue
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 import funcy
@@ -730,9 +731,18 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
             monitor.add_extra("rowcount", rowcount)
 
 
-def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
+configured_conn = set()
+
+
+def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> LoadableRelation:
     conn = pool.getconn()
-    conn.set_session(autocommit=True, readonly=dry_run)
+    if conn not in configured_conn:
+        conn.set_session(autocommit=True, readonly=dry_run)
+        if relation.is_transformation:
+            # TODO(tom): Derive from settings
+            etl.dialect.redshift.set_wlm_slots(conn, 5, dry_run=dry_run)
+        configured_conn.add(conn)
+
     try:
         build_one_relation(conn, relation, dry_run=dry_run)
     except Exception as exc:
@@ -746,6 +756,7 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         raise
     else:
         pool.putconn(conn, close=False)
+    return relation
 
 
 def vacuum(relations: Sequence[RelationDescription], dry_run=False) -> None:
@@ -794,6 +805,7 @@ def create_source_tables_when_ready(
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+    source_relations = [relation for relation in relations if not relation.is_transformation]
 
     recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
@@ -977,14 +989,12 @@ def create_source_tables_in_parallel(
     any relation from the full set of relations that depends on a source relation that failed
     to load.
     """
-    source_relations = [relation for relation in relations if not relation.is_transformation]
-    if not source_relations:
-        logger.info("None of the relations are in source schemas")
-        return
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
     futures: Dict[str, concurrent.futures.Future] = {}
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
             for relation in source_relations:
@@ -1024,6 +1034,118 @@ def create_source_tables_in_parallel(
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
+class TransformationLoaderThread(threading.Thread):
+    POISON_PILL = (1_000_000, 1_000_000, None)
+
+    loader_thread_exception = threading.Event()
+
+    def __init__(self, work_queue, pool, downstream, dependencies, name, dry_run=False) -> None:
+        super().__init__(name=name)
+        self.work_queue = work_queue
+        self.pool = pool
+        self.downstream = downstream
+        self.dependencies = dependencies
+        self.dry_run = dry_run
+
+    def run(self) -> None:
+        while not TransformationLoaderThread.loader_thread_exception.is_set():
+            _, _, relation = self.work_queue.get()
+            if relation is None:
+                logger.info("Received poison pill from queue, exiting thread")
+                self.work_queue.put(self.POISON_PILL)
+                return
+
+            try:
+                with etl.db.log_error():
+                    build_one_relation_using_pool(self.pool, relation, dry_run=self.dry_run)
+            except (RelationConstructionError, RelationDataError):
+                TransformationLoaderThread.loader_thread_exception.set()
+                # TODO(tom): Mark all downstream relations as failed
+                relation.mark_failure([relation])
+            except Exception:
+                TransformationLoaderThread.loader_thread_exception.set()
+                logger.error(f"Caught exception in thread while loading '{relation:x}'", exc_info=True)
+                raise
+
+            logger.info(f"Checking for relations downstream of {relation:x} whether they can be built now")
+            for downstream in self.downstream[relation.identifier]:
+                # TODO(tom): Is this thread-safe?
+                self.dependencies[downstream.identifier].remove(relation)
+                if not self.dependencies[downstream.identifier]:
+                    logger.info(f"Adding relation {downstream:x} to queue (size={self.work_queue.qsize()})")
+                    self.work_queue.put((downstream.execution_level, downstream.execution_order, downstream))
+            remaining = sum(1 if len(dep) else 0 for dep in self.dependencies.values())
+            logger.info(f"Number of remaining relations with unmet dependencies: {remaining}")
+            if remaining == 0:
+                self.work_queue.put(self.POISON_PILL)
+
+
+def create_transformations_in_parallel(
+    relations: Sequence[LoadableRelation], max_concurrency: int, wlm_query_slots: int, dry_run=False
+) -> None:
+    """Create transformations in parallel."""
+    timer = Timer()
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    # TODO(tom): Set wlm query slots in every connection
+    transformations = [relation for relation in relations if relation.is_transformation]
+
+    # Find all the relations that can be updated after its upstream relation is built.
+    downstream_relations: Dict[str, List[LoadableRelation]] = defaultdict(list)
+    for relation in transformations:
+        for dependency in relation.dependencies:
+            downstream_relations[dependency.identifier].append(relation)
+
+    # Find dependencies (which are actually in flight) of relations.
+    map_to_relation = {relation.identifier: relation for relation in transformations}
+    upstream_dependencies = {
+        relation.identifier: {
+            map_to_relation[upstream.identifier]
+            for upstream in relation.dependencies
+            if upstream.identifier in map_to_relation
+        }
+        for relation in transformations
+    }
+
+    # Seed the work queue with transformations that have all of their dependencies already met.
+    ready = PriorityQueue()  # type: ignore
+    for relation in transformations:
+        if not upstream_dependencies[relation.identifier]:
+            ready.put((relation.execution_level, relation.execution_order, relation))
+
+    # Now run the transformations in parallel.
+    pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+    threads = [
+        TransformationLoaderThread(
+            ready,
+            pool,
+            downstream_relations,
+            upstream_dependencies,
+            name=f"create-transformations_{index}",
+            dry_run=dry_run,
+        )
+        for index in range(max_concurrency)
+    ]
+    logger.info(f"Starting {max_concurrency} thread(s)")
+    for thread in threads:
+        thread.start()
+    for index, thread in enumerate(threads):
+        logger.info(f"Waiting for remaining {max_concurrency - index} thread(s) to finish")
+        thread.join()
+
+    if TransformationLoaderThread.loader_thread_exception.is_set():
+        raise ETLRuntimeError("caught exception in one of the worker threads")
+
+    failed = [relation.identifier for relation in transformations if relation.failed]
+    if failed:
+        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
+    skipped = [
+        relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation
+    ]
+    if 0 < len(skipped) < len(transformations):
+        logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_single_quotes(skipped))
+    logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
+
+
 def create_transformations_sequentially(
     relations: Sequence[LoadableRelation], wlm_query_slots: int, dry_run=False
 ) -> None:
@@ -1040,13 +1162,10 @@ def create_transformations_sequentially(
     N.B. It is not possible for a relation to be not required but have dependents that are
     (by construction).
     """
-    transformations = [relation for relation in relations if relation.is_transformation]
-    if not transformations:
-        logger.info("None of the selected relations are in transformation schemas")
-        return
-
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
+    transformations = [relation for relation in relations if relation.is_transformation]
+
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
         for relation in transformations:
@@ -1072,20 +1191,30 @@ def create_transformations_sequentially(
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 
-def create_relations(
-    relations: Sequence[LoadableRelation],
-    max_concurrency=1,
-    wlm_query_slots=1,
-    concurrent_extract=False,
-    dry_run=False,
+def create_sources(
+    relations: Sequence[LoadableRelation], max_concurrency=1, concurrent_extract=False, dry_run=False
 ) -> None:
-    """Build relations by creating them, granting access, and loading them (if they hold data)."""
+    """Build sources by creating them, granting access, and loading them (if they hold data)."""
+    if not any(not relation.is_transformation for relation in relations):
+        logger.info("None of the relations are in source schemas")
+        return
     if concurrent_extract:
         create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
     else:
         create_source_tables_in_parallel(relations, max_concurrency, dry_run=dry_run)
 
-    create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
+
+def create_transformations(
+    relations: Sequence[LoadableRelation], max_concurrency=1, wlm_query_slots=1, dry_run=False
+) -> None:
+    """Build sources by creating them, granting access, and loading them (if they hold data)."""
+    if not any(relation.is_transformation for relation in relations):
+        logger.info("None of the relations are in transformation schemas")
+        return
+    if max_concurrency > 1:
+        create_transformations_in_parallel(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+    else:
+        create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
 
 
 # --- Section 5: "Callbacks" (functions that implement commands)
@@ -1152,11 +1281,12 @@ def load_data_warehouse(
     etl.data_warehouse.create_groups(dry_run=dry_run)
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
-        create_relations(
+        create_sources(relations, max_concurrency, concurrent_extract, dry_run=dry_run)
+        create_transformations(
+            # TODO(tom): What is the relationship between max concurrency and wlm query slots?
             relations,
-            max_concurrency,
-            wlm_query_slots,
-            concurrent_extract=concurrent_extract,
+            max_concurrency=2,
+            wlm_query_slots=wlm_query_slots,
             dry_run=dry_run,
         )
     except ETLRuntimeError:
@@ -1256,7 +1386,9 @@ def upgrade_data_warehouse(
         )
         etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
 
-    create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+    create_sources(relations, max_concurrency, dry_run=dry_run)
+    # TODO(tom): Make max concurrency a parameter.
+    create_transformations(relations, max_concurrency=2, wlm_query_slots=wlm_query_slots, dry_run=dry_run)
 
 
 def update_data_warehouse(
