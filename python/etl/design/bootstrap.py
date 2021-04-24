@@ -180,7 +180,7 @@ def fetch_dependencies(cx: Connection, table_name: TableName) -> List[str]:
 
     Note that this will return an empty list for a late-binding view.
     """
-    # See https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql
+    # See https://github.com/awslabs/amazon-redshift-utils/blob/master/src/AdminViews/v_constraint_dependency.sql  # noqa: E501
     stmt = """
         SELECT DISTINCT
                target_ns.nspname AS "schema"

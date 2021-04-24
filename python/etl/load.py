@@ -768,7 +768,7 @@ def create_source_tables_when_ready(
     dry_run=False,
 ) -> None:
     """
-    Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
+    Create source relations in several threads, as we observe their extracts to be done.
 
     We assume here that the relations have no dependencies on each other and just gun it.
     This will only raise an Exception if one of the created relations was marked as "required".
@@ -1259,10 +1259,12 @@ def update_data_warehouse(
     Within a transaction:
         Iterate over relations (selected or (selected and transitively dependent)):
             1 Delete rows
-            2.Load data from upstream sources using COPY command, load data into CTAS using views for queries
+            2.Load data from upstream sources using COPY command, load data into CTAS using views
+              for queries
             3 Verify constraints
 
-    Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
+    Note that a failure will rollback the transaction -- there is no distinction between required
+    or not-required.
     Finally, if elected, run vacuum (in new connection) for all tables that were modified.
 
     This is a callback of a command.

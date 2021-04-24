@@ -50,7 +50,7 @@ class SqoopExtractor(DatabaseExtractor):
     def _temporary_options_file(self, prefix: Optional[str] = None):
         # This function is needed to avoid a type error around 'dir' which isn't defined
         # as 'Optional' in the library.
-        return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
+        return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop."""

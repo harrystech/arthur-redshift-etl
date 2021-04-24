@@ -109,12 +109,16 @@ def _keep_common_path(paths: Iterable[str]) -> str:
 
     >>> _keep_common_path(["production/schemas/dw/fact_order.sql"])
     'production/schemas/dw/fact_order.sql'
-    >>> _keep_common_path(["production/schemas/dw/fact_order.sql", "production/schemas/dw/fact_order.yaml"])
+    >>> _keep_common_path(
+    ...     ["production/schemas/dw/fact_order.sql", "production/schemas/dw/fact_order.yaml"]
+    ... )
     'production/schemas/dw/'
-    >>> _keep_common_path(["production/schemas/dw/fact_order.yaml", "production/schemas/web_app/public-orders.yaml"])
-    'production/schemas/'
-    >>> _keep_common_path(["production/schemas/oops/longer_than_path/", "production/schemas/oops/lo"])
-    'production/schemas/oops/'
+    >>> _keep_common_path(
+    ...     ["prod/schemas/dw/fact_order.yaml", "prod/schemas/web_app/public-orders.yaml"]
+    ... )
+    'prod/schemas/'
+    >>> _keep_common_path(["dev/schemas/oops/longer_than_path/", "dev/schemas/oops/lo"])
+    'dev/schemas/oops/'
     """
     common_path: Optional[str] = None
     for path in paths:

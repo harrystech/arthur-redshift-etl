@@ -46,8 +46,9 @@ class Extractor:
         self.schemas = schemas
         self.relations = relations
         self.keep_going = keep_going
-        # Decide whether we should wait for some application to finish extracting and writing a success file or
-        # whether we can proceed immediately when testing for presence of that success file.
+        # Decide whether we should wait for some application to finish extracting and writing a
+        # success file or whether we can proceed immediately when testing for presence of that
+        # success file.
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)

@@ -397,7 +397,8 @@ def add_standard_arguments(parser, options):
             "--max-concurrency",
             metavar="N",
             type=int,
-            help="set max number of parallel loads to N (overrides 'resources.RedshiftCluster.max_concurrency')",
+            help="set max number of parallel loads to N (overrides "
+            "'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
         parser.add_argument(
@@ -470,23 +471,23 @@ class SubCommand:
         # TODO move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
-            "-o", "--prolix", help="send full log to console", default=False, action="store_true"
+            "-o", "--prolix", action="store_true", default=False, help="send full log to console"
         )
         group.add_argument(
             "-v",
             "--verbose",
-            help="increase verbosity",
             action="store_const",
             const="DEBUG",
             dest="log_level",
+            help="increase verbosity",
         )
         group.add_argument(
             "-q",
             "--quiet",
-            help="decrease verbosity",
             action="store_const",
             const="WARNING",
             dest="log_level",
+            help="decrease verbosity",
         )
         # Cannot be set on the command line since changing it is not supported by file sets.
         parser.set_defaults(table_design_dir="./schemas")
@@ -710,9 +711,9 @@ class RunSqlCommand(SubCommand):
         as_user.add_argument(
             "-e",
             "--as-etl-user",
-            help="connect as ETL user (default)",
             action="store_false",
             dest="use_admin",
+            help="connect as ETL user (default)",
         )
         parser.add_argument(
             action=StorePatternAsSelector,
@@ -916,30 +917,31 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
         group.add_argument(
             "--use-existing-csv-files",
-            help="skip extraction and go straight to creating manifest files, implied default for static sources",
-            const="manifest-only",
             action="store_const",
+            const="manifest-only",
             dest="extractor",
+            help="skip extraction and go straight to creating manifest files "
+            "(implied default for static sources)",
         )
         parser.add_argument(
             "-k",
             "--keep-going",
-            help="extract as much data as possible, ignoring errors along the way",
-            default=False,
             action="store_true",
+            default=False,
+            help="extract as much data as possible, ignoring errors along the way",
         )
         parser.add_argument(
             "-m",
             "--max-partitions",
+            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
             metavar="N",
             type=int,
-            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
         )
         parser.add_argument(
             "--use-sampling",
-            help="use only 10%% of rows in extracted tables that are larger than 100MB",
-            default=False,
             action="store_true",
+            default=False,
+            help="use only 10%% of rows in extracted tables that are larger than 100MB",
         )
 
     def callback(self, args):
@@ -1467,14 +1469,14 @@ class ListFilesCommand(SubCommand):
         parser.add_argument(
             "-a",
             "--long-format",
-            help="add file size and timestamp of last modification",
             action="store_true",
+            help="add file size and timestamp of last modification",
         )
         parser.add_argument(
             "-t",
             "--sort-by-time",
-            help="sort files by timestamp (and list in single column)",
             action="store_true",
+            help="sort files by timestamp (and list in single column)",
         )
 
     def callback(self, args):
@@ -1495,16 +1497,16 @@ class PingCommand(SubCommand):
         group.add_argument(
             "-a",
             "--as-admin-user",
-            help="try to connect as admin user",
             action="store_true",
             dest="use_admin",
+            help="try to connect as admin user",
         )
         group.add_argument(
             "-e",
             "--as-etl-user",
-            help="try to connect as ETL user (default)",
             action="store_false",
             dest="use_admin",
+            help="try to connect as ETL user (default)",
         )
         group.add_argument(
             "--for-schema",
@@ -1566,19 +1568,19 @@ class ShowDownstreamDependentsCommand(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--list-dependencies",
-            help="deprecated in favor of --with-dependencies",
             action="store_true",
             dest="with_dependencies",
+            help="deprecated in favor of --with-dependencies",
         )
         group.add_argument(
             "--with-dependencies",
-            help="show list of dependencies (downstream) for every relation",
             action="store_true",
+            help="show list of dependencies (downstream) for every relation",
         )
         group.add_argument(
             "--with-dependents",
-            help="show list of dependents (upstream) for every relation",
             action="store_true",
+            help="show list of dependents (upstream) for every relation",
         )
 
     def callback(self, args):
@@ -1628,9 +1630,9 @@ class RenderTemplateCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("-l", "--list", action="store_true", help="list available templates")
         group.add_argument("template", help="name of template", nargs="?")
-        parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
+        parser.add_argument("-t", "--compact", action="store_true", help="produce compact output")
 
     def callback(self, args):
         if args.list:

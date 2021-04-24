@@ -63,7 +63,9 @@ class DatabaseExtractor(Extractor):
         table design file, (2) stay above the number where the partition size is above the
         minimum size, (3) is a multiple of 4. (Rule 1 wins over rule 2.)
 
-        >>> extractor = DatabaseExtractor("test", {}, [], 64, use_sampling=False, keep_going=False, dry_run=True)
+        >>> extractor = DatabaseExtractor(
+        ... "test", {}, [], 64, use_sampling=False, keep_going=False, dry_run=True
+        ... )
         >>> extractor.maximize_partitions(1)
         1
         >>> extractor.maximize_partitions(10485750)
