@@ -109,12 +109,16 @@ def list_pipelines():
     client = boto3.client("datapipeline")
     pipeline_ids = get_etl_pipeline_ids(client)
     statuses = [
-        status for status in get_pipeline_status(client, pipeline_ids) if status["pipelineState"] == "SCHEDULED"
+        status
+        for status in get_pipeline_status(client, pipeline_ids)
+        if status["pipelineState"] == "SCHEDULED"
     ]
 
     if not statuses:
         print("Found no scheduled ETL pipelines")
-        print("Note that a pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked up here.")
+        print(
+            "Note that a pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked up here."
+        )
         return
     for status in sorted(statuses, key=itemgetter("name")):
         print("{pipelineId:24s} - {name} - ({healthStatus}, {latestRunTime})".format(**status))

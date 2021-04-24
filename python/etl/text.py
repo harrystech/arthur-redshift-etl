@@ -108,7 +108,12 @@ class ColumnWrapper(textwrap.TextWrapper):
 
 
 def format_lines(
-    value_rows, header_row=None, has_header=False, max_column_width=100, skip_rows_count=False, tablefmt="presto"
+    value_rows,
+    header_row=None,
+    has_header=False,
+    max_column_width=100,
+    skip_rows_count=False,
+    tablefmt="presto",
 ) -> str:
     """
     Format a list of rows which each have a list of values, optionally with a header.
@@ -159,7 +164,9 @@ def format_lines(
         replace_whitespace=True,
         drop_whitespace=False,
     )
-    matrix = [[wrapper.fill(column) if isinstance(column, str) else column for column in row] for row in value_rows]
+    matrix = [
+        [wrapper.fill(column) if isinstance(column, str) else column for column in row] for row in value_rows
+    ]
 
     if has_header:
         row_count = len(matrix) - 1

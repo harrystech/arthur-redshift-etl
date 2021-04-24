@@ -141,7 +141,11 @@ def print_comparison_table(previous_values, current_values, column):
     )
     print("Differences for '{}':\n".format(column))
     print(
-        tabulate(table, headers=("target", "step", "prev. " + column, "cur. " + column, "delta %"), tablefmt="presto")
+        tabulate(
+            table,
+            headers=("target", "step", "prev. " + column, "cur. " + column, "delta %"),
+            tablefmt="presto",
+        )
     )
 
 

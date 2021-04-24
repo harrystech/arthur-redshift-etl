@@ -66,7 +66,9 @@ class S3Uploader:
 
     def __call__(self, filename: str, object_key: str) -> None:
         if self.dry_run:
-            logger.debug("Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
+            logger.debug(
+                "Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key
+            )
             self.callback()
             return
         logger.debug("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
@@ -146,7 +148,9 @@ def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str
 
     # We break out the futures to be able to easily tally up errors.
     futures: List[concurrent.futures.Future] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sync-parallel") as executor:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="sync-parallel"
+    ) as executor:
         for local_filename, remote_filename in files:
             futures.append(executor.submit(uploader.__call__, local_filename, f"{prefix}/{remote_filename}"))
 
@@ -173,7 +177,9 @@ def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str
         raise ETLRuntimeError(f"There were {errors} error(s) during upload")
 
 
-def delete_objects(bucket_name: str, object_keys: Sequence[str], wait=False, _retry=True, dry_run=False) -> None:
+def delete_objects(
+    bucket_name: str, object_keys: Sequence[str], wait=False, _retry=True, dry_run=False
+) -> None:
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
 
@@ -202,7 +208,11 @@ def delete_objects(bucket_name: str, object_keys: Sequence[str], wait=False, _re
             tqdm_bar.update()
         for error in result.get("Errors", []):
             logger.error(
-                "Failed to delete 's3://%s/%s' with %s: %s", bucket_name, error["Key"], error["Code"], error["Message"]
+                "Failed to delete 's3://%s/%s' with %s: %s",
+                bucket_name,
+                error["Key"],
+                error["Code"],
+                error["Message"],
             )
             failed.append(error["Key"])
             tqdm_bar.update()

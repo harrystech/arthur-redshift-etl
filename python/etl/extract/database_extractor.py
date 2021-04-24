@@ -163,7 +163,11 @@ class DatabaseExtractor(Extractor):
                 rows = etl.db.query(conn, stmt, (str(table), str(table)))
             bytes_size, pretty_size = rows[0]["bytes"], rows[0]["pretty_size"]
             self.logger.info(
-                "Size of table '%s.%s': %s (%s)", relation.source_name, table.identifier, bytes_size, pretty_size
+                "Size of table '%s.%s': %s (%s)",
+                relation.source_name,
+                table.identifier,
+                bytes_size,
+                pretty_size,
             )
         else:
             bytes_size, pretty_size = 671088640, "671 Mb"

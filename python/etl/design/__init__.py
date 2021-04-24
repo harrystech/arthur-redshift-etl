@@ -30,7 +30,16 @@ class ColumnDefinition:
     These are ready to be sent to a table design or come from a table design file.
     """
 
-    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null", "identity", "encoding")
+    __slots__ = (
+        "name",
+        "type",
+        "sql_type",
+        "source_sql_type",
+        "expression",
+        "not_null",
+        "identity",
+        "encoding",
+    )
 
     def __init__(
         self, name, source_sql_type, sql_type, expression, type_, not_null, identity=False, encoding=None
@@ -80,13 +89,19 @@ class ColumnDefinition:
                 mapping_sql_type, mapping_expression, mapping_type = attribute.sql_type, None, generic_type
                 break
         else:
-            for re_att_type, (mapping_sql_type, mapping_expression, mapping_type) in cast_needed_att_type.items():
+            for re_att_type, (
+                mapping_sql_type,
+                mapping_expression,
+                mapping_type,
+            ) in cast_needed_att_type.items():
                 if re.match(re_att_type, attribute.sql_type):
                     # Found tuple with new SQL type, expression and generic type.  Rejoice.
                     break
             else:
                 logger.warning(
-                    "Unknown type '{}' of column '{}' (using default)".format(attribute.sql_type, attribute.name)
+                    "Unknown type '{}' of column '{}' (using default)".format(
+                        attribute.sql_type, attribute.name
+                    )
                 )
                 mapping_sql_type, mapping_expression, mapping_type = default_att_type
 

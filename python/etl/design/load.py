@@ -24,7 +24,12 @@ import etl.config
 import etl.db
 import etl.file_sets
 import etl.s3
-from etl.errors import SchemaValidationError, TableDesignParseError, TableDesignSemanticError, TableDesignSyntaxError
+from etl.errors import (
+    SchemaValidationError,
+    TableDesignParseError,
+    TableDesignSemanticError,
+    TableDesignSyntaxError,
+)
 from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
@@ -101,7 +106,9 @@ def validate_table_design_syntax(table_design, table_name):
     try:
         etl.config.validate_with_schema(table_design, "table_design.schema")
     except SchemaValidationError as exc:
-        raise TableDesignSyntaxError("failed to validate table design for '{}'".format(table_name.identifier)) from exc
+        raise TableDesignSyntaxError(
+            "failed to validate table design for '{}'".format(table_name.identifier)
+        ) from exc
 
 
 def validate_identity_as_surrogate_key(table_design):
@@ -133,7 +140,9 @@ def validate_column_references(table_design):
         ("attributes", "interleaved_sort"),
         ("attributes", "compound_sort"),
     ]
-    valid_columns = frozenset(column["name"] for column in table_design["columns"] if not column.get("skipped"))
+    valid_columns = frozenset(
+        column["name"] for column in table_design["columns"] if not column.get("skipped")
+    )
 
     constraints = table_design.get("constraints", [])
     for obj, key in column_list_references:
@@ -145,7 +154,9 @@ def validate_column_references(table_design):
         unknown = join_with_single_quotes(frozenset(cols).difference(valid_columns))
         if unknown:
             raise TableDesignSemanticError(
-                "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key, unknown=unknown)
+                "{key} columns in {obj} contain unknown column(s): {unknown}".format(
+                    obj=obj, key=key, unknown=unknown
+                )
             )
 
 
@@ -162,7 +173,9 @@ def validate_semantics_of_view(table_design):
     for column in table_design["columns"]:
         unwanted_fields = set(column).difference(("name", "description"))
         if unwanted_fields:
-            raise TableDesignSemanticError("too much information for column of a VIEW: {}".format(unwanted_fields))
+            raise TableDesignSemanticError(
+                "too much information for column of a VIEW: {}".format(unwanted_fields)
+            )
     for obj in ("constraints", "attributes", "extract_settings"):
         if obj in table_design:
             raise TableDesignSemanticError("{} not supported for a VIEW".format(obj))
@@ -198,11 +211,15 @@ def validate_semantics_of_table(table_design):
         raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_design["name"])
 
     constraints = table_design.get("constraints", [])
-    constraint_types_in_design = [constraint_type for constraint in constraints for constraint_type in constraint]
+    constraint_types_in_design = [
+        constraint_type for constraint in constraints for constraint_type in constraint
+    ]
     for constraint_type in constraint_types_in_design:
         if constraint_type in ("natural_key", "surrogate_key"):
             raise TableDesignSemanticError(
-                "upstream table '{}' has unexpected {} constraint".format(table_design["name"], constraint_type)
+                "upstream table '{}' has unexpected {} constraint".format(
+                    table_design["name"], constraint_type
+                )
             )
 
     [split_by_name] = table_design.get("extract_settings", {}).get("split_by", [None])
@@ -214,7 +231,9 @@ def validate_semantics_of_table(table_design):
             raise TableDesignSemanticError("split-by column must have not-null constraint")
         if split_by_column["type"] not in ("int", "long", "date", "timestamp"):
             raise TableDesignSemanticError(
-                "type of split-by column must be int, long, date or timestamp, not '{}'".format(split_by_column["type"])
+                "type of split-by column must be int, long, date or timestamp, not '{}'".format(
+                    split_by_column["type"]
+                )
             )
 
 
@@ -225,7 +244,9 @@ def validate_table_design_semantics(table_design, table_name):
     Raise an exception if anything is amiss.
     """
     if table_design["name"] != table_name.identifier:
-        raise TableDesignSemanticError("name in table design must match target '{}'".format(table_name.identifier))
+        raise TableDesignSemanticError(
+            "name in table design must match target '{}'".format(table_name.identifier)
+        )
 
     schema = etl.config.get_dw_config().schema_lookup(table_name.schema)
 

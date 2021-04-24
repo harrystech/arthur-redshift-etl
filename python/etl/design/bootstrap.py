@@ -64,7 +64,9 @@ def fetch_tables(cx: Connection, source: DataWarehouseSchema, selector: TableSel
                         logger.debug("Table '%s' is included in result set", source_table_name.identifier)
                         break
                     else:
-                        logger.debug("Table '%s' matches allowlist but is not selected", source_table_name.identifier)
+                        logger.debug(
+                            "Table '%s' matches allowlist but is not selected", source_table_name.identifier
+                        )
     logger.info(
         "Found %d table(s) matching patterns; allowlist=%s, denylist=%s, subset='%s'",
         len(found),
@@ -355,7 +357,9 @@ def create_table_design_for_source(
             and column.get("source_sql_type") == existing_column.get("source_sql_type")
             and column["sql_type"] != existing_column["sql_type"]
         ):
-            logger.warning("Keeping previous SQL type and expression for '%s.%s'", source_table_name, column_name)
+            logger.warning(
+                "Keeping previous SQL type and expression for '%s.%s'", source_table_name, column_name
+            )
             for key in ("sql_type", "expression"):
                 if key in existing_column:
                     column[key] = existing_column[key]
@@ -445,7 +449,9 @@ def create_partial_table_design_for_transformation(
                 update_column_definition(relation.identifier, column, existing_column[column["name"]])
 
     # Now do the rest of the update keys which require less attention to details.
-    remaining_keys = selected_update_keys.difference(("columns", "description")).intersection(existing_table_design)
+    remaining_keys = selected_update_keys.difference(("columns", "description")).intersection(
+        existing_table_design
+    )
     for copy_key in sorted(remaining_keys):
         # TODO(tom): May have to cleanup columns in constraints and attributes!
         table_design[copy_key] = existing_table_design[copy_key]
@@ -603,7 +609,9 @@ def create_table_design_for_transformation(
         if dependencies is None:
             raise RuntimeError("failed to query for dependencies")
         if any(dependencies):
-            logger.info("Looks like %s has external dependencies, proceeding with caution", relation.identifier)
+            logger.info(
+                "Looks like %s has external dependencies, proceeding with caution", relation.identifier
+            )
             if kind == "VIEW":
                 raise RuntimeError("VIEW not supported for transformations that depend on extrenal tables")
             return create_table_design_for_ctas(conn, tmp_view_name, relation, update)
@@ -636,7 +644,9 @@ def save_table_design(
         return
 
     if os.path.exists(filename) and not overwrite:
-        logger.warning("Skipping writing new table design for '%s' since '%s' already exists", this_table, filename)
+        logger.warning(
+            "Skipping writing new table design for '%s' since '%s' already exists", this_table, filename
+        )
         return
 
     logger.info("Writing new table design file for '%s' to '%s'", this_table, filename)
@@ -689,11 +699,17 @@ def create_table_designs_from_source(
                     continue
                 relation = relation_lookup.get(source_table_name) if update else None
                 target_table_name = TableName(source.name, source_table_name.table)
-                table_design = create_table_design_for_source(conn, source_table_name, target_table_name, relation)
+                table_design = create_table_design_for_source(
+                    conn, source_table_name, target_table_name, relation
+                )
                 if relation is not None and relation.table_design == table_design:
-                    logger.info(f"No updates detected in table design for {target_table_name:x}, skipping write")
+                    logger.info(
+                        f"No updates detected in table design for {target_table_name:x}, skipping write"
+                    )
                     continue
-                filename = os.path.join(source_dir, f"{source_table_name.schema}-{source_table_name.table}.yaml")
+                filename = os.path.join(
+                    source_dir, f"{source_table_name.schema}-{source_table_name.table}.yaml"
+                )
                 save_table_design(
                     target_table_name, table_design, filename, overwrite=update or replace, dry_run=dry_run
                 )
@@ -708,12 +724,16 @@ def create_table_designs_from_source(
     not_found = upstream.difference(existent)
     if not_found:
         logger.warning(
-            "New table(s) in source '%s' without local design: %s", source.name, join_with_single_quotes(not_found)
+            "New table(s) in source '%s' without local design: %s",
+            source.name,
+            join_with_single_quotes(not_found),
         )
     too_many = existent.difference(upstream)
     if too_many:
         logger.error(
-            "Local table design(s) without table in source '%s': %s", source.name, join_with_single_quotes(too_many)
+            "Local table design(s) without table in source '%s': %s",
+            source.name,
+            join_with_single_quotes(too_many),
         )
 
     return len(source_tables)
@@ -731,7 +751,9 @@ def bootstrap_sources(selector, table_design_dir, local_files, update=False, rep
     """
     dw_config = etl.config.get_dw_config()
     selected_database_schemas = [
-        schema for schema in dw_config.schemas if schema.is_database_source and selector.match_schema(schema.name)
+        schema
+        for schema in dw_config.schemas
+        if schema.is_database_source and selector.match_schema(schema.name)
     ]
     database_schema_names = {schema.name for schema in selected_database_schemas}
     existing_relations = [
@@ -785,11 +807,15 @@ def bootstrap_transformations(
     check_only_errors = 0
     with closing(etl.db.connection(dw_config.dsn_etl, autocommit=True)) as conn:
         for index, relation in enumerate(relations):
-            logger.info("Working on transformation '%s' (%d/%d)", relation.identifier, index + 1, len(relations))
+            logger.info(
+                "Working on transformation '%s' (%d/%d)", relation.identifier, index + 1, len(relations)
+            )
             # Be careful to not trigger a load of an unknown design file by accessing "kind".
             actual_kind = source_name or (relation.kind if relation.design_file_name else None)
             try:
-                table_design = create_table_design_for_transformation(conn, actual_kind, relation, update or check_only)
+                table_design = create_table_design_for_transformation(
+                    conn, actual_kind, relation, update or check_only
+                )
             except RuntimeError as exc:
                 if check_only:
                     print(f"Failed to create table design for {relation:x}: {exc}")
@@ -803,7 +829,9 @@ def bootstrap_transformations(
                     check_only_errors += 1
                     print(f"Change detected in table design for {relation:x}")
                     print(
-                        diff_table_designs(relation.table_design, table_design, relation.design_file_name, "bootstrap")
+                        diff_table_designs(
+                            relation.table_design, table_design, relation.design_file_name, "bootstrap"
+                        )
                     )
                 continue
 
@@ -823,7 +851,11 @@ def bootstrap_transformations(
                     f"{relation.target_table_name.schema}-{relation.target_table_name.table}.yaml",
                 )
             save_table_design(
-                relation.target_table_name, table_design, filename, overwrite=update or replace, dry_run=dry_run
+                relation.target_table_name,
+                table_design,
+                filename,
+                overwrite=update or replace,
+                dry_run=dry_run,
             )
 
     if check_only_errors:

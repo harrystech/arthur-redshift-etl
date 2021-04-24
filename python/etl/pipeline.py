@@ -52,7 +52,9 @@ class DataPipelineObject:
     def __init__(self, description) -> None:
         self.name = description.get("name")
         self.object_id = description["id"]
-        self.ref_values = {field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field}
+        self.ref_values = {
+            field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field
+        }
         self.string_values = {
             field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
         }
@@ -118,7 +120,9 @@ class DataPipelineObject:
             # TODO(tom): Once we're on Python 3.8, we should add 'Final["minute"]' etc.
             return parsed_end_time.humanize(parsed_start_time, granularity=["minute"], only_distance=True)
         if elapsed_hours < 12:
-            return parsed_end_time.humanize(parsed_start_time, granularity=["hour", "minute"], only_distance=True)
+            return parsed_end_time.humanize(
+                parsed_start_time, granularity=["hour", "minute"], only_distance=True
+            )
         return parsed_end_time.humanize(parsed_start_time, granularity=["hour"], only_distance=True)
 
     @property
@@ -232,7 +236,9 @@ class DataPipeline:
             sum(map(len, grouped_instances.values())),
         )
         for component_parent in sorted(grouped_instances):
-            latest_instance = sorted(grouped_instances[component_parent], key=attrgetter("scheduled_start_time"))[-1]
+            latest_instance = sorted(
+                grouped_instances[component_parent], key=attrgetter("scheduled_start_time")
+            )[-1]
             latest_instance.parent_object = component_lookup[component_parent]
             yield latest_instance
 
@@ -328,7 +334,10 @@ def list_pipelines(selection: Sequence[str]) -> List[DataPipeline]:
     all_pipeline_ids = DataPipeline.list_all_pipelines(client)
     if selection:
         selected_pipeline_ids = [
-            pipeline_id for pipeline_id in all_pipeline_ids for glob in selection if fnmatch.fnmatch(pipeline_id, glob)
+            pipeline_id
+            for pipeline_id in all_pipeline_ids
+            for glob in selection
+            if fnmatch.fnmatch(pipeline_id, glob)
         ]
     else:
         selected_pipeline_ids = list(all_pipeline_ids)

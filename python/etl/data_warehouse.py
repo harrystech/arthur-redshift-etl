@@ -93,7 +93,9 @@ def _promote_schemas(schemas: Iterable[DataWarehouseSchema], from_where: str, dr
             )
             return
 
-        logger.info("Promoting %d schema(s) from %s position: %s", len(need_promotion), from_where, selected_names)
+        logger.info(
+            "Promoting %d schema(s) from %s position: %s", len(need_promotion), from_where, selected_names
+        )
         for from_name in need_promotion:
             schema = from_name_schema_lookup[from_name]
             logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
@@ -262,7 +264,9 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
 
     owner_name = config.owner.name
     if dry_run:
-        logger.info("Dry-run: Skipping drop and create of database '%s' with owner '%s'", database_name, owner_name)
+        logger.info(
+            "Dry-run: Skipping drop and create of database '%s' with owner '%s'", database_name, owner_name
+        )
     else:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True)) as conn:
             logger.info("Dropping and creating database '%s' with owner '%s'", database_name, owner_name)
@@ -281,7 +285,9 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
                 _update_search_path(conn, user, dry_run=dry_run)
 
 
-def create_or_update_user(user_name, group_name=None, add_user_schema=False, only_update=False, dry_run=False):
+def create_or_update_user(
+    user_name, group_name=None, add_user_schema=False, only_update=False, dry_run=False
+):
     """
     Add new user to cluster or update existing user.
 
@@ -316,13 +322,17 @@ def create_or_update_user(user_name, group_name=None, add_user_schema=False, onl
                 _create_schema_for_user(conn, user, config.groups[0], dry_run=dry_run)
             elif user.schema is not None:
                 logger.warning(
-                    "User '%s' has schema '%s' configured but adding that was not requested", user.name, user.schema
+                    "User '%s' has schema '%s' configured but adding that was not requested",
+                    user.name,
+                    user.schema,
                 )
             _update_search_path(conn, user, dry_run=dry_run)
 
 
 def create_new_user(new_user, group=None, add_user_schema=False, dry_run=False):
-    create_or_update_user(new_user, group, add_user_schema=add_user_schema, only_update=False, dry_run=dry_run)
+    create_or_update_user(
+        new_user, group, add_user_schema=add_user_schema, only_update=False, dry_run=dry_run
+    )
 
 
 def update_user(old_user, group=None, add_user_schema=False, dry_run=False):

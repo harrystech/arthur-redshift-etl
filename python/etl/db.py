@@ -103,7 +103,9 @@ def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str) -> d
     return dsn_values
 
 
-def connection(dsn_dict: Dict[str, str], application_name=psycopg2.__name__, autocommit=False, readonly=False):
+def connection(
+    dsn_dict: Dict[str, str], application_name=psycopg2.__name__, autocommit=False, readonly=False
+):
     """
     Open a connection to the database described by dsn_string.
 
@@ -149,7 +151,11 @@ def extract_dsn(dsn_dict: Dict[str, str], read_only=False):
     """
     dsn_properties = dict(dsn_dict)  # so as to not mutate the argument
     dsn_properties.update(
-        {"ApplicationName": __name__, "readOnly": "true" if read_only else "false", "driver": "org.postgresql.Driver"}
+        {
+            "ApplicationName": __name__,
+            "readOnly": "true" if read_only else "false",
+            "driver": "org.postgresql.Driver",
+        }
     )
     if "port" in dsn_properties:
         jdbc_url = "jdbc:postgresql://{host}:{port}/{database}".format_map(dsn_properties)
@@ -493,7 +499,9 @@ def grant_select_on_all_tables_in_schema(cx: Connection, schema: str, groups: It
     execute(cx, f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_group_list}')
 
 
-def grant_select_and_write_on_all_tables_in_schema(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+def grant_select_and_write_on_all_tables_in_schema(
+    cx: Connection, schema: str, groups: Iterable[str]
+) -> None:
     quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
     execute(
         cx,
@@ -541,7 +549,10 @@ def grant_select(cx, schema, table, group):
 
 
 def grant_select_and_write(cx, schema, table, group):
-    execute(cx, """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group))
+    execute(
+        cx,
+        """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group),
+    )
 
 
 def grant_all_to_user(cx, schema, table, user):

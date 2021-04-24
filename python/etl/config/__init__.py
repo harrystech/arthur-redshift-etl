@@ -271,7 +271,9 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
-        raise ETLRuntimeError("failed to find enough configuration files (need at least default and local config)")
+        raise ETLRuntimeError(
+            "failed to find enough configuration files (need at least default and local config)"
+        )
 
     validate_with_schema(settings, "settings.schema")
 

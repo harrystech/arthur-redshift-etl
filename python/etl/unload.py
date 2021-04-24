@@ -37,7 +37,11 @@ logger.addHandler(logging.NullHandler())
 
 
 def run_redshift_unload(
-    conn: Connection, relation: RelationDescription, unload_path: str, aws_iam_role: str, allow_overwrite=False
+    conn: Connection,
+    relation: RelationDescription,
+    unload_path: str,
+    aws_iam_role: str,
+    allow_overwrite=False,
 ) -> None:
     """
     Execute the UNLOAD command for the given relation (via a select statement).
@@ -109,9 +113,11 @@ def unload_relation(
     dry_run=False,
 ) -> None:
     """Unload data from table in the data warehouse using the UNLOAD command of Redshift."""
-    s3_key_prefix = "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
-        schema=schema,
-        source=relation.target_table_name,
+    s3_key_prefix = (
+        "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
+            schema=schema,
+            source=relation.target_table_name,
+        )
     )
     unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
@@ -154,7 +160,9 @@ def unload_to_s3(
     relation_target_tuples = []
     for relation in unloadable_relations:
         if relation.unload_target not in target_lookup:
-            raise TableDesignSemanticError("Unload target specified, but not defined: '%s'" % relation.unload_target)
+            raise TableDesignSemanticError(
+                "Unload target specified, but not defined: '%s'" % relation.unload_target
+            )
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
     error_occurred = False
@@ -163,7 +171,9 @@ def unload_to_s3(
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
                 index = {"current": i + 1, "final": len(relation_target_tuples)}
-                unload_relation(conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run)
+                unload_relation(
+                    conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run
+                )
             except Exception as exc:
                 if keep_going:
                     error_occurred = True
