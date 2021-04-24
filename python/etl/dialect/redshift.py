@@ -16,6 +16,7 @@ from psycopg2.extensions import connection  # only for type annotation
 
 import etl.config
 import etl.db
+from etl.design import ColumnDefinition
 from etl.errors import ETLRuntimeError, ETLSystemError, TransientETLError
 from etl.names import TableName
 from etl.text import join_with_double_quotes, whitespace_cleanup
@@ -44,6 +45,8 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
         column_ddl += " IDENTITY(1, 1)"
     if "encoding" in column:
         column_ddl += " ENCODE {}".format(column["encoding"])
+    elif "auto_encoding" in column:
+        column_ddl += " ENCODE {}".format(column["auto_encoding"])
     if column.get("not_null", False):
         column_ddl += " NOT NULL"
     if "references" in column and not skip_references:
@@ -133,8 +136,49 @@ def build_table_attributes(table_design: dict) -> List[str]:
     return ddl_attributes
 
 
+def add_auto_encoding(table_design: dict) -> None:
+    """Modify table design in-place to add encodings of columns (in 'auto_encoding')."""
+    columns = {column["name"]: ColumnDefinition.from_dict(column) for column in table_design["columns"]}
+    # Use any encoding already defined in the table design.
+    encoding = {column.name: column.encoding for column in columns.values() if column.encoding is not None}
+    # Find all distribution and sort keys.
+    for attribute in table_design.get("attributes", {}).values():
+        if isinstance(attribute, str):
+            continue  # skip values like "all" or "auto"
+        for column_name in attribute:
+            encoding[column_name] = "raw"
+    for constraint in table_design.get("constraints", []):
+        for column_list in constraint.values():
+            for column_name in column_list:
+                encoding[column_name] = "raw"
+    # Find all columns that reference other columns.
+    for column in table_design["columns"]:
+        if "references" in column:
+            encoding[column["name"]] = "raw"
+    # Find the identity column if it exists.
+    for column in columns.values():
+        if column.identity:
+            encoding[column.name] = "raw"
+            break
+    # Assign default encoding based on type.
+    for column in columns.values():
+        if column.name in encoding:
+            continue
+        if column.type in ("boolean", "double", "float"):
+            encoding[column.name] = "raw"
+        elif column.type in ("date", "decimal", "int", "long", "timestamp"):
+            encoding[column.name] = "az64"
+        else:
+            encoding[column.name] = "zstd"
+    # Copy newly found encoding back to our table design.
+    for column in table_design["columns"]:
+        column["auto_encoding"] = encoding[column["name"]]
+
+
 def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) -> str:
     """Assemble the DDL of a table in a Redshift data warehouse."""
+    if (etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON") == "AUTO":
+        add_auto_encoding(table_design)
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
     attributes = build_table_attributes(table_design)
@@ -246,12 +290,15 @@ def copy_using_manifest(
     data_format: Optional[str] = None,
     format_option: Optional[str] = None,
     file_compression: Optional[str] = None,
-    compupdate="ON",
     dry_run=False,
 ) -> None:
 
     credentials = "aws_iam_role={}".format(aws_iam_role)
     data_format_parameters = determine_data_format_parameters(data_format, format_option, file_compression)
+
+    compupdate = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
+    if compupdate == "AUTO":
+        compupdate = "OFF"
 
     copy_stmt = """
         COPY {table} (
@@ -344,7 +391,6 @@ def copy_from_uri(
     data_format: Optional[str] = None,
     format_option: Optional[str] = None,
     file_compression: Optional[str] = None,
-    compupdate="ON",
     dry_run=False,
 ) -> None:
     """Load data into table in the data warehouse using the COPY command."""
@@ -357,7 +403,6 @@ def copy_from_uri(
         data_format,
         format_option,
         file_compression,
-        compupdate,
         dry_run,
     )
     query_load_commits(conn, table_name, s3_uri, dry_run)

@@ -30,17 +30,21 @@ class ColumnDefinition:
     These are ready to be sent to a table design or come from a table design file.
     """
 
-    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null")
+    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null", "identity", "encoding")
 
-    def __init__(self, name, source_sql_type, sql_type, expression, type_, not_null):
+    def __init__(
+        self, name, source_sql_type, sql_type, expression, type_, not_null, identity=False, encoding=None
+    ) -> None:
         self.name = name
         self.source_sql_type = source_sql_type
         self.sql_type = sql_type
         self.expression = expression
         self.type = type_
         self.not_null = not_null
+        self.identity = identity
+        self.encoding = encoding
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         d = dict(name=self.name, sql_type=self.sql_type, type=self.type)
         if self.expression is not None:
             d["expression"] = self.expression
@@ -49,6 +53,19 @@ class ColumnDefinition:
         if self.not_null:
             d["not_null"] = self.not_null
         return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ColumnDefinition":
+        return cls(
+            name=d["name"],
+            source_sql_type=d.get("source_sql_type"),
+            sql_type=d.get("sql_type"),
+            expression=d.get("expression"),
+            type_=d.get("type"),
+            not_null=d.get("not_null"),
+            identity=d.get("identity"),
+            encoding=d.get("encoding"),
+        )
 
     @staticmethod
     def from_attribute(attribute, as_is_att_type, cast_needed_att_type, default_att_type):

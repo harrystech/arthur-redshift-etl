@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-ARTHUR_VERSION = "1.42.0"
+ARTHUR_VERSION = "1.43.0"
 
 
 setup(
