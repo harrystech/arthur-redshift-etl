@@ -9,8 +9,9 @@ Table designs are implemented as dictionaries of dictionaries or lists etc.
 
 import logging
 from contextlib import closing
+from typing import Dict, List
 
-import funcy as fy
+import funcy
 import yaml
 import yaml.parser
 
@@ -125,28 +126,24 @@ def validate_identity_as_surrogate_key(table_design):
 
 def validate_column_references(table_design):
     """Make sure that table attributes and constraints only reference columns that actually exist."""
-    column_list_references = [
-        ("constraints", "primary_key"),
-        ("constraints", "natural_key"),
-        ("constraints", "surrogate_key"),
-        ("constraints", "unique"),
-        ("attributes", "interleaved_sort"),
-        ("attributes", "compound_sort"),
-    ]
     valid_columns = frozenset(column["name"] for column in table_design["columns"] if not column.get("skipped"))
 
-    constraints = table_design.get("constraints", [])
-    for obj, key in column_list_references:
-        if obj == "constraints":
-            # This evaluates all unique constraints at once by concatenating all of the columns.
-            cols = [col for constraint in constraints for col in constraint.get(key, [])]
-        else:  # 'attributes'
-            cols = table_design.get(obj, {}).get(key, [])
-        unknown = join_with_single_quotes(frozenset(cols).difference(valid_columns))
+    # Rewrite the attributes to have the same shape as constraints (list of dicts, each dict having
+    # one item, which is the name and some columns). Note that some attributes have tokens like ALL.
+    attributes = [
+        {attribute: columns}
+        for attribute, columns in table_design.get("attributes", {}).items()
+        if not isinstance(columns, str)
+    ]
+    constraints: List[Dict[str, List[str]]] = table_design.get("constraints", [])
+
+    for outer_name, description in funcy.chain(
+        zip(funcy.repeat("attributes"), attributes), zip(funcy.repeat("constraints"), constraints)
+    ):
+        [[inner_name, this_columns]] = description.items()
+        unknown = join_with_single_quotes(frozenset(this_columns).difference(valid_columns))
         if unknown:
-            raise TableDesignSemanticError(
-                "{key} columns in {obj} contain unknown column(s): {unknown}".format(obj=obj, key=key, unknown=unknown)
-            )
+            raise TableDesignSemanticError(f"unknown {inner_name} column(s) in table {outer_name}: {unknown}")
 
 
 def validate_semantics_of_view(table_design):
@@ -207,7 +204,7 @@ def validate_semantics_of_table(table_design):
 
     [split_by_name] = table_design.get("extract_settings", {}).get("split_by", [None])
     if split_by_name:
-        split_by_column = fy.first(fy.where(table_design["columns"], name=split_by_name))
+        split_by_column = funcy.first(funcy.where(table_design["columns"], name=split_by_name))
         if split_by_column.get("skipped", False):
             raise TableDesignSemanticError("split-by column must not be skipped")
         if not split_by_column.get("not_null", False):
