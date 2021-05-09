@@ -114,11 +114,10 @@ class LoadableRelation:
         """Grab everything from the contained relation. Fail if it's actually not available."""
         if hasattr(self._relation_description, name):
             return getattr(self._relation_description, name)
-        raise AttributeError("'{}' object has no attribute '{}'".format(self.__class__.__name__, name))
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    # This works although __str__ will get passed a 'LoadableRelation' object instead of a
-    # 'RelationDescription' object.
-    __str__ = RelationDescription.__str__  # type: ignore
+    def __str__(self) -> str:
+        return str(self.target_table_name)
 
     def __format__(self, code):
         r"""
@@ -148,13 +147,11 @@ class LoadableRelation:
         """
         if (not code) or (code == "s"):
             return str(self)
-        elif code == "x":
+        if code == "x":
             if self.use_staging:
                 return "'{:s}' (in staging)".format(self.identifier)
-            else:
-                return "'{:s}'".format(self.identifier)
-        else:
-            raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
+            return "'{:s}'".format(self.identifier)
+        raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
     def __init__(
         self,
@@ -168,7 +165,7 @@ class LoadableRelation:
         self._relation_description = relation
         self.info = info
         self.in_transaction = in_transaction
-        self.skip_copy = skip_copy or relation.is_view_relation
+        self.skip_copy = skip_copy
         self.use_staging = use_staging
         self.failed = False
 
@@ -248,6 +245,7 @@ class LoadableRelation:
         use_staging=False,
         target_schema: Optional[str] = None,
         skip_copy=False,
+        skip_loading_sources=False,
         in_transaction=False,
     ) -> List["LoadableRelation"]:
         """Build a list of "loadable" relations."""
@@ -256,8 +254,18 @@ class LoadableRelation:
         base_index = {"name": database, "current": 0, "final": len(relations)}
         base_destination = {"name": database}
 
+        managed = frozenset(relation.identifier for relation in relations)
+
         loadable = []
         for i, relation in enumerate(relations):
+            this_skip_copy = skip_copy
+            if skip_loading_sources:
+                # Only load transformations and only if no dependency is external.
+                if not relation.is_transformation or any(
+                    dependency.identifier not in managed for dependency in relation.dependencies
+                ):
+                    this_skip_copy = True
+
             target = relation.target_table_name
             source = dict(bucket_name=relation.bucket_name)
             if relation.is_view_relation or relation.is_ctas_relation:
@@ -270,10 +278,10 @@ class LoadableRelation:
                 "step": command,
                 "source": source,
                 "destination": destination,
-                "options": {"use_staging": use_staging, "skip_copy": skip_copy},
+                "options": {"use_staging": use_staging, "skip_copy": this_skip_copy},
                 "index": dict(base_index, current=i + 1),
             }
-            loadable.append(cls(relation, monitor_info, use_staging, target_schema, skip_copy, in_transaction))
+            loadable.append(cls(relation, monitor_info, use_staging, target_schema, this_skip_copy, in_transaction))
 
         return loadable
 
@@ -676,27 +684,25 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if relation.is_view_relation:
             pass
         elif relation.skip_copy:
-            logger.info("Skipping loading data into {:x} (skip copy is active)".format(relation))
+            logger.info(f"Skipping loading data into {relation:x} (skip copy is active)")
         elif relation.failed:
-            logger.info("Bypassing already failed relation {:x}".format(relation))
+            logger.info(f"Bypassing already failed relation {relation:x}")
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
 
         # Step 3 -- log size of table
-        if not (relation.in_transaction or relation.is_view_relation or relation.failed):
-            rows = etl.db.run(
-                conn,
-                # TODO(tom): This should be logged at the DEBUG level.
-                "(Calculating row count for {:x})".format(relation),
-                "SELECT COUNT(*) AS rowcount FROM {}".format(relation),
-                return_result=True,
-                dry_run=dry_run,
-            )
-            if rows:
-                rowcount = rows[0]["rowcount"]
-                logger.info("Found {:d} row(s) in {:x}".format(rowcount, relation))
-                monitor.add_extra("rowcount", rowcount)
+        if relation.is_view_relation or relation.failed or relation.skip_copy:
+            return
+        stmt = f"SELECT COUNT(*) AS rowcount FROM {relation}"
+        if dry_run:
+            etl.db.skip_query(conn, stmt)
+            return
+        rows = etl.db.query(conn, stmt)
+        if rows:
+            rowcount = rows[0]["rowcount"]
+            logger.info(f"Found {rowcount:d} row(s) in {relation:x}")
+            monitor.add_extra("rowcount", rowcount)
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
@@ -724,11 +730,12 @@ def vacuum(relations: Sequence[RelationDescription], dry_run=False) -> None:
     This needs to open a new connection since it needs to happen outside a transaction.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+    timer = Timer()
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for relation in relations:
             etl.db.run(conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
-        if not dry_run:
-            logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
+    if not dry_run:
+        logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
 
 
 # --- Experimental Section: load during extract
@@ -1057,13 +1064,14 @@ def load_data_warehouse(
     wlm_query_slots=1,
     concurrent_extract=False,
     skip_copy=False,
+    skip_loading_sources=False,
     dry_run=False,
 ):
     """
     Fully "load" the data warehouse after creating a blank slate.
 
-    By default, we use staging positions of schemas to load and thus first
-    moving existing schemas out of the way.
+    By default, we use staging positions of schemas to load and thus wait with
+    moving existing schemas out of the way until the load is complete.
 
     This function allows only complete schemas as selection.
 
@@ -1088,7 +1096,11 @@ def load_data_warehouse(
         return
 
     relations = LoadableRelation.from_descriptions(
-        selected_relations, "load", skip_copy=skip_copy, use_staging=use_staging
+        selected_relations,
+        "load",
+        skip_copy=skip_copy,
+        skip_loading_sources=skip_loading_sources,
+        use_staging=use_staging,
     )
     traversed_schemas = find_traversed_schemas(relations)
     logger.info("Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
