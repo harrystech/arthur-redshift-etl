@@ -1035,6 +1035,12 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             action="store_false",
             dest="use_staging_schemas",
         )
+        parser.add_argument(
+            "--skip-loading-sources",
+            action="store_true",
+            default=False,
+            help="Skip loading data from sources",
+        )
 
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
@@ -1063,6 +1069,7 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             wlm_query_slots=wlm_query_slots,
             concurrent_extract=args.concurrent_extract,
             skip_copy=args.skip_copy,
+            skip_loading_sources=args.skip_loading_sources,
             use_staging=args.use_staging_schemas,
             dry_run=args.dry_run,
         )

@@ -209,7 +209,7 @@ def build_view_ddl(view_name: TableName, columns: List[str], query_stmt: str) ->
 
 def build_insert_ddl(table_name: TableName, column_list, query_stmt) -> str:
     """Assemble the statement to insert data based on a query."""
-    columns = join_with_double_quotes(column_list)
+    columns = join_with_double_quotes(column_list, sep=",\n            ")
     insert_stmt = """
         INSERT INTO {table} (
             {columns}
