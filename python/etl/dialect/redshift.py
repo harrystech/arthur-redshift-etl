@@ -432,6 +432,9 @@ def insert_from_query(
         logger.info("Inserting data into '%s' from query", table_name.identifier)
         try:
             etl.db.execute(conn, stmt)
+        # TODO(tom) Ideally we'd retry these but initial testing ran into issues with closed connections.
+        # except psycopg2.OperationalError as exc:
+        #    raise TransientETLError(exc) from exc
         except psycopg2.InternalError as exc:
             if exc.pgcode in retriable_error_codes:
                 raise TransientETLError(exc) from exc
