@@ -423,9 +423,11 @@ def insert_from_query(
         logger.info("Inserting data into '%s' from query", table_name.identifier)
         try:
             etl.db.execute(conn, stmt)
+        except psycopg2.OperationalError as exc:
+            raise TransientETLError(exc) from exc
         except psycopg2.InternalError as exc:
             if exc.pgcode in retriable_error_codes:
                 raise TransientETLError(exc) from exc
-            else:
-                logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
-                raise
+
+            logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
+            raise
