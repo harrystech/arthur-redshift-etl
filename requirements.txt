@@ -10,4 +10,4 @@ PyYAML==5.4.1
 simplejson==3.17.2
 tabulate==0.8.9
 termcolor==1.1.0
-tqdm==4.60.0
+tqdm==4.61.0
