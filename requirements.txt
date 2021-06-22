@@ -5,7 +5,7 @@ funcy==1.15
 jmespath==0.10.0
 jsonschema==3.2.0
 pgpasslib==1.1.0
-psycopg2-binary==2.8.6
+psycopg2-binary==2.9.1
 PyYAML==5.4.1
 simplejson==3.17.2
 tabulate==0.8.9
