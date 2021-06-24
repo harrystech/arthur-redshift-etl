@@ -2,6 +2,10 @@
     "version": 1,
     "disable_existing_loggers": false,
     "formatters": {
+        "aws": {
+            "format": "%(asctime)s [%(levelname)-8s] %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
+        },
         "console": {
             "class": "etl.config.console.ColorfulFormatter",
             "datefmt": "%Y-%m-%d %H:%M:%S",
@@ -17,6 +21,14 @@
         }
     },
     "handlers": {
+        "watchtower": {
+            "level": "DEBUG",
+            "class": "watchtower.CloudWatchLogHandler",
+            "boto3_session": "hello",
+            "log_group": "/dw/arthur-etl-log-group",
+            "stream_name": "/dw/arthur-etl-log-stream",
+            "formatter": "aws"
+        },
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "console",
@@ -48,7 +60,7 @@
         }
     },
     "root": {
-        "handlers": [ "console", "file" ],
+        "handlers": [ "console", "file", "watchtower" ],
         "level": "NOTSET"
     },
     "loggers": {

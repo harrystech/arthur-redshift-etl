@@ -18,9 +18,11 @@ from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+import boto3
 import jsonschema
 import pkg_resources
 import simplejson as json
+import watchtower
 import yaml
 from simplejson.errors import JSONDecodeError
 
@@ -151,6 +153,9 @@ def configure_logging(full_format: bool = False, log_level: str = None) -> None:
         config["handlers"]["console"]["level"] = logging.DEBUG
     elif log_level:
         config["handlers"]["console"]["level"] = log_level
+    session = boto3.session.Session(region_name="us-east-1")
+    config["handlers"]["watchtower"]["boto3_session"] = session
+    config["handlers"]["watchtower"]["log_group"] = "/dw/one-off-testing"
     logging.config.dictConfig(config)
     # Ignored due to lack of stub in type checking library
     logging.captureWarnings(True)  # type: ignore
