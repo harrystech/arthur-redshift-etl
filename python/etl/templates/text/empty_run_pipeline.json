@@ -1,0 +1,161 @@
+{
+    "objects": [
+        {
+            "id": "Default",
+            "name": "Default",
+            "schedule": { "ref": "ETLSchedule" },
+            "scheduleType": "cron",
+            "failureAndRerunMode": "CASCADE",
+            "resourceRole": "${resources.EC2.iam_instance_profile}",
+            "role": "${resources.DataPipeline.role}",
+            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/_logs/${object_store.s3.prefix}/",
+            "region": "${resources.VPC.region}",
+            "maximumRetries": "2"
+        },
+        {
+            "id": "EmptyRunSchedule",
+            "name": "Run every saturday after the Redshift Cluster Maintenance",
+            "type": "Schedule",
+            "period": "1 days",
+            "startDateTime": "#{myStartDateTime}",
+            "occurrences": "#{myOccurrences}"
+        },
+        {
+            "id": "SNSParent",
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-status"
+        },
+        {
+            "id": "SuccessNotification",
+            "type": "SnsAlarm",
+            "parent": { "ref": "SNSParent" },
+            "subject": "ETL Empty Run Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
+        },
+        {
+            "id": "FailureNotification",
+            "type": "SnsAlarm",
+            "parent": { "ref": "SNSParent" },
+            "subject": "ETL Empty Run Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
+        },
+        {
+            "id": "PagerNotification",
+            "type": "SnsAlarm",
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-page",
+            "subject": "ETL Empty Run Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
+        },
+        {
+            "id": "ResourceParent",
+            "keyPair": "${resources.key_name}",
+            "subnetId": "${resources.VPC.public_subnet}",
+            "terminateAfter": "#{myTimeout} Hours"
+        },
+        {
+            "id": "ArthurDriverEC2Resource",
+            "type": "Ec2Resource",
+            "parent": { "ref": "ResourceParent" },
+            "actionOnTaskFailure": "terminate",
+            "actionOnResourceFailure": "retryAll",
+            "instanceType": "${resources.EC2.instance_type}",
+            "imageId": "${resources.EC2.image_id}",
+            "securityGroupIds": [
+                "${resources.EC2.public_security_group}",
+                "${resources.VPC.whitelist_security_group}"
+            ],
+            "associatePublicIpAddress": "true"
+        },
+        {
+            "id": "Ec2CommandGrandParent",
+            "runsOn": { "ref": "ArthurDriverEC2Resource" }
+        },
+        {
+            "id": "ShellCommandParent",
+            "parent": { "ref": "Ec2CommandGrandParent" }
+        },
+        {
+            "id": "ArthurCommandParent",
+            "parent": { "ref": "Ec2CommandGrandParent" },
+            "maximumRetries": "0"
+        },
+        {
+            "id": "CopyStartupScripts",
+            "name": "Copy Startup Scripts (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "/usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'create_validation_credentials' --include 'sync_env.sh' s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin /tmp"
+        },
+        {
+            "id": "SyncEnvironment",
+            "name": "Sync environments (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "/bin/bash /tmp/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/validation",
+            "dependsOn": { "ref": "CopyStartupScripts" }
+        },
+        {
+            "id": "CreateStagingCredentials",
+            "name": "Create staging credentials (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "/bin/bash /tmp/create_staging_credentials ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
+            "dependsOn": { "ref": "SyncEnvironment" }
+        },
+        {
+            "id": "Bootstrap",
+            "name": "Bootstrap (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ShellCommandParent" },
+            "command": "/bin/bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
+            "dependsOn": { "ref": "CreateStagingCredentials" }
+        },
+        {
+            "id": "ArthurInitialize",
+            "name": "Initialize (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ initialize --prolix",
+            "dependsOn": { "ref": "Bootstrap" }
+        },
+        {
+            "id": "ArthurLoad",
+            "name": "Arthur Load with skip loading source (EC2)",
+            "type": "ShellCommandActivity",
+            "parent": { "ref": "ArthurCommandParent" },
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix} --skip-loading-sources",
+            "dependsOn": { "ref": "ArthurInitialize" }
+        }
+    ],
+    "parameters": [
+        {
+            "id": "myStartDateTime",
+            "type": "String",
+            "optional": "false",
+            "description": "UTC ISO formatted string giving the datetime to start the pipeline",
+            "watermark": "2525-01-01T00:00:00",
+            "helpText": "When should the pipeline's daily cadence start?"
+        },
+        {
+            "id": "myOccurrences",
+            "type": "String",
+            "optional": "false",
+            "description": "Number of occurrences for this pipeline",
+            "watermark": "1000",
+            "helpText": "How often should the pipeline schedule be repeated?"
+        },
+        {
+            "id": "myTimeout",
+            "type": "Integer",
+            "optional": "true",
+            "description": "How many hours to allow the pipeline to run before terminating it",
+            "watermark": "2",
+            "default": "2",
+            "helpText": "How long can the pipeline run?"
+        }
+    ],
+    "values": {
+        "myStartDateTime": "2525-01-01T00:00:00",
+        "myOccurrences": "1000",
+        "myTimeout": "2"
+    }
+}
