@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 import psycopg2
 import psycopg2.extensions
-from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl.config
 import etl.db
@@ -280,7 +280,7 @@ def determine_data_format_parameters(data_format, format_option, file_compressio
 
 
 def copy_using_manifest(
-    conn: connection,
+    conn: Connection,
     table_name: TableName,
     column_list: List[str],
     s3_uri: str,
@@ -331,7 +331,7 @@ def copy_using_manifest(
                 raise TransientETLError(exc) from exc
 
 
-def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
+def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
     stmt = """
         SELECT TRIM(filename) AS filename
              , lines_scanned
@@ -349,7 +349,7 @@ def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry
         )
 
 
-def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -> None:
+def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -> None:
     # This query is not guarded by "dry_run" so that we have a copy_id for the other query.
     [[copy_count, copy_id]] = etl.db.query(conn, "SELECT pg_last_copy_count(), pg_last_copy_id()")
 
@@ -381,7 +381,7 @@ def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -
 
 
 def copy_from_uri(
-    conn: connection,
+    conn: Connection,
     table_name: TableName,
     column_list: List[str],
     s3_uri: str,
@@ -408,7 +408,7 @@ def copy_from_uri(
 
 
 def insert_from_query(
-    conn: connection, table_name: TableName, column_list: List[str], query_stmt: str, dry_run=False
+    conn: Connection, table_name: TableName, column_list: List[str], query_stmt: str, dry_run=False
 ) -> None:
     """Load data into table in the data warehouse using the INSERT INTO command."""
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
@@ -427,3 +427,38 @@ def insert_from_query(
             else:
                 logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
                 raise
+
+
+def unload(
+    conn: Connection,
+    table_name: TableName,
+    columns: List[str],
+    unload_path: str,
+    aws_iam_role: str,
+    allow_overwrite=False,
+) -> None:
+    """
+    Execute the UNLOAD command for the given relation (via a select statement).
+
+    Optionally allow users to overwrite previously unloaded data within the same keyspace.
+    """
+    credentials = f"aws_iam_role={aws_iam_role}"
+    # TODO(tom): Need to review why we can't use r"\N"
+    null_string = "\\\\N"
+    unload_statement = """
+        UNLOAD ('
+            SELECT {}
+            FROM {}
+        ')
+        TO '{}'
+        CREDENTIALS '{}' MANIFEST
+        DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS '{}'
+        """.format(
+        "\n                 , ".join(columns), table_name, unload_path, credentials, null_string
+    )
+    if allow_overwrite:
+        unload_statement += "ALLOWOVERWRITE"
+
+    logger.info("Unloading data from '%s' to '%s'", table_name.identifier, unload_path)
+    with etl.db.log_error():
+        etl.db.execute(conn, unload_statement)

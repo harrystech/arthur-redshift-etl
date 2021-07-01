@@ -26,6 +26,7 @@ from psycopg2.extensions import connection as Connection  # only for type annota
 
 import etl
 import etl.db
+import etl.dialect.redshift
 import etl.monitor
 import etl.s3
 from etl.config.dw import DataWarehouseSchema
@@ -34,37 +35,6 @@ from etl.relation import RelationDescription
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-
-def run_redshift_unload(
-    conn: Connection, relation: RelationDescription, unload_path: str, aws_iam_role: str, allow_overwrite=False
-) -> None:
-    """
-    Execute the UNLOAD command for the given relation (via a select statement).
-
-    Optionally allow users to overwrite previously unloaded data within the same keyspace.
-    """
-    credentials = "aws_iam_role={}".format(aws_iam_role)
-    # TODO Need to review why we can't use r"\N"
-    null_string = "\\\\N"
-    columns = ", ".join(relation.columns)
-    unload_statement = """
-        UNLOAD ('
-            SELECT {}
-            FROM {}
-        ')
-        TO '{}'
-        CREDENTIALS '{}' MANIFEST
-        DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS '{}'
-        """.format(
-        columns, relation, unload_path, credentials, null_string
-    )
-    if allow_overwrite:
-        unload_statement += "ALLOWOVERWRITE"
-
-    logger.info("Unloading data from '%s' to '%s'", relation.identifier, unload_path)
-    with etl.db.log_error():
-        etl.db.execute(conn, unload_statement)
 
 
 def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
@@ -113,7 +83,7 @@ def unload_relation(
         schema=schema,
         source=relation.target_table_name,
     )
-    unload_path = "s3://{}/{}/".format(schema.s3_bucket, s3_key_prefix)
+    unload_path = f"s3://{schema.s3_bucket}/{s3_key_prefix}/"
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
 
     with etl.monitor.Monitor(
@@ -128,7 +98,14 @@ def unload_relation(
             logger.info("Dry-run: Skipping unload of '%s' to '%s'", relation.identifier, unload_path)
             return
 
-        run_redshift_unload(conn, relation, unload_path, aws_iam_role, allow_overwrite=allow_overwrite)
+        etl.dialect.redshift.unload(
+            conn,
+            relation.target_table_name,
+            relation.columns,
+            unload_path,
+            aws_iam_role,
+            allow_overwrite=allow_overwrite,
+        )
         write_columns_file(relation, schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
         write_success_file(schema.s3_bucket, s3_key_prefix, dry_run=dry_run)
 
@@ -154,10 +131,10 @@ def unload_to_s3(
     relation_target_tuples = []
     for relation in unloadable_relations:
         if relation.unload_target not in target_lookup:
-            raise TableDesignSemanticError("Unload target specified, but not defined: '%s'" % relation.unload_target)
+            raise TableDesignSemanticError(f"unload target specified, but not defined: '{relation.unload_target}'")
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
-    error_occurred = False
+    errors_occurred = 0
     conn = etl.db.connection(config.dsn_etl, autocommit=True, readonly=True)
     with closing(conn) as conn:
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
@@ -165,12 +142,11 @@ def unload_to_s3(
                 index = {"current": i + 1, "final": len(relation_target_tuples)}
                 unload_relation(conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run)
             except Exception as exc:
-                if keep_going:
-                    error_occurred = True
-                    logger.warning("Unload failed for '%s'", relation.identifier)
-                    logger.exception("Ignoring this exception and proceeding as requested:")
-                else:
+                if not keep_going:
                     raise DataUnloadError(exc) from exc
+                errors_occurred += 1
+                logger.warning("Unload failed for '%s'", relation.identifier)
+                logger.exception("Ignoring this exception and proceeding as requested:")
 
-    if error_occurred:
-        raise ETLDelayedExit("At least one error occurred while unloading with 'keep going' option")
+    if errors_occurred > 0:
+        raise ETLDelayedExit(f"unload encountered {errors_occurred} error(s) while running with 'keep going' option")
