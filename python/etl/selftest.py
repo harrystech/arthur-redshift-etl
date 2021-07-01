@@ -9,6 +9,8 @@ from typing import Optional
 # Skip etl.commands to avoid circular dependency
 import etl.config
 import etl.config.env
+import etl.config.log
+import etl.config.settings
 import etl.data_warehouse
 import etl.db
 import etl.design
@@ -25,9 +27,9 @@ import etl.monitor
 import etl.names
 import etl.pipeline
 import etl.relation
-import etl.render_template
 import etl.s3
 import etl.sync
+import etl.templates
 import etl.text
 import etl.timer
 import etl.unload
