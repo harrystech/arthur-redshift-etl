@@ -34,15 +34,15 @@ def approx_pretty_size(total_bytes) -> str:
     """
     if total_bytes < 0:
         raise ValueError("total_bytes may not be negative")
-    for scale, unit in ((1024 * 1024 * 1024, "GB"), (1024 * 1024, "MB"), (1024, "KB")):
+    for scale, _unit in ((1024 * 1024 * 1024, "GB"), (1024 * 1024, "MB"), (1024, "KB")):
         div, rem = divmod(total_bytes, scale)
         if div > 0:
             if rem > 0:
                 div += 1  # always round up
             break
     else:
-        div, unit = 1, "KB"
-    return "{:d}{}".format(div, unit)
+        div, _unit = 1, "KB"
+    return f"{div:d}{_unit}"
 
 
 def join_with_single_quotes(names: Iterable[str]) -> str:
@@ -145,7 +145,7 @@ def format_lines(
     (0 rows)
     >>> format_lines([["a", "b"], ["c"]])
     Traceback (most recent call last):
-    ValueError: unexpected row length: got 1, expected 2
+    ValueError: unexpected length of row 2: got 1, expected 2
     """
     if header_row is not None and has_header is True:
         raise ValueError("cannot have separate header row and mark first row as header")
@@ -174,7 +174,7 @@ def format_lines(
     # Quick check whether we built the matrix correctly.
     for i, row in enumerate(matrix):
         if len(row) != column_count:
-            raise ValueError("unexpected row length: got {:d}, expected {:d}".format(len(row), column_count))
+            raise ValueError(f"unexpected length of row {i + 1}: got {len(row)}, expected {column_count}")
 
     if row_count == 0 and not (has_header or header_row):
         formatted = ""

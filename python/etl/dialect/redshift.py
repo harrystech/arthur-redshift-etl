@@ -88,14 +88,12 @@ def build_table_constraints(table_design: dict) -> List[str]:
     ['PRIMARY KEY ( "id" )', 'UNIQUE ( "name", "email" )']
     """
     table_constraints = table_design.get("constraints", [])
-    type_lookup = dict(
-        [
-            ("primary_key", "PRIMARY KEY"),
-            ("surrogate_key", "PRIMARY KEY"),
-            ("unique", "UNIQUE"),
-            ("natural_key", "UNIQUE"),
-        ]
-    )
+    type_lookup = {
+        "primary_key": "PRIMARY KEY",
+        "surrogate_key": "PRIMARY KEY",
+        "unique": "UNIQUE",
+        "natural_key": "UNIQUE",
+    }
     ddl_for_constraints = []
     for constraint in table_constraints:
         [[constraint_type, column_list]] = constraint.items()

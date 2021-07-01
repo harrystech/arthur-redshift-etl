@@ -36,7 +36,7 @@ def _get_s3_bucket(bucket_name: str):
         # When multi-threaded, we can't use the default session. So keep one per thread.
         session = boto3.session.Session()
         s3 = session.resource("s3")
-        setattr(_resources_for_thread, "s3", s3)
+        _resources_for_thread.s3 = s3
     return s3.Bucket(bucket_name)
 
 

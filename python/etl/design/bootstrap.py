@@ -160,7 +160,7 @@ def fetch_constraints(cx: Connection, table_name: TableName) -> List[Dict[str, L
         cond = " OR ".join("a.attnum = i.indkey[%d]" % i for i in range(nr_atts))
         attributes = etl.db.query(cx, stmt_att.format(cond=cond), (index_id,))
         if attributes:
-            columns = list(att["name"] for att in attributes)
+            columns = [att["name"] for att in attributes]
             constraint: Dict[str, List[str]] = {constraint_type: columns}
             logger.info(
                 "Index '%s' of '%s' adds constraint %s",

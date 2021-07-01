@@ -90,14 +90,14 @@ def _dsn_connection_values(dsn_dict: Dict[str, str], application_name: str) -> d
     """
     # See https://www.postgresql.org/docs/10/libpq-connect.html for the keepalive* args.
     # and https://docs.aws.amazon.com/redshift/latest/mgmt/connecting-firewall-guidance.html
-    dsn_values = dict(
-        application_name=application_name,
-        connect_timeout=30,
-        cursor_factory=psycopg2.extras.DictCursor,
-        keepalives=1,
-        keepalives_idle=30,
-        keepalives_interval=60,
-    )
+    dsn_values = {
+        "application_name": application_name,
+        "connect_timeout": 30,
+        "cursor_factory": psycopg2.extras.DictCursor,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 60,
+    }
     dsn_values.update(dsn_dict)
     dsn_values.pop("subprotocol", None)
     return dsn_values
@@ -308,8 +308,8 @@ def log_sql_error(exc):
     Send information from psycopg2.Error instance to logfile.
 
     See PostgreSQL documentation at
-    http://www.postgresql.org/docs/current/static/libpq-exec.html#LIBPQ-PQRESULTERRORFIELD
-    and psycopg2 documentation at http://initd.org/psycopg/docs/extensions.html
+    https://www.postgresql.org/docs/current/libpq-exec.html#LIBPQ-PQRESULTERRORFIELD
+    and psycopg2 documentation at https://www.psycopg.org/docs/extensions.html
     """
     if exc.pgcode is not None:
         logger.error('SQL ERROR "%s" %s', exc.pgcode, str(exc.pgerror).strip())

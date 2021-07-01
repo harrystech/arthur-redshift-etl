@@ -258,7 +258,7 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
 
     The settings are validated against their schema.
     """
-    settings: Dict[str, Any] = dict()
+    settings: Dict[str, Any] = {}
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):

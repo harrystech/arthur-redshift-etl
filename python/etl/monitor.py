@@ -368,7 +368,7 @@ class DynamoDBStorage(PayloadDispatcher):
             table = getattr(self._thread_local_table, "table", None)
             if not table:
                 table = self.get_table()
-                setattr(self._thread_local_table, "table", table)
+                self._thread_local_table.table = table
             item = dict(payload)
             # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
             # But decimals maybe finicky when instantiated from float so we make sure to fix the
@@ -381,10 +381,10 @@ class DynamoDBStorage(PayloadDispatcher):
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
                 logger.warning("Trying to store payload a second time after this mishap:", exc_info=True)
+                self._thread_local_table.table = None
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
                 time.sleep(delay)
-                setattr(self._thread_local_table, "table", None)
                 self.store(payload, _retry=False)
             else:
                 raise
@@ -905,7 +905,7 @@ def test_run():
     host = MemoryStorage.SERVER_HOST if MemoryStorage.SERVER_HOST else "localhost"
     print("Creating events ... follow along at http://{}:{}/".format(host, MemoryStorage.SERVER_PORT))
 
-    with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
+    with Monitor("color.fruit", "test", index={"current": 1, "final": 1, "name": "outer"}):
         for i, names in enumerate(itertools.product(schema_names, table_names)):
             try:
                 with Monitor(".".join(names), "test", index=dict(index, current=i + 1)):
