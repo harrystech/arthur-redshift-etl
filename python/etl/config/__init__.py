@@ -9,7 +9,6 @@ We use the term "config" files to refer to all files that may reside in the "con
 
 import datetime
 import logging
-import logging.config
 import os
 import os.path
 import re
@@ -18,16 +17,13 @@ from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Set
 
-import boto3
 import jsonschema
 import pkg_resources
 import simplejson as json
-import watchtower
 import yaml
 from simplejson.errors import JSONDecodeError
 
 import etl.config.dw
-import etl.monitor
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
 
@@ -40,7 +36,7 @@ _dw_config: Optional[DataWarehouseConfig] = None
 _mapped_config: Optional[Dict[str, str]] = None
 
 # Local temp directory used for bootstrap, temp files, etc.
-# TODO(tom): This is a misnomer -- it's also the install dir on EC2 hosts.
+# TODO(tom): This is a misnomer -- it's also the install directory on EC2 hosts.
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
@@ -137,33 +133,6 @@ def _build_config_map(settings):
 def etl_tmp_dir(path: str) -> str:
     """Return the absolute path within the ETL runtime directory for the selected path."""
     return os.path.join(ETL_TMP_DIR, path)
-
-
-def configure_logging(full_format: bool = False, log_level: str = None) -> None:
-    """
-    Set up logging to go to console and application log file.
-
-    If full_format is True, then use the terribly verbose format of
-    the application log file also for the console.  And log at the DEBUG level.
-    Otherwise, you can choose the log level by passing one in.
-    """
-    config = load_json("logging.json")
-    if full_format:
-        config["formatters"]["console"] = dict(config["formatters"]["file"])
-        config["handlers"]["console"]["level"] = logging.DEBUG
-    elif log_level:
-        config["handlers"]["console"]["level"] = log_level
-    session = boto3.session.Session(region_name="us-east-1")
-    config["handlers"]["watchtower"]["boto3_session"] = session
-    config["handlers"]["watchtower"]["log_group"] = "/dw/one-off-testing"
-    logging.config.dictConfig(config)
-    # Ignored due to lack of stub in type checking library
-    logging.captureWarnings(True)  # type: ignore
-    logger.info("Starting log for %s with ETL ID %s", package_version(), etl.monitor.Monitor.etl_id)
-    logger.info('Command line: "%s"', " ".join(sys.argv))
-    logger.debug("Current working directory: '%s'", os.getcwd())
-    logger.info(get_release_info())
-    logger.debug(get_python_info())
 
 
 def load_environ_file(filename: str) -> None:
@@ -263,7 +232,7 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
 
     The settings are validated against their schema.
     """
-    settings: Dict[str, Any] = dict()
+    settings: Dict[str, Any] = {}
     count_settings = 0
     for filename in yield_config_files(config_files, default_file):
         if filename.endswith(".sh"):
@@ -276,7 +245,9 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
-        raise ETLRuntimeError("failed to find enough configuration files (need at least default and local config)")
+        raise ETLRuntimeError(
+            "failed to find enough configuration files (need at least default and local config)"
+        )
 
     validate_with_schema(settings, "settings.schema")
 

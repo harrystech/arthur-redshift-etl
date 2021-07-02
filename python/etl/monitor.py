@@ -226,7 +226,9 @@ class Monitor(metaclass=MetaMonitor):
             ]
             logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
 
-        payload = MonitorPayload(self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra)
+        payload = MonitorPayload(
+            self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra
+        )
         payload.emit(dry_run=self._dry_run)
 
     def add_extra(self, key, value):
@@ -352,7 +354,9 @@ class DynamoDBStorage(PayloadDispatcher):
         if status != "ACTIVE":
             logger.info("Waiting for events table '%s' to become active", self.table_name)
             table.wait_until_exists()
-            logger.debug("Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn)
+            logger.debug(
+                "Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn
+            )
         return table
 
     def store(self, payload: dict, _retry: bool = True):
@@ -368,7 +372,7 @@ class DynamoDBStorage(PayloadDispatcher):
             table = getattr(self._thread_local_table, "table", None)
             if not table:
                 table = self.get_table()
-                setattr(self._thread_local_table, "table", table)
+                self._thread_local_table.table = table
             item = dict(payload)
             # Cast timestamp (and elapsed seconds) into Decimal since DynamoDB cannot handle float.
             # But decimals maybe finicky when instantiated from float so we make sure to fix the
@@ -381,10 +385,10 @@ class DynamoDBStorage(PayloadDispatcher):
             # Something bad happened while talking to the service ... just try one more time
             if _retry:
                 logger.warning("Trying to store payload a second time after this mishap:", exc_info=True)
+                self._thread_local_table.table = None
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
                 time.sleep(delay)
-                setattr(self._thread_local_table, "table", None)
                 self.store(payload, _retry=False)
             else:
                 raise
@@ -590,7 +594,9 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
     table = ddb.get_table(create_if_not_exists=False)
     response = table.query(
         ConsistentRead=True,
-        ExpressionAttributeNames={"#timestamp": "timestamp"},  # "timestamp" is a reserved word. You're welcome.
+        ExpressionAttributeNames={
+            "#timestamp": "timestamp"
+        },  # "timestamp" is a reserved word. You're welcome.
         ExpressionAttributeValues=attribute_values,
         KeyConditionExpression="target = :marker and #timestamp > :epoch_seconds",
         FilterExpression=filter_exp,
@@ -664,7 +670,9 @@ def scan_etl_events(etl_id, selected_columns: Optional[Iterable[str]] = None) ->
         consumed_capacity += response["ConsumedCapacity"]["CapacityUnits"]
         scanned_count += response["ScannedCount"]
         # We need to turn something like "'event': {'S': 'finish'}" into "'event': 'finish'".
-        deserialized = [{key: deserialize(value) for key, value in item.items()} for item in response["Items"]]
+        deserialized = [
+            {key: deserialize(value) for key, value in item.items()} for item in response["Items"]
+        ]
         # Lookup "elapsed" or "extra.rowcount" (the latter as ["extra", "rowcount"]).
         items = [{key: fy.get_in(item, key.split(".")) for key in keys} for item in deserialized]
         # Scope down to selected keys and format the columns.
@@ -726,7 +734,9 @@ class BackgroundQueriesRunner(threading.Thread):
     longer be tried.
     """
 
-    def __init__(self, targets, query, consumer_queue, start_time, update_interval, idle_time_out, **kwargs) -> None:
+    def __init__(
+        self, targets, query, consumer_queue, start_time, update_interval, idle_time_out, **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self.targets = list(targets)
         self.query = query
@@ -770,7 +780,9 @@ class BackgroundQueriesRunner(threading.Thread):
                 break
             if query_loop.elapsed < self.update_interval:
                 time.sleep(self.update_interval - query_loop.elapsed)
-        logger.info("Found events for %d out of %d target(s)", len(self.targets) - len(targets), len(self.targets))
+        logger.info(
+            "Found events for %d out of %d target(s)", len(self.targets) - len(targets), len(self.targets)
+        )
         self.queue.put(None)
 
 
@@ -821,7 +833,9 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
 
     events = []
     schema_events: Dict[str, Dict[str, Union[str, Decimal]]] = {}
-    for relation in tqdm(desc="Querying for events", disable=None, iterable=relations, leave=False, unit="table"):
+    for relation in tqdm(
+        desc="Querying for events", disable=None, iterable=relations, leave=False, unit="table"
+    ):
         event = query(table, relation.identifier, latest_start)
         if event:
             # Make the column for row counts easier to read by dropping "extra.".
@@ -852,7 +866,9 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     print(etl.text.format_lines(rows, header_row=keys))
 
 
-def tail_events(relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str] = None) -> None:
+def tail_events(
+    relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str] = None
+) -> None:
     """Tail the events table and show latest finish or fail events coming in."""
     targets = [relation.identifier for relation in relations]
     query = EventsQuery(step)
@@ -875,7 +891,9 @@ def tail_events(relations, start_time, update_interval=None, idle_time_out=None,
                 if event is None:
                     done = True
                     break
-                event["timestamp"] = datetime.utcfromtimestamp(event["timestamp"]).isoformat()  # timestamp to isoformat
+                event["timestamp"] = datetime.utcfromtimestamp(
+                    event["timestamp"]
+                ).isoformat()  # timestamp to isoformat
                 events.append(event)
             except queue.Empty:
                 break
@@ -905,7 +923,7 @@ def test_run():
     host = MemoryStorage.SERVER_HOST if MemoryStorage.SERVER_HOST else "localhost"
     print("Creating events ... follow along at http://{}:{}/".format(host, MemoryStorage.SERVER_PORT))
 
-    with Monitor("color.fruit", "test", index=dict(current=1, final=1, name="outer")):
+    with Monitor("color.fruit", "test", index={"current": 1, "final": 1, "name": "outer"}):
         for i, names in enumerate(itertools.product(schema_names, table_names)):
             try:
                 with Monitor(".".join(names), "test", index=dict(index, current=i + 1)):

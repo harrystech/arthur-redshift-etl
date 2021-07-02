@@ -11,7 +11,9 @@ def show_ddl(relations: List[RelationDescription]) -> None:
         if i > 0:
             print()
         if relation.is_view_relation:
-            ddl_stmt = build_view_ddl(relation.target_table_name, relation.unquoted_columns, relation.query_stmt)
+            ddl_stmt = build_view_ddl(
+                relation.target_table_name, relation.unquoted_columns, relation.query_stmt
+            )
         else:
             ddl_stmt = build_table_ddl(relation.target_table_name, relation.table_design)
         print("-- arthur.target: {table}".format(table=relation.target_table_name.identifier))
