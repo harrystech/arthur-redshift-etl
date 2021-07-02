@@ -342,12 +342,12 @@ def test_object_creation(bucket_name: str, prefix: str) -> None:
 if __name__ == "__main__":
     import sys
 
-    import etl.config.log
+    import etl.logs
 
     if len(sys.argv) != 3:
         print("Usage: {} bucket_name prefix".format(sys.argv[0]))
         print("This will create a test object under s3://[bucket_name]/[prefix] and delete afterwards.")
         sys.exit(1)
 
-    etl.config.log.configure_logging(log_level="DEBUG")
+    etl.logs.configure_logging(log_level="DEBUG")
     test_object_creation(sys.argv[1], sys.argv[2])

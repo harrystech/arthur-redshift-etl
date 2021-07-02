@@ -9,7 +9,6 @@ from typing import Optional
 # Skip etl.commands to avoid circular dependency
 import etl.config
 import etl.config.env
-import etl.config.log
 import etl.config.settings
 import etl.data_warehouse
 import etl.db
@@ -23,6 +22,8 @@ import etl.extract
 import etl.file_sets
 import etl.json_encoder
 import etl.load
+import etl.logs.cloudwatch
+import etl.logs.formatter
 import etl.monitor
 import etl.names
 import etl.pipeline

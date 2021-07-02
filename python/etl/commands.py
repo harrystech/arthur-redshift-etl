@@ -22,7 +22,6 @@ from termcolor import colored
 
 import etl.config
 import etl.config.env
-import etl.config.log
 import etl.config.settings
 import etl.data_warehouse
 import etl.db
@@ -33,6 +32,8 @@ import etl.extract
 import etl.file_sets
 import etl.json_encoder
 import etl.load
+import etl.logs
+import etl.logs.cloudwatch
 import etl.monitor
 import etl.names
 import etl.pipeline
@@ -104,6 +105,16 @@ def execute_or_bail():
         logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
+def log_command_line():
+    logger.info(
+        "Starting log for %s with ETL ID %s", etl.config.package_version(), etl.monitor.Monitor.etl_id
+    )
+    logger.info('Command line: "%s"', " ".join(sys.argv))
+    logger.debug("Current working directory: '%s'", os.getcwd())
+    logger.info(etl.config.get_release_info())
+    logger.debug(etl.config.get_python_info())
+
+
 def run_arg_as_command(my_name="arthur.py"):
     """
     Use the sub-command's callback in `func` to actually run the sub-command.
@@ -112,44 +123,55 @@ def run_arg_as_command(my_name="arthur.py"):
     """
     parser = build_full_parser(my_name)
     args = parser.parse_args()
+
     if not args.func:
         parser.print_usage()
-    elif args.cluster_id is not None:
+        return
+
+    if args.cluster_id is not None:
         submit_step(args.cluster_id, args.sub_command)
-    else:
-        # We need to configure logging before running context because that context expects
-        # logging to be setup.
-        try:
-            etl.config.log.configure_logging(args.prolix, args.log_level)
-        except Exception as exc:
-            croak(exc, 1)
+        return
 
-        with execute_or_bail():
-            etl.config.load_config(args.config)
+    # We need to configure logging before running context because that context expects
+    # logging to be setup.
+    try:
+        etl.logs.configure_logging(args.prolix, args.log_level)
+    except Exception as exc:
+        croak(exc, 1)
 
-            if hasattr(args, "prefix"):
-                # Any command where we can select the "prefix" also needs the bucket.
-                # TODO(tom): Need to differentiate between object store (schemas) and data lake
-                #     (extracted or unloaded data)
-                args.bucket_name = etl.config.get_config_value("object_store.s3.bucket_name")
-                etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
+    with execute_or_bail():
+        log_command_line()
+        etl.config.load_config(args.config)
 
-                # Create name used as prefix for resources, like DynamoDB tables or SNS topics
-                base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
-                etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
+        # The region must be set for most boto3 calls to succeed.
+        os.environ["AWS_DEFAULT_REGION"] = etl.config.get_config_value("resources.VPC.region")
 
-                if getattr(args, "use_monitor", False):
-                    etl.monitor.start_monitors(args.prefix)
+        if hasattr(args, "prefix"):
+            # Any command where we can select the "prefix" also needs the bucket.
+            # TODO(tom): Need to differentiate between object store (schemas) and data lake
+            #     (extracted or unloaded data)
+            args.bucket_name = etl.config.get_config_value("object_store.s3.bucket_name")
+            etl.config.set_config_value("object_store.s3.prefix", args.prefix)
+            etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
 
-            # The region must be set for most boto3 calls to succeed.
-            os.environ["AWS_DEFAULT_REGION"] = etl.config.get_config_value("resources.VPC.region")
+            # Create name used as prefix for resources, like DynamoDB tables or SNS topics
+            base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
+            etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
+        elif etl.config.get_config_value("object_store.s3.prefix") is None:
+            etl.config.set_config_value("object_store.s3.prefix", etl.config.env.get_default_prefix())
 
-            dw_config = etl.config.get_dw_config()
-            if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
-                args.pattern.base_schemas = [schema.name for schema in dw_config.schemas]
+        if etl.config.get_config_value("arthur_settings.logging.cloudwatch.enabled"):
+            prefix = etl.config.get_config_value("object_store.s3.prefix")
+            etl.logs.cloudwatch.add_cloudwatch_logging(prefix)
 
-            args.func(args)
+        if getattr(args, "use_monitor", False):
+            etl.monitor.start_monitors(args.prefix)
+
+        dw_config = etl.config.get_dw_config()
+        if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
+            args.pattern.base_schemas = [schema.name for schema in dw_config.schemas]
+
+        args.func(args)
 
 
 def submit_step(cluster_id, sub_command):
@@ -350,6 +372,7 @@ def build_full_parser(prog_name):
         QueryEventsCommand,
         SummarizeEventsCommand,
         TailEventsCommand,
+        TailLogsCommand,
         # General and development commands
         ShowHelpCommand,
         SelfTestCommand,
@@ -1642,7 +1665,7 @@ class RenderTemplateCommand(SubCommand):
             etl.templates.list_templates(compact=args.compact)
             return
 
-        etl.templates.render(args.template, compact=args.compact)
+        print(etl.templates.render(args.template, compact=args.compact), end="")
 
 
 class ShowValueCommand(SubCommand):
@@ -1819,6 +1842,21 @@ class TailEventsCommand(SubCommand):
             idle_time_out=idle_time_out,
             step=args.step,
         )
+
+
+class TailLogsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "tail_logs",
+            "show latest logs from CloudWatch",
+            "Show logs from CloudWatch for the last 15 minutes",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix"])
+
+    def callback(self, args):
+        etl.logs.cloudwatch.tail(args.prefix)
 
 
 class ShowHelpCommand(SubCommand):
