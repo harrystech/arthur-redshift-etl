@@ -487,7 +487,7 @@ def _sanitize_dependencies(descriptions: Sequence[SortableRelationDescription]) 
     has_pg_catalog_dependencies = set()
     known_unknowns = set()
 
-    for initial_order, description in enumerate(descriptions):
+    for description in descriptions:
         unmanaged_dependencies = frozenset(dep for dep in description.dependencies if not dep.is_managed)
         pg_catalog_dependencies = frozenset(
             dep for dep in description.dependencies if dep.schema == "pg_catalog"
@@ -600,7 +600,7 @@ def order_by_dependencies(relation_descriptions: Sequence[RelationDescription]) 
             sortable.original_description._execution_order = sortable.order
             sortable.original_description._execution_level = sortable.level
 
-    return [description for description in sorted(relation_descriptions, key=attrgetter("execution_order"))]
+    return sorted(relation_descriptions, key=attrgetter("execution_order"))
 
 
 def set_required_relations(
@@ -848,12 +848,12 @@ if __name__ == "__main__":
     etl.config.load_config([config_dir])
     dw_config = etl.config.get_dw_config()
     base_schemas = [s.name for s in dw_config.schemas]
-    selector = etl.names.TableSelector(base_schemas=base_schemas)
+    selector = TableSelector(base_schemas=base_schemas)
     required_selector = dw_config.required_in_full_load_selector
     file_sets = etl.file_sets.find_file_sets(uri_parts, selector)
     descriptions = RelationDescription.from_file_sets(file_sets, required_relation_selector=required_selector)
     if len(sys.argv) > 1:
-        selector = etl.names.TableSelector(sys.argv[1:])
+        selector = TableSelector(sys.argv[1:])
         descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
 
     native = [d.table_design for d in descriptions]

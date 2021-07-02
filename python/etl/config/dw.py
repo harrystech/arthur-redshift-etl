@@ -5,7 +5,7 @@ from typing import Dict
 import etl.config.env
 import etl.db
 import etl.names
-import etl.render_template
+import etl.templates
 from etl.errors import ETLConfigError, InvalidEnvironmentError
 
 
@@ -97,21 +97,21 @@ class DataWarehouseSchema:
     @property
     def s3_bucket(self) -> str:
         """Render S3 Bucket name (if it references Arthur configuration, e.g., the data lake)."""
-        return etl.render_template.render_from_config(
+        return etl.templates.render_from_config(
             self._s3_bucket_template, context="s3_bucket of schema '{}'".format(self.name)
         )
 
     @property
     def s3_path_prefix(self) -> str:
         """Render S3 path prefix in particular wrt. prefix (environment) and dates."""
-        return etl.render_template.render_from_config(
+        return etl.templates.render_from_config(
             self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name)
         )
 
     @property
     def s3_unload_path_prefix(self) -> str:
         """Render S3 unload path prefix in particular wrt. prefix (environment) and dates."""
-        return etl.render_template.render_from_config(
+        return etl.templates.render_from_config(
             self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name)
         )
 

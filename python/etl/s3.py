@@ -36,7 +36,7 @@ def _get_s3_bucket(bucket_name: str):
         # When multi-threaded, we can't use the default session. So keep one per thread.
         session = boto3.session.Session()
         s3 = session.resource("s3")
-        setattr(_resources_for_thread, "s3", s3)
+        _resources_for_thread.s3 = s3
     return s3.Bucket(bucket_name)
 
 
@@ -342,12 +342,12 @@ def test_object_creation(bucket_name: str, prefix: str) -> None:
 if __name__ == "__main__":
     import sys
 
-    import etl.config
+    import etl.config.log
 
     if len(sys.argv) != 3:
         print("Usage: {} bucket_name prefix".format(sys.argv[0]))
         print("This will create a test object under s3://[bucket_name]/[prefix] and delete afterwards.")
         sys.exit(1)
 
-    etl.config.configure_logging(log_level="DEBUG")
+    etl.config.log.configure_logging(log_level="DEBUG")
     test_object_creation(sys.argv[1], sys.argv[2])
