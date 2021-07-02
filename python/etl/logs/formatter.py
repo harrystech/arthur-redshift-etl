@@ -1,6 +1,7 @@
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 
 import simplejson as json
 from termcolor import colored
@@ -32,10 +33,18 @@ class JsonFormatter(logging.Formatter):
         super().__init__()
         self.environment = environment
 
+    def as_utc_iso8601(self, ts) -> str:
+        return (
+            datetime.fromtimestamp(ts, timezone.utc)
+            .isoformat("T", timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+
     def format(self, record: logging.LogRecord) -> str:
         """Format log record by creating a JSON-format in a string."""
         values = {
             "environment": self.environment,
+            "gmtime": self.as_utc_iso8601(record.created),
             "log_level": record.levelname,
             "log_severity": record.levelno,
             "logger": record.name,
@@ -48,5 +57,6 @@ class JsonFormatter(logging.Formatter):
             "source.module": record.module,
             "source.pathname": record.pathname,
             "thread.name": record.threadName,
+            "timestamp": int(record.created * 1000.0),
         }
         return json.dumps(values, default=str, separators=(",", ":"), sort_keys=True)

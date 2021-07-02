@@ -22,7 +22,7 @@ import etl.extract
 import etl.file_sets
 import etl.json_encoder
 import etl.load
-import etl.logs.config
+import etl.logs.cloudwatch
 import etl.logs.formatter
 import etl.monitor
 import etl.names

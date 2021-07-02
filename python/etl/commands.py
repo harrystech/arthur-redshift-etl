@@ -32,7 +32,8 @@ import etl.extract
 import etl.file_sets
 import etl.json_encoder
 import etl.load
-import etl.logs.config
+import etl.logs
+import etl.logs.cloudwatch
 import etl.monitor
 import etl.names
 import etl.pipeline
@@ -134,7 +135,7 @@ def run_arg_as_command(my_name="arthur.py"):
     # We need to configure logging before running context because that context expects
     # logging to be setup.
     try:
-        etl.logs.config.configure_logging(args.prolix, args.log_level)
+        etl.logs.configure_logging(args.prolix, args.log_level)
     except Exception as exc:
         croak(exc, 1)
 
@@ -156,9 +157,12 @@ def run_arg_as_command(my_name="arthur.py"):
             # Create name used as prefix for resources, like DynamoDB tables or SNS topics
             base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
             etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
+        elif etl.config.get_config_value("object_store.s3.prefix") is None:
+            etl.config.set_config_value("object_store.s3.prefix", etl.config.env.get_default_prefix())
 
         if etl.config.get_config_value("arthur_settings.logging.cloudwatch.enabled"):
-            etl.logs.config.configure_cloudwatch_logging()
+            prefix = etl.config.get_config_value("object_store.s3.prefix")
+            etl.logs.cloudwatch.add_cloudwatch_logging(prefix)
 
         if getattr(args, "use_monitor", False):
             etl.monitor.start_monitors(args.prefix)
@@ -368,6 +372,7 @@ def build_full_parser(prog_name):
         QueryEventsCommand,
         SummarizeEventsCommand,
         TailEventsCommand,
+        TailLogsCommand,
         # General and development commands
         ShowHelpCommand,
         SelfTestCommand,
@@ -1837,6 +1842,21 @@ class TailEventsCommand(SubCommand):
             idle_time_out=idle_time_out,
             step=args.step,
         )
+
+
+class TailLogsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "tail_logs",
+            "show latest logs from CloudWatch",
+            "Show logs from CloudWatch for the last 15 minutes",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix"])
+
+    def callback(self, args):
+        etl.logs.cloudwatch.tail(args.prefix)
 
 
 class ShowHelpCommand(SubCommand):
