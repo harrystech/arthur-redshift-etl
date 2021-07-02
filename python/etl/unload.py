@@ -79,9 +79,11 @@ def unload_relation(
     dry_run=False,
 ) -> None:
     """Unload data from table in the data warehouse using the UNLOAD command of Redshift."""
-    s3_key_prefix = "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
-        schema=schema,
-        source=relation.target_table_name,
+    s3_key_prefix = (
+        "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
+            schema=schema,
+            source=relation.target_table_name,
+        )
     )
     unload_path = f"s3://{schema.s3_bucket}/{s3_key_prefix}/"
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
@@ -131,7 +133,9 @@ def unload_to_s3(
     relation_target_tuples = []
     for relation in unloadable_relations:
         if relation.unload_target not in target_lookup:
-            raise TableDesignSemanticError(f"unload target specified, but not defined: '{relation.unload_target}'")
+            raise TableDesignSemanticError(
+                f"unload target specified, but not defined: '{relation.unload_target}'"
+            )
         relation_target_tuples.append((relation, target_lookup[relation.unload_target]))
 
     errors_occurred = 0
@@ -140,7 +144,9 @@ def unload_to_s3(
         for i, (relation, unload_schema) in enumerate(relation_target_tuples):
             try:
                 index = {"current": i + 1, "final": len(relation_target_tuples)}
-                unload_relation(conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run)
+                unload_relation(
+                    conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run
+                )
             except Exception as exc:
                 if not keep_going:
                     raise DataUnloadError(exc) from exc
@@ -149,4 +155,6 @@ def unload_to_s3(
                 logger.exception("Ignoring this exception and proceeding as requested:")
 
     if errors_occurred > 0:
-        raise ETLDelayedExit(f"unload encountered {errors_occurred} error(s) while running with 'keep going' option")
+        raise ETLDelayedExit(
+            f"unload encountered {errors_occurred} error(s) while running with 'keep going' option"
+        )

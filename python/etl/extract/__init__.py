@@ -76,7 +76,9 @@ def extract_upstream_sources(
         return
 
     if extract_type == "manifest-only":
-        database_extractor: Extractor = ManifestOnlyExtractor(database_sources, applicable, keep_going, dry_run)
+        database_extractor: Extractor = ManifestOnlyExtractor(
+            database_sources, applicable, keep_going, dry_run
+        )
     elif extract_type == "spark":
         database_extractor = SparkExtractor(
             database_sources,
@@ -105,5 +107,7 @@ def filter_relations_for_sources(
     selected = [relation for relation in relations if relation.source_name in source_lookup]
     if selected:
         sources = frozenset(relation.source_name for relation in selected)
-        logger.info("Selected %d relation(s) from source(s): %s", len(selected), join_with_single_quotes(sources))
+        logger.info(
+            "Selected %d relation(s) from source(s): %s", len(selected), join_with_single_quotes(sources)
+        )
     return selected

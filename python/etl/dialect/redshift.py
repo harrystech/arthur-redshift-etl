@@ -229,7 +229,9 @@ def log_load_error(cx):
         etl.db.log_sql_error(exc)
         # For load errors, let's get some details from Redshift.
         if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
-            logger.warning("Cannot retrieve error information from 'stl_load_errors' within failed transaction")
+            logger.warning(
+                "Cannot retrieve error information from 'stl_load_errors' within failed transaction"
+            )
         else:
             rows = etl.db.query(
                 cx,
@@ -251,7 +253,10 @@ def log_load_error(cx):
             if rows:
                 row0 = rows.pop()
                 max_len = max(len(k) for k in row0.keys())
-                info = ["{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len) for k in row0.keys()]
+                info = [
+                    "{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len)
+                    for k in row0.keys()
+                ]
                 logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
             else:
                 logger.debug("There was no additional information in 'stl_load_errors'")
@@ -343,9 +348,15 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
         etl.db.skip_query(conn, stmt)
     else:
         rows = etl.db.query(conn, stmt)
-        summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
+        summary = "    " + "\n    ".join(
+            "'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows
+        )
         logger.debug(
-            "Copied %d file(s) into '%s' using manifest '%s':\n%s", len(rows), table_name.identifier, s3_uri, summary
+            "Copied %d file(s) into '%s' using manifest '%s':\n%s",
+            len(rows),
+            table_name.identifier,
+            s3_uri,
+            summary,
         )
 
 

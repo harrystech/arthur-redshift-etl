@@ -186,7 +186,9 @@ def submit_step(cluster_id, sub_command):
         )
         step_id = response["StepIds"][0]
         status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
-        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder)
+        json.dump(
+            status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder
+        )
         sys.stdout.write("\n")
     except Exception as exc:
         logger.exception("Adding step to job flow failed:")
@@ -222,7 +224,9 @@ class FancyArgumentParser(argparse.ArgumentParser):
     def __init__(self, **kwargs) -> None:
         formatter_class = kwargs.pop("formatter_class", WideHelpFormatter)
         fromfile_prefix_chars = kwargs.pop("fromfile_prefix_chars", "@")
-        super().__init__(formatter_class=formatter_class, fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
+        super().__init__(
+            formatter_class=formatter_class, fromfile_prefix_chars=fromfile_prefix_chars, **kwargs
+        )
 
     def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
         """
@@ -395,7 +399,8 @@ def add_standard_arguments(parser, options):
             "--max-concurrency",
             metavar="N",
             type=int,
-            help="set max number of parallel loads to N (overrides 'resources.RedshiftCluster.max_concurrency')",
+            help="set max number of parallel loads to N (overrides "
+            "'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
         parser.add_argument(
@@ -467,12 +472,24 @@ class SubCommand:
         # on them.
         # TODO move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
         group.add_argument(
-            "-v", "--verbose", help="increase verbosity", action="store_const", const="DEBUG", dest="log_level"
+            "-o", "--prolix", action="store_true", default=False, help="send full log to console"
         )
         group.add_argument(
-            "-q", "--quiet", help="decrease verbosity", action="store_const", const="WARNING", dest="log_level"
+            "-v",
+            "--verbose",
+            action="store_const",
+            const="DEBUG",
+            dest="log_level",
+            help="increase verbosity",
+        )
+        group.add_argument(
+            "-q",
+            "--quiet",
+            action="store_const",
+            const="WARNING",
+            dest="log_level",
+            help="decrease verbosity",
         )
         # Cannot be set on the command line since changing it is not supported by file sets.
         parser.set_defaults(table_design_dir="./schemas")
@@ -501,7 +518,9 @@ class SubCommand:
         else:
             raise ETLSystemError("scheme invalid")
 
-    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None, return_all=False):
+    def find_relation_descriptions(
+        self, args, default_scheme=None, required_relation_selector=None, return_all=False
+    ):
         """
         Most commands need to collect file sets and create relation descriptions around those.
 
@@ -527,7 +546,9 @@ class SubCommand:
 
         if not return_all and required_relation_selector is not None:
             descriptions = [
-                description for description in descriptions if args.pattern.match(description.target_table_name)
+                description
+                for description in descriptions
+                if args.pattern.match(description.target_table_name)
             ]
 
         return descriptions
@@ -690,7 +711,11 @@ class RunSqlCommand(SubCommand):
             "-a", "--as-admin-user", help="connect as admin user", action="store_true", dest="use_admin"
         )
         as_user.add_argument(
-            "-e", "--as-etl-user", help="connect as ETL user (default)", action="store_false", dest="use_admin"
+            "-e",
+            "--as-etl-user",
+            action="store_false",
+            dest="use_admin",
+            help="connect as ETL user (default)",
         )
         parser.add_argument(
             action=StorePatternAsSelector,
@@ -746,7 +771,9 @@ class BootstrapSourcesCommand(SubCommand):
         )
 
     def callback(self, args):
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
+        local_files = etl.file_sets.find_file_sets(
+            self.location(args, "file"), args.pattern, allow_empty=True
+        )
         etl.design.bootstrap.bootstrap_sources(
             args.pattern,
             args.table_design_dir,
@@ -893,30 +920,31 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
         group.add_argument(
             "--use-existing-csv-files",
-            help="skip extraction and go straight to creating manifest files, implied default for static sources",
-            const="manifest-only",
             action="store_const",
+            const="manifest-only",
             dest="extractor",
+            help="skip extraction and go straight to creating manifest files "
+            "(implied default for static sources)",
         )
         parser.add_argument(
             "-k",
             "--keep-going",
-            help="extract as much data as possible, ignoring errors along the way",
-            default=False,
             action="store_true",
+            default=False,
+            help="extract as much data as possible, ignoring errors along the way",
         )
         parser.add_argument(
             "-m",
             "--max-partitions",
+            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
             metavar="N",
             type=int,
-            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
         )
         parser.add_argument(
             "--use-sampling",
-            help="use only 10%% of rows in extracted tables that are larger than 100MB",
-            default=False,
             action="store_true",
+            default=False,
+            help="use only 10%% of rows in extracted tables that are larger than 100MB",
         )
 
     def callback(self, args):
@@ -1029,7 +1057,16 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(
-            parser, ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "continue-from", "skip-copy", "dry-run"]
+            parser,
+            [
+                "pattern",
+                "prefix",
+                "max-concurrency",
+                "wlm-query-slots",
+                "continue-from",
+                "skip-copy",
+                "dry-run",
+            ],
         )
         parser.add_argument(
             "--only-selected",
@@ -1355,7 +1392,9 @@ class ExplainQueryCommand(SubCommand):
             # When running locally, we accept that there be only a SQL file.
             local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
             descriptions = [
-                etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.sql_file_name
+                etl.relation.RelationDescription(file_set)
+                for file_set in local_files
+                if file_set.sql_file_name
             ]
         else:
             # When running with S3, we expect full sets of files (SQL plus table design)
@@ -1378,7 +1417,9 @@ class ShowDdlCommand(SubCommand):
     def callback(self, args):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
-            etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
+            etl.relation.RelationDescription(file_set)
+            for file_set in local_files
+            if file_set.design_file_name
         ]
         etl.dialect.show_ddl(descriptions)
 
@@ -1394,14 +1435,20 @@ class CreateIndexCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern"])
-        parser.add_argument("--group", action="append", default=[], help="filter by reader group (repeat as needed)")
-        parser.add_argument("--with-columns", action="store_true", help="add detailed tables with column information")
+        parser.add_argument(
+            "--group", action="append", default=[], help="filter by reader group (repeat as needed)"
+        )
+        parser.add_argument(
+            "--with-columns", action="store_true", help="add detailed tables with column information"
+        )
 
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
-            etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
+            etl.relation.RelationDescription(file_set)
+            for file_set in local_files
+            if file_set.design_file_name
         ]
         unknown = frozenset(args.group).difference(dw_config.groups)
         if unknown:
@@ -1423,10 +1470,16 @@ class ListFilesCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument(
-            "-a", "--long-format", help="add file size and timestamp of last modification", action="store_true"
+            "-a",
+            "--long-format",
+            action="store_true",
+            help="add file size and timestamp of last modification",
         )
         parser.add_argument(
-            "-t", "--sort-by-time", help="sort files by timestamp (and list in single column)", action="store_true"
+            "-t",
+            "--sort-by-time",
+            action="store_true",
+            help="sort files by timestamp (and list in single column)",
         )
 
     def callback(self, args):
@@ -1445,10 +1498,18 @@ class PingCommand(SubCommand):
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
-            "-a", "--as-admin-user", help="try to connect as admin user", action="store_true", dest="use_admin"
+            "-a",
+            "--as-admin-user",
+            action="store_true",
+            dest="use_admin",
+            help="try to connect as admin user",
         )
         group.add_argument(
-            "-e", "--as-etl-user", help="try to connect as ETL user (default)", action="store_false", dest="use_admin"
+            "-e",
+            "--as-etl-user",
+            action="store_false",
+            dest="use_admin",
+            help="try to connect as ETL user (default)",
         )
         group.add_argument(
             "--for-schema",
@@ -1510,15 +1571,19 @@ class ShowDownstreamDependentsCommand(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--list-dependencies",
-            help="deprecated in favor of --with-dependencies",
             action="store_true",
             dest="with_dependencies",
+            help="deprecated in favor of --with-dependencies",
         )
         group.add_argument(
-            "--with-dependencies", help="show list of dependencies (downstream) for every relation", action="store_true"
+            "--with-dependencies",
+            action="store_true",
+            help="show list of dependencies (downstream) for every relation",
         )
         group.add_argument(
-            "--with-dependents", help="show list of dependents (upstream) for every relation", action="store_true"
+            "--with-dependents",
+            action="store_true",
+            help="show list of dependents (upstream) for every relation",
         )
 
     def callback(self, args):
@@ -1568,9 +1633,9 @@ class RenderTemplateCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("-l", "--list", action="store_true", help="list available templates")
         group.add_argument("template", help="name of template", nargs="?")
-        parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
+        parser.add_argument("-t", "--compact", action="store_true", help="produce compact output")
 
     def callback(self, args):
         if args.list:
@@ -1625,7 +1690,9 @@ class ShowPipelinesCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        parser.add_argument("-j", "--as-json", help="write output in JSON format", action="store_true", default=False)
+        parser.add_argument(
+            "-j", "--as-json", help="write output in JSON format", action="store_true", default=False
+        )
         parser.add_argument("selection", help="pick pipelines using a glob pattern", nargs="*")
 
     def callback(self, args):
@@ -1714,13 +1781,21 @@ class TailEventsCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix"])
         parser.add_argument(
-            "-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"], help="pick which step to tail"
+            "-s",
+            "--step",
+            choices=["extract", "load", "upgrade", "update", "unload"],
+            help="pick which step to tail",
         )
         now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
         parser.add_argument(
-            "-t", "--start-time", help="beginning of time window, e.g. '%s'" % now, type=isoformat_datetime_string
+            "-t",
+            "--start-time",
+            help="beginning of time window, e.g. '%s'" % now,
+            type=isoformat_datetime_string,
         )
-        parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
+        parser.add_argument(
+            "-f", "--follow", help="keep checking for events", default=False, action="store_true"
+        )
 
     def callback(self, args):
         start_time = args.start_time or (datetime.utcnow() - timedelta(seconds=15 * 60))

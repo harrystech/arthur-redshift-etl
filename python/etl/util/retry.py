@@ -34,7 +34,9 @@ def call_with_retry(max_retries: int, func: Callable, *args, **kwargs) -> None:
         except TransientETLError as exc:
             # Was this your last chance, Buster?
             if remaining_attempts == 1:
-                raise RetriesExhaustedError("reached max number of retries ({:d})".format(max_retries)) from exc
+                raise RetriesExhaustedError(
+                    "reached max number of retries ({:d})".format(max_retries)
+                ) from exc
             sleep_time = 5 ** (max_retries - remaining_attempts + 1)
             logger.warning(
                 "Encountered the following error, but retrying %s more time(s) after %d second sleep: %s",
