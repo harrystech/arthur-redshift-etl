@@ -8,7 +8,7 @@
     "insert_data_retries": 3,
     "logging": {
       "cloudwatch": {
-        "enabled": true,
+        "enabled": false,
         "log_group": "/dw/arthur-etl",
         "log_level": "INFO"
       }
