@@ -22,7 +22,6 @@ from termcolor import colored
 
 import etl.config
 import etl.config.env
-import etl.config.log
 import etl.config.settings
 import etl.data_warehouse
 import etl.db
@@ -33,6 +32,7 @@ import etl.extract
 import etl.file_sets
 import etl.json_encoder
 import etl.load
+import etl.logs.config
 import etl.monitor
 import etl.names
 import etl.pipeline
@@ -134,7 +134,7 @@ def run_arg_as_command(my_name="arthur.py"):
     # We need to configure logging before running context because that context expects
     # logging to be setup.
     try:
-        etl.config.log.configure_logging(args.prolix, args.log_level)
+        etl.logs.config.configure_logging(args.prolix, args.log_level)
     except Exception as exc:
         croak(exc, 1)
 
@@ -158,7 +158,7 @@ def run_arg_as_command(my_name="arthur.py"):
             etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
 
         if etl.config.get_config_value("arthur_settings.logging.cloudwatch.enabled"):
-            etl.config.log.configure_cloudwatch_logging(getattr(args, "prefix", "default"))
+            etl.logs.config.configure_cloudwatch_logging()
 
         if getattr(args, "use_monitor", False):
             etl.monitor.start_monitors(args.prefix)

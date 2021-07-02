@@ -28,9 +28,14 @@ class JsonFormatter(logging.Formatter):
 
     converter = time.gmtime
 
+    def __init__(self, environment: str):
+        super().__init__()
+        self.environment = environment
+
     def format(self, record: logging.LogRecord) -> str:
         """Format log record by creating a JSON-format in a string."""
         values = {
+            "environment": self.environment,
             "log_level": record.levelname,
             "log_severity": record.levelno,
             "logger": record.name,
