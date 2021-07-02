@@ -94,7 +94,7 @@ def render_string(template_name: str, template_type: str, compact=False) -> str:
     logger.info("Rendering template '%s' from file '%s'", template_name, filename)
     original = pkg_resources.resource_string("etl", filename).decode()
 
-    rendered = render_from_config(original, context="'{}'".format(filename))
+    rendered = render_from_config(original, context=f"'{filename}'")
     if not filename.endswith((".json", ".yaml", ".yml")):
         return rendered
 
@@ -104,12 +104,13 @@ def render_string(template_name: str, template_type: str, compact=False) -> str:
     # the (prettier) JSON format.
     if compact:
         return json.dumps(obj, separators=(",", ":"), sort_keys=True) + "\n"
+
     return json.dumps(obj, indent="    ", sort_keys=True) + "\n"
 
 
-def render(template_name: str, compact=False) -> None:
-    """Print the rendered text template."""
-    print(render_string(template_name, "text", compact=compact), end="")
+def render(template_name: str, compact=False) -> str:
+    """Return the rendered text template."""
+    return render_string(template_name, "text", compact=compact)
 
 
 def render_sql(template_name: str) -> str:

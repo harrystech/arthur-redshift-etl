@@ -1,13 +1,12 @@
+import datetime
 import logging
 import logging.config
-import os
-import sys
 
 import boto3
-import watchtower  # noqa: F401
+import watchtower
 
 import etl.monitor
-from etl.config import get_python_info, get_release_info, load_json, package_version
+from etl.config import get_config_value, load_json
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -28,14 +27,23 @@ def configure_logging(full_format: bool = False, log_level: str = None) -> None:
     elif log_level:
         config["handlers"]["console"]["level"] = log_level
 
-    session = boto3.session.Session(region_name="us-east-1")
-    config["handlers"]["watchtower"]["boto3_session"] = session
-    config["handlers"]["watchtower"]["log_group"] = "/dw/one-off-testing"
-
     logging.config.dictConfig(config)
     logging.captureWarnings(True)
-    logger.info("Starting log for %s with ETL ID %s", package_version(), etl.monitor.Monitor.etl_id)
-    logger.info('Command line: "%s"', " ".join(sys.argv))
-    logger.debug("Current working directory: '%s'", os.getcwd())
-    logger.info(get_release_info())
-    logger.debug(get_python_info())
+
+
+def configure_cloudwatch_logging(prefix):
+    session = boto3.session.Session()
+    log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
+    now = datetime.datetime.utcnow()
+    stream_name = f"{now.year}/{now.month}/{now.day}/{prefix}/{etl.monitor.Monitor.etl_id}"
+
+    handler = watchtower.CloudWatchLogHandler(
+        boto3_session=session,
+        log_group=log_group,
+        log_group_retention_days=180,
+        send_interval=10,
+        stream_name=stream_name,
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)

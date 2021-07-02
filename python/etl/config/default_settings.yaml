@@ -6,6 +6,12 @@
     "extract_retries": 1,
     "copy_data_retries": 3,
     "insert_data_retries": 3,
+    "logging": {
+      "cloudwatch": {
+        "enabled": true,
+        "log_group": "/dw/arthur-etl"
+      }
+    },
     "retriable_error_codes": "8001,15001,15005",
     "redshift": {
       "relation_column_encoding": "ON"

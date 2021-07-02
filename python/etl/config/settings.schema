@@ -154,6 +154,24 @@
                     "type": "integer",
                     "minimum": 0
                 },
+                "logging": {
+                    "description": "Configuration for logging",
+                    "type": "object",
+                    "properties": {
+                        "cloudwatch": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": { "type": "boolean" },
+                                "log_group": {
+                                    "description": "Name of log group used in CloudWatch",
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                },
                 "retriable_error_codes": {
                     "description": "Comma-separated list of pgcode values which can be safely retried",
                     "type": "string"

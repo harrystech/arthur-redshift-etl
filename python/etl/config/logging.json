@@ -21,14 +21,6 @@
         }
     },
     "handlers": {
-        "watchtower": {
-            "level": "DEBUG",
-            "class": "watchtower.CloudWatchLogHandler",
-            "boto3_session": "hello",
-            "log_group": "/dw/arthur-etl-log-group",
-            "stream_name": "/dw/arthur-etl-log-stream",
-            "formatter": "aws"
-        },
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "console",
@@ -60,7 +52,7 @@
         }
     },
     "root": {
-        "handlers": [ "console", "file", "watchtower" ],
+        "handlers": [ "console", "file" ],
         "level": "NOTSET"
     },
     "loggers": {
