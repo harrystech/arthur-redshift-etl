@@ -362,7 +362,9 @@ class DynamoDBStorage(PayloadDispatcher):
         if status != "ACTIVE":
             logger.info(f"Waiting for events table '{self.table_name}' to become active")
             table.wait_until_exists()
-            logger.debug(f"Finished creating or updating events table '{self.table_name}' (arn={table.table_arn})")
+            logger.debug(
+                f"Finished creating or updating events table '{self.table_name}' (arn={table.table_arn})"
+            )
         return table
 
     def store(self, payload: dict, _retry: bool = True):
