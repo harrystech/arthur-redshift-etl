@@ -7,6 +7,7 @@ import watchtower
 
 import etl.monitor
 from etl.config import get_config_value, load_json
+from etl.config.formatter import JsonFormatter
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -35,8 +36,9 @@ def configure_cloudwatch_logging(prefix):
     session = boto3.session.Session()
     log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
     now = datetime.datetime.utcnow()
-    stream_name = f"{now.year}/{now.month}/{now.day}/{prefix}/{etl.monitor.Monitor.etl_id}"
+    stream_name = f"{prefix}/{now.year}/{now.month}/{now.day}/{etl.monitor.Monitor.etl_id}"
 
+    logger.info(f"Starting logging to CloudWatch stream '{log_group}/{stream_name}'")
     handler = watchtower.CloudWatchLogHandler(
         boto3_session=session,
         log_group=log_group,
@@ -44,6 +46,10 @@ def configure_cloudwatch_logging(prefix):
         send_interval=10,
         stream_name=stream_name,
     )
+
+    log_level = get_config_value("arthur_settings.logging.cloudwatch.log_level")
+    handler.setLevel(log_level)
+    handler.setFormatter(JsonFormatter())
 
     root_logger = logging.getLogger()
     root_logger.addHandler(handler)

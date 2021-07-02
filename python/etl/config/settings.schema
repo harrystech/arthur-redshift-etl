@@ -165,6 +165,9 @@
                                 "log_group": {
                                     "description": "Name of log group used in CloudWatch",
                                     "type": "string"
+                                },
+                                "log_level": {
+                                    "enum": [ "DEBUG", "INFO", "WARNING" ]
                                 }
                             },
                             "additionalProperties": false

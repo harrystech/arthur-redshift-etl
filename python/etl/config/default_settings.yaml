@@ -9,7 +9,8 @@
     "logging": {
       "cloudwatch": {
         "enabled": true,
-        "log_group": "/dw/arthur-etl"
+        "log_group": "/dw/arthur-etl",
+        "log_level": "INFO"
       }
     },
     "retriable_error_codes": "8001,15001,15005",

@@ -2,12 +2,8 @@
     "version": 1,
     "disable_existing_loggers": false,
     "formatters": {
-        "aws": {
-            "format": "%(asctime)s [%(levelname)-8s] %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S"
-        },
         "console": {
-            "class": "etl.config.console.ColorfulFormatter",
+            "class": "etl.config.formatter.ColorfulFormatter",
             "datefmt": "%Y-%m-%d %H:%M:%S",
             "format": "%(asctime)s - %(levelname)s - %(message)s"
         },
