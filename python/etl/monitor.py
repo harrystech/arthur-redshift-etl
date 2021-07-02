@@ -242,6 +242,14 @@ class Monitor(metaclass=MetaMonitor):
         return MonitorPayload(monitor, STEP_FINISH, utc_now(), elapsed=0, extra={"is_marker": True})
 
 
+class InsertTraceKey(logging.Filter):
+    """Called as a logging filter: insert the ETL id as the trace key into the logging record."""
+
+    def filter(self, record):
+        record.trace_key = Monitor.etl_id
+        return True
+
+
 class PayloadDispatcher:
     def store(self, payload):
         """Send payload to persistence layer."""
@@ -285,10 +293,11 @@ class MonitorPayload:
         compact_text = json.dumps(payload, sort_keys=True, separators=(",", ":"), cls=FancyJsonEncoder)
         if dry_run:
             logger.debug("Dry-run: payload = %s", compact_text)
-        else:
-            logger.debug("Monitor payload = %s", compact_text)
-            for d in MonitorPayload.dispatchers:
-                d.store(payload)
+            return
+
+        logger.debug("Monitor payload = %s", compact_text)
+        for d in MonitorPayload.dispatchers:
+            d.store(payload)
 
 
 class DynamoDBStorage(PayloadDispatcher):
@@ -305,25 +314,24 @@ class DynamoDBStorage(PayloadDispatcher):
             table_name,
             etl.config.get_config_value("etl_events.read_capacity"),
             etl.config.get_config_value("etl_events.write_capacity"),
-            etl.config.get_config_value("resources.VPC.region"),
         )
 
-    def __init__(self, table_name, read_capacity, write_capacity, region_name):
+    def __init__(self, table_name, read_capacity, write_capacity):
         self.table_name = table_name
         self.initial_read_capacity = read_capacity
         self.initial_write_capacity = write_capacity
-        self.region_name = region_name
         # Avoid default sessions and have one table reference per thread
         self._thread_local_table = threading.local()
 
     def get_table(self, create_if_not_exists=True):
         """Get table reference from DynamoDB or create it (within a new session)."""
-        session = boto3.session.Session(region_name=self.region_name)
+        session = boto3.session.Session()
+        logger.debug(f"Started new boto3 session in region '{session.region_name}'")
         dynamodb = session.resource("dynamodb")
         try:
             table = dynamodb.Table(self.table_name)
             status = table.table_status
-            logger.info("Found existing events table '%s' in DynamoDB (status: %s)", self.table_name, status)
+            logger.info(f"Found existing events table '{self.table_name}' in DynamoDB (status: {status})")
         except botocore.exceptions.ClientError as exc:
             # Check whether this is just a ResourceNotFoundException (sadly a 400, not a 404)
             if exc.response["ResponseMetadata"]["HTTPStatusCode"] != 400:
@@ -334,7 +342,7 @@ class DynamoDBStorage(PayloadDispatcher):
         if not (status == "ACTIVE" or create_if_not_exists):
             raise ETLRuntimeError("DynamoDB table '%s' does not exist or is not active" % self.table_name)
         if table is None:
-            logger.info("Creating DynamoDB table: '%s'", self.table_name)
+            logger.info(f"Creating DynamoDB table: '{self.table_name}'")
             table = dynamodb.create_table(
                 TableName=self.table_name,
                 KeySchema=[
@@ -352,10 +360,10 @@ class DynamoDBStorage(PayloadDispatcher):
             )
             status = table.table_status
         if status != "ACTIVE":
-            logger.info("Waiting for events table '%s' to become active", self.table_name)
+            logger.info(f"Waiting for events table '{self.table_name}' to become active")
             table.wait_until_exists()
             logger.debug(
-                "Finished creating or updating events table '%s' (arn=%s)", self.table_name, table.table_arn
+                f"Finished creating or updating events table '{self.table_name}' (arn={table.table_arn})"
             )
         return table
 
@@ -363,10 +371,11 @@ class DynamoDBStorage(PayloadDispatcher):
         """
         Actually send the payload to the DynamoDB table.
 
-        If this is the first call at all, then get a reference to the table,
-        or even create the table as necessary.
-        This method will try to store the payload a second time if there's an
-        error in the first attempt.
+        If this is the first call at all, then get a reference to the table, or even create the
+        table as necessary.
+
+        This method will try to store the payload a second time if there's an error in the first
+        attempt.
         """
         try:
             table = getattr(self._thread_local_table, "table", None)
@@ -382,7 +391,7 @@ class DynamoDBStorage(PayloadDispatcher):
                 item["elapsed"] = Decimal("%.6f" % item["elapsed"])
             table.put_item(Item=item)
         except botocore.exceptions.ClientError:
-            # Something bad happened while talking to the service ... just try one more time
+            # Something bad happened while talking to the service ... just try one more time.
             if _retry:
                 logger.warning("Trying to store payload a second time after this mishap:", exc_info=True)
                 self._thread_local_table.table = None
@@ -540,14 +549,6 @@ class MemoryStorage(PayloadDispatcher):
             logger.warning("Failed to start monitor server:", exc_info=True)
 
 
-class InsertTraceKey(logging.Filter):
-    """Called as a logging filter: insert the ETL id as the trace key into the logging record."""
-
-    def filter(self, record):
-        record.trace_key = Monitor.etl_id
-        return True
-
-
 def start_monitors(environment):
     Monitor.environment = environment
     memory = MemoryStorage()
@@ -594,9 +595,7 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
     table = ddb.get_table(create_if_not_exists=False)
     response = table.query(
         ConsistentRead=True,
-        ExpressionAttributeNames={
-            "#timestamp": "timestamp"
-        },  # "timestamp" is a reserved word. You're welcome.
+        ExpressionAttributeNames={"#timestamp": "timestamp"},  # "timestamp" is a reserved word.
         ExpressionAttributeValues=attribute_values,
         KeyConditionExpression="target = :marker and #timestamp > :epoch_seconds",
         FilterExpression=filter_exp,
@@ -891,9 +890,7 @@ def tail_events(
                 if event is None:
                     done = True
                     break
-                event["timestamp"] = datetime.utcfromtimestamp(
-                    event["timestamp"]
-                ).isoformat()  # timestamp to isoformat
+                event["timestamp"] = datetime.utcfromtimestamp(event["timestamp"]).isoformat()
                 events.append(event)
             except queue.Empty:
                 break
@@ -939,4 +936,9 @@ def test_run():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    # This allows to test the HTTP server. When running inside a Docker container, make sure
+    # that port 8086 is exposed. (bin/run_arthur.sh -w).
+    # Invoke using "python -m etl.monitor" inside the Docker container and follow along
+    # with "open http://localhost:8086" from your host.
     test_run()
