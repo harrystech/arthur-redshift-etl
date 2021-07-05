@@ -237,7 +237,9 @@ class RelationFileSet:
         if self.scheme == "s3":
             return etl.s3.object_stat(self.netloc, filename)
         elif self.scheme == "file":
-            return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(" ")
+            return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(
+                " "
+            )
         else:
             raise ETLSystemError("illegal scheme in file set")
 
@@ -298,7 +300,7 @@ def list_local_files(directory):
     if not os.path.isdir(normed_directory):
         raise FileNotFoundError("Failed to find directory: '%s'" % normed_directory)
     logger.info("Looking for files locally in '%s'", normed_directory)
-    for root, dirs, files in os.walk(os.path.normpath(normed_directory)):
+    for root, _, files in os.walk(os.path.normpath(normed_directory)):
         for filename in sorted(files):
             if not filename.endswith((".swp", "~", ".DS_Store")):
                 yield os.path.join(root, filename)
@@ -324,7 +326,9 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
             etl.s3.list_objects_for_prefix(netloc, path + "/data", path + "/schemas"), selector
         )
         if not file_sets:
-            raise FileNotFoundError("Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector))
+            raise FileNotFoundError(
+                "Found no matching files in 's3://{}/{}' for '{}'".format(netloc, path, selector)
+            )
     else:
         if os.path.exists(path):
             file_sets = _find_file_sets_from(list_local_files(path), selector)
@@ -449,8 +453,16 @@ def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
                     if long_format:
                         content_length, last_modified = file_set.stat(filename)
                         total_length += content_length
-                        print("        {} ({:d}, {})".format(file_set.uri(filename), content_length, last_modified))
+                        print(
+                            "        {} ({:d}, {})".format(
+                                file_set.uri(filename), content_length, last_modified
+                            )
+                        )
                     else:
                         print("        {}".format(file_set.uri(filename)))
         if total_length > 0:
-            print("Total size in bytes: {:d} ({})".format(total_length, etl.text.approx_pretty_size(total_length)))
+            print(
+                "Total size in bytes: {:d} ({})".format(
+                    total_length, etl.text.approx_pretty_size(total_length)
+                )
+            )

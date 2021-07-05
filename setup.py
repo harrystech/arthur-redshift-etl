@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-ARTHUR_VERSION = "1.44.0"
+ARTHUR_VERSION = "1.45.0"
 
 
 setup(
@@ -17,7 +17,7 @@ setup(
     name="redshift_etl",
     package_dir={"": "python"},
     packages=find_packages("python"),
-    package_data={"etl": ["assets/*", "config/*", "templates/sql/*", "templates/text/*"]},
+    package_data={"etl": ["assets/*", "config/*", "logs/*.json", "templates/sql/*", "templates/text/*"]},
     python_requires=">=3.6, <4",
     scripts=[
         "python/scripts/compare_events.py",

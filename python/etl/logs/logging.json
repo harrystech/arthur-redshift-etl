@@ -3,7 +3,7 @@
     "disable_existing_loggers": false,
     "formatters": {
         "console": {
-            "class": "etl.config.console.ColorfulFormatter",
+            "class": "etl.logs.formatter.ColorfulFormatter",
             "datefmt": "%Y-%m-%d %H:%M:%S",
             "format": "%(asctime)s - %(levelname)s - %(message)s"
         },

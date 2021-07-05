@@ -5,7 +5,7 @@ from typing import Dict
 import etl.config.env
 import etl.db
 import etl.names
-import etl.render_template
+import etl.templates
 from etl.errors import ETLConfigError, InvalidEnvironmentError
 
 
@@ -97,22 +97,22 @@ class DataWarehouseSchema:
     @property
     def s3_bucket(self) -> str:
         """Render S3 Bucket name (if it references Arthur configuration, e.g., the data lake)."""
-        return etl.render_template.render_from_config(
-            self._s3_bucket_template, context="s3_bucket of schema '{}'".format(self.name)
+        return etl.templates.render_from_config(
+            self._s3_bucket_template, context=f"s3_bucket of schema '{self.name}'"
         )
 
     @property
     def s3_path_prefix(self) -> str:
         """Render S3 path prefix in particular wrt. prefix (environment) and dates."""
-        return etl.render_template.render_from_config(
-            self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name)
+        return etl.templates.render_from_config(
+            self._s3_path_template, context=f"s3_path_template of schema '{self.name}'"
         )
 
     @property
     def s3_unload_path_prefix(self) -> str:
         """Render S3 unload path prefix in particular wrt. prefix (environment) and dates."""
-        return etl.render_template.render_from_config(
-            self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name)
+        return etl.templates.render_from_config(
+            self._s3_unload_path_template, context=f"s3_unload_path_template of schema '{self.name}'"
         )
 
     @property
@@ -157,7 +157,9 @@ class DataWarehouseConfig:
         self._check_access_to_cluster()
         root = DataWarehouseUser(dw_settings["owner"])
         # Users are in the order from the config
-        other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
+        other_users = [
+            DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"
+        ]
 
         # Note that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
@@ -165,7 +167,9 @@ class DataWarehouseConfig:
 
         # Schemas (upstream sources followed by transformations, keeps order of settings file)
         self.schemas = [
-            DataWarehouseSchema(dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access)
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access
+            )
             for info in schema_settings
             if not info.get("external", False)
         ]
@@ -173,12 +177,16 @@ class DataWarehouseConfig:
 
         # Schemas may grant access to groups that have no bootstrapped users, so create all
         # mentioned user groups.
-        other_groups = {u.group for u in other_users} | {g for schema in self.schemas for g in schema.reader_groups}
+        other_groups = {u.group for u in other_users} | {
+            g for schema in self.schemas for g in schema.reader_groups
+        }
 
         # Groups are in sorted order after the root group
         self.groups = [root.group] + sorted(other_groups)
         try:
-            [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+            [self.default_group] = [
+                user["group"] for user in dw_settings["users"] if user["name"] == "default"
+            ]
         except ValueError:
             raise ETLConfigError("Failed to find group of default user")
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset

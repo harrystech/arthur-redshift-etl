@@ -48,6 +48,7 @@ _arthur_completion()
                 summarize_events
                 sync
                 tail_events
+                tail_logs
                 terminate_sessions
                 unload
                 update
