@@ -40,10 +40,11 @@ CONTINUE_FROM_RELATION="${2:-*}"
 START_DATE_TIME="$START_NOW"
 TIMEOUT="${3:-$DEFAULT_TIMEOUT}"
 
-# Verify that this bucket/environment pair is set up on s3
+# Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-  echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
+  echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist"
+  echo "and whether you have the correct access permissions."
   exit 1
 fi
 
@@ -52,7 +53,7 @@ set -o xtrace
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl key=user:data-pipeline-type,value=pizza"
 
-PIPELINE_NAME="ETL Pizza Loader Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
+PIPELINE_NAME="ETL Pizza Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 
@@ -86,7 +87,7 @@ aws datapipeline put-pipeline-definition \
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
-set +x
+set +o xtrace
 echo
 echo "You can monitor the status of this pizza pipeline using:"
 echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"

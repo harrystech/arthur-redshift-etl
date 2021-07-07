@@ -38,10 +38,11 @@ fi
 OCCURRENCES="$3"
 TIMEOUT="${4:-$DEFAULT_TIMEOUT}"
 
-# Verify that this bucket/environment pair is set up on s3
+# Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
+    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist"
+    echo "and whether you have the correct access permissions."
     exit 1
 fi
 
@@ -53,6 +54,7 @@ AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-et
 PIPELINE_NAME="ETL Rebuild Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
+
 # shellcheck disable=SC2064
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
@@ -68,7 +70,7 @@ aws datapipeline create-pipeline \
 PIPELINE_ID=$(jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId')
 
 if [[ -z "$PIPELINE_ID" ]]; then
-    set +x
+    set +o xtrace
     echo "Failed to find pipeline id in output -- pipeline probably wasn't created. Check your VPN etc."
     exit 1
 fi
@@ -83,7 +85,7 @@ aws datapipeline put-pipeline-definition \
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
-set +x
+set +o xtrace
 echo
 echo "You can monitor the status of this rebuild pipeline using:"
 echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"

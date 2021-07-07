@@ -35,7 +35,8 @@ OCCURRENCES="${3:-1}"
 # Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist!"
+    echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist"
+    echo "and whether you have the correct access permissions."
     exit 1
 fi
 # NOTE we don't test for the validation folder since that gets created automatically.
@@ -58,6 +59,7 @@ AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-et
 
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
+
 # shellcheck disable=SC2064
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
@@ -87,7 +89,7 @@ aws datapipeline put-pipeline-definition \
 
 aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
-set +x
+set +o xtrace
 echo
 echo "You can monitor the status of this validation pipeline using:"
 echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"
