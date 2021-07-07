@@ -29,8 +29,8 @@ set -o errexit -o nounset
 # Verify that there is a local configuration directory
 DEFAULT_CONFIG="${DATA_WAREHOUSE_CONFIG:-./config}"
 if [[ ! -d "$DEFAULT_CONFIG" ]]; then
-  echo >&2 "Failed to find \'$DEFAULT_CONFIG\' directory."
-  echo >&2 "Make sure you are in the directory with your data warehouse setup or have DATA_WAREHOUSE_CONFIG set."
+  echo 1>&2 "Failed to find \'$DEFAULT_CONFIG\' directory."
+  echo 1>&2 "Make sure you are in the directory with your data warehouse setup or have DATA_WAREHOUSE_CONFIG set."
   exit 1
 fi
 
@@ -43,8 +43,10 @@ TIMEOUT="${3:-$DEFAULT_TIMEOUT}"
 # Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
 if ! aws s3 ls "$BOOTSTRAP" > /dev/null; then
-  echo "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist"
-  echo "and whether you have the correct access permissions."
+  echo 1>&2 "Failed to access \"$BOOTSTRAP\"!"
+  echo 1>&2 "Check whether the bucket \"$PROJ_BUCKET\" and folder \"$PROJ_ENVIRONMENT\" exist,"
+  echo 1>&2 "whether you have the correct access permissions, and"
+  echo 1>&2 "whether you have uploaded the Arthur environment."
   exit 1
 fi
 
@@ -73,7 +75,7 @@ PIPELINE_ID=$(jq --raw-output < "$PIPELINE_ID_FILE" '.pipelineId')
 
 if [[ -z "$PIPELINE_ID" ]]; then
   set +o xtrace
-  echo "Failed to find pipeline id in output -- pipeline probably wasn't created. Check your VPN etc."
+  echo 1>&2 "Failed to find pipeline id in output -- pipeline probably wasn't created. Check your VPN etc."
   exit 1
 fi
 
