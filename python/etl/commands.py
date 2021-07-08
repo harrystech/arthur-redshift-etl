@@ -438,7 +438,7 @@ def add_standard_arguments(parser, options):
         parser.add_argument(
             "-y",
             "--skip-copy",
-            help="skip the COPY and INSERT commands (leaves tables empty, used for validation)",
+            help="skip the COPY and INSERT commands (this leaves tables empty, used for validation)",
             action="store_true",
         )
     if "continue-from" in options:
@@ -1039,7 +1039,7 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             "--skip-loading-sources",
             action="store_true",
             default=False,
-            help="Skip loading data from sources",
+            help="Skip loading data from sources (but still build the tables)",
         )
 
     def callback(self, args):
