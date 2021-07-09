@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 import psycopg2
 import psycopg2.extensions
-from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl.config
 import etl.db
@@ -88,14 +88,12 @@ def build_table_constraints(table_design: dict) -> List[str]:
     ['PRIMARY KEY ( "id" )', 'UNIQUE ( "name", "email" )']
     """
     table_constraints = table_design.get("constraints", [])
-    type_lookup = dict(
-        [
-            ("primary_key", "PRIMARY KEY"),
-            ("surrogate_key", "PRIMARY KEY"),
-            ("unique", "UNIQUE"),
-            ("natural_key", "UNIQUE"),
-        ]
-    )
+    type_lookup = {
+        "primary_key": "PRIMARY KEY",
+        "surrogate_key": "PRIMARY KEY",
+        "unique": "UNIQUE",
+        "natural_key": "UNIQUE",
+    }
     ddl_for_constraints = []
     for constraint in table_constraints:
         [[constraint_type, column_list]] = constraint.items()
@@ -231,7 +229,9 @@ def log_load_error(cx):
         etl.db.log_sql_error(exc)
         # For load errors, let's get some details from Redshift.
         if cx.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
-            logger.warning("Cannot retrieve error information from 'stl_load_errors' within failed transaction")
+            logger.warning(
+                "Cannot retrieve error information from 'stl_load_errors' within failed transaction"
+            )
         else:
             rows = etl.db.query(
                 cx,
@@ -253,7 +253,10 @@ def log_load_error(cx):
             if rows:
                 row0 = rows.pop()
                 max_len = max(len(k) for k in row0.keys())
-                info = ["{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len) for k in row0.keys()]
+                info = [
+                    "{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len)
+                    for k in row0.keys()
+                ]
                 logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
             else:
                 logger.debug("There was no additional information in 'stl_load_errors'")
@@ -282,7 +285,7 @@ def determine_data_format_parameters(data_format, format_option, file_compressio
 
 
 def copy_using_manifest(
-    conn: connection,
+    conn: Connection,
     table_name: TableName,
     column_list: List[str],
     s3_uri: str,
@@ -333,7 +336,7 @@ def copy_using_manifest(
                 raise TransientETLError(exc) from exc
 
 
-def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
+def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
     stmt = """
         SELECT TRIM(filename) AS filename
              , lines_scanned
@@ -345,13 +348,19 @@ def query_load_commits(conn: connection, table_name: TableName, s3_uri: str, dry
         etl.db.skip_query(conn, stmt)
     else:
         rows = etl.db.query(conn, stmt)
-        summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
+        summary = "    " + "\n    ".join(
+            "'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows
+        )
         logger.debug(
-            "Copied %d file(s) into '%s' using manifest '%s':\n%s", len(rows), table_name.identifier, s3_uri, summary
+            "Copied %d file(s) into '%s' using manifest '%s':\n%s",
+            len(rows),
+            table_name.identifier,
+            s3_uri,
+            summary,
         )
 
 
-def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -> None:
+def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -> None:
     # This query is not guarded by "dry_run" so that we have a copy_id for the other query.
     [[copy_count, copy_id]] = etl.db.query(conn, "SELECT pg_last_copy_count(), pg_last_copy_id()")
 
@@ -383,7 +392,7 @@ def query_load_summary(conn: connection, table_name: TableName, dry_run=False) -
 
 
 def copy_from_uri(
-    conn: connection,
+    conn: Connection,
     table_name: TableName,
     column_list: List[str],
     s3_uri: str,
@@ -410,7 +419,7 @@ def copy_from_uri(
 
 
 def insert_from_query(
-    conn: connection, table_name: TableName, column_list: List[str], query_stmt: str, dry_run=False
+    conn: Connection, table_name: TableName, column_list: List[str], query_stmt: str, dry_run=False
 ) -> None:
     """Load data into table in the data warehouse using the INSERT INTO command."""
     retriable_error_codes = etl.config.get_config_list("arthur_settings.retriable_error_codes")
@@ -423,11 +432,47 @@ def insert_from_query(
         logger.info("Inserting data into '%s' from query", table_name.identifier)
         try:
             etl.db.execute(conn, stmt)
-        except psycopg2.OperationalError as exc:
-            raise TransientETLError(exc) from exc
+        # TODO(tom) Ideally we'd retry these but initial testing ran into issues with closed connections.
+        # except psycopg2.OperationalError as exc:
+        #    raise TransientETLError(exc) from exc
         except psycopg2.InternalError as exc:
             if exc.pgcode in retriable_error_codes:
                 raise TransientETLError(exc) from exc
+            else:
+                logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
+                raise
 
-            logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
-            raise
+
+def unload(
+    conn: Connection,
+    table_name: TableName,
+    columns: List[str],
+    unload_path: str,
+    aws_iam_role: str,
+    allow_overwrite=False,
+) -> None:
+    """
+    Execute the UNLOAD command for the given relation (via a select statement).
+
+    Optionally allow users to overwrite previously unloaded data within the same keyspace.
+    """
+    credentials = f"aws_iam_role={aws_iam_role}"
+    # TODO(tom): Need to review why we can't use r"\N"
+    null_string = "\\\\N"
+    unload_statement = """
+        UNLOAD ('
+            SELECT {}
+            FROM {}
+        ')
+        TO '{}'
+        CREDENTIALS '{}' MANIFEST
+        DELIMITER ',' ESCAPE ADDQUOTES GZIP NULL AS '{}'
+        """.format(
+        "\n                 , ".join(columns), table_name, unload_path, credentials, null_string
+    )
+    if allow_overwrite:
+        unload_statement += "ALLOWOVERWRITE"
+
+    logger.info("Unloading data from '%s' to '%s'", table_name.identifier, unload_path)
+    with etl.db.log_error():
+        etl.db.execute(conn, unload_statement)

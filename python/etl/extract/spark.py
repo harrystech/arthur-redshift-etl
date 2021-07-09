@@ -26,7 +26,9 @@ class SparkExtractor(DatabaseExtractor):
         keep_going: bool,
         dry_run: bool,
     ) -> None:
-        super().__init__("spark", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
+        super().__init__(
+            "spark", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run
+        )
         self.logger = logging.getLogger(__name__)
         self._sql_context = None
 
@@ -115,7 +117,9 @@ class SparkExtractor(DatabaseExtractor):
             relation.source_table_name.identifier,
             partition_key,
         )
-        boundaries = self.fetch_partition_boundaries(conn, relation.source_table_name, partition_key, num_partitions)
+        boundaries = self.fetch_partition_boundaries(
+            conn, relation.source_table_name, partition_key, num_partitions
+        )
         predicates = []
         for low, high in boundaries:
             predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
@@ -144,7 +148,10 @@ class SparkExtractor(DatabaseExtractor):
         """
         with Timer() as timer:
             rows = etl.db.query(
-                conn, stmt.format(partition_key=partition_key, num_partitions=num_partitions, table_name=table_name)
+                conn,
+                stmt.format(
+                    partition_key=partition_key, num_partitions=num_partitions, table_name=table_name
+                ),
             )
         row_count = sum(row["count"] for row in rows)
         self.logger.info(

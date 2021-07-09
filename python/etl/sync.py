@@ -48,7 +48,9 @@ def upload_settings(config_paths: Iterable[str], bucket_name: str, prefix: str, 
     config directories).
     """
     settings_files = etl.config.gather_setting_files(config_paths)
-    logger.info("Found %d settings file(s) to deploy to 's3://%s/%s/config'", len(settings_files), bucket_name, prefix)
+    logger.info(
+        "Found %d settings file(s) to deploy to 's3://%s/%s/config'", len(settings_files), bucket_name, prefix
+    )
 
     files = [(local_file, f"config/{os.path.basename(local_file)}") for local_file in settings_files]
     etl.s3.upload_files(files, bucket_name, prefix, dry_run=dry_run)

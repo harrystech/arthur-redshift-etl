@@ -80,7 +80,9 @@ class RelationDescription:
             self.prefix = None
         # Note the subtle difference to RelationFileSet: the manifest_file_name is always present
         # since it's computed.
-        self.manifest_file_name = os.path.join(discovered_files.path or "", "data", self.source_path_name + ".manifest")
+        self.manifest_file_name = os.path.join(
+            discovered_files.path or "", "data", self.source_path_name + ".manifest"
+        )
         # Lazy-loading of table design and query statement and any derived information from the
         # table design.
         self._table_design: Optional[Dict[str, Any]] = None
@@ -97,7 +99,10 @@ class RelationDescription:
 
     @property
     def has_manifest(self):
-        return etl.s3.get_s3_object_last_modified(self.bucket_name, self.manifest_file_name, wait=False) is not None
+        return (
+            etl.s3.get_s3_object_last_modified(self.bucket_name, self.manifest_file_name, wait=False)
+            is not None
+        )
 
     @property
     def identifier(self) -> str:
@@ -176,7 +181,11 @@ class RelationDescription:
         # This section loads the remaining relations from the "parallel start index" onwards
         # and shows a pretty loading bar (but only if this goes to a terminal).
         tqdm_bar = tqdm(
-            desc="Loading table designs", disable=None, leave=False, total=len(remaining_relations), unit="file"
+            desc="Loading table designs",
+            disable=None,
+            leave=False,
+            total=len(remaining_relations),
+            unit="file",
         )
         tqdm_bar.update(parallel_start_index)
         max_workers = min(len(remaining_relations) - parallel_start_index, 8)
@@ -188,7 +197,9 @@ class RelationDescription:
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="load-parallel"
         ) as executor:
-            executor.map(lambda relation: relation.load(tqdm_bar.update), remaining_relations[parallel_start_index:])
+            executor.map(
+                lambda relation: relation.load(tqdm_bar.update), remaining_relations[parallel_start_index:]
+            )
 
         tqdm_bar.close()
         logger.info(
@@ -234,14 +245,18 @@ class RelationDescription:
     def execution_level(self) -> int:
         """All relations of the same level may be loaded in parallel."""
         if self._execution_level is None:
-            raise ETLRuntimeError("execution level unknown for RelationDescription '{0.identifier}'".format(self))
+            raise ETLRuntimeError(
+                "execution level unknown for RelationDescription '{0.identifier}'".format(self)
+            )
         return self._execution_level
 
     @property
     def execution_order(self) -> int:
         """All relations can be ordered to load properly in series based on their dependencies."""
         if self._execution_order is None:
-            raise ETLRuntimeError("execution order unknown for RelationDescription '{0.identifier}'".format(self))
+            raise ETLRuntimeError(
+                "execution order unknown for RelationDescription '{0.identifier}'".format(self)
+            )
         return self._execution_order
 
     @property
@@ -274,7 +289,9 @@ class RelationDescription:
     @property
     def dependencies(self) -> FrozenSet[TableName]:
         if self._dependencies is None:
-            dependent_table_names = [TableName.from_identifier(d) for d in self.table_design.get("depends_on", [])]
+            dependent_table_names = [
+                TableName.from_identifier(d) for d in self.table_design.get("depends_on", [])
+            ]
             self._dependencies = frozenset(dependent_table_names)
         return self._dependencies
 
@@ -362,7 +379,9 @@ class RelationDescription:
     def get_columns_with_types(self) -> List[Dict[str, str]]:
         """Return list of dicts that describe non-skipped columns with their name and type."""
         return [
-            fy.project(column, ["name", "type"]) for column in self.table_design["columns"] if not column.get("skipped")
+            fy.project(column, ["name", "type"])
+            for column in self.table_design["columns"]
+            if not column.get("skipped")
         ]
 
     @property
@@ -391,7 +410,9 @@ class RelationDescription:
         if not partition_key:
             try:
                 # Unpacking will fail here if the list of primary keys hasn't exactly one element.
-                [primary_key] = [col for constraint in constraints for col in constraint.get("primary_key", [])]
+                [primary_key] = [
+                    col for constraint in constraints for col in constraint.get("primary_key", [])
+                ]
                 partition_key = primary_key
             except ValueError:
                 logger.debug("Found no single-column primary key for table '%s'", self.identifier)
@@ -466,9 +487,11 @@ def _sanitize_dependencies(descriptions: Sequence[SortableRelationDescription]) 
     has_pg_catalog_dependencies = set()
     known_unknowns = set()
 
-    for initial_order, description in enumerate(descriptions):
+    for description in descriptions:
         unmanaged_dependencies = frozenset(dep for dep in description.dependencies if not dep.is_managed)
-        pg_catalog_dependencies = frozenset(dep for dep in description.dependencies if dep.schema == "pg_catalog")
+        pg_catalog_dependencies = frozenset(
+            dep for dep in description.dependencies if dep.schema == "pg_catalog"
+        )
         unknowns = description.dependencies - known_tables - unmanaged_dependencies
         if unknowns:
             known_unknowns.update(unknowns)
@@ -530,7 +553,8 @@ def _sort_by_dependencies(descriptions: Sequence[SortableRelationDescription]) -
             description.order = latest_order
 
             max_preceding_level = max(
-                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed), default=0
+                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed),
+                default=0,
             )
             description.level = max_preceding_level + 1
 
@@ -561,9 +585,13 @@ def order_by_dependencies(relation_descriptions: Sequence[RelationDescription]) 
 
     # Sorting is all-or-nothing so we get away with checking for just one relation's order.
     if relation_descriptions and relation_descriptions[0]._execution_order is not None:
-        logger.info("Reusing previously computed execution order of %d relation(s)", len(relation_descriptions))
+        logger.info(
+            "Reusing previously computed execution order of %d relation(s)", len(relation_descriptions)
+        )
     else:
-        sortable_descriptions = [SortableRelationDescription(description) for description in relation_descriptions]
+        sortable_descriptions = [
+            SortableRelationDescription(description) for description in relation_descriptions
+        ]
         _sanitize_dependencies(sortable_descriptions)
         _sort_by_dependencies(sortable_descriptions)
         # A functional approach would be to create new instances here. Instead we reach back. Shrug.
@@ -572,10 +600,12 @@ def order_by_dependencies(relation_descriptions: Sequence[RelationDescription]) 
             sortable.original_description._execution_order = sortable.order
             sortable.original_description._execution_level = sortable.level
 
-    return [description for description in sorted(relation_descriptions, key=attrgetter("execution_order"))]
+    return sorted(relation_descriptions, key=attrgetter("execution_order"))
 
 
-def set_required_relations(relations: Sequence[RelationDescription], required_selector: TableSelector) -> None:
+def set_required_relations(
+    relations: Sequence[RelationDescription], required_selector: TableSelector
+) -> None:
     """
     Set the "required" property based on the selector.
 
@@ -588,7 +618,9 @@ def set_required_relations(relations: Sequence[RelationDescription], required_se
     ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
     required_relations = [
-        description for description in ordered_descriptions if required_selector.match(description.target_table_name)
+        description
+        for description in ordered_descriptions
+        if required_selector.match(description.target_table_name)
     ]
     # Walk through descriptions in reverse dependency order, expanding required set based on
     # dependency fan-out.
@@ -601,7 +633,9 @@ def set_required_relations(relations: Sequence[RelationDescription], required_se
     for relation in required_relations:
         relation._is_required = True
 
-    logger.info("Marked %d relation(s) as required based on selector: %s", len(required_relations), required_selector)
+    logger.info(
+        "Marked %d relation(s) as required based on selector: %s", len(required_relations), required_selector
+    )
 
 
 def find_matches(relations: Sequence[RelationDescription], selector: TableSelector):
@@ -727,7 +761,9 @@ def select_in_execution_order(
     raise InvalidArgumentError("found no matching relations to continue from")
 
 
-def create_index(relations: Sequence[RelationDescription], groups: Iterable[str], with_columns: Optional[bool]) -> None:
+def create_index(
+    relations: Sequence[RelationDescription], groups: Iterable[str], with_columns: Optional[bool]
+) -> None:
     """
     Create an "index" page with Markdown that lists all schemas and their tables.
 
@@ -756,7 +792,9 @@ def create_index(relations: Sequence[RelationDescription], groups: Iterable[str]
         if schema_info["description"]:
             print(f"{schema_info['description']}\n")
 
-        rows = ([relation.target_table_name.table, relation.description] for relation in schema_info["relations"])
+        rows = (
+            [relation.target_table_name.table, relation.description] for relation in schema_info["relations"]
+        )
         print(tabulate(rows, headers=["Relation", "Description"], tablefmt="pipe"))
 
         if not show_details:
@@ -783,7 +821,13 @@ def create_index(relations: Sequence[RelationDescription], groups: Iterable[str]
                 ]
                 for column in relation.table_design["columns"]
             )
-            print(tabulate(rows, headers=["Key?", "Column Name", "Column Type", "Column Description"], tablefmt="pipe"))
+            print(
+                tabulate(
+                    rows,
+                    headers=["Key?", "Column Name", "Column Type", "Column Description"],
+                    tablefmt="pipe",
+                )
+            )
 
 
 if __name__ == "__main__":
@@ -804,12 +848,12 @@ if __name__ == "__main__":
     etl.config.load_config([config_dir])
     dw_config = etl.config.get_dw_config()
     base_schemas = [s.name for s in dw_config.schemas]
-    selector = etl.names.TableSelector(base_schemas=base_schemas)
+    selector = TableSelector(base_schemas=base_schemas)
     required_selector = dw_config.required_in_full_load_selector
     file_sets = etl.file_sets.find_file_sets(uri_parts, selector)
     descriptions = RelationDescription.from_file_sets(file_sets, required_relation_selector=required_selector)
     if len(sys.argv) > 1:
-        selector = etl.names.TableSelector(sys.argv[1:])
+        selector = TableSelector(sys.argv[1:])
         descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
 
     native = [d.table_design for d in descriptions]

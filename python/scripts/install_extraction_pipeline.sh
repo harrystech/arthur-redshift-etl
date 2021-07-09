@@ -12,6 +12,7 @@ Single-shot extraction pipeline. You get to pick the arguments to 'extract' comm
 Usage: $(basename "$0") extract_arg [extract_arg ...]
 
 The commandline arguments will be passed to 'extract'.
+(So pass in schema names, table patterns, or options like '--keep-going'.)
 The environment defaults to "$DEFAULT_PREFIX".
 
 Example: $(basename "$0") dw

@@ -144,7 +144,9 @@ class UpdateTableError(RelationDataError):
 
 class MissingExtractEventError(RelationDataError):
     def __init__(self, source_relations, extracted_targets):
-        missing_relations = [relation for relation in source_relations if relation.identifier not in extracted_targets]
+        missing_relations = [
+            relation for relation in source_relations if relation.identifier not in extracted_targets
+        ]
         self.message = (
             "Some source relations did not have extract events after the step start time: "
             + join_with_single_quotes(missing_relations)

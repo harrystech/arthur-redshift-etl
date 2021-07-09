@@ -34,7 +34,9 @@ class SqoopExtractor(DatabaseExtractor):
         dry_run: bool,
     ) -> None:
 
-        super().__init__("sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run)
+        super().__init__(
+            "sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run
+        )
 
         self.logger = logging.getLogger(__name__)
         self.sqoop_executable = "sqoop"
@@ -48,7 +50,7 @@ class SqoopExtractor(DatabaseExtractor):
     def _temporary_options_file(self, prefix: Optional[str] = None):
         # This function is needed to avoid a type error around 'dir' which isn't defined
         # as 'Optional' in the library.
-        return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)  # type: ignore
+        return NamedTemporaryFile("w", dir=self._sqoop_options_dir, prefix=prefix, delete=False)
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription) -> None:
         """Run Sqoop for one table; creates the sub-process and all the pretty args for Sqoop."""
@@ -161,7 +163,9 @@ class SqoopExtractor(DatabaseExtractor):
         self.logger.debug("Sqoop options are:\n%s", " ".join(args))
         return args
 
-    def build_sqoop_select(self, relation: RelationDescription, partition_key: Optional[str], table_size: int) -> str:
+    def build_sqoop_select(
+        self, relation: RelationDescription, partition_key: Optional[str], table_size: int
+    ) -> str:
         """Build custom select statement needed to implement sampling and extracting views."""
         if self.use_sampling_with_table(table_size):
             select_statement = self.select_statement(relation, partition_key)
@@ -235,11 +239,17 @@ class SqoopExtractor(DatabaseExtractor):
         else:
             self.logger.debug("Starting command: %s", cmdline)
             sqoop = subprocess.Popen(
-                args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+                args,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
             )
             self.logger.info("Sqoop is running with pid %d", sqoop.pid)
             out, err = sqoop.communicate()
-            nice_out, nice_err = ("\n" + str(out)).rstrip(), ("\n" + str(err)).rstrip()  # using str() for type check
+            nice_out, nice_err = ("\n" + str(out)).rstrip(), (
+                "\n" + str(err)
+            ).rstrip()  # using str() for type check
             self.logger.debug("Sqoop finished with return code %d", sqoop.returncode)
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)

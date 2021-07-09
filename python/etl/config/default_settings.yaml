@@ -6,6 +6,13 @@
     "extract_retries": 1,
     "copy_data_retries": 3,
     "insert_data_retries": 3,
+    "logging": {
+      "cloudwatch": {
+        "enabled": false,
+        "log_group": "/dw/arthur-etl",
+        "log_level": "INFO"
+      }
+    },
     "retriable_error_codes": "8001,15001,15005",
     "redshift": {
       "relation_column_encoding": "ON"
@@ -65,7 +72,7 @@
   # Type information from source (PostgreSQL) to target (Redshift)
   "type_maps": {
     # Types that may be used "as-is"
-    # See also # http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
+    # See also http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
     # The keys are regular expression (with escaped backslashes!) and the values are
     # serialization formats (logical types).
     "as_is_att_type": {
