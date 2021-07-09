@@ -6,7 +6,7 @@ DEFAULT_TIMEOUT=6
 if [[ $# -lt 3 || $# -gt 4 || "$1" = "-h" ]]; then
     cat <<USAGE
 
-Empty ETL to run all the queries on empty data. This allow us to pre-compile queries
+Warmup ETL to run all the queries on empty data. This allow us to pre-compile queries
 before a rebuild when the cluster is fresh out of maintenance, thus reducing duration.
 
 Usage: $(basename "$0") <environment> <startdatetime> <occurrences> [timeout]
@@ -51,17 +51,17 @@ set -o xtrace
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl key=user:data-pipeline-type,value=empty-run"
 
-PIPELINE_NAME="ETL Empty Run Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
+PIPELINE_NAME="ETL Warmup Pipeline ($PROJ_ENVIRONMENT @ $START_DATE_TIME, N=$OCCURRENCES)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 # shellcheck disable=SC2064
 trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
-arthur.py render_template --prefix "$PROJ_ENVIRONMENT" rebuild_pipeline > "$PIPELINE_DEFINITION_FILE"
+arthur.py render_template --prefix "$PROJ_ENVIRONMENT" warmup_pipeline > "$PIPELINE_DEFINITION_FILE"
 
 # shellcheck disable=SC2086
 aws datapipeline create-pipeline \
-    --unique-id dw-etl-rebuild-pipeline \
+    --unique-id warmup-pipeline \
     --name "$PIPELINE_NAME" \
     --tags $AWS_TAGS \
     | tee "$PIPELINE_ID_FILE"
@@ -86,5 +86,5 @@ aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
 set +x
 echo
-echo "You can monitor the status of this rebuild pipeline using:"
+echo "You can monitor the status of this warmup pipeline using:"
 echo "  watch --interval=5 arthur.py show_pipelines -q '$PIPELINE_ID'"
