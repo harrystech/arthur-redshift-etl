@@ -95,10 +95,10 @@ def build_table_constraints(table_design: dict) -> List[str]:
         "natural_key": "UNIQUE",
     }
     ddl_for_constraints = []
-    for constraint in table_constraints:
+    for constraint in sorted(table_constraints, key=lambda d: d.items()):
         [[constraint_type, column_list]] = constraint.items()
         ddl_for_constraints.append(
-            "{} ( {} )".format(type_lookup[constraint_type], join_with_double_quotes(column_list))
+            f"{type_lookup[constraint_type]} ( {join_with_double_quotes(column_list)} )"
         )
     return ddl_for_constraints
 
@@ -107,10 +107,10 @@ def build_table_attributes(table_design: dict) -> List[str]:
     """
     Return the attributes from the table design, ready to be inserted into a SQL DDL statement.
 
-    >>> build_table_attributes({})  # no-op
-    []
+    >>> build_table_attributes({})  # defaults are now explicit
+    ['DISTSTYLE AUTO', 'SORTKEY AUTO']
     >>> build_table_attributes({"attributes": {"distribution": "even"}})
-    ['DISTSTYLE EVEN']
+    ['DISTSTYLE EVEN', 'SORTKEY AUTO']
     >>> build_table_attributes({"attributes": {"distribution": ["key"], "compound_sort": ["name"]}})
     ['DISTSTYLE KEY', 'DISTKEY ( "key" )', 'COMPOUND SORTKEY ( "name" )']
     """
@@ -119,24 +119,25 @@ def build_table_attributes(table_design: dict) -> List[str]:
     # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-sort-key.html
     # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-best-dist-key.html
     distribution = table_attributes.get("distribution", "auto")
-    compound_sort = table_attributes.get("compound_sort", "auto")
+    compound_sort = table_attributes.get("compound_sort")
     interleaved_sort = table_attributes.get("interleaved_sort")
+    if compound_sort is None and interleaved_sort is None:
+        compound_sort = "auto"
 
     ddl_attributes = []
-    # TODO Use for staging tables: ddl_attributes.append("BACKUP NO")
-    if distribution:
-        if isinstance(distribution, list):
-            ddl_attributes.append("DISTSTYLE KEY")
-            ddl_attributes.append("DISTKEY ( {} )".format(join_with_double_quotes(distribution)))
-        else:
-            ddl_attributes.append("DISTSTYLE {}".format(distribution.upper()))
-    if compound_sort:
+    if isinstance(distribution, list):
+        ddl_attributes.append("DISTSTYLE KEY")
+        ddl_attributes.append(f"DISTKEY ( {join_with_double_quotes(distribution)} )")
+    else:
+        ddl_attributes.append(f"DISTSTYLE {distribution.upper()}")
+
+    if compound_sort is not None:
         if isinstance(compound_sort, list):
-            ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_with_double_quotes(compound_sort)))
+            ddl_attributes.append(f"COMPOUND SORTKEY ( {join_with_double_quotes(compound_sort)} )")
         else:
-            ddl_attributes.append("SORTKEY {}".format(compound_sort.upper()))
-    if interleaved_sort:
-        ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_with_double_quotes(interleaved_sort)))
+            ddl_attributes.append(f"SORTKEY {compound_sort.upper()}")
+    if interleaved_sort is not None:
+        ddl_attributes.append(f"INTERLEAVED SORTKEY ( {join_with_double_quotes(interleaved_sort)} )")
     return ddl_attributes
 
 
@@ -191,6 +192,7 @@ def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) ->
         attributes.append("BACKUP NO")
 
     ddl = """
+        -- arthur.ddl: {table_name.identifier}
         CREATE TABLE {table_name} (
             {columns_and_constraints}
         )
@@ -207,6 +209,7 @@ def build_view_ddl(view_name: TableName, columns: List[str], query_stmt: str) ->
     """Assemble the DDL of a view in a Redshift data warehouse."""
     comma_separated_columns = join_with_double_quotes(columns, sep=",\n            ")
     ddl_initial = """
+        -- arthur.ddl: {view_name.identifier}
         CREATE VIEW {view_name} (
             {columns}
         ) AS
@@ -220,6 +223,7 @@ def build_insert_ddl(table_name: TableName, column_list, query_stmt) -> str:
     """Assemble the statement to insert data based on a query."""
     columns = join_with_double_quotes(column_list)
     insert_stmt = """
+        -- arthur.insert: {table.identifier}
         INSERT INTO {table} (
             {columns}
         )
@@ -313,6 +317,7 @@ def copy_using_manifest(
         compupdate = "OFF"
 
     copy_stmt = """
+        -- arthur.copy: {table.identifier}
         COPY {table} (
             {columns}
         )
@@ -465,6 +470,7 @@ def unload(
     credentials = f"aws_iam_role={aws_iam_role}"
     # TODO(tom): Need to review why we can't use r"\N"
     null_string = "\\\\N"
+    # TODO(tom): Add '-- arthur.unload: {table_name.identifier}' at top of query
     unload_statement = """
         UNLOAD ('
             SELECT {}

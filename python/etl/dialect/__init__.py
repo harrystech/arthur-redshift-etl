@@ -16,5 +16,4 @@ def show_ddl(relations: List[RelationDescription]) -> None:
             )
         else:
             ddl_stmt = build_table_ddl(relation.target_table_name, relation.table_design)
-        print("-- arthur.target: {table}".format(table=relation.target_table_name.identifier))
         print(ddl_stmt + "\n;")
