@@ -115,9 +115,12 @@ def build_table_attributes(table_design: dict) -> List[str]:
     ['DISTSTYLE KEY', 'DISTKEY ( "key" )', 'COMPOUND SORTKEY ( "name" )']
     """
     table_attributes = table_design.get("attributes", {})
-    distribution = table_attributes.get("distribution", [])
-    compound_sort = table_attributes.get("compound_sort", [])
-    interleaved_sort = table_attributes.get("interleaved_sort", [])
+    # The default in AWS Redshift is now to have AUTO sort and distribution, see also:
+    # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-sort-key.html
+    # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-best-dist-key.html
+    distribution = table_attributes.get("distribution", "auto")
+    compound_sort = table_attributes.get("compound_sort", "auto")
+    interleaved_sort = table_attributes.get("interleaved_sort")
 
     ddl_attributes = []
     # TODO Use for staging tables: ddl_attributes.append("BACKUP NO")
@@ -128,8 +131,11 @@ def build_table_attributes(table_design: dict) -> List[str]:
         else:
             ddl_attributes.append("DISTSTYLE {}".format(distribution.upper()))
     if compound_sort:
-        ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_with_double_quotes(compound_sort)))
-    elif interleaved_sort:
+        if isinstance(compound_sort, list):
+            ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_with_double_quotes(compound_sort)))
+        else:
+            ddl_attributes.append("SORTKEY {}".format(compound_sort.upper()))
+    if interleaved_sort:
         ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_with_double_quotes(interleaved_sort)))
     return ddl_attributes
 

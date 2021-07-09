@@ -192,11 +192,16 @@
             "properties": {
                 "distribution": {
                     "oneOf": [
-                        { "enum": [ "all", "even", "auto" ] },
+                        { "enum": [ "all", "auto", "even", "ALL", "AUTO", "EVEN" ] },
                         { "$ref": "#/definitions/one_column_as_list" }
                     ]
                 },
-                "compound_sort": { "$ref": "#/definitions/column_list" },
+                "compound_sort": {
+                    "oneOf": [
+                        { "enum": [ "auto", "AUTO" ] },
+                        { "$ref": "#/definitions/column_list" }
+                    ]
+                },
                 "interleaved_sort": { "$ref": "#/definitions/column_list" }
             },
             "not": {
