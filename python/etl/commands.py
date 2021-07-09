@@ -165,7 +165,7 @@ def run_arg_as_command(my_name="arthur.py"):
             prefix = etl.config.get_config_value("object_store.s3.prefix")
             etl.logs.cloudwatch.add_cloudwatch_logging(prefix)
 
-        if getattr(args.func, "uses_monitor", False):
+        if args.uses_monitor:
             etl.monitor.start_monitors(args.prefix)
             logger.debug("Setting marker in events table for start of '%s' step", args.sub_command)
             etl.monitor.Monitor.marker_payload(args.sub_command).emit(dry_run=args.dry_run)
@@ -477,6 +477,9 @@ class StorePatternAsSelector(argparse.Action):
 class SubCommand(abc.ABC):
     """Abstract parent class for all commands which add sub-parsers and callbacks."""
 
+    # By default, commands do not have monitor events.
+    uses_monitor = False
+
     def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None) -> None:
         self.name = name
         self.help = help_
@@ -491,6 +494,7 @@ class SubCommand(abc.ABC):
         else:
             parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
         parser.set_defaults(func=self.callback)
+        parser.set_defaults(uses_monitor=self.uses_monitor)
 
         # Log level and prolix setting need to be always known since `run_arg_as_command` depends
         # on them.
@@ -905,6 +909,8 @@ class SyncWithS3Command(SubCommand):
 
 
 class ExtractToS3Command(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "extract",
@@ -996,10 +1002,10 @@ class ExtractToS3Command(SubCommand):
             dry_run=args.dry_run,
         )
 
-    setattr(callback, "uses_monitor", True)
-
 
 class LoadDataWarehouseCommand(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "load",
@@ -1061,10 +1067,10 @@ class LoadDataWarehouseCommand(SubCommand):
             dry_run=args.dry_run,
         )
 
-    setattr(callback, "uses_monitor", True)
-
 
 class UpgradeDataWarehouseCommand(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "upgrade",
@@ -1150,10 +1156,10 @@ class UpgradeDataWarehouseCommand(SubCommand):
             dry_run=args.dry_run,
         )
 
-    setattr(callback, "uses_monitor", True)
-
 
 class UpdateDataWarehouseCommand(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "update",
@@ -1201,15 +1207,15 @@ class UpdateDataWarehouseCommand(SubCommand):
             dry_run=args.dry_run,
         )
 
-    setattr(callback, "uses_monitor", True)
-
 
 class UnloadDataToS3Command(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "unload",
             "unload data from data warehouse to files in S3",
-            "Unload data from data warehouse into CSV files in S3 (along with files of column" " names).",
+            "Unload data from data warehouse into CSV files in S3 (along with files of column names).",
         )
 
     def add_arguments(self, parser):
@@ -1233,8 +1239,6 @@ class UnloadDataToS3Command(SubCommand):
         etl.unload.unload_to_s3(
             descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
         )
-
-    setattr(callback, "uses_monitor", True)
 
 
 class CreateSchemasCommand(SubCommand):
