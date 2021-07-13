@@ -290,7 +290,7 @@ class MonitorPayload:
             if not payload[key]:
                 del payload[key]
 
-        compact_text = json.dumps(payload, sort_keys=True, separators=(",", ":"), cls=FancyJsonEncoder)
+        compact_text = json.dumps(payload, cls=FancyJsonEncoder, separators=(",", ":"), sort_keys=True)
         if dry_run:
             logger.debug("Dry-run: payload = %s", compact_text)
             return
@@ -564,16 +564,15 @@ def start_monitors(environment):
 def _format_output_column(key: str, value: str) -> str:
     if value is None:
         return "---"
-    elif key == "timestamp":
+    if key == "timestamp":
         # Make timestamp readable by turning epoch seconds into a date.
         return datetime.utcfromtimestamp(float(value)).replace(microsecond=0).isoformat()
-    elif key == "elapsed":
+    if key == "elapsed":
         # Reduce number of decimals to 2.
         return "{:6.2f}".format(float(value))
-    elif key == "rowcount":
+    if key == "rowcount":
         return "{:9d}".format(int(value))
-    else:
-        return value
+    return value
 
 
 def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
