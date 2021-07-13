@@ -352,21 +352,23 @@ def build_full_parser(prog_name):
         ShowDdlCommand,
         CreateIndexCommand,
         SyncWithS3Command,
+        ShowDownstreamDependentsCommand,
+        ShowUpstreamDependenciesCommand,
         # ETL commands to extract, load (or update), or transform
         ExtractToS3Command,
         LoadDataWarehouseCommand,
         UpgradeDataWarehouseCommand,
         UpdateDataWarehouseCommand,
         UnloadDataToS3Command,
-        # Helper commands (database, filesystem)
+        # Helper commands (database)
         CreateExternalSchemasCommand,
         CreateSchemasCommand,
         PromoteSchemasCommand,
         PingCommand,
         TerminateSessionsCommand,
+        VacuumCommand,
+        # Helper commands (filesystem)
         ListFilesCommand,
-        ShowDownstreamDependentsCommand,
-        ShowUpstreamDependenciesCommand,
         # Environment commands
         RenderTemplateCommand,
         ShowValueCommand,
@@ -1619,6 +1621,23 @@ class TerminateSessionsCommand(SubCommand):
     def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.terminate_sessions(dry_run=args.dry_run)
+
+
+class VacuumCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "vacuum",
+            "vacuum selected or all tables",
+            "Run VACUUM command.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme", "dry-run"])
+
+    def callback(self, args):
+        relations = self.find_relation_descriptions(args)
+        with etl.db.log_error():
+            etl.load.vacuum(relations, dry_run=args.dry_run)
 
 
 class ShowDownstreamDependentsCommand(SubCommand):

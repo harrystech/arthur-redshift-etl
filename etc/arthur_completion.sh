@@ -55,6 +55,7 @@ _arthur_completion()
                 update
                 update_user
                 upgrade
+                vacuum
                 validate
                 "
             # shellcheck disable=SC2207
