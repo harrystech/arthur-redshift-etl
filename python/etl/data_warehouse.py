@@ -22,12 +22,27 @@ import etl.commands
 import etl.config
 import etl.config.dw
 import etl.db
+import etl.dialect.redshift
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import ETLConfigError, ETLRuntimeError
 from etl.text import join_with_single_quotes
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+
+def create_external_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> None:
+    """
+    Create external schemas and grant access.
+
+    It's ok if any of the schemas already exist, in which case the privileges are updated.
+
+    This is a callback for a command.
+    """
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        for schema in schemas:
+            create_external_schema_and_grant_access(conn, schema, dry_run=dry_run)
 
 
 def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dry_run=False) -> None:
@@ -40,6 +55,25 @@ def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dr
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for schema in schemas:
             create_schema_and_grant_access(conn, schema, use_staging=use_staging, dry_run=dry_run)
+
+
+def create_external_schema_and_grant_access(conn, schema, dry_run=False) -> None:
+    # TODO(tom): How do we make the ETL the owner of this schema?
+    if not schema.database or not schema.iam_role:
+        logger.warning("External schema '%s' is missing database name and IAM role", schema.name)
+        return
+
+    etl.dialect.redshift.create_external_schema(
+        conn, schema.name, schema.database, schema.iam_role, dry_run=dry_run
+    )
+
+    group_names = join_with_single_quotes(schema.reader_groups)
+    if dry_run:
+        logger.info("Dry-run: Skipping granting access for '%s' to %s", schema.name, group_names)
+        return
+
+    logger.info("Granting access in '%s' to %s", schema.name, group_names)
+    etl.db.grant_usage(conn, schema.name, schema.reader_groups)
 
 
 def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, dry_run=False) -> None:

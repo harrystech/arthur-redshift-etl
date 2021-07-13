@@ -126,9 +126,10 @@ class TableName:
         """List external schemas that are not managed by us and may not exist during validation."""
         if self._external_schemas is None:
             try:
-                self._external_schemas = frozenset(etl.config.get_dw_config().external_schema_names)
+                schemas = etl.config.get_dw_config().external_schemas
             except AttributeError:
                 raise ETLSystemError("dw_config has not been set!")
+            self._external_schemas = frozenset(schema.name for schema in schemas)
         return self._external_schemas
 
     def to_tuple(self):
