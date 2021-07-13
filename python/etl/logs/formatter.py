@@ -48,7 +48,7 @@ class JsonFormatter(logging.Formatter):
             "log_level": record.levelname,
             "log_severity": record.levelno,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": str(record.getMessage()),
             "process.id": record.process,
             "process.name": record.processName,
             "source.filename": record.filename,
@@ -59,4 +59,12 @@ class JsonFormatter(logging.Formatter):
             "thread.name": record.threadName,
             "timestamp": int(record.created * 1000.0),
         }
+        # Always add monitor information if present.
+        if hasattr(record, "monitor"):
+            values["monitor"] = record.monitor  # type: ignore
+        # Always add exception information if present.
+        if record.exc_text is not None:
+            if values["message"] != "\n":
+                values["message"] += "\n"  # type: ignore
+            values["message"] += record.exc_text  # type: ignore
         return json.dumps(values, default=str, separators=(",", ":"), sort_keys=True)
