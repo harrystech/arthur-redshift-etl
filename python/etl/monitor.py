@@ -215,7 +215,17 @@ class Monitor(metaclass=MetaMonitor):
         if exc_type is None:
             event = STEP_FINISH
             errors = None
-            logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
+            logger.info(
+                f"Finished {self._step} step for '{self._target}' ({seconds:0.2f}s)",
+                extra={
+                    "metrics": {
+                        "elapsed": seconds,
+                        "rowcount": self._extra.get("rowcount"),
+                        "step": self._step,
+                        "target": self._target,
+                    }
+                },
+            )
         else:
             event = STEP_FAIL
             errors = [
@@ -224,7 +234,16 @@ class Monitor(metaclass=MetaMonitor):
                     "message": traceback.format_exception_only(exc_type, exc_value)[0].strip(),
                 }
             ]
-            logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
+            logger.warning(
+                f"Failed {self._step} step for '{self._target}' ({seconds:0.2f}s)",
+                extra={
+                    "metrics": {
+                        "elapsed": seconds,
+                        "step": self._step,
+                        "target": self._target,
+                    }
+                },
+            )
 
         payload = MonitorPayload(
             self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra

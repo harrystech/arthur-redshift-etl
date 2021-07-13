@@ -103,10 +103,13 @@ def execute_or_bail(sub_command: str):
         logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
         croak(exc, 5)
     else:
-        logger.info("Ran '%s' for %.2fs and finished successfully!", sub_command, timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s and finished successfully!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
 
 
-def log_command_line():
+def log_command_line() -> None:
     logger.info(
         "Starting log for %s with ETL ID %s", etl.config.package_version(), etl.monitor.Monitor.etl_id
     )
