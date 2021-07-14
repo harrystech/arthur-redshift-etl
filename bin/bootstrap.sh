@@ -69,6 +69,7 @@ python3 -m venv venv
 
 # Work around this error: "_OLD_VIRTUAL_PATH: unbound variable"
 set +o nounset
+# shellcheck disable=SC1091
 source venv/bin/activate
 set -o nounset
 
@@ -79,6 +80,7 @@ python3 -m pip install --requirement ./jars/requirements.txt
 # so that the sort command can split correctly on '.' with the -t option.
 # We then use the major (3), minor (4) and patch (5) version to sort numerically in reverse order.
 LATEST_TAR_FILE=$(
+    # shellcheck disable=SC2012
     ls -1 ./jars/ |
     sed -n "s:${PROJ_NAME}-:${PROJ_NAME}.:p" |
     sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |

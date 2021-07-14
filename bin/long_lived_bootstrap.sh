@@ -25,34 +25,37 @@
 # Make sure to keep this in sync with our Dockerfile.
 
 PROJ_NAME="redshift_etl"
+# PROJ_PACKAGES="awscli jq libyaml-devel postgresql procps-ng python3 python3-devel tmux"
 PROJ_PACKAGES="aws-cli gcc jq libyaml-devel tmux"
+
 
 PROJ_TEMP="/home/hadoop/${PROJ_NAME}"  # Should be rendered from arthur_settings.etl_temp_dir
 
-show_usage_and_exit () {
-	
-	cat <<EOF
-Usage: `basename $0` <bucket_name> <environment>
+show_usage_and_exit() {
+    cat <<USAGE
+
+Usage: $(basename "$0") <bucket_name> <environment>
 
 Download files from the S3 bucket into $PROJ_TEMP on this instance
 and install the Python code in a virtual environment.
+
 We will also try to set tags for this instance.
-EOF
-	exit ${1-0}
+USAGE
+    exit "${1-0}"
 }
 
-log () {
-	set +o xtrace
-	echo "`date '+%Y-%m-%d %H:%M:%S %Z'`: $*"
+log() {
+    set +o xtrace
+    echo "$(date '+%Y-%m-%d %H:%M:%S %Z'): $*"
 }
 
-if [[ ${1-"-h"} = "-h" ]]; then
-	show_usage_and_exit
+if [[ ${1-"-h"} == "-h" ]]; then
+    show_usage_and_exit
 fi
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
-	echo "Missing arguments!" 1>&2
-	show_usage_and_exit 1
+    echo "Missing arguments!" 1>&2
+    show_usage_and_exit 1
 fi
 
 # Fail if any install step fails or variables are not set before use.
@@ -64,6 +67,7 @@ log "Starting $PROJ_NAME bootstrap from bucket \"$BUCKET_NAME\" and prefix \"$EN
 
 set -o xtrace
 
+# shellcheck disable=SC2086
 sudo yum install --assumeyes $PROJ_PACKAGES
 
 # Set creation mask to: u=rwx,g=rx,o=
@@ -77,30 +81,35 @@ cd "$PROJ_TEMP"
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/config/" ./config/
 aws s3 cp --only-show-errors --recursive "s3://$BUCKET_NAME/$ENVIRONMENT/jars/" ./jars/
 aws s3 cp --only-show-errors --recursive \
-	--exclude '*' --include bootstrap.sh --include send_health_check.sh --include sync_env.sh \
-	"s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
+    --exclude '*' --include bootstrap.sh --include send_health_check.sh --include sync_env.sh \
+    "s3://$BUCKET_NAME/$ENVIRONMENT/bin/" ./bin/
 chmod +x ./bin/*.sh
 
 log "Creating virtual environment in \"$PROJ_TEMP/venv\""
 test -x deactivate && deactivate || echo "Already outside virtual environment"
 
-virtualenv --python=python3 venv
+python3 -m venv venv
 
 # Work around this error: "_OLD_VIRTUAL_PATH: unbound variable"
 set +o nounset
+# shellcheck disable=SC1091
 source venv/bin/activate
 set -o nounset
 
-pip3 install --upgrade pip --disable-pip-version-check
-pip3 install --requirement ./jars/requirements.txt
+python3 -m pip install --upgrade pip --disable-pip-version-check
+python3 -m pip install --requirement ./jars/requirements.txt
 
 # This trick with sed transforms project-<dotted version>.tar.gz into project.<dotted_version>.tar.gz
 # so that the sort command can split correctly on '.' with the -t option.
 # We then use the major (3), minor (4) and patch (5) version to sort numerically in reverse order.
-LATEST_TAR_FILE=`
-ls -1 ./jars/ |
-sed -n "s:${PROJ_NAME}-:${PROJ_NAME}.:p" |
-sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |
-sed "s:${PROJ_NAME}\.:${PROJ_NAME}-:" |
-head -1`
-pip3 install --upgrade "./jars/$LATEST_TAR_FILE"
+LATEST_TAR_FILE=$(
+    # shellcheck disable=SC2012
+    ls -1 ./jars/ |
+    sed -n "s:${PROJ_NAME}-:${PROJ_NAME}.:p" |
+    sort -t. -n -r -k 3,3 -k 4,4 -k 5,5 |
+    sed "s:${PROJ_NAME}\.:${PROJ_NAME}-:" |
+    head -1
+)
+python3 -m pip install --upgrade "./jars/$LATEST_TAR_FILE"
+
+log "Finished \"$0 $BUCKET_NAME $ENVIRONMENT\""
