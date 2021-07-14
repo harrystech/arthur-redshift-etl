@@ -180,19 +180,23 @@ class SqoopExtractor(DatabaseExtractor):
         self, relation: RelationDescription, partition_key: Optional[str], table_size: int
     ) -> List[str]:
         """Build the partitioning-related arguments for Sqoop."""
-        # Use 1 mapper if either there is no partition key, or if the partitioner returns only one partition
+        # Use single mapper if either there is no partition key, or if the partitioner returns
+        # only one partition.
         num_mappers = 1
         partition_options = []
         if partition_key:
             column = fy.first(fy.where(relation.table_design["columns"], name=partition_key))
+
             if column is not None and column["type"] in ("date", "timestamp"):
-                quoted_key_arg = """CAST(DATE_PART('epoch', "{}") AS BIGINT)""".format(partition_key)
+                # Turn dates and timestamps into ints that we can partition on.
+                quoted_key_arg = f"""CAST(DATE_PART('epoch', "{partition_key}") AS BIGINT)"""
             else:
-                quoted_key_arg = '"{}"'.format(partition_key)
+                quoted_key_arg = f'"{partition_key}"'
+
             partition_options += ["--split-by", quoted_key_arg]
 
             if relation.partition_boundary_query:
-                partition_options += ["--boundary-query", '"{}"'.format(relation.partition_boundary_query)]
+                partition_options += ["--boundary-query", f'"{relation.partition_boundary_query}"']
 
             if relation.num_partitions:
                 # num_partitions explicitly set in the design file overrides dynamic determination.
