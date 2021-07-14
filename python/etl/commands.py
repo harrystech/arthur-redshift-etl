@@ -113,6 +113,7 @@ def run_arg_as_command(my_name="arthur.py"):
     if not args.func:
         parser.print_usage()
     elif args.cluster_id is not None:
+        etl.config.load_config(args.config)
         submit_step(args.cluster_id, args.sub_command)
     else:
         # We need to configure logging before running context because that context expects
