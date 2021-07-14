@@ -3,12 +3,12 @@
         {
             "id": "Default",
             "name": "Default",
-            "schedule": { "ref": "ETLSchedule" },
+            "schedule": { "ref": "WarmupSchedule" },
             "scheduleType": "cron",
             "failureAndRerunMode": "CASCADE",
             "resourceRole": "${resources.EC2.iam_instance_profile}",
             "role": "${resources.DataPipeline.role}",
-            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/_logs/${object_store.s3.prefix}/",
+            "pipelineLogUri": "s3://${object_store.s3.bucket_name}/_logs/${object_store.s3.prefix}/validation/",
             "region": "${resources.VPC.region}",
             "maximumRetries": "2"
         },
@@ -16,33 +16,33 @@
             "id": "WarmupSchedule",
             "name": "Run every saturday after the Redshift Cluster Maintenance",
             "type": "Schedule",
-            "period": "1 days",
+            "period": "7 days",
             "startDateTime": "#{myStartDateTime}",
             "occurrences": "#{myOccurrences}"
         },
         {
             "id": "SNSParent",
-            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-status"
+            "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-validation"
         },
         {
             "id": "SuccessNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
-            "subject": "ETL warmup Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Warmup Success: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Completed last action successfully at #{node.@actualEndTime}\\nLast node: #{node.name}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}"
         },
         {
             "id": "FailureNotification",
             "type": "SnsAlarm",
             "parent": { "ref": "SNSParent" },
-            "subject": "ETL warmup Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Warmup Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
         },
         {
             "id": "PagerNotification",
             "type": "SnsAlarm",
             "topicArn": "arn:aws:sns:${resources.VPC.region}:${resources.VPC.account}:${resource_prefix}-page",
-            "subject": "ETL warmup Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
+            "subject": "ETL Warmup Failure: ${object_store.s3.prefix} at #{node.@scheduledStartTime}",
             "message": "Failed step #{node.name} at #{node.@actualEndTime}\\nPipelineId: #{node.@pipelineId}\\nLog directory: #{node.pipelineLogUri}#{node.@pipelineId}\\n\\nShow error message: arthur.py show_pipelines '#{node.@pipelineId}'"
         },
         {
@@ -83,7 +83,7 @@
             "name": "Copy Startup Scripts (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "/usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'create_staging_credentials' --include 'sync_env.sh' s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin /tmp"
+            "command": "/usr/bin/aws s3 cp --recursive --exclude '*' --include 'bootstrap.sh' --include 'create_validation_credentials' --include 'sync_env.sh' s3://${object_store.s3.bucket_name}/${object_store.s3.prefix}/bin /tmp"
         },
         {
             "id": "SyncEnvironment",
@@ -94,11 +94,11 @@
             "dependsOn": { "ref": "CopyStartupScripts" }
         },
         {
-            "id": "CreateStagingCredentials",
-            "name": "Create staging credentials (EC2)",
+            "id": "CreateValidationCredentials",
+            "name": "Create validation credentials (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "/bin/bash /tmp/create_staging_credentials ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
+            "command": "/bin/bash /tmp/create_validation_credentials ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
             "dependsOn": { "ref": "SyncEnvironment" }
         },
         {
@@ -106,8 +106,8 @@
             "name": "Bootstrap (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "/bin/bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/staging",
-            "dependsOn": { "ref": "CreateStagingCredentials" }
+            "command": "/bin/bash /tmp/bootstrap.sh ${object_store.s3.bucket_name} ${object_store.s3.prefix}/validation",
+            "dependsOn": { "ref": "CreateValidationCredentials" }
         },
         {
             "id": "ArthurInitialize",
@@ -156,6 +156,6 @@
     "values": {
         "myStartDateTime": "2525-01-01T00:00:00",
         "myOccurrences": "1000",
-        "myTimeout": "2"
+        "myTimeout": "4"
     }
 }

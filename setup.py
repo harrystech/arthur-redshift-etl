@@ -28,6 +28,7 @@ setup(
         "python/scripts/install_refresh_pipeline.sh",
         "python/scripts/install_upgrade_pipeline.sh",
         "python/scripts/install_validation_pipeline.sh",
+        "python/scripts/install_warmup_pipeline.sh",
         "python/scripts/launch_ec2_instance.sh",
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",
