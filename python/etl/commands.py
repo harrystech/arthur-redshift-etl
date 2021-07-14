@@ -5,6 +5,7 @@ This can be the entry point for a console script.  Some functions are broken out
 so that they can be leveraged by utilities in addition to the top-level script.
 """
 
+import abc
 import argparse
 import logging
 import os
@@ -14,7 +15,7 @@ import traceback
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 import boto3
 import simplejson as json
@@ -22,6 +23,7 @@ from termcolor import colored
 
 import etl.config
 import etl.config.env
+import etl.config.settings
 import etl.data_warehouse
 import etl.db
 import etl.design.bootstrap
@@ -31,13 +33,15 @@ import etl.extract
 import etl.file_sets
 import etl.json_encoder
 import etl.load
+import etl.logs
+import etl.logs.cloudwatch
 import etl.monitor
 import etl.names
 import etl.pipeline
 import etl.relation
-import etl.render_template
 import etl.selftest
 import etl.sync
+import etl.templates
 import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
@@ -102,6 +106,16 @@ def execute_or_bail():
         logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
 
 
+def log_command_line():
+    logger.info(
+        "Starting log for %s with ETL ID %s", etl.config.package_version(), etl.monitor.Monitor.etl_id
+    )
+    logger.info('Command line: "%s"', " ".join(sys.argv))
+    logger.debug("Current working directory: '%s'", os.getcwd())
+    logger.info(etl.config.get_release_info())
+    logger.debug(etl.config.get_python_info())
+
+
 def run_arg_as_command(my_name="arthur.py"):
     """
     Use the sub-command's callback in `func` to actually run the sub-command.
@@ -110,45 +124,58 @@ def run_arg_as_command(my_name="arthur.py"):
     """
     parser = build_full_parser(my_name)
     args = parser.parse_args()
+
     if not args.func:
         parser.print_usage()
-    elif args.cluster_id is not None:
+        return
+
+    if args.cluster_id is not None:
         etl.config.load_config(args.config)
         submit_step(args.cluster_id, args.sub_command)
-    else:
-        # We need to configure logging before running context because that context expects
-        # logging to be setup.
-        try:
-            etl.config.configure_logging(args.prolix, args.log_level)
-        except Exception as exc:
-            croak(exc, 1)
+        return
 
-        with execute_or_bail():
-            etl.config.load_config(args.config)
+    # We need to configure logging before running context because that context expects
+    # logging to be setup.
+    try:
+        etl.logs.configure_logging(args.prolix, args.log_level)
+    except Exception as exc:
+        croak(exc, 1)
 
-            if hasattr(args, "prefix"):
-                # Any command where we can select the "prefix" also needs the bucket.
-                # TODO(tom): Need to differentiate between object store (schemas) and data lake
-                #     (extracted or unloaded data)
-                setattr(args, "bucket_name", etl.config.get_config_value("object_store.s3.bucket_name"))
-                etl.config.set_config_value("object_store.s3.prefix", args.prefix)
-                etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
+    with execute_or_bail():
+        log_command_line()
+        etl.config.load_config(args.config)
 
-                # Create name used as prefix for resources, like DynamoDB tables or SNS topics
-                base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
-                etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
+        # The region must be set for most boto3 calls to succeed.
+        os.environ["AWS_DEFAULT_REGION"] = etl.config.get_config_value("resources.VPC.region")
 
-                if getattr(args, "use_monitor"):
-                    etl.monitor.start_monitors(args.prefix)
+        if hasattr(args, "prefix"):
+            # Any command where we can select the "prefix" also needs the bucket.
+            # TODO(tom): Need to differentiate between object store (schemas) and data lake
+            #     (extracted or unloaded data)
+            args.bucket_name = etl.config.get_config_value("object_store.s3.bucket_name")
+            etl.config.set_config_value("object_store.s3.prefix", args.prefix)
+            etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
 
-            # The region must be set for most boto3 calls to succeed.
-            os.environ["AWS_DEFAULT_REGION"] = etl.config.get_config_value("resources.VPC.region")
+            # Create name used as prefix for resources, like DynamoDB tables or SNS topics
+            base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
+            etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
+        elif etl.config.get_config_value("object_store.s3.prefix") is None:
+            etl.config.set_config_value("object_store.s3.prefix", etl.config.env.get_default_prefix())
 
-            dw_config = etl.config.get_dw_config()
-            if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
-                args.pattern.base_schemas = [schema.name for schema in dw_config.schemas]
+        if etl.config.get_config_value("arthur_settings.logging.cloudwatch.enabled"):
+            prefix = etl.config.get_config_value("object_store.s3.prefix")
+            etl.logs.cloudwatch.add_cloudwatch_logging(prefix)
 
-            args.func(args)
+        if args.uses_monitor:
+            etl.monitor.start_monitors(args.prefix)
+            logger.debug("Setting marker in events table for start of '%s' step", args.sub_command)
+            etl.monitor.Monitor.marker_payload(args.sub_command).emit(dry_run=args.dry_run)
+
+        dw_config = etl.config.get_dw_config()
+        if isinstance(getattr(args, "pattern", None), etl.names.TableSelector):
+            args.pattern.base_schemas = [schema.name for schema in dw_config.schemas]
+
+        args.func(args)
 
 
 def submit_step(cluster_id, sub_command):
@@ -185,7 +212,9 @@ def submit_step(cluster_id, sub_command):
         )
         step_id = response["StepIds"][0]
         status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
-        json.dump(status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder)
+        json.dump(
+            status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder
+        )
         sys.stdout.write("\n")
     except Exception as exc:
         logger.exception("Adding step to job flow failed:")
@@ -221,7 +250,9 @@ class FancyArgumentParser(argparse.ArgumentParser):
     def __init__(self, **kwargs) -> None:
         formatter_class = kwargs.pop("formatter_class", WideHelpFormatter)
         fromfile_prefix_chars = kwargs.pop("fromfile_prefix_chars", "@")
-        super().__init__(formatter_class=formatter_class, fromfile_prefix_chars=fromfile_prefix_chars, **kwargs)
+        super().__init__(
+            formatter_class=formatter_class, fromfile_prefix_chars=fromfile_prefix_chars, **kwargs
+        )
 
     def convert_arg_line_to_args(self, arg_line: str) -> List[str]:
         """
@@ -233,7 +264,7 @@ class FancyArgumentParser(argparse.ArgumentParser):
         >>> parser.convert_arg_line_to_args(" schema.table ")
         ['schema.table']
         >>> parser.convert_arg_line_to_args(
-        ...     "show_dependents.output_compatible # index=1, kind=CTAS, is_required=true")
+        ...     "show_dependents.output_compatible # CTAS index=1 is_required=true")
         ['show_dependents.output_compatible']
         >>> parser.convert_arg_line_to_args(" # single-line comment")
         []
@@ -278,7 +309,6 @@ def build_basic_parser(prog_name, description=None):
     parser.set_defaults(prolix=None)
     parser.set_defaults(log_level=None)
     parser.set_defaults(func=None)
-    parser.set_defaults(use_monitor=False)
     return parser
 
 
@@ -292,7 +322,7 @@ def build_full_parser(prog_name):
     :param prog_name: Name that should show up as command name in help
     :return: instance of ArgumentParser that is ready to parse and run sub-commands
     """
-    parser = build_basic_parser(prog_name, description="This command allows to drive the ETL steps.")
+    parser = build_basic_parser(prog_name, description="This script allows to drive the ETL steps.")
 
     package = etl.config.package_version()
     parser.add_argument("-V", "--version", action="version", version=f"%(prog)s ({package})")
@@ -305,6 +335,7 @@ def build_full_parser(prog_name):
         dest="sub_command",
     )
     for klass in [
+        # TODO(tom): Split into common and infrequent commands, sort alphabetically.
         # Commands to deal with data warehouse as admin
         InitializeSetupCommand,
         ShowRandomPassword,
@@ -322,20 +353,23 @@ def build_full_parser(prog_name):
         ShowDdlCommand,
         CreateIndexCommand,
         SyncWithS3Command,
+        ShowDownstreamDependentsCommand,
+        ShowUpstreamDependenciesCommand,
         # ETL commands to extract, load (or update), or transform
         ExtractToS3Command,
         LoadDataWarehouseCommand,
         UpgradeDataWarehouseCommand,
         UpdateDataWarehouseCommand,
         UnloadDataToS3Command,
-        # Helper commands (database, filesystem)
+        # Helper commands (database)
+        CreateExternalSchemasCommand,
         CreateSchemasCommand,
         PromoteSchemasCommand,
         PingCommand,
         TerminateSessionsCommand,
+        VacuumCommand,
+        # Helper commands (filesystem)
         ListFilesCommand,
-        ShowDownstreamDependentsCommand,
-        ShowUpstreamDependenciesCommand,
         # Environment commands
         RenderTemplateCommand,
         ShowValueCommand,
@@ -345,6 +379,7 @@ def build_full_parser(prog_name):
         QueryEventsCommand,
         SummarizeEventsCommand,
         TailEventsCommand,
+        TailLogsCommand,
         # General and development commands
         ShowHelpCommand,
         SelfTestCommand,
@@ -355,16 +390,14 @@ def build_full_parser(prog_name):
     return parser
 
 
-def add_standard_arguments(parser, options):
+def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterable[str]) -> None:
     """
     Add from set of "standard" arguments.
 
     They are "standard" in that the name and description should be the same when used
     by multiple sub-commands.
-
-    :param parser: should be a sub-parser
-    :param options: see option strings below, like "prefix", "pattern"
     """
+    options = frozenset(option_names)
     if "dry-run" in options:
         parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
     if "prefix" in options:
@@ -394,7 +427,8 @@ def add_standard_arguments(parser, options):
             "--max-concurrency",
             metavar="N",
             type=int,
-            help="set max number of parallel loads to N (overrides 'resources.RedshiftCluster.max_concurrency')",
+            help="set max number of parallel loads to N (overrides "
+            "'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
         parser.add_argument(
@@ -409,7 +443,7 @@ def add_standard_arguments(parser, options):
         parser.add_argument(
             "-y",
             "--skip-copy",
-            help="skip the COPY and INSERT commands (leaves tables empty, used for validation)",
+            help="skip the COPY and INSERT commands (this leaves tables empty, used for validation)",
             action="store_true",
         )
     if "continue-from" in options:
@@ -423,16 +457,16 @@ def add_standard_arguments(parser, options):
     if "pattern" in options:
         parser.add_argument(
             "pattern",
+            action=StorePatternAsSelector,
             help="glob pattern or identifier to select table(s) or view(s)",
             nargs="*",
-            action=StorePatternAsSelector,
         )
     if "one-pattern" in options:
         parser.add_argument(
             "pattern",
+            action=StorePatternAsSelector,
             help="glob pattern or identifier to select table or view",
             nargs=1,
-            action=StorePatternAsSelector,
         )
 
 
@@ -444,8 +478,11 @@ class StorePatternAsSelector(argparse.Action):
         setattr(namespace, self.dest, selector)
 
 
-class SubCommand:
-    """Instances (of child classes) will setup sub-parsers and have callbacks for those."""
+class SubCommand(abc.ABC):
+    """Abstract parent class for all commands which add sub-parsers and callbacks."""
+
+    # By default, commands do not have monitor events.
+    uses_monitor = False
 
     def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None) -> None:
         self.name = name
@@ -461,27 +498,36 @@ class SubCommand:
         else:
             parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
         parser.set_defaults(func=self.callback)
+        parser.set_defaults(uses_monitor=self.uses_monitor)
 
         # Log level and prolix setting need to be always known since `run_arg_as_command` depends
         # on them.
         # TODO move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("-o", "--prolix", help="send full log to console", default=False, action="store_true")
         group.add_argument(
-            "-v", "--verbose", help="increase verbosity", action="store_const", const="DEBUG", dest="log_level"
+            "-o", "--prolix", action="store_true", default=False, help="send full log to console"
         )
         group.add_argument(
-            "-q", "--quiet", help="decrease verbosity", action="store_const", const="WARNING", dest="log_level"
+            "-v",
+            "--verbose",
+            action="store_const",
+            const="DEBUG",
+            dest="log_level",
+            help="increase verbosity",
+        )
+        group.add_argument(
+            "-q",
+            "--quiet",
+            action="store_const",
+            const="WARNING",
+            dest="log_level",
+            help="decrease verbosity",
         )
         # Cannot be set on the command line since changing it is not supported by file sets.
         parser.set_defaults(table_design_dir="./schemas")
 
         self.add_arguments(parser)
         return parser
-
-    def add_arguments(self, parser):
-        """Override this method for sub-classes."""
-        pass
 
     @staticmethod
     def location(args, default_scheme=None):
@@ -495,12 +541,13 @@ class SubCommand:
         scheme = getattr(args, "scheme", default_scheme)
         if scheme == "file":
             return scheme, "localhost", args.table_design_dir
-        elif scheme == "s3":
+        if scheme == "s3":
             return scheme, args.bucket_name, args.prefix
-        else:
-            raise ETLSystemError("scheme invalid")
+        raise ETLSystemError("scheme invalid")
 
-    def find_relation_descriptions(self, args, default_scheme=None, required_relation_selector=None, return_all=False):
+    def find_relation_descriptions(
+        self, args, default_scheme=None, required_relation_selector=None, return_all=False
+    ):
         """
         Most commands need to collect file sets and create relation descriptions around those.
 
@@ -526,23 +573,20 @@ class SubCommand:
 
         if not return_all and required_relation_selector is not None:
             descriptions = [
-                description for description in descriptions if args.pattern.match(description.target_table_name)
+                description
+                for description in descriptions
+                if args.pattern.match(description.target_table_name)
             ]
 
         return descriptions
 
+    @abc.abstractmethod
+    def add_arguments(self, parser):
+        ...
+
+    @abc.abstractmethod
     def callback(self, args):
-        """Override this method for sub-classes."""
-        raise NotImplementedError("Instance of {} has no proper callback".format(self.__class__.__name__))
-
-
-class MonitoredSubCommand(SubCommand):
-    """A sub-command that will also use monitors to update some event table."""
-
-    def add_to_parser(self, parent_parser) -> argparse.ArgumentParser:
-        parser = super().add_to_parser(parent_parser)
-        parser.set_defaults(use_monitor=True)
-        return parser
+        ...
 
 
 class InitializeSetupCommand(SubCommand):
@@ -550,9 +594,10 @@ class InitializeSetupCommand(SubCommand):
         super().__init__(
             "initialize",
             "create ETL database",
-            "(Re)create database referenced in ETL credential, optionally creating users and groups."
-            " Normally, we expect this to be a validation database (name starts with 'validation')."
-            " When bringing up your primary production or development database, use the --force option.",
+            "(Re)create database referenced in ETL credential, optionally creating users and"
+            " groups. Normally, we expect this to be a validation database (name starts with"
+            " 'validation'). When bringing up your primary production or development database,"
+            " use the --force option.",
         )
 
     def add_arguments(self, parser):
@@ -648,7 +693,7 @@ class UpdateUserCommand(SubCommand):
         super().__init__(
             "update_user",
             "update user's group, password, and path",
-            "Update an existing user with group membership, password, and search path."
+            "For an existing user, update group membership, password, and search path."
             " Note that you have to set a password for the user in your '~/.pgpass' file"
             " before invoking this command if you want to update the password. The password must"
             " be valid in Redshift, so must contain upper-case and lower-case characters as well"
@@ -689,7 +734,11 @@ class RunSqlCommand(SubCommand):
             "-a", "--as-admin-user", help="connect as admin user", action="store_true", dest="use_admin"
         )
         as_user.add_argument(
-            "-e", "--as-etl-user", help="connect as ETL user (default)", action="store_false", dest="use_admin"
+            "-e",
+            "--as-etl-user",
+            action="store_false",
+            dest="use_admin",
+            help="connect as ETL user (default)",
         )
         parser.add_argument(
             action=StorePatternAsSelector,
@@ -699,20 +748,21 @@ class RunSqlCommand(SubCommand):
         )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
         if args.list:
-            etl.render_template.list_sql_templates()
-        else:
-            try:
-                args.schemas.base_schemas = [schema.name for schema in dw_config.schemas]
-            except ValueError as exc:
-                raise InvalidArgumentError("schemas must be part of configuration") from exc
+            etl.templates.list_sql_templates()
+            return
 
-            dsn = dw_config.dsn_admin_on_etl_db if args.use_admin else dw_config.dsn_etl
-            sql_stmt = etl.render_template.render_sql(args.template)
-            sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
-            rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
-            etl.db.print_result("Running template: '{}'".format(args.template), rows)
+        dw_config = etl.config.get_dw_config()
+        try:
+            args.schemas.base_schemas = [schema.name for schema in dw_config.schemas]
+        except ValueError as exc:
+            raise InvalidArgumentError("schemas must be part of configuration") from exc
+
+        dsn = dw_config.dsn_admin_on_etl_db if args.use_admin else dw_config.dsn_etl
+        sql_stmt = etl.templates.render_sql(args.template)
+        sql_args = {"selected_schemas": tuple(args.schemas.selected_schemas())}
+        rows = etl.db.run_statement_with_args(dsn, sql_stmt, sql_args)
+        etl.db.print_result(f"Running template: '{args.template}'", rows)
 
 
 class BootstrapSourcesCommand(SubCommand):
@@ -720,8 +770,8 @@ class BootstrapSourcesCommand(SubCommand):
         super().__init__(
             "bootstrap_sources",
             "bootstrap schema information from sources",
-            "Download schema information from upstream sources for table designs."
-            " If there is no current design file, then create one as a starting point.",
+            "Download schema information from upstream sources and compare against current table"
+            " designs. If there is no current design file, then create one as a starting point.",
             aliases=["design"],
         )
 
@@ -744,7 +794,9 @@ class BootstrapSourcesCommand(SubCommand):
         )
 
     def callback(self, args):
-        local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern, allow_empty=True)
+        local_files = etl.file_sets.find_file_sets(
+            self.location(args, "file"), args.pattern, allow_empty=True
+        )
         etl.design.bootstrap.bootstrap_sources(
             args.pattern,
             args.table_design_dir,
@@ -860,7 +912,9 @@ class SyncWithS3Command(SubCommand):
         )
 
 
-class ExtractToS3Command(MonitoredSubCommand):
+class ExtractToS3Command(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "extract",
@@ -891,30 +945,31 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
         group.add_argument(
             "--use-existing-csv-files",
-            help="skip extraction and go straight to creating manifest files, implied default for static sources",
-            const="manifest-only",
             action="store_const",
+            const="manifest-only",
             dest="extractor",
+            help="skip extraction and go straight to creating manifest files, "
+            "implied default for static sources",
         )
         parser.add_argument(
             "-k",
             "--keep-going",
-            help="extract as much data as possible, ignoring errors along the way",
-            default=False,
             action="store_true",
+            default=False,
+            help="extract as much data as possible, ignoring errors along the way",
         )
         parser.add_argument(
             "-m",
             "--max-partitions",
+            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
             metavar="N",
             type=int,
-            help="set max number of partitions to write to N (overrides 'resources.EMR.max_partitions')",
         )
         parser.add_argument(
             "--use-sampling",
-            help="use only 10%% of rows in extracted tables that are larger than 100MB",
-            default=False,
             action="store_true",
+            default=False,
+            help="use only 10%% of rows in extracted tables that are larger than 100MB",
         )
 
     def callback(self, args):
@@ -941,7 +996,6 @@ class ExtractToS3Command(MonitoredSubCommand):
         descriptions = self.find_relation_descriptions(
             args, default_scheme="s3", required_relation_selector=dw_config.required_in_full_load_selector
         )
-        etl.monitor.Monitor.marker_payload("extract").emit(dry_run=args.dry_run)
         etl.extract.extract_upstream_sources(
             args.extractor,
             dw_config.schemas,
@@ -953,14 +1007,17 @@ class ExtractToS3Command(MonitoredSubCommand):
         )
 
 
-class LoadDataWarehouseCommand(MonitoredSubCommand):
+class LoadDataWarehouseCommand(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "load",
             "load data into source tables and forcefully update all dependencies",
-            "Load data into the data warehouse from files in S3, which will *rebuild* the data warehouse."
-            " This will operate on entire schemas at once, which will be backed up as necessary."
-            " It is an error to try to select tables unless they are all the tables in the schema.",
+            "Load data into the data warehouse from files in S3, which will *rebuild* the data"
+            " warehouse. This will operate on entire schemas at once, which will be backed up as"
+            " necessary. It is an error to try to select tables unless they are all the tables in"
+            " the schema.",
         )
 
     def add_arguments(self, parser):
@@ -969,18 +1026,25 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
         )
         parser.add_argument(
             "--concurrent-extract",
-            help="watch DynamoDB for extract step completion and load source tables as extracts finish"
-            " assuming another Arthur in this prefix is running extract (default: %(default)s)",
+            help="watch DynamoDB for extract step completion and load source tables as extracts"
+            " finish assuming another Arthur in this prefix is running extract"
+            " (default: %(default)s)",
             default=False,
             action="store_true",
         )
         parser.add_argument(
             "--without-staging-schemas",
-            help="do NOT do all the work in hidden schemas and publish to standard names on completion"
-            " (default: use staging schemas)",
+            help="do NOT do all the work in hidden schemas and publish to standard names on"
+            " completion (default: use staging schemas)",
             default=True,
             action="store_false",
             dest="use_staging_schemas",
+        )
+        parser.add_argument(
+            "--skip-loading-sources",
+            action="store_true",
+            default=False,
+            help="Skip loading data from sources (but still build the tables)",
         )
 
     def callback(self, args):
@@ -996,7 +1060,6 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             required_relation_selector=dw_config.required_in_full_load_selector,
             return_all=True,
         )
-        etl.monitor.Monitor.marker_payload("load").emit(dry_run=args.dry_run)
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
@@ -1010,12 +1073,15 @@ class LoadDataWarehouseCommand(MonitoredSubCommand):
             wlm_query_slots=wlm_query_slots,
             concurrent_extract=args.concurrent_extract,
             skip_copy=args.skip_copy,
+            skip_loading_sources=args.skip_loading_sources,
             use_staging=args.use_staging_schemas,
             dry_run=args.dry_run,
         )
 
 
-class UpgradeDataWarehouseCommand(MonitoredSubCommand):
+class UpgradeDataWarehouseCommand(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "upgrade",
@@ -1027,7 +1093,16 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(
-            parser, ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "continue-from", "skip-copy", "dry-run"]
+            parser,
+            [
+                "pattern",
+                "prefix",
+                "max-concurrency",
+                "wlm-query-slots",
+                "continue-from",
+                "skip-copy",
+                "dry-run",
+            ],
         )
         parser.add_argument(
             "--only-selected",
@@ -1072,7 +1147,6 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
             required_relation_selector=dw_config.required_in_full_load_selector,
             return_all=True,
         )
-        etl.monitor.Monitor.marker_payload("upgrade").emit(dry_run=args.dry_run)
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
@@ -1094,13 +1168,15 @@ class UpgradeDataWarehouseCommand(MonitoredSubCommand):
         )
 
 
-class UpdateDataWarehouseCommand(MonitoredSubCommand):
+class UpdateDataWarehouseCommand(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "update",
             "update data in the data warehouse from files in S3",
-            "Load data into data warehouse from files in S3 and then update all dependent CTAS relations"
-            " (within a transaction).",
+            "Load data into data warehouse from files in S3 and then update all dependent"
+            " CTAS relations (within a transaction).",
         )
 
     def add_arguments(self, parser):
@@ -1129,7 +1205,6 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
 
     def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
-        etl.monitor.Monitor.marker_payload("update").emit(dry_run=args.dry_run)
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1144,7 +1219,9 @@ class UpdateDataWarehouseCommand(MonitoredSubCommand):
         )
 
 
-class UnloadDataToS3Command(MonitoredSubCommand):
+class UnloadDataToS3Command(SubCommand):
+    uses_monitor = True
+
     def __init__(self):
         super().__init__(
             "unload",
@@ -1170,10 +1247,39 @@ class UnloadDataToS3Command(MonitoredSubCommand):
 
     def callback(self, args):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
-        etl.monitor.Monitor.marker_payload("unload").emit(dry_run=args.dry_run)
         etl.unload.unload_to_s3(
             descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
         )
+
+
+class CreateExternalSchemasCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "create_external_schemas",
+            "create external schemas from data warehouse config",
+            "Create external schemas with configured database and IAM role, then set permissions."
+            " (Any patterns must be schema names.)",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["dry-run"])
+        parser.add_argument(
+            "schema", action=StorePatternAsSelector, help="name of external schema", nargs="*"
+        )
+
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
+        try:
+            args.schema.base_schemas = [schema.name for schema in dw_config.external_schemas]
+        except ValueError as exc:
+            raise InvalidArgumentError("selected schema is not external") from exc
+        try:
+            selected = args.schema.selected_schemas()
+        except ValueError as exc:
+            raise InvalidArgumentError("patterns must match schemas") from exc
+        schemas = [schema for schema in dw_config.external_schemas if schema.name in selected]
+        with etl.db.log_error():
+            etl.data_warehouse.create_external_schemas(schemas, dry_run=args.dry_run)
 
 
 class CreateSchemasCommand(SubCommand):
@@ -1211,10 +1317,10 @@ class PromoteSchemasCommand(SubCommand):
         super().__init__(
             "promote_schemas",
             "move staging or backup schemas into standard position",
-            "Move hidden schemas (staging or backup) to standard position (schema names and permissions)."
-            " When promoting from staging, current standard position schemas are backed up first."
-            " Promoting (ie, restoring) a backup should only happen after a load finished successfully"
-            " but left bad data behind.",
+            "Move hidden schemas (staging or backup) to standard position (schema names and"
+            " permissions). When promoting from staging, current standard position schemas are"
+            " backed up first. Promoting (ie, restoring) a backup should only happen after a load"
+            " finished successfully but left bad data behind.",
         )
 
     def add_arguments(self, parser):
@@ -1353,7 +1459,9 @@ class ExplainQueryCommand(SubCommand):
             # When running locally, we accept that there be only a SQL file.
             local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
             descriptions = [
-                etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.sql_file_name
+                etl.relation.RelationDescription(file_set)
+                for file_set in local_files
+                if file_set.sql_file_name
             ]
         else:
             # When running with S3, we expect full sets of files (SQL plus table design)
@@ -1376,7 +1484,9 @@ class ShowDdlCommand(SubCommand):
     def callback(self, args):
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
-            etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
+            etl.relation.RelationDescription(file_set)
+            for file_set in local_files
+            if file_set.design_file_name
         ]
         etl.dialect.show_ddl(descriptions)
 
@@ -1392,14 +1502,20 @@ class CreateIndexCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern"])
-        parser.add_argument("--group", action="append", default=[], help="filter by reader group (repeat as needed)")
-        parser.add_argument("--with-columns", action="store_true", help="add detailed tables with column information")
+        parser.add_argument(
+            "--group", action="append", default=[], help="filter by reader group (repeat as needed)"
+        )
+        parser.add_argument(
+            "--with-columns", action="store_true", help="add detailed tables with column information"
+        )
 
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         local_files = etl.file_sets.find_file_sets(self.location(args, "file"), args.pattern)
         descriptions = [
-            etl.relation.RelationDescription(file_set) for file_set in local_files if file_set.design_file_name
+            etl.relation.RelationDescription(file_set)
+            for file_set in local_files
+            if file_set.design_file_name
         ]
         unknown = frozenset(args.group).difference(dw_config.groups)
         if unknown:
@@ -1421,10 +1537,16 @@ class ListFilesCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
         parser.add_argument(
-            "-a", "--long-format", help="add file size and timestamp of last modification", action="store_true"
+            "-a",
+            "--long-format",
+            action="store_true",
+            help="add file size and timestamp of last modification",
         )
         parser.add_argument(
-            "-t", "--sort-by-time", help="sort files by timestamp (and list in single column)", action="store_true"
+            "-t",
+            "--sort-by-time",
+            action="store_true",
+            help="sort files by timestamp (and list in single column)",
         )
 
     def callback(self, args):
@@ -1443,10 +1565,18 @@ class PingCommand(SubCommand):
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
-            "-a", "--as-admin-user", help="try to connect as admin user", action="store_true", dest="use_admin"
+            "-a",
+            "--as-admin-user",
+            action="store_true",
+            dest="use_admin",
+            help="try to connect as admin user",
         )
         group.add_argument(
-            "-e", "--as-etl-user", help="try to connect as ETL user (default)", action="store_false", dest="use_admin"
+            "-e",
+            "--as-etl-user",
+            action="store_false",
+            dest="use_admin",
+            help="try to connect as ETL user (default)",
         )
         group.add_argument(
             "--for-schema",
@@ -1458,7 +1588,7 @@ class PingCommand(SubCommand):
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         if args.for_schema is None:
-            dsns = [dw_config.dsn_admin if args.use_admin else dw_config.dsn_etl]
+            dsn_list = [dw_config.dsn_admin if args.use_admin else dw_config.dsn_etl]
         else:
             try:
                 args.for_schema.base_schemas = [
@@ -1469,11 +1599,11 @@ class PingCommand(SubCommand):
             try:
                 selected = args.for_schema.selected_schemas()
             except ValueError as exc:
-                raise InvalidArgumentError("pattern must match schemas") from exc
+                raise InvalidArgumentError("patterns must match schemas") from exc
             logger.info("Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected))
-            dsns = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
+            dsn_list = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
         with etl.db.log_error():
-            for dsn in dsns:
+            for dsn in dsn_list:
                 etl.db.ping(dsn)
 
 
@@ -1494,6 +1624,23 @@ class TerminateSessionsCommand(SubCommand):
             etl.data_warehouse.terminate_sessions(dry_run=args.dry_run)
 
 
+class VacuumCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "vacuum",
+            "vacuum selected or all tables",
+            "Run VACUUM command.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme", "dry-run"])
+
+    def callback(self, args):
+        relations = self.find_relation_descriptions(args)
+        with etl.db.log_error():
+            etl.load.vacuum(relations, dry_run=args.dry_run)
+
+
 class ShowDownstreamDependentsCommand(SubCommand):
     def __init__(self):
         super().__init__(
@@ -1508,15 +1655,19 @@ class ShowDownstreamDependentsCommand(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--list-dependencies",
-            help="deprecated in favor of --with-dependencies",
             action="store_true",
             dest="with_dependencies",
+            help="deprecated in favor of --with-dependencies",
         )
         group.add_argument(
-            "--with-dependencies", help="show list of dependencies (downstream) for every relation", action="store_true"
+            "--with-dependencies",
+            action="store_true",
+            help="show list of dependencies (downstream) for every relation",
         )
         group.add_argument(
-            "--with-dependents", help="show list of dependents (upstream) for every relation", action="store_true"
+            "--with-dependents",
+            action="store_true",
+            help="show list of dependents (upstream) for every relation",
         )
 
     def callback(self, args):
@@ -1558,23 +1709,24 @@ class RenderTemplateCommand(SubCommand):
         super().__init__(
             "render_template",
             "render selected template by filling in configuration settings",
-            "Print template after replacing placeholders (like '${resources.VPC.region}') with values"
-            " from the settings files",
+            "Print template after replacing placeholders (like '${resources.VPC.region}') with"
+            " values from the settings files",
         )
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
         add_standard_arguments(parser, ["prefix"])
         group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument("-l", "--list", help="list available templates", action="store_true")
+        group.add_argument("-l", "--list", action="store_true", help="list available templates")
         group.add_argument("template", help="name of template", nargs="?")
-        parser.add_argument("-t", "--compact", help="produce compact output", action="store_true")
+        parser.add_argument("-t", "--compact", action="store_true", help="produce compact output")
 
     def callback(self, args):
         if args.list:
-            etl.render_template.list_templates(compact=args.compact)
-        elif args.template:
-            etl.render_template.render(args.template, compact=args.compact)
+            etl.templates.list_templates(compact=args.compact)
+            return
+
+        print(etl.templates.render(args.template, compact=args.compact), end="")
 
 
 class ShowValueCommand(SubCommand):
@@ -1590,7 +1742,7 @@ class ShowValueCommand(SubCommand):
         parser.add_argument("default", nargs="?", help="set default in case the setting is unset")
 
     def callback(self, args):
-        etl.render_template.show_value(args.name, args.default)
+        etl.config.settings.show_value(args.name, args.default)
 
 
 class ShowVarsCommand(SubCommand):
@@ -1609,7 +1761,7 @@ class ShowVarsCommand(SubCommand):
         parser.add_argument("name", help="print just the value for the chosen setting", nargs="*")
 
     def callback(self, args):
-        etl.render_template.show_vars(args.name)
+        etl.config.settings.show_vars(args.name)
 
 
 class ShowPipelinesCommand(SubCommand):
@@ -1622,7 +1774,9 @@ class ShowPipelinesCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        parser.add_argument("-j", "--as-json", help="write output in JSON format", action="store_true", default=False)
+        parser.add_argument(
+            "-j", "--as-json", help="write output in JSON format", action="store_true", default=False
+        )
         parser.add_argument("selection", help="pick pipelines using a glob pattern", nargs="*")
 
     def callback(self, args):
@@ -1650,9 +1804,8 @@ class QueryEventsCommand(SubCommand):
         super().__init__(
             "query_events",
             "query the tables of ETL events",
-            "Query the table of events written during an ETL."
-            " When an ETL is specified, then it is used as a filter."
-            " Otherwise ETLs from the last 48 hours are listed.",
+            "Query the table of events written during an ETL. When an ETL is specified, then it is"
+            " used as a filter. Otherwise ETLs from the last 48 hours are listed.",
         )
 
     def add_arguments(self, parser):
@@ -1680,7 +1833,7 @@ class SummarizeEventsCommand(SubCommand):
         super().__init__(
             "summarize_events",
             "summarize events from the latest ETL (for given step)",
-            "For selected (or all) relations, show events from ETL, " "grouped by schema.",
+            "For selected (or all) relations, show events from ETL, grouped by schema.",
         )
 
     def add_arguments(self, parser):
@@ -1703,21 +1856,29 @@ class TailEventsCommand(SubCommand):
             "tail_events",
             "show tail of the ETL events and optionally follow for changes",
             "Show latest ETL events for the selected tables in a 15-minute window or"
-            " since the given start time. (Use '-t #{@latestRunTime}' in a Data Pipeline definition.)"
-            " Optionally keep looking for events in 30s intervals,"
+            " since the given start time. (Use '-t #{@latestRunTime}' in a Data Pipeline"
+            " definition.) Optionally keep looking for events in 30s intervals,"
             " which automatically quits when no new event arrives within an hour.",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["pattern", "prefix"])
         parser.add_argument(
-            "-s", "--step", choices=["extract", "load", "upgrade", "update", "unload"], help="pick which step to tail"
+            "-s",
+            "--step",
+            choices=["extract", "load", "upgrade", "update", "unload"],
+            help="pick which step to tail",
         )
         now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
         parser.add_argument(
-            "-t", "--start-time", help="beginning of time window, e.g. '%s'" % now, type=isoformat_datetime_string
+            "-t",
+            "--start-time",
+            help="beginning of time window, e.g. '%s'" % now,
+            type=isoformat_datetime_string,
         )
-        parser.add_argument("-f", "--follow", help="keep checking for events", default=False, action="store_true")
+        parser.add_argument(
+            "-f", "--follow", help="keep checking for events", default=False, action="store_true"
+        )
 
     def callback(self, args):
         start_time = args.start_time or (datetime.utcnow() - timedelta(seconds=15 * 60))
@@ -1743,10 +1904,25 @@ class TailEventsCommand(SubCommand):
         )
 
 
+class TailLogsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "tail_logs",
+            "show latest logs from CloudWatch",
+            "Show logs from CloudWatch for the last 15 minutes",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["prefix"])
+
+    def callback(self, args):
+        etl.logs.cloudwatch.tail(args.prefix)
+
+
 class ShowHelpCommand(SubCommand):
     def __init__(self):
         super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
-        self.topics = ["extract", "load", "unload", "sync", "validate", "pipeline"]
+        self.topics = ["extract", "load", "pipeline", "sync", "unload", "validate"]
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")

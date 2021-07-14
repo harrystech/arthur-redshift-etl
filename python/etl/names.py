@@ -126,9 +126,10 @@ class TableName:
         """List external schemas that are not managed by us and may not exist during validation."""
         if self._external_schemas is None:
             try:
-                self._external_schemas = frozenset(etl.config.get_dw_config().external_schema_names)
+                schemas = etl.config.get_dw_config().external_schemas
             except AttributeError:
                 raise ETLSystemError("dw_config has not been set!")
+            self._external_schemas = frozenset(schema.name for schema in schemas)
         return self._external_schemas
 
     def to_tuple(self):
@@ -151,7 +152,7 @@ class TableName:
         >>> tn.identifier
         'hello.world'
         """
-        return "{}.{}".format(*self.to_tuple())
+        return f"{self.schema}.{self.table}"
 
     @property
     def identifier_as_re(self) -> str:
@@ -207,7 +208,7 @@ class TableName:
         >>> str(tn.as_staging_table_name())
         '"etl_staging$hello"."world"'
         """
-        return '"{}"."{}"'.format(*self.to_tuple())
+        return f'"{self.schema}"."{self.table}"'
 
     def __format__(self, code):
         """
@@ -239,10 +240,9 @@ class TableName:
             raise ValueError("unknown format code '{}' for {}".format(code, self.__class__.__name__))
 
     def __eq__(self, other: object):
-        if isinstance(other, TableName):
-            return self.to_tuple() == other.to_tuple()
-        else:
+        if not isinstance(other, TableName):
             return False
+        return self.to_tuple() == other.to_tuple()
 
     def __hash__(self):
         return hash(self.to_tuple())

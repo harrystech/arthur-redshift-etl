@@ -48,8 +48,9 @@ class Extractor:
         self.schemas = schemas
         self.relations = relations
         self.keep_going = keep_going
-        # Decide whether we should wait for some application to finish extracting and writing a success file or
-        # whether we can proceed immediately when testing for presence of that success file.
+        # Decide whether we should wait for some application to finish extracting and writing a
+        # success file or whether we can proceed immediately when testing for presence of that
+        # success file.
         self.needs_to_wait = needs_to_wait
         self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
@@ -147,7 +148,9 @@ class Extractor:
 
     def extract_sources(self) -> None:
         """Iterate over sources to be extracted and parallelize extraction at the source level."""
-        self.logger.info("Starting to extract %d relation(s) in %d schema(s)", len(self.relations), len(self.schemas))
+        self.logger.info(
+            "Starting to extract %d relation(s) in %d schema(s)", len(self.relations), len(self.schemas)
+        )
         self.failed_sources.clear()
         max_workers = len(self.schemas)
 
@@ -159,9 +162,13 @@ class Extractor:
                 future = executor.submit(self.extract_source, self.schemas[source_name], list(relation_group))
                 futures.append(future)
             if self.keep_going:
-                done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+                done, not_done = concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.ALL_COMPLETED
+                )
             else:
-                done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
+                done, not_done = concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                )
         if self.failed_sources:
             self.logger.error(
                 "Failed to extract from these source(s): %s", join_with_single_quotes(self.failed_sources)
@@ -183,7 +190,9 @@ class Extractor:
         if not_done:
             raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))
 
-    def write_manifest_file(self, relation: RelationDescription, source_bucket: str, source_prefix: str) -> None:
+    def write_manifest_file(
+        self, relation: RelationDescription, source_bucket: str, source_prefix: str
+    ) -> None:
         """
         Create manifest file to load all the data files for the given relation.
 

@@ -30,7 +30,16 @@ class ColumnDefinition:
     These are ready to be sent to a table design or come from a table design file.
     """
 
-    __slots__ = ("name", "type", "sql_type", "source_sql_type", "expression", "not_null", "identity", "encoding")
+    __slots__ = (
+        "name",
+        "type",
+        "sql_type",
+        "source_sql_type",
+        "expression",
+        "not_null",
+        "identity",
+        "encoding",
+    )
 
     def __init__(
         self, name, source_sql_type, sql_type, expression, type_, not_null, identity=False, encoding=None
@@ -45,7 +54,7 @@ class ColumnDefinition:
         self.encoding = encoding
 
     def to_dict(self) -> dict:
-        d = dict(name=self.name, sql_type=self.sql_type, type=self.type)
+        d = {"name": self.name, "sql_type": self.sql_type, "type": self.type}
         if self.expression is not None:
             d["expression"] = self.expression
         if self.source_sql_type != self.sql_type:
@@ -80,17 +89,20 @@ class ColumnDefinition:
                 mapping_sql_type, mapping_expression, mapping_type = attribute.sql_type, None, generic_type
                 break
         else:
-            for re_att_type, (mapping_sql_type, mapping_expression, mapping_type) in cast_needed_att_type.items():
+            for re_att_type in cast_needed_att_type:
                 if re.match(re_att_type, attribute.sql_type):
-                    # Found tuple with new SQL type, expression and generic type.  Rejoice.
+                    # Found tuple with new SQL type, expression and generic type. Rejoice.
+                    mapping_sql_type, mapping_expression, mapping_type = cast_needed_att_type[re_att_type]
                     break
             else:
                 logger.warning(
-                    "Unknown type '{}' of column '{}' (using default)".format(attribute.sql_type, attribute.name)
+                    "Unknown type '{}' of column '{}' (using default)".format(
+                        attribute.sql_type, attribute.name
+                    )
                 )
                 mapping_sql_type, mapping_expression, mapping_type = default_att_type
 
-        delimited_name = '"{}"'.format(attribute.name)
+        delimited_name = f'"{attribute.name}"'
         return ColumnDefinition(
             attribute.name,
             attribute.sql_type,

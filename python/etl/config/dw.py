@@ -5,7 +5,7 @@ from typing import Dict
 import etl.config.env
 import etl.db
 import etl.names
-import etl.render_template
+import etl.templates
 from etl.errors import ETLConfigError, InvalidEnvironmentError
 
 
@@ -45,7 +45,7 @@ class DataWarehouseSchema:
     """
     Define configuration of schema in the data warehouse, e.g. source vs. transformation..
 
-    Schemas in the data warehouse fall into one of four buckets:
+    Schemas in the data warehouse fall into one of these buckets:
       (1) Upstream source backed by a database.  Data will be extracted from there and
         so we need to have a DSN with which we can connect.
       (2) Upstream source backed by CSV files in S3.  Data will be "extracted" in the sense
@@ -55,9 +55,10 @@ class DataWarehouseSchema:
       (3) Schemas with CTAS or VIEWs that are computed during the ETL. Data cannot be extracted here
         (but maybe unload'ed).
       (4) Schemas reserved for users (where user could be a BI tool)
+      (5) "External" schemas which are tied to an external data catalog.
 
     Although there is a (logical) distinction between "sources" and "schemas" in the settings file
-    those are really all the same here ...
+    those are really all the same here.
     """
 
     def __init__(self, schema_info, etl_access=None):
@@ -71,7 +72,8 @@ class DataWarehouseSchema:
         # Booleans to help figure out which bucket the schema is in (see doc for class)
         self.is_database_source = "read_access" in schema_info
         self.is_static_source = "s3_bucket" in schema_info and "s3_path_template" in schema_info
-        self.is_upstream_source = self.is_database_source or self.is_static_source
+        self.is_external = schema_info.get("external", False)
+        self.is_upstream_source = self.is_database_source or self.is_static_source or self.is_external
         self.has_transformations = not self.is_upstream_source
         self.is_an_unload_target = "s3_bucket" in schema_info and "s3_unload_path_template" in schema_info
         # How to access the source of the schema (per DSN (of source or DW)? per S3?)
@@ -79,6 +81,10 @@ class DataWarehouseSchema:
             self._dsn_env_var = schema_info["read_access"]
         elif self.is_static_source or self.is_an_unload_target:
             self._dsn_env_var = None
+        elif self.is_external:
+            self._dsn_env_var = None
+            self.database = schema_info.get("database")
+            self.iam_role = schema_info.get("iam_role")
         else:
             self._dsn_env_var = etl_access
         self.has_dsn = self._dsn_env_var is not None
@@ -95,24 +101,39 @@ class DataWarehouseSchema:
         self.exclude_tables = schema_info.get("exclude_tables", [])
 
     @property
+    def source_type(self) -> str:
+        """
+        Return where the information in this schema comes from.
+
+        This is one of DATABASE, S3_SOURCE, EXTERNAL, or TRANSFORMATIONS.
+        """
+        if self.is_database_source:
+            return "DATABASE"
+        if self.is_static_source:
+            return "S3_STATIC"
+        if self.is_external:
+            return "EXTERNAL"
+        return "TRANSFORMATIONS"
+
+    @property
     def s3_bucket(self) -> str:
         """Render S3 Bucket name (if it references Arthur configuration, e.g., the data lake)."""
-        return etl.render_template.render_from_config(
-            self._s3_bucket_template, context="s3_bucket of schema '{}'".format(self.name)
+        return etl.templates.render_from_config(
+            self._s3_bucket_template, context=f"s3_bucket of schema '{self.name}'"
         )
 
     @property
     def s3_path_prefix(self) -> str:
         """Render S3 path prefix in particular wrt. prefix (environment) and dates."""
-        return etl.render_template.render_from_config(
-            self._s3_path_template, context="s3_path_template of schema '{}'".format(self.name)
+        return etl.templates.render_from_config(
+            self._s3_path_template, context=f"s3_path_template of schema '{self.name}'"
         )
 
     @property
     def s3_unload_path_prefix(self) -> str:
         """Render S3 unload path prefix in particular wrt. prefix (environment) and dates."""
-        return etl.render_template.render_from_config(
-            self._s3_unload_path_template, context="s3_unload_path_template of schema '{}'".format(self.name)
+        return etl.templates.render_from_config(
+            self._s3_unload_path_template, context=f"s3_unload_path_template of schema '{self.name}'"
         )
 
     @property
@@ -157,7 +178,9 @@ class DataWarehouseConfig:
         self._check_access_to_cluster()
         root = DataWarehouseUser(dw_settings["owner"])
         # Users are in the order from the config
-        other_users = [DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"]
+        other_users = [
+            DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"
+        ]
 
         # Note that the "owner," which is our super-user of sorts, comes first.
         self.users = [root] + other_users
@@ -165,20 +188,35 @@ class DataWarehouseConfig:
 
         # Schemas (upstream sources followed by transformations, keeps order of settings file)
         self.schemas = [
-            DataWarehouseSchema(dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access)
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access
+            )
             for info in schema_settings
             if not info.get("external", False)
         ]
         self._schema_lookup = {schema.name: schema for schema in self.schemas}
 
+        # External schemas are kept separate (for example, we don't back them up).
+        self.external_schemas = [
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access
+            )
+            for info in schema_settings
+            if info.get("external", False)
+        ]
+
         # Schemas may grant access to groups that have no bootstrapped users, so create all
         # mentioned user groups.
-        other_groups = {u.group for u in other_users} | {g for schema in self.schemas for g in schema.reader_groups}
+        other_groups = {u.group for u in other_users} | {
+            g for schema in self.schemas for g in schema.reader_groups
+        }
 
         # Groups are in sorted order after the root group
         self.groups = [root.group] + sorted(other_groups)
         try:
-            [self.default_group] = [user["group"] for user in dw_settings["users"] if user["name"] == "default"]
+            [self.default_group] = [
+                user["group"] for user in dw_settings["users"] if user["name"] == "default"
+            ]
         except ValueError:
             raise ETLConfigError("Failed to find group of default user")
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset
@@ -187,9 +225,6 @@ class DataWarehouseConfig:
 
         # Map of SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
-
-        # External schemas are un-managed by Arthur and require late-binding views.
-        self.external_schema_names = [info["name"] for info in schema_settings if info.get("external", False)]
 
     def _check_access_to_cluster(self):
         """

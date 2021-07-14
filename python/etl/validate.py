@@ -50,7 +50,9 @@ logger.addHandler(logging.NullHandler())
 _error_occurred = threading.Event()
 
 
-def validate_relation_description(relation: RelationDescription, keep_going=False) -> Optional[RelationDescription]:
+def validate_relation_description(
+    relation: RelationDescription, keep_going=False
+) -> Optional[RelationDescription]:
     """
     Load table design (which always also validates against the schema).
 
@@ -62,7 +64,9 @@ def validate_relation_description(relation: RelationDescription, keep_going=Fals
     except ETLConfigError:
         if keep_going:
             _error_occurred.set()
-            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier)
+            logger.exception(
+                "Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier
+            )
             return None
         else:
             raise
@@ -113,7 +117,9 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
         return None
 
 
-def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
+def validate_dependencies(
+    conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName
+) -> None:
     """Download the dependencies (based on a temporary view) and compare with table design."""
     if tmp_view_name.is_late_binding_view:
         dependencies = etl.design.bootstrap.fetch_dependency_hints(conn, relation.query_stmt)
@@ -121,11 +127,15 @@ def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_v
             logger.warning("Unable to validate '%s' which depends on external tables", relation.identifier)
             return
         logger.info(
-            "Dependencies of '%s' per query plan: %s", relation.identifier, join_with_single_quotes(dependencies)
+            "Dependencies of '%s' per query plan: %s",
+            relation.identifier,
+            join_with_single_quotes(dependencies),
         )
     else:
         dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
-        logger.info("Dependencies of '%s' per catalog: %s", relation.identifier, join_with_single_quotes(dependencies))
+        logger.info(
+            "Dependencies of '%s' per catalog: %s", relation.identifier, join_with_single_quotes(dependencies)
+        )
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
     if difference:
@@ -134,7 +144,9 @@ def validate_dependencies(conn: Connection, relation: RelationDescription, tmp_v
     logger.info("Dependencies listing in design file for '%s' matches SQL", relation.identifier)
 
 
-def validate_column_ordering(conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName) -> None:
+def validate_column_ordering(
+    conn: Connection, relation: RelationDescription, tmp_view_name: TempTableName
+) -> None:
     """Download the column order (using the temporary view) and compare with table design."""
     attributes = etl.design.bootstrap.fetch_attributes(conn, tmp_view_name)
     actual_columns = [attribute.name for attribute in attributes]
@@ -158,7 +170,8 @@ def validate_column_ordering(conn: Connection, relation: RelationDescription, tm
     diff = get_list_difference(expected_columns, actual_columns)
     if diff:
         logger.error(
-            "Order of columns in design of '%s' does not match result of running its query", relation.identifier
+            "Order of columns in design of '%s' does not match result of running its query",
+            relation.identifier,
         )
         logger.error(
             "You need to replace, insert and/or delete in '%s' some column(s): %s",
@@ -167,10 +180,14 @@ def validate_column_ordering(conn: Connection, relation: RelationDescription, tm
         )
         raise TableDesignValidationError("invalid columns or column order in '%s'" % relation.identifier)
     else:
-        logger.info("Order of columns in design of '%s' matches result of running SQL query", relation.identifier)
+        logger.info(
+            "Order of columns in design of '%s' matches result of running SQL query", relation.identifier
+        )
 
 
-def validate_single_transform(conn: Connection, relation: RelationDescription, keep_going: bool = False) -> None:
+def validate_single_transform(
+    conn: Connection, relation: RelationDescription, keep_going: bool = False
+) -> None:
     """
     Test-run a relation (CTAS or VIEW) by creating a temporary view.
 
@@ -179,14 +196,18 @@ def validate_single_transform(conn: Connection, relation: RelationDescription, k
     """
     has_external_dependencies = any(dependency.is_external for dependency in relation.dependencies)
     try:
-        with relation.matching_temporary_view(conn, as_late_binding_view=has_external_dependencies) as tmp_view_name:
+        with relation.matching_temporary_view(
+            conn, as_late_binding_view=has_external_dependencies
+        ) as tmp_view_name:
             validate_dependencies(conn, relation, tmp_view_name)
             validate_column_ordering(conn, relation, tmp_view_name)
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if not keep_going:
             raise
         _error_occurred.set()
-        logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier)
+        logger.exception(
+            "Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier
+        )
 
 
 def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool = False) -> None:
@@ -195,7 +216,9 @@ def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_go
 
     This allows us to check their syntax, their dependencies, etc.
     """
-    transforms = [relation for relation in relations if relation.is_ctas_relation or relation.is_view_relation]
+    transforms = [
+        relation for relation in relations if relation.is_ctas_relation or relation.is_view_relation
+    ]
     if not transforms:
         logger.info("No transforms found or selected, skipping CTAS or VIEW validation")
         return
@@ -230,7 +253,9 @@ def get_list_difference(list1: List[str], list2: List[str]) -> List[str]:
     return sorted(diff)
 
 
-def validate_reload(schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool):
+def validate_reload(
+    schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool
+):
     """
     Verify that columns between unloaded tables and reloaded tables are the same.
 
@@ -258,14 +283,18 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
                 if reloaded.identifier in relations_lookup:
                     relation = relations_lookup[reloaded.identifier]
                     logger.info(
-                        "Checking for consistency between '%s' and '%s'", unloaded.identifier, relation.identifier
+                        "Checking for consistency between '%s' and '%s'",
+                        unloaded.identifier,
+                        relation.identifier,
                     )
                     unloaded_columns = unloaded.unquoted_columns
                     reloaded_columns = relation.unquoted_columns
                     if unloaded_columns != reloaded_columns:
                         diff = get_list_difference(reloaded_columns, unloaded_columns)
                         logger.error(
-                            "Column difference detected between '%s' and '%s'", unloaded.identifier, relation.identifier
+                            "Column difference detected between '%s' and '%s'",
+                            unloaded.identifier,
+                            relation.identifier,
                         )
                         logger.error(
                             "You need to replace, insert and/or delete in '%s' some column(s): %s",
@@ -278,7 +307,9 @@ def validate_reload(schemas: List[DataWarehouseSchema], relations: List[Relation
         except TableDesignValidationError:
             if keep_going:
                 _error_occurred.set()
-                logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier)
+                logger.exception(
+                    "Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier
+                )
             else:
                 raise
 
@@ -290,7 +321,9 @@ def check_select_permission(conn: Connection, table_name: TableName):
     try:
         etl.db.execute(conn, statement)
     except psycopg2.Error as exc:
-        raise UpstreamValidationError("failed to read from upstream table '%s'" % table_name.identifier) from exc
+        raise UpstreamValidationError(
+            "failed to read from upstream table '%s'" % table_name.identifier
+        ) from exc
 
 
 def validate_upstream_columns(conn: Connection, table: RelationDescription) -> None:
@@ -307,7 +340,9 @@ def validate_upstream_columns(conn: Connection, table: RelationDescription) -> N
 
     columns_info = etl.design.bootstrap.fetch_attributes(conn, source_table_name)
     if not columns_info:
-        raise UpstreamValidationError("table '%s' is gone or has no columns left" % source_table_name.identifier)
+        raise UpstreamValidationError(
+            "table '%s' is gone or has no columns left" % source_table_name.identifier
+        )
     logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
 
     current_columns = frozenset(column.name for column in columns_info)
@@ -434,7 +469,9 @@ def validate_upstream_table(conn: Connection, table: RelationDescription, keep_g
     except (ETLConfigError, ETLRuntimeError, psycopg2.Error):
         if keep_going:
             _error_occurred.set()
-            logger.exception("Ignoring failure to validate '%s' and proceeding as requested:", table.identifier)
+            logger.exception(
+                "Ignoring failure to validate '%s' and proceeding as requested:", table.identifier
+            )
         else:
             raise
 

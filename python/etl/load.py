@@ -114,11 +114,10 @@ class LoadableRelation:
         """Grab everything from the contained relation. Fail if it's actually not available."""
         if hasattr(self._relation_description, name):
             return getattr(self._relation_description, name)
-        raise AttributeError("'{}' object has no attribute '{}'".format(self.__class__.__name__, name))
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    # This works although __str__ will get passed a 'LoadableRelation' object instead of a
-    # 'RelationDescription' object.
-    __str__ = RelationDescription.__str__  # type: ignore
+    def __str__(self) -> str:
+        return str(self.target_table_name)
 
     def __format__(self, code):
         r"""
@@ -148,13 +147,11 @@ class LoadableRelation:
         """
         if (not code) or (code == "s"):
             return str(self)
-        elif code == "x":
+        if code == "x":
             if self.use_staging:
                 return "'{:s}' (in staging)".format(self.identifier)
-            else:
-                return "'{:s}'".format(self.identifier)
-        else:
-            raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
+            return "'{:s}'".format(self.identifier)
+        raise ValueError("unsupported format code '{}' passed to LoadableRelation".format(code))
 
     def __init__(
         self,
@@ -168,12 +165,14 @@ class LoadableRelation:
         self._relation_description = relation
         self.info = info
         self.in_transaction = in_transaction
-        self.skip_copy = skip_copy or relation.is_view_relation
+        self.skip_copy = skip_copy
         self.use_staging = use_staging
         self.failed = False
 
         if target_schema is not None:
-            self.target_table_name = TableName(target_schema, self._relation_description.target_table_name.table)
+            self.target_table_name = TableName(
+                target_schema, self._relation_description.target_table_name.table
+            )
         elif self.use_staging:
             self.target_table_name = self._relation_description.target_table_name.as_staging_table_name()
         else:
@@ -190,7 +189,9 @@ class LoadableRelation:
         return self.target_table_name.identifier
 
     def find_dependents(self, relations: Sequence["LoadableRelation"]) -> List["LoadableRelation"]:
-        unpacked = [r._relation_description for r in relations]  # do DAG operations in terms of RelationDescriptions
+        unpacked = [
+            r._relation_description for r in relations
+        ]  # do DAG operations in terms of RelationDescriptions
         dependent_relations = etl.relation.find_dependents(unpacked, [self._relation_description])
         dependent_relation_identifiers = {r.identifier for r in dependent_relations}
         return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
@@ -248,6 +249,7 @@ class LoadableRelation:
         use_staging=False,
         target_schema: Optional[str] = None,
         skip_copy=False,
+        skip_loading_sources=False,
         in_transaction=False,
     ) -> List["LoadableRelation"]:
         """Build a list of "loadable" relations."""
@@ -256,11 +258,21 @@ class LoadableRelation:
         base_index = {"name": database, "current": 0, "final": len(relations)}
         base_destination = {"name": database}
 
+        managed = frozenset(relation.identifier for relation in relations)
+
         loadable = []
         for i, relation in enumerate(relations):
+            this_skip_copy = skip_copy
+            if skip_loading_sources:
+                # Only load transformations and only if no dependency is external.
+                if not relation.is_transformation or any(
+                    dependency.identifier not in managed for dependency in relation.dependencies
+                ):
+                    this_skip_copy = True
+
             target = relation.target_table_name
-            source = dict(bucket_name=relation.bucket_name)
-            if relation.is_view_relation or relation.is_ctas_relation:
+            source = {"bucket_name": relation.bucket_name}
+            if relation.is_transformation:
                 source["object_key"] = relation.sql_file_name
             else:
                 source["object_key"] = relation.manifest_file_name
@@ -270,10 +282,12 @@ class LoadableRelation:
                 "step": command,
                 "source": source,
                 "destination": destination,
-                "options": {"use_staging": use_staging, "skip_copy": skip_copy},
+                "options": {"use_staging": use_staging, "skip_copy": this_skip_copy},
                 "index": dict(base_index, current=i + 1),
             }
-            loadable.append(cls(relation, monitor_info, use_staging, target_schema, skip_copy, in_transaction))
+            loadable.append(
+                cls(relation, monitor_info, use_staging, target_schema, this_skip_copy, in_transaction)
+            )
 
         return loadable
 
@@ -372,7 +386,11 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
                 )
             )
         else:
-            logger.info("Granting select access on {:x} to {}".format(relation, join_with_single_quotes(reader_groups)))
+            logger.info(
+                "Granting select access on {:x} to {}".format(
+                    relation, join_with_single_quotes(reader_groups)
+                )
+            )
             for reader in reader_groups:
                 etl.db.grant_select(conn, target.schema, target.table, reader)
 
@@ -384,7 +402,9 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
                 )
             )
         else:
-            logger.info("Granting write access on {:x} to {}".format(relation, join_with_single_quotes(writer_groups)))
+            logger.info(
+                "Granting write access on {:x} to {}".format(relation, join_with_single_quotes(writer_groups))
+            )
             for writer in writer_groups:
                 etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
 
@@ -407,7 +427,9 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
     if not relation.has_manifest:
         if dry_run:
             logger.info(
-                "Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(relation.identifier, s3_uri)
+                "Dry-run: Ignoring that relation '{}' is missing manifest file '{}'".format(
+                    relation.identifier, s3_uri
+                )
             )
         else:
             raise MissingManifestError(
@@ -519,7 +541,9 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
 
 def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
     """Update table statistics."""
-    etl.db.run(conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run)
+    etl.db.run(
+        conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run
+    )
 
 
 def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
@@ -564,7 +588,9 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
         else:
             condition = "TRUE"
 
-        statement = statement_template.format(columns=quoted_columns, table=relation, condition=condition, limit=limit)
+        statement = statement_template.format(
+            columns=quoted_columns, table=relation, condition=condition, limit=limit
+        )
         if dry_run:
             logger.info(
                 "Dry-run: Skipping check of {} constraint in {:x} on column(s): {}".format(
@@ -582,10 +608,14 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
             if results:
                 if len(results) == limit:
                     logger.error(
-                        "Constraint check for {:x} failed on at least {:d} row(s)".format(relation, len(results))
+                        "Constraint check for {:x} failed on at least {:d} row(s)".format(
+                            relation, len(results)
+                        )
                     )
                 else:
-                    logger.error("Constraint check for {:x} failed on {:d} row(s)".format(relation, len(results)))
+                    logger.error(
+                        "Constraint check for {:x} failed on {:d} row(s)".format(relation, len(results))
+                    )
                 raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
@@ -604,7 +634,9 @@ def find_traversed_schemas(relations: Sequence[LoadableRelation]) -> List[DataWa
     return traversed_in_order
 
 
-def create_schemas_for_rebuild(schemas: Sequence[DataWarehouseSchema], use_staging: bool, dry_run=False) -> None:
+def create_schemas_for_rebuild(
+    schemas: Sequence[DataWarehouseSchema], use_staging: bool, dry_run=False
+) -> None:
     """
     Create schemas necessary for a full rebuild of data warehouse.
 
@@ -676,27 +708,25 @@ def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=Fal
         if relation.is_view_relation:
             pass
         elif relation.skip_copy:
-            logger.info("Skipping loading data into {:x} (skip copy is active)".format(relation))
+            logger.info(f"Skipping loading data into {relation:x} (skip copy is active)")
         elif relation.failed:
-            logger.info("Bypassing already failed relation {:x}".format(relation))
+            logger.info(f"Bypassing already failed relation {relation:x}")
         else:
             update_table(conn, relation, dry_run=dry_run)
             verify_constraints(conn, relation, dry_run=dry_run)
 
         # Step 3 -- log size of table
-        if not (relation.in_transaction or relation.is_view_relation or relation.failed):
-            rows = etl.db.run(
-                conn,
-                # TODO(tom): This should be logged at the DEBUG level.
-                "(Calculating row count for {:x})".format(relation),
-                "SELECT COUNT(*) AS rowcount FROM {}".format(relation),
-                return_result=True,
-                dry_run=dry_run,
-            )
-            if rows:
-                rowcount = rows[0]["rowcount"]
-                logger.info("Found {:d} row(s) in {:x}".format(rowcount, relation))
-                monitor.add_extra("rowcount", rowcount)
+        if relation.is_view_relation or relation.failed or relation.skip_copy:
+            return
+        stmt = f"SELECT COUNT(*) AS rowcount FROM {relation}"
+        if dry_run:
+            etl.db.skip_query(conn, stmt)
+            return
+        rows = etl.db.query(conn, stmt)
+        if rows:
+            rowcount = rows[0]["rowcount"]
+            logger.info(f"Found {rowcount:d} row(s) in {relation:x}")
+            monitor.add_extra("rowcount", rowcount)
 
 
 def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=False) -> None:
@@ -724,11 +754,14 @@ def vacuum(relations: Sequence[RelationDescription], dry_run=False) -> None:
     This needs to open a new connection since it needs to happen outside a transaction.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    with Timer() as timer, closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+    timer = Timer()
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for relation in relations:
-            etl.db.run(conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run)
-        if not dry_run:
-            logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
+            etl.db.run(
+                conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run
+            )
+    if not dry_run:
+        logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
 
 
 # --- Experimental Section: load during extract
@@ -741,7 +774,7 @@ def create_source_tables_when_ready(
     dry_run=False,
 ) -> None:
     """
-    Create source relations in several threads, as we observe their extracts to be done, using a connection pool.
+    Create source relations in several threads, as we observe their extracts to be done.
 
     We assume here that the relations have no dependencies on each other and just gun it.
     This will only raise an Exception if one of the created relations was marked as "required".
@@ -750,7 +783,9 @@ def create_source_tables_when_ready(
     any relation from the full set of relations that depends on a source relation that failed
     to load.
     """
-    idle_termination_seconds = etl.config.get_config_int("arthur_settings.concurrent_load_idle_termination_seconds")
+    idle_termination_seconds = etl.config.get_config_int(
+        "arthur_settings.concurrent_load_idle_termination_seconds"
+    )
     source_relations = [relation for relation in relations if not relation.is_transformation]
     if not source_relations:
         logger.info("None of the relations are in source schemas")
@@ -828,11 +863,13 @@ def create_source_tables_when_ready(
                 for extract_payload in res["Items"]:
                     if extract_payload["event"] == etl.monitor.STEP_FINISH:
                         logger.info(
-                            "Poller: Recently completed extract found for '%s', marking as ready.", item.identifier
+                            "Poller: Recently completed extract found for '%s', marking as ready.",
+                            item.identifier,
                         )
                     elif extract_payload["event"] == etl.monitor.STEP_FAIL:
                         logger.info(
-                            "Poller: Recently failed extract found for '%s', marking as failed.", item.identifier
+                            "Poller: Recently failed extract found for '%s', marking as failed.",
+                            item.identifier,
                         )
                         item.mark_failure(relations, exc_info=False)
                     # We'll create the relation on success and failure (but skip copy on failure)
@@ -861,7 +898,9 @@ def create_source_tables_when_ready(
                 item.mark_failure(relations)
             except Exception:
                 logger.error(
-                    "Loader: Uncaught exception in load worker while loading '%s':", item.identifier, exc_info=True
+                    "Loader: Uncaught exception in load worker while loading '%s':",
+                    item.identifier,
+                    exc_info=True,
                 )
                 uncaught_load_worker_exception.set()
                 raise
@@ -869,7 +908,7 @@ def create_source_tables_when_ready(
     to_poll = queue.Queue()  # type: ignore
     to_load = queue.Queue()  # type: ignore
     threads = []
-    for i in range(max_concurrency):
+    for _ in range(max_concurrency):
         t = threading.Thread(target=load_worker)
         t.start()
         threads.append(t)
@@ -898,7 +937,7 @@ def create_source_tables_when_ready(
         logger.info("Current queue length: %s", checkpoint_queue_size_cutoff)
 
     # When poller is done, send workers a 'stop' event and wait
-    for i in range(max_concurrency):
+    for _ in range(max_concurrency):
         to_load.put(None)
     for t in threads:
         t.join()
@@ -923,7 +962,9 @@ def create_source_tables_when_ready(
 # --- Section 4: Functions related to control flow
 
 
-def create_source_tables_in_parallel(relations: Sequence[LoadableRelation], max_concurrency=1, dry_run=False) -> None:
+def create_source_tables_in_parallel(
+    relations: Sequence[LoadableRelation], max_concurrency=1, dry_run=False
+) -> None:
     """
     Create relations in parallel, using a connection pool, a thread pool, and a kiddie pool.
 
@@ -948,7 +989,9 @@ def create_source_tables_in_parallel(relations: Sequence[LoadableRelation], max_
                 future = executor.submit(build_one_relation_using_pool, pool, relation, dry_run=dry_run)
                 futures[relation.identifier] = future
             # For fail-fast, switch to FIRST_EXCEPTION below.
-            done, not_done = concurrent.futures.wait(futures.values(), return_when=concurrent.futures.ALL_COMPLETED)
+            done, not_done = concurrent.futures.wait(
+                futures.values(), return_when=concurrent.futures.ALL_COMPLETED
+            )
             cancelled = [future for future in not_done if future.cancel()]
             logger.info(
                 "Wrapping up work in %d worker(s): %d done, %d not done (%d cancelled) (%s)",
@@ -1016,10 +1059,14 @@ def create_transformations_sequentially(
     if failed:
         logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
     skipped = [
-        relation.identifier for relation in transformations if relation.skip_copy and not relation.is_view_relation
+        relation.identifier
+        for relation in transformations
+        if relation.skip_copy and not relation.is_view_relation
     ]
     if 0 < len(skipped) < len(transformations):
-        logger.warning("These %d relation(s) were left empty: %s", len(skipped), join_with_single_quotes(skipped))
+        logger.warning(
+            "These %d relation(s) were left empty: %s", len(skipped), join_with_single_quotes(skipped)
+        )
     logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
 
 
@@ -1033,7 +1080,11 @@ def set_redshift_wlm_slots(conn: connection, slots: int, dry_run: bool) -> None:
 
 
 def create_relations(
-    relations: Sequence[LoadableRelation], max_concurrency=1, wlm_query_slots=1, concurrent_extract=False, dry_run=False
+    relations: Sequence[LoadableRelation],
+    max_concurrency=1,
+    wlm_query_slots=1,
+    concurrent_extract=False,
+    dry_run=False,
 ) -> None:
     """Build relations by creating them, granting access, and loading them (if they hold data)."""
     if concurrent_extract:
@@ -1057,13 +1108,14 @@ def load_data_warehouse(
     wlm_query_slots=1,
     concurrent_extract=False,
     skip_copy=False,
+    skip_loading_sources=False,
     dry_run=False,
 ):
     """
     Fully "load" the data warehouse after creating a blank slate.
 
-    By default, we use staging positions of schemas to load and thus first
-    moving existing schemas out of the way.
+    By default, we use staging positions of schemas to load and thus wait with
+    moving existing schemas out of the way until the load is complete.
 
     This function allows only complete schemas as selection.
 
@@ -1083,12 +1135,18 @@ def load_data_warehouse(
 
     This is a callback of a command.
     """
-    selected_relations = etl.relation.select_in_execution_order(all_relations, selector, include_dependents=True)
+    selected_relations = etl.relation.select_in_execution_order(
+        all_relations, selector, include_dependents=True
+    )
     if not selected_relations:
         return
 
     relations = LoadableRelation.from_descriptions(
-        selected_relations, "load", skip_copy=skip_copy, use_staging=use_staging
+        selected_relations,
+        "load",
+        skip_copy=skip_copy,
+        skip_loading_sources=skip_loading_sources,
+        use_staging=use_staging,
     )
     traversed_schemas = find_traversed_schemas(relations)
     logger.info("Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
@@ -1102,7 +1160,11 @@ def load_data_warehouse(
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
         create_relations(
-            relations, max_concurrency, wlm_query_slots, concurrent_extract=concurrent_extract, dry_run=dry_run
+            relations,
+            max_concurrency,
+            wlm_query_slots,
+            concurrent_extract=concurrent_extract,
+            dry_run=dry_run,
         )
     except ETLRuntimeError:
         if not use_staging:
@@ -1168,21 +1230,29 @@ def upgrade_data_warehouse(
             view.identifier for view in etl.relation.find_immediate_dependencies(all_relations, selector)
         ]
         if immediate_views:
-            logger.warning("These views are not part of the upgrade: %s", join_with_single_quotes(immediate_views))
+            logger.warning(
+                "These views are not part of the upgrade: %s", join_with_single_quotes(immediate_views)
+            )
             logger.info(
                 "Any views that depend in their query on tables that are part of the upgrade but"
                 " are not selected will be missing once the upgrade completes."
             )
 
     relations = LoadableRelation.from_descriptions(
-        selected_relations, "upgrade", skip_copy=skip_copy, use_staging=use_staging, target_schema=target_schema
+        selected_relations,
+        "upgrade",
+        skip_copy=skip_copy,
+        use_staging=use_staging,
+        target_schema=target_schema,
     )
 
     if target_schema:
         logger.info("Starting to load %d relation(s) into schema '%s'", len(relations), target_schema)
     else:
         traversed_schemas = find_traversed_schemas(relations)
-        logger.info("Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+        logger.info(
+            "Starting to upgrade %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas)
+        )
         etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
 
     create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
@@ -1203,10 +1273,12 @@ def update_data_warehouse(
     Within a transaction:
         Iterate over relations (selected or (selected and transitively dependent)):
             1 Delete rows
-            2.Load data from upstream sources using COPY command, load data into CTAS using views for queries
+            2.Load data from upstream sources using COPY command, load data into CTAS using views
+              for queries
             3 Verify constraints
 
-    Note that a failure will rollback the transaction -- there is no distinction between required or not-required.
+    Note that a failure will rollback the transaction -- there is no distinction between required
+    or not-required.
     Finally, if elected, run vacuum (in new connection) for all tables that were modified.
 
     This is a callback of a command.
@@ -1269,7 +1341,9 @@ def run_query(relation: RelationDescription, limit=None, use_staging=False) -> N
             limit_clause,
         )
         results = etl.db.query(conn, query_stmt)
-    logger.info("Ran query underlying '%s' and received %d row(s) (%s)", relation.identifier, len(results), timer)
+    logger.info(
+        "Ran query underlying '%s' and received %d row(s) (%s)", relation.identifier, len(results), timer
+    )
 
     # TODO(tom): This should grab the column names from the query to help with debugging.
     if relation.has_identity_column:
@@ -1373,7 +1447,7 @@ def show_downstream_dependents(
     width_dep = max(len(identifier) for identifier in current_level)
     line_template = (
         "{relation.identifier:{width}s}"
-        " # kind={relation.kind} index={index:4d} level={level:3d}"
+        " # {relation.source_type} index={index:4d} level={level:3d}"
         " flag={flag:9s}"
         " is_required={relation.is_required}"
     )
@@ -1394,7 +1468,9 @@ def show_downstream_dependents(
             for dependency in sorted(relation.dependencies):
                 print(
                     dependency_template.format(
-                        identifier=dependency.identifier, level=current_level[dependency.identifier], width=width_dep
+                        identifier=dependency.identifier,
+                        level=current_level[dependency.identifier],
+                        width=width_dep,
                     )
                 )
         if with_dependents:
@@ -1428,7 +1504,8 @@ def show_upstream_dependencies(relations: Sequence[RelationDescription], selecto
 
     max_len = max(len(identifier) for identifier in dependencies)
     line_template = (
-        "{relation.identifier:{width}s} # kind={relation.kind} index={index:4d}" " is_required={relation.is_required}"
+        "{relation.identifier:{width}s} # {relation.source_type} index={index:4d}"
+        " is_required={relation.is_required}"
     )
     for i, relation in enumerate(execution_order):
         if relation.identifier in dependencies:
