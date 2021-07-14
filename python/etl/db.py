@@ -50,14 +50,17 @@ def parse_connection_string(dsn: str) -> Dict[str, str]:
     >>> dsn_max = parse_connection_string("postgresql://john.doe:secret@pg.example.com:5432/xyzzy")
     >>> unparse_connection(dsn_max)
     'host=pg.example.com port=5432 dbname=xyzzy user=john.doe password=***'
+    >>> dsn_uu = parse_connection_string("postgresql://john.doe:%2B-%2B@pg-example.com/xyzzy")
+    >>> dsn_uu["password"]
+    '+-+'
     """
     # Some people, when confronted with a problem, think "I know, I'll use regular expressions."
     # Now they have two problems.
     dsn_re = re.compile(
         r"""(?:jdbc:)?(?P<subprotocol>redshift|postgresql|postgres)://  # accept either type
-            (?:(?P<user>\w[.\w]*)(?::(?P<password>[-\w\!\$\&.%]+))?@)?  # optional user with password
-            (?P<host>\w[-.\w]*)(:?:(?P<port>\d+))?/  # host and optional port information
-            (?P<database>\w+)  # database (and not dbname)
+            (?:(?P<user>[-\w.%]+)(?::(?P<password>[-\w.%]+))?@)?  # optional user with password
+            (?P<host>[-\w.%]+)(:?:(?P<port>\d+))?/  # host and optional port information
+            (?P<database>[-\w.%]+)  # database (and not dbname)
             (?:\?sslmode=(?P<sslmode>\w+))?$""",  # sslmode is the only option currently supported
         re.ASCII | re.VERBOSE,
     )
