@@ -90,7 +90,7 @@
             "name": "Sync environments (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "/bin/bash /tmp/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/validation",
+            "command": "/bin/bash /tmp/sync_env.sh -y ${object_store.s3.bucket_name} ${object_store.s3.prefix} ${object_store.s3.prefix}/validation_warmup",
             "dependsOn": { "ref": "CopyStartupScripts" }
         },
         {
@@ -98,7 +98,7 @@
             "name": "Create validation credentials (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
-            "command": "/bin/bash /tmp/create_validation_credentials ${object_store.s3.bucket_name} ${object_store.s3.prefix}",
+            "command": "/bin/bash /tmp/create_validation_credentials ${object_store.s3.bucket_name} ${object_store.s3.prefix} validation_warmup",
             "dependsOn": { "ref": "SyncEnvironment" }
         },
         {
