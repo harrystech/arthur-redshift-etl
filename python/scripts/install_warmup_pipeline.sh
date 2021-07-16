@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 START_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S")
-USER="${USEmR-nobody}"
+USER="${USER-nobody}"
 DEFAULT_PREFIX="${ARTHUR_DEFAULT_PREFIX-$USER}"
 
 if [[ $# -gt 3 || "$1" = "-h" ]]; then
