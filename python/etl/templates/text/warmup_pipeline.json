@@ -14,7 +14,7 @@
         },
         {
             "id": "WarmupSchedule",
-            "name": "Run every saturday after the Redshift Cluster Maintenance",
+            "name": "Run once a week (every Saturday after the Redshift Cluster Maintenance)",
             "type": "Schedule",
             "period": "7 days",
             "startDateTime": "#{myStartDateTime}",
@@ -119,10 +119,10 @@
         },
         {
             "id": "ArthurLoad",
-            "name": "Arthur Load with skip loading source (EC2)",
+            "name": "Arthur Load with skip loading sources (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix} --skip-loading-sources",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix}/validation_warmup --skip-loading-sources",
             "dependsOn": { "ref": "ArthurInitialize" }
         }
     ],

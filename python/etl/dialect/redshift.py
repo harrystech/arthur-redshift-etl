@@ -118,30 +118,22 @@ def build_table_attributes(table_design: dict) -> List[str]:
     # The default in AWS Redshift is now to have AUTO sort and distribution, see also:
     # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-sort-key.html
     # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-best-dist-key.html
+    distribution = table_attributes.get("distribution")
     compound_sort = table_attributes.get("compound_sort")
     interleaved_sort = table_attributes.get("interleaved_sort")
-    if compound_sort is None and interleaved_sort is None:
-        compound_sort = "auto"
-    if interleaved_sort is None:
-        distribution = table_attributes.get("distribution", "auto")
-    else:
-        # Tables that have an interleaved sort cannot have an AUTO distribution.
-        # ERROR:  Dist/Sort/Encode auto table should not have interleaved sortkey.
-        distribution = table_attributes.get("distribution", "even")
 
     ddl_attributes = []
     if isinstance(distribution, list):
         ddl_attributes.append("DISTSTYLE KEY")
         ddl_attributes.append(f"DISTKEY ( {join_with_double_quotes(distribution)} )")
-    else:
+    elif distribution is not None:
         ddl_attributes.append(f"DISTSTYLE {distribution.upper()}")
 
-    if compound_sort is not None:
-        if isinstance(compound_sort, list):
-            ddl_attributes.append(f"COMPOUND SORTKEY ( {join_with_double_quotes(compound_sort)} )")
-        else:
-            ddl_attributes.append(f"SORTKEY {compound_sort.upper()}")
-    if interleaved_sort is not None:
+    if isinstance(compound_sort, list):
+        ddl_attributes.append(f"COMPOUND SORTKEY ( {join_with_double_quotes(compound_sort)} )")
+    elif compound_sort is not None:
+        ddl_attributes.append(f"SORTKEY {compound_sort.upper()}")
+    elif interleaved_sort is not None:
         ddl_attributes.append(f"INTERLEAVED SORTKEY ( {join_with_double_quotes(interleaved_sort)} )")
     return ddl_attributes
 
