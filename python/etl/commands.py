@@ -1914,8 +1914,19 @@ class TailLogsCommand(SubCommand):
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
 
+        start_time = (
+            (datetime.utcnow() - timedelta(minutes=15)).replace(microsecond=0, tzinfo=None).isoformat()
+        )
+        parser.add_argument(
+            "-t",
+            "--start-time",
+            default=start_time,
+            help="beginning of time window (default: 15 minutes ago, '%s')" % start_time,
+            type=isoformat_datetime_string,
+        )
+
     def callback(self, args):
-        etl.logs.cloudwatch.tail(args.prefix)
+        etl.logs.cloudwatch.tail(args.prefix, args.start_time)
 
 
 class ShowHelpCommand(SubCommand):
