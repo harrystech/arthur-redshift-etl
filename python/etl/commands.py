@@ -69,7 +69,7 @@ def croak(error, exit_code):
 
 
 @contextmanager
-def execute_or_bail():
+def execute_or_bail(sub_command: str):
     """
     Either execute (the wrapped code) successfully or bail out with a helpful error message.
 
@@ -103,10 +103,13 @@ def execute_or_bail():
         logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
         croak(exc, 5)
     else:
-        logger.info("Ran for %.2fs and finished successfully!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s and finished successfully!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
 
 
-def log_command_line():
+def log_command_line() -> None:
     logger.info(
         "Starting log for %s with ETL ID %s", etl.config.package_version(), etl.monitor.Monitor.etl_id
     )
@@ -140,7 +143,7 @@ def run_arg_as_command(my_name="arthur.py"):
     except Exception as exc:
         croak(exc, 1)
 
-    with execute_or_bail():
+    with execute_or_bail(args.sub_command):
         log_command_line()
         etl.config.load_config(args.config)
 

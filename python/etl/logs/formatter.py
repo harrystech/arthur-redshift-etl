@@ -59,4 +59,12 @@ class JsonFormatter(logging.Formatter):
             "thread.name": record.threadName,
             "timestamp": int(record.created * 1000.0),
         }
+        # Always add metrics if present.
+        if hasattr(record, "metrics"):
+            values["metrics"] = record.metrics  # type: ignore
+        # Always add exception information if present.
+        if record.exc_text is not None:
+            if values["message"] != "\n":
+                values["message"] += "\n"  # type: ignore
+            values["message"] += record.exc_text  # type: ignore
         return json.dumps(values, default=str, separators=(",", ":"), sort_keys=True)
