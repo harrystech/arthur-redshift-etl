@@ -118,11 +118,16 @@ def build_table_attributes(table_design: dict) -> List[str]:
     # The default in AWS Redshift is now to have AUTO sort and distribution, see also:
     # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-sort-key.html
     # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-best-dist-key.html
-    distribution = table_attributes.get("distribution", "auto")
     compound_sort = table_attributes.get("compound_sort")
     interleaved_sort = table_attributes.get("interleaved_sort")
     if compound_sort is None and interleaved_sort is None:
         compound_sort = "auto"
+    if interleaved_sort is None:
+        distribution = table_attributes.get("distribution", "auto")
+    else:
+        # Tables that have an interleaved sort cannot have an AUTO distribution.
+        # ERROR:  Dist/Sort/Encode auto table should not have interleaved sortkey.
+        distribution = table_attributes.get("distribution", "even")
 
     ddl_attributes = []
     if isinstance(distribution, list):
