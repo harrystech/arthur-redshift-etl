@@ -37,7 +37,11 @@ COPY --chown=arthur:arthur docker/* /home/arthur/
 
 # Install code under /opt/local/ (although it is under /tmp/ on an EC2 host).
 COPY --chown=arthur:arthur \
-    bin/release_version.sh bin/send_health_check.sh bin/sync_env.sh bin/upload_env.sh \
+    bin/create_validation_credentials \
+    bin/release_version.sh \
+    bin/send_health_check.sh \
+    bin/sync_env.sh \
+    bin/upload_env.sh \
     "/opt/local/$PROJ_NAME/bin/"
 
 COPY requirements*.txt /tmp/
