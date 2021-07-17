@@ -107,10 +107,10 @@ def build_table_attributes(table_design: dict) -> List[str]:
     """
     Return the attributes from the table design, ready to be inserted into a SQL DDL statement.
 
-    >>> build_table_attributes({})  # defaults are now explicit
-    ['DISTSTYLE AUTO', 'SORTKEY AUTO']
+    >>> build_table_attributes({})
+    []
     >>> build_table_attributes({"attributes": {"distribution": "even"}})
-    ['DISTSTYLE EVEN', 'SORTKEY AUTO']
+    ['DISTSTYLE EVEN']
     >>> build_table_attributes({"attributes": {"distribution": ["key"], "compound_sort": ["name"]}})
     ['DISTSTYLE KEY', 'DISTKEY ( "key" )', 'COMPOUND SORTKEY ( "name" )']
     """
