@@ -184,9 +184,6 @@ def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) ->
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
     attributes = build_table_attributes(table_design)
-    # Exclude temp tables from snapshots.
-    if is_temp:
-        attributes.append("BACKUP NO")
 
     ddl = """
         -- arthur.ddl: {table_name.identifier}
