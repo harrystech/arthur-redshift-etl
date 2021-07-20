@@ -371,6 +371,7 @@ def build_full_parser(prog_name):
         DeleteFinishedPipelinesCommand,
         QueryEventsCommand,
         SummarizeEventsCommand,
+        CompareEventsCommand,
         TailEventsCommand,
         TailLogsCommand,
         # General and development commands
@@ -1795,6 +1796,28 @@ class SummarizeEventsCommand(SubCommand):
     def callback(self, args):
         relations = self.find_relation_descriptions(args)
         etl.monitor.summarize_events(relations, args.step)
+
+
+class CompareEventsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "compare_events",
+            "Compare events from the 2 latest ETLs (for given step)",
+            "For selected (or all) relations, show events from ETL, " "grouped by schema.",
+        )
+
+    def add_arguments(self, parser):
+        add_standard_arguments(parser, ["pattern", "prefix", "scheme"])
+        parser.add_argument(
+            "-s",
+            "--step",
+            choices=["extract", "load", "upgrade", "update", "unload"],
+            help="pick which step to Compare",
+        )
+
+    def callback(self, args):
+        relations = self.find_relation_descriptions(args)
+        etl.monitor.compare_events(relations, args.step)
 
 
 class TailEventsCommand(SubCommand):

@@ -690,7 +690,8 @@ class EventsQuery:
         self._keys = ["target", "step", "event", "timestamp", "elapsed", "extra.rowcount"]
         values = {
             ":target": None,  # will be set when called
-            ":epoch_seconds": None,  # will be set when called
+            ":start_epoch_seconds": None,  # will be set when called
+            ":end_epoch_seconds": None,  # will be set when called
             ":start_event": STEP_START,
         }
         # Only look for finish or fail events
@@ -702,7 +703,7 @@ class EventsQuery:
             "ConsistentRead": False,
             "ExpressionAttributeNames": {"#timestamp": "timestamp"},
             "ExpressionAttributeValues": values,
-            "KeyConditionExpression": "target = :target and #timestamp > :epoch_seconds",
+            "KeyConditionExpression": "target = :target and #timestamp BETWEEN :start_epoch_seconds and :end_epoch_seconds",
             "FilterExpression": filter_exp,
             "ProjectionExpression": "target, step, event, #timestamp, elapsed, extra.rowcount",
         }
@@ -712,10 +713,11 @@ class EventsQuery:
     def keys(self):
         return self._keys[:]
 
-    def __call__(self, table, target, epoch_seconds):
+    def __call__(self, table, target, start_epoch_seconds, end_epoch_seconds=None):
         query = deepcopy(self._base_query)
         query["ExpressionAttributeValues"][":target"] = target
-        query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
+        query["ExpressionAttributeValues"][":start_epoch_seconds"] = start_epoch_seconds
+        query["ExpressionAttributeValues"][":end_epoch_seconds"] = end_epoch_seconds or (start_epoch_seconds + 3600 * 24 * 2)
         response = table.query(**query)
         events = [{key: fy.get_in(item, key.split(".")) for key in self.keys} for item in response["Items"]]
         # Return latest event or None
@@ -863,6 +865,109 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     rows = [[_format_output_column(key, info[key]) for key in keys] for info in events]
     rows.sort(key=itemgetter(keys.index("timestamp")))
     print(etl.text.format_lines(rows, header_row=keys))
+
+
+def compare_events(relations, step: Optional[str] = None) -> None:
+    etl_info = _query_for_etls(step=step, days_ago=7)
+    if not len(etl_info):
+        logger.warning("Found no ETLs within the last 7 days")
+        return
+
+    # TODO(youssef): Give option to compare with (current - x days) run.
+    second_latest_etl, latest_etl = sorted(etl_info, key=itemgetter("timestamp"))[-4], sorted(etl_info, key=itemgetter("timestamp"))[-1]
+
+    latest_start = latest_etl["timestamp"]
+    latest_end = latest_etl["timestamp"] + 3600 * 24 * 2  # Infinityyy
+    second_latest_start = second_latest_etl["timestamp"]
+    second_latest_end = second_latest_etl["timestamp"] + 3600 * 20  # TODO(youssef): Hacky, to remove
+    logger.info("Latest ETL: %s", latest_etl)
+    logger.info("Second latest ETL: %s", second_latest_etl)
+
+    ddb = DynamoDBStorage.factory()
+    table = ddb.get_table(create_if_not_exists=False)
+    query = EventsQuery(step)
+
+    events = []
+    schema_events: Dict[str, Dict[str, Union[str, Decimal]]] = {}
+
+    def merge_event(event_latest, event_second_latest, kind):
+        return {
+            "target": event_latest["target"],
+            "step": event_latest["step"],
+            "latest_timestamp": event_latest["timestamp"],
+            "second_latest_timestamp": event_second_latest["timestamp"],
+            "event": (event_latest["event"] == event_second_latest["event"]) and event_latest["event"],
+            "latest_elapsed": event_latest["elapsed"],
+            "second_latest_elapsed": event_second_latest["elapsed"],
+            "latest_rowcount": event_latest["rowcount"],
+            "second_latest_rowcount": event_second_latest["rowcount"],
+            "diff_elapsed": event_latest["elapsed"] - event_second_latest["elapsed"],
+            "diff_rowcount": event_latest["rowcount"] - event_second_latest["rowcount"] if event_latest[
+                "rowcount"] else None
+        }
+
+    missing_from_latest_run = []
+    missing_from_second_latest_run = []
+
+    for relation in tqdm(
+        desc="Querying for events", disable=None, iterable=relations, leave=False, unit="table"
+    ):
+        event_latest = query(table, relation.identifier, latest_start, latest_end)
+        event_second_latest = query(table, relation.identifier, start_epoch_seconds=second_latest_start,
+                                    end_epoch_seconds=second_latest_end)
+        if not (event_latest and event_second_latest):
+            if not event_latest:
+                missing_from_latest_run.append(relation.identifier)
+            if not event_second_latest:
+                missing_from_second_latest_run.append(relation.identifier)
+            continue
+
+        # Make the column for row counts easier to read by dropping "extra.".
+        event_latest["rowcount"] = event_latest.pop("extra.rowcount")
+        event_second_latest["rowcount"] = event_second_latest.pop("extra.rowcount")
+        merged_event = merge_event(event_latest, event_second_latest, relation.kind)
+        events.append(dict(merged_event, kind=relation.kind))
+        schema = relation.target_table_name.schema
+        if schema not in schema_events:
+            schema_events[schema] = {
+                "target": schema,
+                "kind": "---",
+                "step": event_latest["step"],
+                "latest_timestamp": Decimal(0),
+                "second_latest_timestamp": Decimal(0),
+                "event": "complete",
+                "latest_elapsed": Decimal(0),
+                "second_latest_elapsed": Decimal(0),
+                "latest_rowcount": Decimal(0),
+                "second_latest_rowcount": Decimal(0),
+                "diff_elapsed": Decimal(0),
+                "diff_rowcount": Decimal(0)
+            }
+        if event_latest["timestamp"] > schema_events[schema]["latest_timestamp"]:
+            schema_events[schema]["latest_timestamp"] = event_latest["timestamp"]
+        if event_second_latest["timestamp"] > schema_events[schema]["second_latest_timestamp"]:
+            schema_events[schema]["second_latest_timestamp"] = event_second_latest["timestamp"]
+        schema_events[schema]["latest_elapsed"] += event_latest["elapsed"]
+        schema_events[schema]["second_latest_elapsed"] += event_second_latest["elapsed"]
+        schema_events[schema]["latest_rowcount"] += event_latest["rowcount"] if event_latest["rowcount"] else 0
+        schema_events[schema]["second_latest_rowcount"] += event_second_latest["rowcount"] if event_second_latest["rowcount"] else 0
+        schema_events[schema]['diff_elapsed'] = schema_events[schema]['latest_elapsed'] - schema_events[schema][
+            'second_latest_elapsed']
+        schema_events[schema]['diff_rowcount'] = schema_events[schema]['latest_rowcount'] - schema_events[schema][
+            'second_latest_rowcount']
+
+    # Add pseudo events to show schemas are done.
+    print(f"Totol latest load time {sum([event['latest_elapsed'] for event in events])}")
+    print(f"Totol second latest load time {sum([event['second_latest_elapsed'] for event in events])}")
+    events.extend(schema_events.values())
+
+    keys = ["target", "kind", "step", "latest_elapsed", "second_latest_elapsed", "latest_rowcount",
+            "second_latest_rowcount", 'diff_elapsed', 'diff_rowcount']
+    rows = [[_format_output_column(key, info[key]) for key in keys] for info in events]
+    rows.sort(key=itemgetter(keys.index("diff_elapsed")))
+    print(etl.text.format_lines(rows, header_row=keys))
+    print(f"{len(missing_from_latest_run)} missing tables from latest run: {missing_from_latest_run}")
+    print(f"{len(missing_from_second_latest_run)} missing tables from second latest run: {missing_from_second_latest_run}")
 
 
 def tail_events(

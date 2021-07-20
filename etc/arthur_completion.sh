@@ -22,6 +22,7 @@ _arthur_completion()
                 create_index
                 create_schemas
                 create_user
+                compare_events
                 delete_finished_pipelines
                 design
                 explain
