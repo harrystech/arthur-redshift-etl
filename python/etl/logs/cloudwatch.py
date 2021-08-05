@@ -31,7 +31,8 @@ def add_cloudwatch_logging(prefix) -> None:
 
     log_level = get_config_value("arthur_settings.logging.cloudwatch.log_level")
     handler.setLevel(log_level)
-    handler.setFormatter(JsonFormatter(prefix))
+    # The extra "str()" gets around the meta class approach to store the etl_id.
+    handler.setFormatter(JsonFormatter(prefix, str(etl.monitor.Monitor.etl_id)))
 
     root_logger = logging.getLogger()
     root_logger.addHandler(handler)

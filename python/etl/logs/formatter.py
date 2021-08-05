@@ -29,9 +29,10 @@ class JsonFormatter(logging.Formatter):
 
     converter = time.gmtime
 
-    def __init__(self, environment: str):
+    def __init__(self, environment: str, etl_id: str):
         super().__init__()
         self.environment = environment
+        self.etl_id = etl_id
 
     def as_utc_iso8601(self, ts) -> str:
         return (
@@ -43,8 +44,10 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record by creating a JSON-format in a string."""
         values = {
+            "application_name": "arthur-etl",
             "environment": self.environment,
             "gmtime": self.as_utc_iso8601(record.created),
+            "etl_id": self.etl_id,
             "log_level": record.levelname,
             "log_severity": record.levelno,
             "logger": record.name,
@@ -59,10 +62,13 @@ class JsonFormatter(logging.Formatter):
             "thread.name": record.threadName,
             "timestamp": int(record.created * 1000.0),
         }
-        # Always add metrics if present.
+        # Always add metrics if any are present.
         if hasattr(record, "metrics"):
             values["metrics"] = record.metrics  # type: ignore
-        # Always add exception information if present.
+        # Always add exception (value) as a field if exception info is present.
+        if record.exc_info is not None:
+            values["exception"] = repr(record.exc_info[1])
+        # Always add formatted exception to message if exception info is present.
         if record.exc_text is not None:
             if values["message"] != "\n":
                 values["message"] += "\n"  # type: ignore

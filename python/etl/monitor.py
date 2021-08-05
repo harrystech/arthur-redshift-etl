@@ -178,8 +178,8 @@ class Monitor(metaclass=MetaMonitor):
         return Monitor.cluster_info
 
     @property
-    def etl_id(self):
-        return Monitor.etl_id
+    def etl_id(self) -> str:
+        return str(Monitor.etl_id)
 
     @property
     def target(self):
