@@ -67,7 +67,8 @@ class JsonFormatter(logging.Formatter):
             values["metrics"] = record.metrics  # type: ignore
         # Always add exception (value) as a field if exception info is present.
         if record.exc_info is not None:
-            values["exception"] = repr(record.exc_info[1])
+            values["exception.class"] = record.exc_info[1].__class__.__name__
+            values["exception.message"] = str(record.exc_info[1])
         # Always add formatted exception to message if exception info is present.
         if record.exc_text is not None:
             if values["message"] != "\n":
