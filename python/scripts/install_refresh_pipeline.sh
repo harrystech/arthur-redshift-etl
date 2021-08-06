@@ -41,7 +41,7 @@ OCCURRENCES="$3"
 shift 3
 # shellcheck disable=SC2124
 SELECTION="$@"
-C_S_SELECTION=$(join_by ',' "$SELECTION")
+C_S_SELECTION=$(join_by ',' "$@")
 
 # Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/current/bin/bootstrap.sh"
