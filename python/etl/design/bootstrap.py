@@ -810,8 +810,8 @@ def bootstrap_transformations(
             logger.info(
                 "Working on transformation '%s' (%d/%d)", relation.identifier, index + 1, len(relations)
             )
-            # Be careful to not trigger a load of an unknown design file by accessing "kind".
-            actual_kind = source_name or (relation.kind if relation.design_file_name else None)
+            # Be careful to not trigger a load of an unknown design file by accessing "source_name".
+            actual_kind = source_name or (relation.source_type if relation.design_file_name else None)
             try:
                 table_design = create_table_design_for_transformation(
                     conn, actual_kind, relation, update or check_only

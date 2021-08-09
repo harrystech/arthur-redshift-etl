@@ -220,22 +220,25 @@ class RelationDescription:
 
     @property
     def kind(self) -> str:
-        if self.table_design["source_name"] in ("CTAS", "VIEW"):
-            return self.table_design["source_name"]
-        else:
-            return "DATA"
+        """
+        Return "kind" of a relation which is either TABlE or VIEW.
+
+        See also etl.db.relation_kind which uses the existing relation to determine
+        its kind instead of the table design file.
+        """
+        return "VIEW" if self.is_view_relation else "TABLE"
 
     @property
     def is_ctas_relation(self) -> bool:
-        return self.kind == "CTAS"
+        return self.table_design["source_name"] == "CTAS"
 
     @property
     def is_view_relation(self) -> bool:
-        return self.kind == "VIEW"
+        return self.table_design["source_name"] == "VIEW"
 
     @property
     def is_transformation(self) -> bool:
-        return self.kind != "DATA"
+        return self.table_design["source_name"] in {"CTAS", "VIEW"}
 
     @property
     def is_unloadable(self) -> bool:
@@ -297,7 +300,15 @@ class RelationDescription:
 
     @property
     def source_name(self):
+        # TODO(tom): Change the name of this property since it's confusing given table_design["source_name"]
         return self.target_table_name.schema
+
+    @property
+    def source_type(self) -> str:
+        # For transformations be specific whether it is CTAS or VIEW.
+        if self.table_design["source_name"] in {"CTAS", "VIEW"}:
+            return self.table_design["source_name"]
+        return self.schema_config.source_type
 
     @property
     def schema_config(self) -> DataWarehouseSchema:
@@ -330,7 +341,7 @@ class RelationDescription:
         """
         Return whether any of the columns is marked as identity column.
 
-        (Should only ever be possible for CTAS, see validation code).
+        This should only ever be possible for a CTAS, see validation code.
         """
         return any(column.get("identity") for column in self.table_design["columns"])
 

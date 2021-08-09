@@ -18,6 +18,7 @@ _arthur_completion()
                 bootstrap_sources
                 bootstrap_transformations
                 check_constraints
+                create_external_schemas
                 create_groups
                 create_index
                 create_schemas
@@ -54,6 +55,7 @@ _arthur_completion()
                 update
                 update_user
                 upgrade
+                vacuum
                 validate
                 "
             # shellcheck disable=SC2207

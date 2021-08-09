@@ -95,10 +95,10 @@ def build_table_constraints(table_design: dict) -> List[str]:
         "natural_key": "UNIQUE",
     }
     ddl_for_constraints = []
-    for constraint in table_constraints:
+    for constraint in sorted(table_constraints, key=lambda d: d.items()):
         [[constraint_type, column_list]] = constraint.items()
         ddl_for_constraints.append(
-            "{} ( {} )".format(type_lookup[constraint_type], join_with_double_quotes(column_list))
+            f"{type_lookup[constraint_type]} ( {join_with_double_quotes(column_list)} )"
         )
     return ddl_for_constraints
 
@@ -107,7 +107,7 @@ def build_table_attributes(table_design: dict) -> List[str]:
     """
     Return the attributes from the table design, ready to be inserted into a SQL DDL statement.
 
-    >>> build_table_attributes({})  # no-op
+    >>> build_table_attributes({})
     []
     >>> build_table_attributes({"attributes": {"distribution": "even"}})
     ['DISTSTYLE EVEN']
@@ -115,22 +115,26 @@ def build_table_attributes(table_design: dict) -> List[str]:
     ['DISTSTYLE KEY', 'DISTKEY ( "key" )', 'COMPOUND SORTKEY ( "name" )']
     """
     table_attributes = table_design.get("attributes", {})
-    distribution = table_attributes.get("distribution", [])
-    compound_sort = table_attributes.get("compound_sort", [])
-    interleaved_sort = table_attributes.get("interleaved_sort", [])
+    # The default in AWS Redshift is now to have AUTO sort and distribution, see also:
+    # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-sort-key.html
+    # https://docs.aws.amazon.com/redshift/latest/dg/c_best-practices-best-dist-key.html
+    distribution = table_attributes.get("distribution")
+    compound_sort = table_attributes.get("compound_sort")
+    interleaved_sort = table_attributes.get("interleaved_sort")
 
     ddl_attributes = []
-    # TODO Use for staging tables: ddl_attributes.append("BACKUP NO")
-    if distribution:
-        if isinstance(distribution, list):
-            ddl_attributes.append("DISTSTYLE KEY")
-            ddl_attributes.append("DISTKEY ( {} )".format(join_with_double_quotes(distribution)))
-        else:
-            ddl_attributes.append("DISTSTYLE {}".format(distribution.upper()))
-    if compound_sort:
-        ddl_attributes.append("COMPOUND SORTKEY ( {} )".format(join_with_double_quotes(compound_sort)))
-    elif interleaved_sort:
-        ddl_attributes.append("INTERLEAVED SORTKEY ( {} )".format(join_with_double_quotes(interleaved_sort)))
+    if isinstance(distribution, list):
+        ddl_attributes.append("DISTSTYLE KEY")
+        ddl_attributes.append(f"DISTKEY ( {join_with_double_quotes(distribution)} )")
+    elif distribution is not None:
+        ddl_attributes.append(f"DISTSTYLE {distribution.upper()}")
+
+    if isinstance(compound_sort, list):
+        ddl_attributes.append(f"COMPOUND SORTKEY ( {join_with_double_quotes(compound_sort)} )")
+    elif compound_sort is not None:
+        ddl_attributes.append(f"SORTKEY {compound_sort.upper()}")
+    elif interleaved_sort is not None:
+        ddl_attributes.append(f"INTERLEAVED SORTKEY ( {join_with_double_quotes(interleaved_sort)} )")
     return ddl_attributes
 
 
@@ -182,6 +186,7 @@ def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) ->
     attributes = build_table_attributes(table_design)
 
     ddl = """
+        -- arthur.ddl: {table_name.identifier}
         CREATE TABLE {table_name} (
             {columns_and_constraints}
         )
@@ -198,6 +203,7 @@ def build_view_ddl(view_name: TableName, columns: List[str], query_stmt: str) ->
     """Assemble the DDL of a view in a Redshift data warehouse."""
     comma_separated_columns = join_with_double_quotes(columns, sep=",\n            ")
     ddl_initial = """
+        -- arthur.ddl: {view_name.identifier}
         CREATE VIEW {view_name} (
             {columns}
         ) AS
@@ -211,6 +217,7 @@ def build_insert_ddl(table_name: TableName, column_list, query_stmt) -> str:
     """Assemble the statement to insert data based on a query."""
     columns = join_with_double_quotes(column_list, sep=",\n            ")
     insert_stmt = """
+        -- arthur.insert: {table.identifier}
         INSERT INTO {table} (
             {columns}
         )
@@ -218,6 +225,28 @@ def build_insert_ddl(table_name: TableName, column_list, query_stmt) -> str:
         table=table_name, columns=columns
     )
     return whitespace_cleanup(insert_stmt) + "\n" + query_stmt
+
+
+def create_external_schema(
+    cx: Connection, schema_name: str, database: str, iam_role: str, dry_run=False
+) -> None:
+    # TODO(tom): Need to pass in catalog role as well if it is not the same as IAM role.
+    drop_stmt = f'DROP SCHEMA IF EXISTS "{schema_name}"'
+    create_stmt = f"""
+        -- arthur.ddl: {schema_name}
+        CREATE EXTERNAL SCHEMA IF NOT EXISTS "{schema_name}"
+        FROM DATA CATALOG
+        DATABASE %s
+        IAM_ROLE %s
+        """
+    if dry_run:
+        logger.info("Dry-run: Skipping creating external schema '%s'", schema_name)
+        etl.db.skip_query(cx, drop_stmt)
+        etl.db.skip_query(cx, create_stmt, (database, iam_role))
+        return
+    logger.info("Creating external schema '%s' (database='%s')", schema_name, database)
+    etl.db.execute(cx, drop_stmt)
+    etl.db.execute(cx, create_stmt, (database, iam_role))
 
 
 @contextmanager
@@ -266,21 +295,21 @@ def log_load_error(cx):
 def determine_data_format_parameters(data_format, format_option, file_compression):
     if data_format is None:
         # This is our original data format (which mirrors settings in unload).
-        data_format_parameters = "DELIMITER ',' ESCAPE REMOVEQUOTES GZIP"
-    else:
-        if data_format == "CSV":
-            if format_option is None:
-                data_format_parameters = "CSV"
-            else:
-                data_format_parameters = "CSV QUOTE AS '{}'".format(format_option)
-        elif data_format in ["AVRO", "JSON"]:
-            if format_option is None:
-                format_option = "auto"
-            data_format_parameters = "{} AS '{}'".format(data_format, format_option)
+        return "DELIMITER ',' ESCAPE REMOVEQUOTES GZIP"
+
+    if data_format == "CSV":
+        if format_option is None:
+            data_format_parameters = "CSV"
         else:
-            raise ETLSystemError("found unexpected data format: {}".format(data_format))
-        if file_compression is not None:
-            data_format_parameters += " {}".format(file_compression)
+            data_format_parameters = "CSV QUOTE AS '{}'".format(format_option)
+    elif data_format in ["AVRO", "JSON"]:
+        if format_option is None:
+            format_option = "auto"
+        data_format_parameters = "{} AS '{}'".format(data_format, format_option)
+    else:
+        raise ETLSystemError("found unexpected data format: {}".format(data_format))
+    if file_compression is not None:
+        data_format_parameters += " {}".format(file_compression)
     return data_format_parameters
 
 
@@ -304,6 +333,7 @@ def copy_using_manifest(
         compupdate = "OFF"
 
     copy_stmt = """
+        -- arthur.copy: {table.identifier}
         COPY {table} (
             {columns}
         )
@@ -324,16 +354,16 @@ def copy_using_manifest(
     if dry_run:
         logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
         etl.db.skip_query(conn, copy_stmt, (s3_uri, credentials))
-    else:
-        logger.info("Copying data into '%s' using '%s'", table_name.identifier, s3_uri)
-        try:
-            with log_load_error(conn):
-                etl.db.execute(conn, copy_stmt, (s3_uri, credentials))
-        except psycopg2.InternalError as exc:
-            if exc.pgcode == "XX000":
-                raise ETLRuntimeError(exc) from exc
-            else:
-                raise TransientETLError(exc) from exc
+        return
+
+    logger.info("Copying data into '%s' using '%s'", table_name.identifier, s3_uri)
+    try:
+        with log_load_error(conn):
+            etl.db.execute(conn, copy_stmt, (s3_uri, credentials))
+    except psycopg2.InternalError as exc:
+        if exc.pgcode == "XX000":
+            raise ETLRuntimeError(exc) from exc
+        raise TransientETLError(exc) from exc
 
 
 def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry_run=False) -> None:
@@ -346,18 +376,17 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
         """
     if dry_run:
         etl.db.skip_query(conn, stmt)
-    else:
-        rows = etl.db.query(conn, stmt)
-        summary = "    " + "\n    ".join(
-            "'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows
-        )
-        logger.debug(
-            "Copied %d file(s) into '%s' using manifest '%s':\n%s",
-            len(rows),
-            table_name.identifier,
-            s3_uri,
-            summary,
-        )
+        return
+
+    rows = etl.db.query(conn, stmt)
+    summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
+    logger.debug(
+        "Copied %d file(s) into '%s' using manifest '%s':\n%s",
+        len(rows),
+        table_name.identifier,
+        s3_uri,
+        summary,
+    )
 
 
 def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -> None:
@@ -379,16 +408,17 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
         """
     if dry_run:
         etl.db.skip_query(conn, stmt, (copy_id,))
-    else:
-        [row] = etl.db.query(conn, stmt, (copy_id,))
-        logger.info(
-            (
-                "Copied {copy_count:d} row(s) into {table_name:x} "
-                "(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, "
-                "slots: {slot_count:d}, elapsed: {elapsed}s ({elapsed_queued}s queued), "
-                "size: {total_mb}MB)"
-            ).format(copy_count=copy_count, table_name=table_name, **row)
-        )
+        return
+
+    [row] = etl.db.query(conn, stmt, (copy_id,))
+    logger.info(
+        (
+            "Copied {copy_count:d} row(s) into {table_name:x} "
+            "(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, "
+            "slots: {slot_count:d}, elapsed: {elapsed}s ({elapsed_queued}s queued), "
+            "size: {total_mb}MB)"
+        ).format(copy_count=copy_count, table_name=table_name, **row)
+    )
 
 
 def copy_from_uri(
@@ -428,19 +458,19 @@ def insert_from_query(
     if dry_run:
         logger.info("Dry-run: Skipping inserting data into '%s' from query", table_name.identifier)
         etl.db.skip_query(conn, stmt)
-    else:
-        logger.info("Inserting data into '%s' from query", table_name.identifier)
-        try:
-            etl.db.execute(conn, stmt)
-        # TODO(tom) Ideally we'd retry these but initial testing ran into issues with closed connections.
-        # except psycopg2.OperationalError as exc:
-        #    raise TransientETLError(exc) from exc
-        except psycopg2.InternalError as exc:
-            if exc.pgcode in retriable_error_codes:
-                raise TransientETLError(exc) from exc
-            else:
-                logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
-                raise
+        return
+
+    logger.info("Inserting data into '%s' from query", table_name.identifier)
+    try:
+        etl.db.execute(conn, stmt)
+    # TODO(tom) Ideally we'd retry these but initial testing ran into issues with closed connections.
+    # except psycopg2.OperationalError as exc:
+    #    raise TransientETLError(exc) from exc
+    except psycopg2.InternalError as exc:
+        if exc.pgcode in retriable_error_codes:
+            raise TransientETLError(exc) from exc
+        logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
+        raise
 
 
 def unload(
@@ -459,6 +489,7 @@ def unload(
     credentials = f"aws_iam_role={aws_iam_role}"
     # TODO(tom): Need to review why we can't use r"\N"
     null_string = "\\\\N"
+    # TODO(tom): Add '-- arthur.unload: {table_name.identifier}' at top of query
     unload_statement = """
         UNLOAD ('
             SELECT {}

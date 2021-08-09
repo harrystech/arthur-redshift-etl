@@ -178,8 +178,8 @@ class Monitor(metaclass=MetaMonitor):
         return Monitor.cluster_info
 
     @property
-    def etl_id(self):
-        return Monitor.etl_id
+    def etl_id(self) -> str:
+        return str(Monitor.etl_id)
 
     @property
     def target(self):
@@ -215,7 +215,17 @@ class Monitor(metaclass=MetaMonitor):
         if exc_type is None:
             event = STEP_FINISH
             errors = None
-            logger.info("Finished %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
+            logger.info(
+                f"Finished {self._step} step for '{self._target}' ({seconds:0.2f}s)",
+                extra={
+                    "metrics": {
+                        "elapsed": seconds,
+                        "rowcount": self._extra.get("rowcount"),
+                        "step": self._step,
+                        "target": self._target,
+                    }
+                },
+            )
         else:
             event = STEP_FAIL
             errors = [
@@ -224,7 +234,16 @@ class Monitor(metaclass=MetaMonitor):
                     "message": traceback.format_exception_only(exc_type, exc_value)[0].strip(),
                 }
             ]
-            logger.warning("Failed %s step for '%s' (%0.2fs)", self._step, self._target, seconds)
+            logger.warning(
+                f"Failed {self._step} step for '{self._target}' ({seconds:0.2f}s)",
+                extra={
+                    "metrics": {
+                        "elapsed": seconds,
+                        "step": self._step,
+                        "target": self._target,
+                    }
+                },
+            )
 
         payload = MonitorPayload(
             self, event, self._end_time, elapsed=seconds, errors=errors, extra=self._extra
@@ -290,7 +309,7 @@ class MonitorPayload:
             if not payload[key]:
                 del payload[key]
 
-        compact_text = json.dumps(payload, sort_keys=True, separators=(",", ":"), cls=FancyJsonEncoder)
+        compact_text = json.dumps(payload, cls=FancyJsonEncoder, separators=(",", ":"), sort_keys=True)
         if dry_run:
             logger.debug("Dry-run: payload = %s", compact_text)
             return
@@ -564,16 +583,15 @@ def start_monitors(environment):
 def _format_output_column(key: str, value: str) -> str:
     if value is None:
         return "---"
-    elif key == "timestamp":
+    if key == "timestamp":
         # Make timestamp readable by turning epoch seconds into a date.
         return datetime.utcfromtimestamp(float(value)).replace(microsecond=0).isoformat()
-    elif key == "elapsed":
+    if key == "elapsed":
         # Reduce number of decimals to 2.
         return "{:6.2f}".format(float(value))
-    elif key == "rowcount":
+    if key == "rowcount":
         return "{:9d}".format(int(value))
-    else:
-        return value
+    return value
 
 
 def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:

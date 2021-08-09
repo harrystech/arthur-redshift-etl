@@ -1,7 +1,7 @@
 import json
 import logging
 import logging.config
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import boto3
 import watchtower
@@ -31,17 +31,16 @@ def add_cloudwatch_logging(prefix) -> None:
 
     log_level = get_config_value("arthur_settings.logging.cloudwatch.log_level")
     handler.setLevel(log_level)
-    handler.setFormatter(JsonFormatter(prefix))
+    # The extra "str()" gets around the meta class approach to store the etl_id.
+    handler.setFormatter(JsonFormatter(prefix, str(etl.monitor.Monitor.etl_id)))
 
     root_logger = logging.getLogger()
     root_logger.addHandler(handler)
 
 
-def tail(prefix) -> None:
+def tail(prefix: str, start_time: datetime) -> None:
     client = boto3.client("logs")
-
     log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
-    start_time = (datetime.utcnow() - timedelta(minutes=15)).replace(microsecond=0)
     logger.info(f"Searching log streams '{log_group}/{prefix}/*' (starting at '{start_time})'")
 
     paginator = client.get_paginator("filter_log_events")
@@ -50,7 +49,6 @@ def tail(prefix) -> None:
         logStreamNamePrefix=prefix,
         startTime=int(start_time.timestamp() * 1000.0),
     )
-
     for response in response_iterator:
         for event in response["events"]:
             stream_name = event["logStreamName"]
