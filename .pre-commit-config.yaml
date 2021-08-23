@@ -59,7 +59,7 @@ repos:
           - "mypy-boto3~=1.17"
           - "types-PyYAML==5.4.3"
           - "types-setuptools==57.0.0"
-          - "types-simplejson==0.1.4"
+          - "types-simplejson==3.17.0"
           - "types-tabulate==0.1.1"
           - "types-termcolor==0.1.1"
   - repo: https://github.com/shellcheck-py/shellcheck-py
