@@ -14,5 +14,5 @@ pyupgrade==2.21.0
 types-PyYAML==5.4.3
 types-setuptools==57.0.0
 types-simplejson==3.17.0
-types-tabulate==0.1.1
+types-tabulate==0.8.2
 types-termcolor==0.1.1
