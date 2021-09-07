@@ -127,7 +127,7 @@ def print_comparison_table(previous_values, current_values, column):
         event for event in all_events if show_delta(previous_values[event], current_values[event], column)
     )
     table = sorted(
-        [
+        (
             (
                 event[1],  # target
                 event[0],  # step
@@ -136,7 +136,7 @@ def print_comparison_table(previous_values, current_values, column):
                 delta(previous_values[event], current_values[event]),
             )
             for event in has_large_diff
-        ],
+        ),
         key=lambda row: row[:2],  # Avoid comparison with None values in the columns
     )
     print("Differences for '{}':\n".format(column))
