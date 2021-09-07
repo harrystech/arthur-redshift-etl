@@ -401,10 +401,10 @@ def validate_upstream_constraints(conn: Connection, table: RelationDescription) 
     current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
     design_constraint = table.table_design.get("constraints", [])
 
-    current_primary_key = frozenset([col for c in current_constraint for col in c.get("primary_key", [])])
+    current_primary_key = frozenset(col for c in current_constraint for col in c.get("primary_key", []))
     current_uniques = [frozenset(c["unique"]) for c in current_constraint if "unique" in c]
 
-    design_primary_key = frozenset([col for c in design_constraint for col in c.get("primary_key", [])])
+    design_primary_key = frozenset(col for c in design_constraint for col in c.get("primary_key", []))
     design_uniques = [frozenset(c["unique"]) for c in design_constraint if "unique" in c]
 
     # We'll pluck from the not_used info and report if anything wasn't used in the design.
