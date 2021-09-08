@@ -133,6 +133,7 @@ def run_arg_as_command(my_name="arthur.py"):
         return
 
     if args.cluster_id is not None:
+        etl.config.load_config(args.config)
         submit_step(args.cluster_id, args.sub_command)
         return
 

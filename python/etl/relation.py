@@ -399,6 +399,17 @@ class RelationDescription:
     def num_partitions(self):
         return self.table_design.get("extract_settings", {}).get("num_partitions")
 
+    @property
+    def partition_boundary_query(self) -> Union[str, None]:
+        """
+        Return the optional boundary query specified in relation extract settings.
+
+        Sqoop generates evenly-spaced buckets for map tasks in extraction. Users may provide
+        a separate query that returns the min and max values in that range. The query should select
+        one row with two fields; the first provides the lower bound, the second the upper bound.
+        """
+        return self.table_design.get("extract_settings", {}).get("boundary_query")
+
     def find_partition_key(self) -> Union[str, None]:
         """
         Return valid partition key for a relation.
@@ -416,7 +427,19 @@ class RelationDescription:
         """
         constraints = self.table_design.get("constraints", [])
         extract_settings = self.table_design.get("extract_settings", {})
-        [partition_key] = extract_settings.get("split_by", [None])
+        split_by_setting = extract_settings.get("split_by", [None])
+        if isinstance(split_by_setting, list):
+            [partition_key] = split_by_setting
+        elif isinstance(split_by_setting, str):
+            # Split by expression provided; return immediately
+            return split_by_setting
+        else:
+            # Should be impossible given json schema
+            raise ValueError(
+                "Unsupported type in split_by field of extract_settings in {self}: {split_by_setting}".format(
+                    self=self, split_by_setting=split_by_setting
+                )
+            )
 
         if not partition_key:
             try:

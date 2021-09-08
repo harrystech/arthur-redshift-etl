@@ -37,12 +37,12 @@
             "uniqueItems": true,
             "minItems": 1
         },
-        "bucket_template" : {
+        "bucket_template": {
             "description": "'Templates' used in static sources to configure their bucket",
             "type": "string",
             "pattern": "^(([a-zA-Z0-9._$-]+)|(\\${[.\\w]+}))+$"
         },
-        "path_template" : {
+        "path_template": {
             "description": "'Templates' used in static sources to configure their effective prefix",
             "type": "string",
             "pattern": "^(([a-zA-Z0-9._$-]+/?)|(\\${[.\\w]+})/?)+$"
@@ -99,6 +99,19 @@
             "required": [ "name", "external" ],
             "additionalProperties": false
         },
+        "s3_acl": {
+            "description": "Access control policy setting for S3",
+            "type": "string",
+            "enum": [
+                    "private",
+                    "public-read",
+                    "public-read-write",
+                    "authenticated-read",
+                    "aws-exec-read",
+                    "bucket-owner-read",
+                    "bucket-owner-full-control"
+                ]
+        },
         "s3_data_format": {
             "description": "Description of data format found in S3 objects to be COPY'ed",
             "type": "object",
@@ -146,10 +159,24 @@
         "arthur_settings": {
             "type": "object",
             "properties": {
+                "etl_temp_dir": {
+                    "type": "string",
+                    "description": "Install directory in remote deployments (e.g. root of commands dispatched via arthur submit)"
+                },
                 "extract_retries": {
                     "description": "If an extract from an upstream source fails due to some transient error, retry the extract at most this many times. Zero disables retries",
                     "type": "integer",
                     "minimum": 0
+                },
+                "extract_jitter": {
+                    "description": "Maximum number of seconds to wait during extract startup. For each extract call, a sleep duration is chosen at runtime uniformly between 0 and this value.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "concurrent_load_idle_termination_seconds": {
+                    "description": "Maximum number of seconds to wait during concurrent load for a new extract event.",
+                    "type": "integer",
+                    "minimum": 60
                 },
                 "copy_data_retries": {
                     "description": "If a COPY command fails with a database internal error (which we optimistically hope are transient), retry the COPY at most this many times. Zero disables retries",
@@ -308,7 +335,8 @@
                     "type": "object",
                     "properties": {
                         "bucket_name": { "$ref": "#/definitions/identifier" },
-                        "iam_role": { "$ref": "#/definitions/aws_arn" }
+                        "iam_role": { "$ref": "#/definitions/aws_arn" },
+                        "upload_acl": { "$ref": "#/definitions/s3_acl" }
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false

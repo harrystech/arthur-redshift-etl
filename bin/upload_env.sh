@@ -132,6 +132,7 @@ echo "Creating Python dist file, then uploading files (including configuration, 
 set -o xtrace
 
 python3 setup.py sdist
+# shellcheck disable=SC2012
 LATEST_TAR_FILE=$(ls -1t dist/redshift_etl*tar.gz | head -1)
 for FILE in requirements.txt "$LATEST_TAR_FILE"
 do

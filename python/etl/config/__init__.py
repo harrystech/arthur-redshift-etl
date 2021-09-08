@@ -132,7 +132,8 @@ def _build_config_map(settings):
 
 def etl_tmp_dir(path: str) -> str:
     """Return the absolute path within the ETL runtime directory for the selected path."""
-    return os.path.join(ETL_TMP_DIR, path)
+    tmp_dir = str(get_config_value("arthur_settings.etl_temp_dir", ETL_TMP_DIR))
+    return os.path.join(tmp_dir, path)
 
 
 def load_environ_file(filename: str) -> None:

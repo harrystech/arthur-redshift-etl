@@ -216,7 +216,11 @@
                     "$ref": "#/definitions/expression",
                     "description": "Condition in SQL that will be part of the WHERE clause during extraction"
                 },
-                "split_by": { "$ref": "#/definitions/one_column_as_list" },
+                "split_by": { "oneOf": [
+                    { "$ref": "#/definitions/expression" },
+                    { "$ref": "#/definitions/one_column_as_list" }
+                ] },
+                "boundary_query": { "$ref": "#/definitions/expression" },
                 "num_partitions": {
                     "type": "integer",
                     "minimum": 1

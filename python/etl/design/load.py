@@ -217,7 +217,10 @@ def validate_semantics_of_table(table_design):
                 )
             )
 
-    [split_by_name] = table_design.get("extract_settings", {}).get("split_by", [None])
+    split_by_settings = table_design.get("extract_settings", {}).get("split_by", [None])
+    if isinstance(split_by_settings, str):
+        return  # Not validating split_by expressions
+    [split_by_name] = split_by_settings
     if split_by_name:
         split_by_column = funcy.first(funcy.where(table_design["columns"], name=split_by_name))
         if split_by_column.get("skipped", False):
