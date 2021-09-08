@@ -225,7 +225,7 @@
                     "additionalProperties": false
                 }
             },
-            "required": [ "extract_retries", "copy_data_retries" ],
+            "required": [ "concurrent_load_idle_termination_seconds", "copy_data_retries", "extract_retries" ],
             "additionalProperties": false
         },
         "data_warehouse": {

@@ -126,7 +126,7 @@ class Extractor:
         This will return a list of tables that failed to extract or raise an exception
         if there was just one relation failing, it was required, and "keep going" was not active.
         """
-        extract_jitter = etl.config.get_config_int("arthur_settings.extract_jitter")
+        extract_jitter = etl.config.get_config_int("arthur_settings.extract_jitter", 0)
         if extract_jitter:
             jitter_sleep_duration = random.randint(0, extract_jitter)
             self.logger.info("Sleeping %d seconds to jitter extraction startup.", jitter_sleep_duration)

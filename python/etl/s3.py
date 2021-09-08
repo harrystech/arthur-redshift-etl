@@ -76,7 +76,7 @@ class S3Uploader:
         logger.debug("Uploading '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key)
         try:
             upload_kwargs = {}
-            upload_acl = etl.config.get_config_value("object_store.s3.upload_acl", None)
+            upload_acl = etl.config.get_config_value("object_store.s3.upload_acl")
             if upload_acl:
                 upload_kwargs["ExtraArgs"] = {"ACL": upload_acl}
             bucket = _get_s3_bucket(self.bucket_name)
