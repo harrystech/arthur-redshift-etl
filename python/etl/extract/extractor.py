@@ -5,6 +5,8 @@ Extractors leave usable (ie, COPY-ready) manifests on S3 that reference data fil
 """
 import concurrent.futures
 import logging
+import random
+import time
 from itertools import groupby
 from operator import attrgetter
 from typing import Dict, List, Set
@@ -124,6 +126,11 @@ class Extractor:
         This will return a list of tables that failed to extract or raise an exception
         if there was just one relation failing, it was required, and "keep going" was not active.
         """
+        extract_jitter = etl.config.get_config_int("arthur_settings.extract_jitter", 0)
+        if extract_jitter:
+            jitter_sleep_duration = random.randint(0, extract_jitter)
+            self.logger.info("Sleeping %d seconds to jitter extraction startup.", jitter_sleep_duration)
+            time.sleep(jitter_sleep_duration)
         self.logger.info("Extracting %d relation(s) from source '%s'", len(relations), source.name)
         failed_tables = []
         with Timer() as timer:

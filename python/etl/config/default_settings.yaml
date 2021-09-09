@@ -14,6 +14,7 @@
       }
     },
     "retriable_error_codes": "8001,15001,15005",
+    "concurrent_load_idle_termination_seconds": 3600,
     "redshift": {
       "relation_column_encoding": "ON"
     }
