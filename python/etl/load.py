@@ -54,6 +54,7 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Any, Dict, List, Optional, Sequence, Set
 
+import funcy
 from psycopg2.extensions import connection  # only for type annotation
 
 import etl
@@ -1208,7 +1209,9 @@ def upgrade_data_warehouse(
     exists to include those immediate views in the upgrade.
 
     If a target schema is provided, then the data is loaded into that schema instead of where the
-    relation would normally land.
+    relation would normally land. Note that a check prevents loading tables from different
+    execution levels in order to avoid loading tables that depend on each other. (In that case,
+    the query would have to be rewritten to use the relocated table.)
 
     This is a callback of a command.
     """
@@ -1222,8 +1225,14 @@ def upgrade_data_warehouse(
     if not selected_relations:
         return
 
-    if target_schema and any(relation.execution_level > 1 for relation in selected_relations):
-        raise ETLRuntimeError("relations depend on each other while target schema is in effect")
+    involved_execution_levels = frozenset(
+        funcy.distinct(relation.execution_level for relation in selected_relations)
+    )
+    if target_schema and len(involved_execution_levels) != 1:
+        raise ETLRuntimeError(
+            f"relations might depend on each other while target schema is in effect "
+            f"(involved execution levels: {join_with_single_quotes(involved_execution_levels)})"
+        )
 
     if only_selected and not include_immediate_views:
         immediate_views = [
