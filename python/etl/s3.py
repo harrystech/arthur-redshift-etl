@@ -217,7 +217,7 @@ def delete_objects(
             logger.debug("Deleted 's3://%s/%s'", bucket_name, deleted)
             tqdm_bar.update()
         for error in result.get("Errors", []):
-            logger.error(
+            logger.warning(
                 "Failed to delete 's3://%s/%s' with %s: %s",
                 bucket_name,
                 error["Key"],
