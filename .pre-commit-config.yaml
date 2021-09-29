@@ -58,7 +58,7 @@ repos:
         additional_dependencies:
           - "mypy-boto3~=1.18"
           - "types-PyYAML==5.4.10"
-          - "types-setuptools==57.0.2"
+          - "types-setuptools==57.4.0"
           - "types-simplejson==3.17.0"
           - "types-tabulate==0.8.2"
           - "types-termcolor==1.1.1"
