@@ -895,7 +895,7 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
 
     # Add stats in log at the end so that we don't miss any summaries with failed != 0.
     msg = (
-        f"Event count in summary:"
+        f"Event count in summary: "
         f"start={stats[STEP_START]}, finish={stats[STEP_FINISH]}, fail={stats[STEP_FAIL]}"
     )
     if stats[STEP_FAIL] > 0:
