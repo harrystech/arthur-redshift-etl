@@ -633,7 +633,11 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
 
 
 def query_for_etl_ids(hours_ago=0, days_ago=0) -> None:
-    """Show recent ETLs with their step and execution start."""
+    """
+    Show recent ETLs with their step and execution start.
+
+    This is a callback of a command.
+    """
     etl_info = _query_for_etls(hours_ago=hours_ago, days_ago=days_ago)
     keys = ["etl_id", "step", "timestamp"]
     rows = [[_format_output_column(key, info[key]) for key in keys] for info in etl_info]
@@ -835,7 +839,11 @@ def recently_extracted_targets(source_relations, start_time):
 
 
 def summarize_events(relations, step: Optional[str] = None) -> None:
-    """Summarize latest ETL step for the given relations by showing elapsed time and row count."""
+    """
+    Summarize latest ETL step for the given relations by showing elapsed time and row count.
+
+    This is a callback of a command.
+    """
     etl_info = _query_for_etls(step=step, days_ago=7)
     if not len(etl_info):
         logger.warning("Found no ETLs within the last 7 days")
@@ -874,6 +882,9 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
             schema_events[schema]["elapsed"] += event["elapsed"]
             schema_events[schema]["rowcount"] += event["rowcount"] if event["rowcount"] else 0
 
+    # Collect stats before adding the pseudo events for schemas.
+    stats = Counter(event["event"] for event in events)
+
     # Add pseudo events to show schemas are done.
     events.extend(schema_events.values())
 
@@ -882,11 +893,25 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
     rows.sort(key=itemgetter(keys.index("timestamp")))
     print(etl.text.format_lines(rows, header_row=keys))
 
+    # Add stats in log at the end so that we don't miss any summaries with failed != 0.
+    msg = (
+        f"Event count in summary:"
+        f"start={stats[STEP_START]}, finish={stats[STEP_FINISH]}, fail={stats[STEP_FAIL]}"
+    )
+    if stats[STEP_FAIL] > 0:
+        logger.warning(msg)
+    else:
+        logger.info(msg)
+
 
 def tail_events(
     relations, start_time, update_interval=None, idle_time_out=None, step: Optional[str] = None
 ) -> None:
-    """Tail the events table and show latest finish or fail events coming in."""
+    """
+    Tail the events table and show latest finish or fail events coming in.
+
+    This is a callback of a command.
+    """
     targets = [relation.identifier for relation in relations]
     query = EventsQuery(step)
     consumer_queue = queue.Queue()  # type: ignore
