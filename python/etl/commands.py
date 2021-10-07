@@ -819,12 +819,18 @@ class RunSqlCommand(SubCommand):
 
 
 class BootstrapSourcesCommand(SubCommand):
+    """
+    Bootstrap schema information from sources.
+
+    Download schema information from upstream sources and compare against current table
+    designs. If there is no current design file, then create one as a starting point.
+    """
+
     def __init__(self):
         super().__init__(
             "bootstrap_sources",
-            "bootstrap schema information from sources",
-            "Download schema information from upstream sources and compare against current table"
-            " designs. If there is no current design file, then create one as a starting point.",
+            "bootstrap schema information from sources",  # TODO(tom): use first half of __doc__
+            self.__class__.__doc__,
             aliases=["design"],
         )
 
