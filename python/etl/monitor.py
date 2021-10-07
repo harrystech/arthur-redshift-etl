@@ -898,10 +898,8 @@ def summarize_events(relations, step: Optional[str] = None) -> None:
         f"Event count in summary: "
         f"start={stats[STEP_START]}, finish={stats[STEP_FINISH]}, fail={stats[STEP_FAIL]}"
     )
-    if stats[STEP_FAIL] > 0:
-        logger.warning(msg)
-    else:
-        logger.info(msg)
+    level = logging.WARNING if stats[STEP_FAIL] > 0 else logging.INFO
+    logger.log(level, msg)
 
 
 def tail_events(
