@@ -2,7 +2,7 @@ name: Publish Docker image
 on:
   push:
     branches:
-    - next
+    - master
     paths:
     - ".github/workflows/publish_latest.yaml"
 jobs:
@@ -19,5 +19,5 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
         registry: docker.pkg.github.com
         repository: harrystech/arthur-redshift-etl/arthur-etl
-        # If code is pushed to next branch, this updates "arthur-etl:latest".
+        # When code is merged to main branch, this updates "arthur-etl:latest".
         tags: latest
