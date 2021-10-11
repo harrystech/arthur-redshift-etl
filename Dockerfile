@@ -16,6 +16,7 @@ ARG PROJ_NAME=redshift_etl
 
 RUN yum install -y \
         awscli \
+        git \
         jq \
         libyaml-devel \
         openssh-clients \
@@ -23,6 +24,7 @@ RUN yum install -y \
         procps-ng \
         python3 \
         python3-devel \
+        tar \
         tmux \
         vim-minimal
 
