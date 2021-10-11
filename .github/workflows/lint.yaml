@@ -11,8 +11,10 @@ on:
     - "setup.py"
 
 jobs:
+
   lint:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout out code
       uses: actions/checkout@v2
@@ -38,8 +40,10 @@ jobs:
     - name: Lint with flake8
       run: |-
         flake8 python setup.py
+
   mypy:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout out code
       uses: actions/checkout@v2

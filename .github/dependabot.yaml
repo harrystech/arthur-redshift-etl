@@ -8,5 +8,5 @@ updates:
     reviewers:
       - "harrystech/data-eng"
     schedule:
-      day: "tuesday"
+      day: "monday"
       interval: "weekly"
