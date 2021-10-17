@@ -401,9 +401,9 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
              , ROUND(MAX(wq.total_queue_time/1000000.0), 2) AS elapsed_queued
              , ROUND(MAX(wq.total_exec_time/1000000.0), 2) AS elapsed
              , ROUND(SUM(s3.transfer_size)/(1024.0*1024.0), 2) AS total_mb
-          FROM stl_wlm_query wq
-          JOIN stl_s3client s3 USING (query)
-          JOIN stv_slices s USING (slice)
+          FROM stl_wlm_query AS wq
+          JOIN stl_s3client AS s3 USING (query)
+          JOIN stv_slices AS s USING (slice)
          WHERE wq.query = %s
         """
     if dry_run:
@@ -418,6 +418,36 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
             "slots: {slot_count:d}, elapsed: {elapsed}s ({elapsed_queued}s queued), "
             "size: {total_mb}MB)"
         ).format(copy_count=copy_count, table_name=table_name, **row)
+    )
+
+
+def query_insert_summary(conn: Connection, table_name: TableName, dry_run=False) -> None:
+    # This query sums up over segments of the previously run query.
+    stmt = """
+        SELECT query AS query_id
+             , SUM(elapsed) AS elapsed
+             , SUM(s3_scanned_rows) AS s3_scanned_rows
+             , SUM(s3_scanned_bytes) AS s3_scanned_bytes
+             , SUM(s3query_returned_rows) AS s3query_returned_rows
+             , SUM(s3query_returned_bytes) AS s3query_returned_bytes
+             , SUM(files) AS files
+          FROM svl_s3query_summary
+         WHERE query = PG_LAST_QUERY_ID()
+         GROUP BY query
+        """
+    if dry_run:
+        etl.db.skip_query(conn, stmt)
+        return
+
+    # For now, just leave if S3 was not involved.
+    result = etl.db.query(conn, stmt)
+    if not result:
+        return
+
+    query_id = result[0]["query_id"]
+    logger.info(
+        f"Summary for query {query_id} (from loading {table_name:x}):\n"
+        f"{etl.db.format_result(result, skip_rows_count=True)}"
     )
 
 
@@ -471,6 +501,8 @@ def insert_from_query(
             raise TransientETLError(exc) from exc
         logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
         raise
+
+    query_insert_summary(conn, table_name, dry_run=dry_run)
 
 
 def set_wlm_slots(conn: Connection, slots: int, dry_run: bool) -> None:
