@@ -242,8 +242,8 @@ def search_query_step(line: str) -> Optional[Dict[str, str]]:
 
 def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
     """Parse a query plan for hints of which relations we might depend on."""
-    s3_dependencies = []
-    xn_dependencies = []
+    s3_dependencies = set()
+    xn_dependencies = set()
 
     logger.debug("Looking at query plan to find dependencies")
     try:
@@ -257,16 +257,17 @@ def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
         if maybe is None:
             continue
         if "s3_table" in maybe:
-            s3_dependencies.append(maybe["s3_table"])
+            s3_dependencies.add(maybe["s3_table"])
         if "xn_table" in maybe:
-            xn_dependencies.append(maybe["xn_table"])
+            xn_dependencies.add(maybe["xn_table"])
 
     if s3_dependencies and xn_dependencies:
         # Unfortunately the tables aren't qualified with a schema so we can't use the info.
         logger.warning(
-            "Found dependencies in S3 AND these not in S3: %s",
+            "Found dependencies in S3, but also some without known schema: %s",
             join_with_single_quotes(xn_dependencies),
         )
+        logger.warning("You will have to manually add the correct tables to the dependencies.")
     return sorted(s3_dependencies)
 
 
