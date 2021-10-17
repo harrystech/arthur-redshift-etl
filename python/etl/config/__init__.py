@@ -184,7 +184,8 @@ def load_settings_file(filename: str, settings: dict) -> None:
     logger.info(f"Loading settings from '{filename}'")
     with open(filename) as content:
         new_settings = yaml.safe_load(content)
-    _deep_update(settings, new_settings)
+    if new_settings:
+        _deep_update(settings, new_settings)
 
 
 def get_python_info() -> str:
