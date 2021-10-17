@@ -27,6 +27,13 @@ import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
 
+# The json_schema package doesn't have a nice parent class for its exceptions.
+VALIDATION_SCHEMA_ERRORS = (
+    jsonschema.exceptions.RefResolutionError,
+    jsonschema.exceptions.SchemaError,
+    jsonschema.exceptions.ValidationError,
+)
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -277,16 +284,9 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
     This will also validate the schema itself!
     """
     schema = load_json_schema(schema_name)
-
-    # The json_schema package doesn't have a nice parent class for its exceptions.
-    validation_internal_errors = (
-        jsonschema.exceptions.RefResolutionError,
-        jsonschema.exceptions.SchemaError,
-        jsonschema.exceptions.ValidationError,
-    )
     try:
         jsonschema.validate(obj, schema, format_checker=jsonschema.draft7_format_checker)
-    except validation_internal_errors as exc:
+    except VALIDATION_SCHEMA_ERRORS as exc:
         raise SchemaValidationError(f"failed to validate against '{schema_name}'") from exc
 
 
@@ -327,14 +327,9 @@ def load_json_schema(schema_name: str):
         schema = load_json(schema_name)
     except JSONDecodeError as exc:
         raise SchemaInvalidError(f"schema in '{schema_name}' cannot be loaded") from exc
-    # The json_schema package doesn't have a nice parent class for its exceptions.
-    validation_internal_errors = (
-        jsonschema.exceptions.SchemaError,
-        jsonschema.exceptions.ValidationError,
-    )
     try:
         jsonschema.Draft7Validator.check_schema(schema)
-    except validation_internal_errors as exc:
+    except VALIDATION_SCHEMA_ERRORS as exc:
         raise SchemaInvalidError(f"schema in '{schema_name}' is not valid") from exc
     return schema
 
