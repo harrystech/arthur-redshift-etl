@@ -872,7 +872,8 @@ def create_source_tables_when_ready(
                             "Poller: Recently failed extract found for '%s', marking as failed.",
                             item.identifier,
                         )
-                        item.mark_failure(relations, exc_info=False)
+                        # We are not inside an exception handling so have no exception info.
+                        item.mark_failure(relations, exc_info=None)
                     # We'll create the relation on success and failure (but skip copy on failure)
                     to_load.put(item)
                     # There should be only one event, but definitely don't queue for loading twice.
