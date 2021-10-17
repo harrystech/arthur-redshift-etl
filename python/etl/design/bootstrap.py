@@ -268,6 +268,8 @@ def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
             join_with_single_quotes(xn_dependencies),
         )
         logger.warning("You will have to manually add the correct tables to the dependencies.")
+
+    # TODO(tom): Do not allow to continue to mix the two.
     return sorted(s3_dependencies)
 
 
@@ -614,7 +616,7 @@ def create_table_design_for_transformation(
                 "Looks like %s has external dependencies, proceeding with caution", relation.identifier
             )
             if kind == "VIEW":
-                raise RuntimeError("VIEW not supported for transformations that depend on extrenal tables")
+                raise RuntimeError("VIEW not supported for transformations that depend on external tables")
             return create_table_design_for_ctas(conn, tmp_view_name, relation, update)
 
     with relation.matching_temporary_view(conn, as_late_binding_view=False) as tmp_view_name:
