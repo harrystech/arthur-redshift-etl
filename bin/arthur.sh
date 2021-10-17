@@ -10,8 +10,8 @@
 #   chmod +x ./arthur.sh
 
 if ! type docker >/dev/null ; then
-    echo "You need to install a Docker environment first." 1>&2
-    exit 1
+  echo "You need to install a Docker environment first." 1>&2
+  exit 1
 fi
 
 set -o errexit
@@ -20,16 +20,17 @@ config_dir="$DATA_WAREHOUSE_CONFIG"
 docker_image="ghcr.io/harrystech/arthur-redshift-etl/arthur-etl:latest"
 aws_profile="${AWS_PROFILE-${AWS_DEFAULT_PROFILE-default}}"
 target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
+verbose=0
 
 # We delayed checking for unset vars until after we've tried to grab the default values.
 set -o nounset
 
 show_usage_and_exit () {
-    cat <<EOF
+  cat <<EOF
 
 Usage:
   $(basename "$0") [-p aws_profile] [<config_dir> [<target_env>]]
-  $(basename "$0") [-p aws_profile] [-c <config_dir>] [-e <target_env>]
+  $(basename "$0") [-v] [-p aws_profile] [-c <config_dir>] [-e <target_env>]
 
 This will start a Docker container with Arthur installed for you, pulling the latest
 Docker image for you if necessary. The following settings will be used:
@@ -47,28 +48,31 @@ Default values are shown above and can be overridden as:
 * Use <aws_profile> to override \$AWS_PROFILE.
 
 EOF
-    exit "${1-0}"
+  exit "${1-0}"
 }
 
-while getopts ":hc:p:e:" opt; do
-    case "$opt" in
-      h)
-        show_usage_and_exit
-        ;;
-      c)
-        config_dir="$OPTARG"
-        ;;
-      e)
-        target_env="$OPTARG"
-        ;;
-      p)
-        aws_profile="$OPTARG"
-        ;;
-      \?)
-        echo "Invalid option: -$OPTARG" 1>&2
-        show_usage_and_exit 1
+while getopts ":hc:p:e:v" opt; do
+  case "$opt" in
+    h)
+      show_usage_and_exit
       ;;
-    esac
+    c)
+      config_dir="$OPTARG"
+      ;;
+    e)
+      target_env="$OPTARG"
+      ;;
+    p)
+      aws_profile="$OPTARG"
+      ;;
+    v)
+      verbose=1
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" 1>&2
+      show_usage_and_exit 1
+      ;;
+  esac
 done
 shift $((OPTIND -1))
 
@@ -109,7 +113,9 @@ config_path=$(basename "$config_abs_path")
 echo "Using Arthur ETL package: $docker_image"
 echo
 
-set -o xtrace
+if [[ "$verbose" != "0" ]]; then
+    set -o xtrace
+fi
 # shellcheck disable=SC2086
 docker run --rm --interactive --tty \
     --env ARTHUR_DEFAULT_PREFIX="$target_env" \
