@@ -106,6 +106,9 @@ config_path=$(basename "$config_abs_path")
 #   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
 #   - DATA_WAREHOUSE_CONFIG so that Arthur finds the configuration files
 
+echo "Using Arthur ETL package: $docker_image"
+echo
+
 set -o xtrace
 # shellcheck disable=SC2086
 docker run --rm --interactive --tty \
