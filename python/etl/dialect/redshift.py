@@ -380,12 +380,10 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
 
     rows = etl.db.query(conn, stmt)
     summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
-    logger.debug(
-        "Copied %d file(s) into '%s' using manifest '%s':\n%s",
-        len(rows),
-        table_name.identifier,
-        s3_uri,
-        summary,
+    # TODO(tom): Check whether this is redundant with query_load_summary
+    logger.info(
+        f"Copied {len(rows)} file(s) into '{table_name:x}' using manifest '{s3_uri}':\n" f"{summary}",
+        extra={"metrics": {"file_count": len(rows), "target": table_name.identifier}},
     )
 
 
@@ -417,7 +415,15 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
             "(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, "
             "slots: {slot_count:d}, elapsed: {elapsed}s ({elapsed_queued}s queued), "
             "size: {total_mb}MB)"
-        ).format(copy_count=copy_count, table_name=table_name, **row)
+        ).format(copy_count=copy_count, table_name=table_name, **row),
+        extra={
+            "metrics": {
+                "file_count": row["file_count"],
+                "rows": copy_count,
+                "size": row["total_mb]"],
+                "target": table_name.identifier,
+            }
+        },
     )
 
 
@@ -444,10 +450,11 @@ def query_insert_summary(conn: Connection, table_name: TableName, dry_run=False)
     if not result:
         return
 
-    query_id = result[0]["query_id"]
+    [row] = result
     logger.info(
-        f"Summary for query {query_id} (from loading {table_name:x}):\n"
-        f"{etl.db.format_result(result, skip_rows_count=True)}"
+        f"Summary for query {row['query_id']} (from loading {table_name:x}):\n"
+        f"{etl.db.format_result(result, skip_rows_count=True)}",
+        extra={"metrics": row},
     )
 
 

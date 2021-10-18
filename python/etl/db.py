@@ -263,6 +263,7 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
 
 
 def format_result(dict_rows, skip_rows_count=False) -> str:
+    """Format query results into a text table."""
     if dict_rows:
         keys = list(dict_rows[0].keys())
     else:
