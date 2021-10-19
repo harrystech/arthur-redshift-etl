@@ -468,6 +468,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
 
     Copied directly: "description", "encoding", "references", and "not_null"
     Updated carefully: "sql_type" and "type" (always together)
+    In case the user might lose precision or information, a warning is issued.
 
     >>> update_column_definition("s.t", {
     ...     "name": "doctest", "sql_type": "integer", "type": "int"
@@ -480,13 +481,13 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
     ... }, {
     ...     "name": "doctest", "sql_type": "DECIMAL(12, 2)", "type": "string"
     ... })
-    {'name': 'doctest', 'sql_type': 'numeric(12,2)', 'type': 'string'}
+    {'name': 'doctest', 'sql_type': 'numeric(18,4)', 'type': 'string'}
     >>> update_column_definition("s.t", {
-    ...     "name": "doctest", "sql_type": "character varying(100)", "type": "string"
+    ...     "name": "doctest", "sql_type": "varchar(100)", "type": "string"
     ... }, {
     ...     "name": "doctest", "sql_type": "Varchar(200)", "type": "string"
     ... })
-    {'name': 'doctest', 'sql_type': 'character varying(200)', 'type': 'string'}
+    {'name': 'doctest', 'sql_type': 'character varying(100)', 'type': 'string'}
     """
     column_name = new_column["name"]
     assert old_column["name"] == column_name
@@ -508,7 +509,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
         if old_sql_type == "bigint" and new_sql_type == "integer":
             new_column.update(sql_type="bigint", type="long")
             logger.warning(
-                "Keeping previous definition for column '%s.%s': '%s' (consider a cast)",
+                "Keeping previous definition for column '%s.%s': '%s' (please add a cast)",
                 target_table,
                 column_name,
                 new_column["sql_type"],
@@ -520,13 +521,12 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
     if new_numeric:
         old_numeric = numeric_re.search(old_sql_type)
         if old_numeric and new_numeric.groups() != old_numeric.groups():
-            new_column["sql_type"] = "numeric({precision},{scale})".format_map(old_numeric.groupdict())
-            # TODO(tom): Be smarter about precision and scale separately.
-            # TODO(tom): Allow to check for a fixed number of (precision, scale) combinations.
+            new_column["sql_type"] = "numeric({precision},{scale})".format_map(new_numeric.groupdict())
             logger.warning(
-                "Keeping previous definition for column '%s.%s': '%s'",
+                "Updating definition for '%s.%s' from '%s' to '%s'",
                 target_table,
                 column_name,
+                old_sql_type,
                 new_column["sql_type"],
             )
         return new_column
@@ -538,19 +538,15 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
         if old_text:
             new_size = int(new_text.groupdict()["size"])
             old_size = int(old_text.groupdict()["size"])
+            # This will always overwrite VARCHAR(100) with CHARACTER VARYING(100).
+            new_column["sql_type"] = f"character varying({new_size})"
             if new_size < old_size:
-                logger.debug(
-                    "Found for '%s.%s': '%s', used previously: '%s'",
-                    target_table,
-                    column_name,
-                    new_column["sql_type"],
-                    old_column["sql_type"],
-                )
-                new_column["sql_type"] = f"character varying({old_size})"
+                # Warn the user in case they made the column accidentally smaller.
                 logger.warning(
-                    "Keeping previous definition for column '%s.%s': '%s' (please add a cast)",
+                    "Updating definition for '%s.%s' from '%s' to '%s'",
                     target_table,
                     column_name,
+                    old_sql_type,
                     new_column["sql_type"],
                 )
         return new_column
