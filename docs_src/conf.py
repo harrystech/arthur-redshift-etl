@@ -35,7 +35,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
-    "recommonmark",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -51,13 +50,12 @@ nitpicky = True
 
 # -- Options for HTML output -------------------------------------------------
 
-html_theme = "alabaster"
+html_theme = "sphinx_book_theme"
 
 html_theme_options = {
-    "body_max_width": "auto",
-    "github_user": "harrystech",
-    "github_repo": "arthur-redshift-etl",
-    "page_width": "95%",
+    "repository_url": "https://github.com/harrystech/arthur-redshift-etl",
+    # "repository_branch": "master",
+    "use_repository_button": True,
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
