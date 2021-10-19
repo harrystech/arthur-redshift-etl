@@ -27,6 +27,13 @@ import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
 
+# The json_schema package doesn't have a nice parent class for its exceptions.
+VALIDATION_SCHEMA_ERRORS = (
+    jsonschema.exceptions.RefResolutionError,
+    jsonschema.exceptions.SchemaError,
+    jsonschema.exceptions.ValidationError,
+)
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -41,7 +48,7 @@ ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
 def package_version(package_name="redshift_etl"):
-    return "{} v{}".format(package_name, pkg_resources.get_distribution(package_name).version)
+    return f"{package_name} v{pkg_resources.get_distribution(package_name).version}"
 
 
 def get_dw_config():
@@ -72,7 +79,7 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
     else:
         value = get_config_value(name, str(default))
     if value is None:
-        raise InvalidArgumentError("missing config for {}".format(name))
+        raise InvalidArgumentError(f"missing config for {name}")
     return int(value)
 
 
@@ -80,7 +87,7 @@ def get_config_list(name: str) -> List[int]:
     """Lookup a configuration value that is a List."""
     value = get_config_value(name)
     if value is None:
-        raise InvalidArgumentError("missing config for {}".format(name))
+        raise InvalidArgumentError(f"missing config for {name}")
     return list(map(int, value.split(",")))
 
 
@@ -111,9 +118,9 @@ def get_config_map() -> Dict[str, str]:
 
 
 def _flatten_hierarchy(prefix, props):
-    assert isinstance(props, dict), "oops, this should only be called with dicts, got {}".format(type(props))
+    assert isinstance(props, dict), f"this should only be called with dicts, not {type(props)}"
     for key in sorted(props):
-        full_key = "{}.{}".format(prefix, key)
+        full_key = f"{prefix}.{key}"
         if isinstance(props[key], dict):
             for sub_key, sub_prop in _flatten_hierarchy(full_key, props[key]):
                 yield sub_key, sub_prop
@@ -143,7 +150,7 @@ def load_environ_file(filename: str) -> None:
     Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
     other lines are silently dropped.
     """
-    logger.info("Loading environment variables from '%s'", filename)
+    logger.info(f"Loading environment variables from '{filename}'")
     assignment_re = re.compile(r"\s*(?:export\s+)?(\w+)=(\S+)")
     with open(filename) as content:
         settings = [match.groups() for match in map(assignment_re.match, content) if match is not None]
@@ -174,15 +181,16 @@ def _deep_update(old: dict, new: dict) -> None:
 
 def load_settings_file(filename: str, settings: dict) -> None:
     """Load new settings from config file and merge with given settings."""
-    logger.info("Loading settings from '%s'", filename)
+    logger.info(f"Loading settings from '{filename}'")
     with open(filename) as content:
         new_settings = yaml.safe_load(content)
-    _deep_update(settings, new_settings)
+    if new_settings:
+        _deep_update(settings, new_settings)
 
 
 def get_python_info() -> str:
     """Return minimal information about this Python version."""
-    return ("Running Python {version_info[0]}.{version_info[1]}.{version_info[2]} ({platform})").format(
+    return "Running Python {version_info[0]}.{version_info[1]}.{version_info[2]} ({platform})".format(
         version_info=sys.version_info, platform=sys.platform
     )
 
@@ -242,7 +250,7 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
             load_settings_file(filename, settings)
             count_settings += 1
         else:
-            logger.debug("Skipping unknown config file '%s'", filename)
+            logger.debug(f"Skipping unknown config file '{filename}'")
 
     # Need to load at least the defaults and some installation specific file:
     if count_settings < 2:
@@ -276,16 +284,11 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
 
     This will also validate the schema itself!
     """
-    validation_internal_errors = (
-        jsonschema.exceptions.ValidationError,
-        jsonschema.exceptions.SchemaError,
-        JSONDecodeError,
-    )
     schema = load_json_schema(schema_name)
     try:
         jsonschema.validate(obj, schema, format_checker=jsonschema.draft7_format_checker)
-    except validation_internal_errors as exc:
-        raise SchemaValidationError("failed to validate against '%s'" % schema_name) from exc
+    except VALIDATION_SCHEMA_ERRORS as exc:
+        raise SchemaValidationError(f"failed to validate against '{schema_name}'") from exc
 
 
 def gather_setting_files(config_files: Iterable[str]) -> List[str]:
@@ -306,7 +309,7 @@ def gather_setting_files(config_files: Iterable[str]) -> List[str]:
         if not filename.endswith((".yaml", ".yml", ".sh")):
             continue
         if filename in settings_found:
-            raise KeyError("found configuration file in multiple locations: '%s'" % filename)
+            raise KeyError(f"found configuration file in multiple locations: '{filename}'")
         settings_found.add(filename)
         settings_with_path.append(fullname)
     return sorted(settings_with_path)
@@ -321,16 +324,14 @@ def load_json(filename: str):
 @lru_cache()
 def load_json_schema(schema_name: str):
     """Load JSON-formatted file validate it assuming that it represents a schema."""
-    validation_internal_errors = (
-        jsonschema.exceptions.ValidationError,
-        jsonschema.exceptions.SchemaError,
-        JSONDecodeError,
-    )
     try:
         schema = load_json(schema_name)
+    except JSONDecodeError as exc:
+        raise SchemaInvalidError(f"schema in '{schema_name}' cannot be loaded") from exc
+    try:
         jsonschema.Draft7Validator.check_schema(schema)
-    except validation_internal_errors as exc:
-        raise SchemaInvalidError("schema in '%s' is not valid" % schema_name) from exc
+    except VALIDATION_SCHEMA_ERRORS as exc:
+        raise SchemaInvalidError(f"schema in '{schema_name}' is not valid") from exc
     return schema
 
 
