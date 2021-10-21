@@ -420,7 +420,7 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
             "metrics": {
                 "file_count": row["file_count"],
                 "rows": copy_count,
-                "size": row["total_mb]"],
+                "size": row["total_mb"],
                 "target": table_name.identifier,
             }
         },
@@ -436,7 +436,7 @@ def query_insert_summary(conn: Connection, table_name: TableName, dry_run=False)
              , SUM(s3_scanned_bytes) AS s3_scanned_bytes
              , SUM(s3query_returned_rows) AS s3query_returned_rows
              , SUM(s3query_returned_bytes) AS s3query_returned_bytes
-             , SUM(files) AS files
+             , SUM(files) AS file_count
           FROM svl_s3query_summary
          WHERE query = PG_LAST_QUERY_ID()
          GROUP BY query
@@ -454,7 +454,17 @@ def query_insert_summary(conn: Connection, table_name: TableName, dry_run=False)
     logger.info(
         f"Summary for query {row['query_id']} (from loading {table_name:x}):\n"
         f"{etl.db.format_result(result, skip_rows_count=True)}",
-        extra={"metrics": row},
+        extra={
+            "metrics": {
+                "elapsed": row["elapsed"] / 1_000_000.0,
+                "file_count": row["file_count"],
+                "s3_scanned_rows": row["s3_scanned_rows"],
+                "s3_scanned_bytes": row["s3_scanned_bytes"],
+                "s3query_returned_rows": row["s3query_returned_rows"],
+                "s3query_returned_bytes": row["s3query_returned_bytes"],
+                "target": table_name.identifier,
+            }
+        },
     )
 
 
