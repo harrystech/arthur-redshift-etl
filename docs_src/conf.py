@@ -30,10 +30,8 @@ release = "1.50.0"
 
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.coverage",
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
-    "sphinx.ext.todo",
     "sphinx.ext.viewcode",
 ]
 
@@ -53,8 +51,11 @@ nitpicky = True
 html_theme = "sphinx_book_theme"
 
 html_theme_options = {
-    "repository_url": "https://github.com/harrystech/arthur-redshift-etl",
+    "home_page_in_toc": True,
+    # "path_to_docs": "./docs",
     # "repository_branch": "master",
+    "repository_url": "https://github.com/harrystech/arthur-redshift-etl",
+    # "use_issues_button": True,
     "use_repository_button": True,
 }
 

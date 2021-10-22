@@ -2,9 +2,9 @@
 This module provides global access to settings.  Always treat them nicely and read-only.
 
 We use the term "config" files to refer to all files that may reside in the "config" directory:
-* "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
-* Environment files (with variables used in connections)
-* Other files (like release notes)
+  * "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
+  * Environment files (with variables used in connections)
+  * Other files (like release notes)
 """
 
 import datetime
@@ -73,6 +73,10 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
     Lookup a configuration value that is an integer.
 
     It is an error if the value (even when using the default) is None.
+
+    Args:
+        name: dot-separated configuration parameter name
+        default: integer value to use (and store) if setting is not found
     """
     if default is None:
         value = get_config_value(name)
