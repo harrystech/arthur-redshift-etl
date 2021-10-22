@@ -23,19 +23,16 @@ copyright = "2017-%s, Harry's, Inc." % time.strftime("%Y")
 author = "Data Engineering at Harry's"
 
 # TODO(tom): Extract from setup.py
-version = "1.42.0"
-release = "1.42.0"
+version = "1.50.0"
+release = "1.50.0"
 
 # -- General configuration ---------------------------------------------------
 
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.coverage",
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
-    "sphinx.ext.todo",
     "sphinx.ext.viewcode",
-    "recommonmark",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -46,18 +43,20 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["README.md"]
 
-needs_sphinx = "3.5"
+needs_sphinx = "4.0"
 nitpicky = True
 
 # -- Options for HTML output -------------------------------------------------
 
-html_theme = "alabaster"
+html_theme = "sphinx_book_theme"
 
 html_theme_options = {
-    "body_max_width": "auto",
-    "github_user": "harrystech",
-    "github_repo": "arthur-redshift-etl",
-    "page_width": "95%",
+    "home_page_in_toc": True,
+    # "path_to_docs": "./docs",
+    # "repository_branch": "master",
+    "repository_url": "https://github.com/harrystech/arthur-redshift-etl",
+    # "use_issues_button": True,
+    "use_repository_button": True,
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,

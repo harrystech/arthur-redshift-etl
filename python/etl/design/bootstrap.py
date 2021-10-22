@@ -242,8 +242,8 @@ def search_query_step(line: str) -> Optional[Dict[str, str]]:
 
 def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
     """Parse a query plan for hints of which relations we might depend on."""
-    s3_dependencies = []
-    xn_dependencies = []
+    s3_dependencies = set()
+    xn_dependencies = set()
 
     logger.debug("Looking at query plan to find dependencies")
     try:
@@ -257,16 +257,19 @@ def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
         if maybe is None:
             continue
         if "s3_table" in maybe:
-            s3_dependencies.append(maybe["s3_table"])
+            s3_dependencies.add(maybe["s3_table"])
         if "xn_table" in maybe:
-            xn_dependencies.append(maybe["xn_table"])
+            xn_dependencies.add(maybe["xn_table"])
 
     if s3_dependencies and xn_dependencies:
         # Unfortunately the tables aren't qualified with a schema so we can't use the info.
         logger.warning(
-            "Found dependencies in S3 AND these not in S3: %s",
+            "Found dependencies in S3, but also some without known schema: %s",
             join_with_single_quotes(xn_dependencies),
         )
+        logger.warning("You will have to manually add the correct tables to the dependencies.")
+
+    # TODO(tom): Do not allow to continue to mix the two.
     return sorted(s3_dependencies)
 
 
@@ -468,6 +471,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
 
     Copied directly: "description", "encoding", "references", and "not_null"
     Updated carefully: "sql_type" and "type" (always together)
+    In case the user might lose precision or information, a warning is issued.
 
     >>> update_column_definition("s.t", {
     ...     "name": "doctest", "sql_type": "integer", "type": "int"
@@ -480,13 +484,13 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
     ... }, {
     ...     "name": "doctest", "sql_type": "DECIMAL(12, 2)", "type": "string"
     ... })
-    {'name': 'doctest', 'sql_type': 'numeric(12,2)', 'type': 'string'}
+    {'name': 'doctest', 'sql_type': 'numeric(18,4)', 'type': 'string'}
     >>> update_column_definition("s.t", {
-    ...     "name": "doctest", "sql_type": "character varying(100)", "type": "string"
+    ...     "name": "doctest", "sql_type": "varchar(100)", "type": "string"
     ... }, {
     ...     "name": "doctest", "sql_type": "Varchar(200)", "type": "string"
     ... })
-    {'name': 'doctest', 'sql_type': 'character varying(200)', 'type': 'string'}
+    {'name': 'doctest', 'sql_type': 'character varying(100)', 'type': 'string'}
     """
     column_name = new_column["name"]
     assert old_column["name"] == column_name
@@ -508,7 +512,7 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
         if old_sql_type == "bigint" and new_sql_type == "integer":
             new_column.update(sql_type="bigint", type="long")
             logger.warning(
-                "Keeping previous definition for column '%s.%s': '%s' (consider a cast)",
+                "Keeping previous definition for column '%s.%s': '%s' (please add a cast)",
                 target_table,
                 column_name,
                 new_column["sql_type"],
@@ -520,13 +524,12 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
     if new_numeric:
         old_numeric = numeric_re.search(old_sql_type)
         if old_numeric and new_numeric.groups() != old_numeric.groups():
-            new_column["sql_type"] = "numeric({precision},{scale})".format_map(old_numeric.groupdict())
-            # TODO(tom): Be smarter about precision and scale separately.
-            # TODO(tom): Allow to check for a fixed number of (precision, scale) combinations.
+            new_column["sql_type"] = "numeric({precision},{scale})".format_map(new_numeric.groupdict())
             logger.warning(
-                "Keeping previous definition for column '%s.%s': '%s'",
+                "Updating definition for '%s.%s' from '%s' to '%s'",
                 target_table,
                 column_name,
+                old_sql_type,
                 new_column["sql_type"],
             )
         return new_column
@@ -538,19 +541,15 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
         if old_text:
             new_size = int(new_text.groupdict()["size"])
             old_size = int(old_text.groupdict()["size"])
+            # This will always overwrite VARCHAR(100) with CHARACTER VARYING(100).
+            new_column["sql_type"] = f"character varying({new_size})"
             if new_size < old_size:
-                logger.debug(
-                    "Found for '%s.%s': '%s', used previously: '%s'",
-                    target_table,
-                    column_name,
-                    new_column["sql_type"],
-                    old_column["sql_type"],
-                )
-                new_column["sql_type"] = f"character varying({old_size})"
+                # Warn the user in case they made the column accidentally smaller.
                 logger.warning(
-                    "Keeping previous definition for column '%s.%s': '%s' (please add a cast)",
+                    "Updating definition for '%s.%s' from '%s' to '%s'",
                     target_table,
                     column_name,
+                    old_sql_type,
                     new_column["sql_type"],
                 )
         return new_column
@@ -613,7 +612,7 @@ def create_table_design_for_transformation(
                 "Looks like %s has external dependencies, proceeding with caution", relation.identifier
             )
             if kind == "VIEW":
-                raise RuntimeError("VIEW not supported for transformations that depend on extrenal tables")
+                raise RuntimeError("VIEW not supported for transformations that depend on external tables")
             return create_table_design_for_ctas(conn, tmp_view_name, relation, update)
 
     with relation.matching_temporary_view(conn, as_late_binding_view=False) as tmp_view_name:

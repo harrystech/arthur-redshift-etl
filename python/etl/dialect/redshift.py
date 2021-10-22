@@ -380,12 +380,10 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
 
     rows = etl.db.query(conn, stmt)
     summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
-    logger.debug(
-        "Copied %d file(s) into '%s' using manifest '%s':\n%s",
-        len(rows),
-        table_name.identifier,
-        s3_uri,
-        summary,
+    # TODO(tom): Check whether this is redundant with query_load_summary
+    logger.info(
+        f"Copied {len(rows)} file(s) into '{table_name:x}' using manifest '{s3_uri}':\n" f"{summary}",
+        extra={"metrics": {"file_count": len(rows), "target": table_name.identifier}},
     )
 
 
@@ -401,9 +399,9 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
              , ROUND(MAX(wq.total_queue_time/1000000.0), 2) AS elapsed_queued
              , ROUND(MAX(wq.total_exec_time/1000000.0), 2) AS elapsed
              , ROUND(SUM(s3.transfer_size)/(1024.0*1024.0), 2) AS total_mb
-          FROM stl_wlm_query wq
-          JOIN stl_s3client s3 USING (query)
-          JOIN stv_slices s USING (slice)
+          FROM stl_wlm_query AS wq
+          JOIN stl_s3client AS s3 USING (query)
+          JOIN stv_slices AS s USING (slice)
          WHERE wq.query = %s
         """
     if dry_run:
@@ -417,7 +415,56 @@ def query_load_summary(conn: Connection, table_name: TableName, dry_run=False) -
             "(files: {file_count:d}, slices: {slice_count:d}, nodes: {node_count:d}, "
             "slots: {slot_count:d}, elapsed: {elapsed}s ({elapsed_queued}s queued), "
             "size: {total_mb}MB)"
-        ).format(copy_count=copy_count, table_name=table_name, **row)
+        ).format(copy_count=copy_count, table_name=table_name, **row),
+        extra={
+            "metrics": {
+                "file_count": row["file_count"],
+                "rows": copy_count,
+                "size": row["total_mb"],
+                "target": table_name.identifier,
+            }
+        },
+    )
+
+
+def query_insert_summary(conn: Connection, table_name: TableName, dry_run=False) -> None:
+    # This query sums up over segments of the previously run query.
+    stmt = """
+        SELECT query AS query_id
+             , SUM(elapsed) AS elapsed
+             , SUM(s3_scanned_rows) AS s3_scanned_rows
+             , SUM(s3_scanned_bytes) AS s3_scanned_bytes
+             , SUM(s3query_returned_rows) AS s3query_returned_rows
+             , SUM(s3query_returned_bytes) AS s3query_returned_bytes
+             , SUM(files) AS file_count
+          FROM svl_s3query_summary
+         WHERE query = PG_LAST_QUERY_ID()
+         GROUP BY query
+        """
+    if dry_run:
+        etl.db.skip_query(conn, stmt)
+        return
+
+    # For now, just leave if S3 was not involved.
+    result = etl.db.query(conn, stmt)
+    if not result:
+        return
+
+    [row] = result
+    logger.info(
+        f"Summary for query {row['query_id']} (from loading {table_name:x}):\n"
+        f"{etl.db.format_result(result, skip_rows_count=True)}",
+        extra={
+            "metrics": {
+                "elapsed": row["elapsed"] / 1_000_000.0,
+                "file_count": row["file_count"],
+                "s3_scanned_rows": row["s3_scanned_rows"],
+                "s3_scanned_bytes": row["s3_scanned_bytes"],
+                "s3query_returned_rows": row["s3query_returned_rows"],
+                "s3query_returned_bytes": row["s3query_returned_bytes"],
+                "target": table_name.identifier,
+            }
+        },
     )
 
 
@@ -471,6 +518,14 @@ def insert_from_query(
             raise TransientETLError(exc) from exc
         logger.warning("Unretriable SQL Error: pgcode=%s, pgerror=%s", exc.pgcode, exc.pgerror)
         raise
+
+    query_insert_summary(conn, table_name, dry_run=dry_run)
+
+
+def set_wlm_slots(conn: Connection, slots: int, dry_run: bool) -> None:
+    etl.db.run(
+        conn, f"Using {slots} WLM queue slot(s)", f"SET wlm_query_slot_count TO {slots}", dry_run=dry_run
+    )
 
 
 def unload(
