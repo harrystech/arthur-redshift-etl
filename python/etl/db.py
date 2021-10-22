@@ -262,14 +262,21 @@ def run(cx, message, stmt, args=(), return_result=False, dry_run=False):
         return execute(cx, stmt, args=args, return_result=return_result)
 
 
-def print_result(title, dict_rows) -> None:
-    """Print query result."""
-    print(title)
+def format_result(dict_rows, skip_rows_count=False) -> str:
+    """Format query results into a text table."""
     if dict_rows:
         keys = list(dict_rows[0].keys())
     else:
         keys = []
-    print(etl.text.format_lines([[row[key] for key in keys] for row in dict_rows], header_row=keys))
+    return etl.text.format_lines(
+        [[row[key] for key in keys] for row in dict_rows], header_row=keys, skip_rows_count=skip_rows_count
+    )
+
+
+def print_result(title, dict_rows) -> None:
+    """Print query result."""
+    print(title)
+    print(format_result(dict_rows))
 
 
 def explain(cx, stmt, args=()):
