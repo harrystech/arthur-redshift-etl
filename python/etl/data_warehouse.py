@@ -85,8 +85,8 @@ def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, 
         logger.info("Creating schema '%s'", name)
         etl.db.create_schema(conn, name, owner)
         etl.db.grant_all_on_schema_to_user(conn, name, schema.owner)
-    if not schema.groups or use_staging:
-        # Don't grant usage on staging schemas to readers/writers (if any)
+    if not schema.groups:
+        # Note that we'll grant usage on staging schemas to readers/writers (if any)
         return None
     if dry_run:
         logger.info("Dry-run: Skipping granting access in '%s' to '%s'", name, group_names)
