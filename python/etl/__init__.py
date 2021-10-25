@@ -1,6 +1,5 @@
 # This should only be used when building documentation.
 import etl.assets
-import etl.commands
 import etl.config
 import etl.config.dw
 import etl.data_warehouse

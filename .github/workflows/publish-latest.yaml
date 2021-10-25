@@ -3,21 +3,39 @@ on:
   push:
     branches:
     - master
-    paths:
-    - ".github/workflows/publish_latest.yaml"
+    - update-workflow
+  release:
+    types: [published]
+
+env:
+  IMAGE_TAG: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl:latest
+
 jobs:
-  push_to_registry:
+  build-and-push-image:
     name: Push Docker image to GitHub Packages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
     - name: Check out the repo
       uses: actions/checkout@v2
-    - name: Push to GitHub Packages
-      uses: docker/build-push-action@v1
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@v1
       with:
+        registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-        registry: docker.pkg.github.com
-        repository: harrystech/arthur-redshift-etl/arthur-etl
-        # When code is merged to main branch, this updates "arthur-etl:latest".
-        tags: latest
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Build and push latest tag
+      id: docker_build
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        tags: ${{ env.IMAGE_TAG }}

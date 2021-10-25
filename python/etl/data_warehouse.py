@@ -18,7 +18,6 @@ from typing import Iterable, Sequence
 
 from psycopg2.extensions import connection as Connection  # only used for typing
 
-import etl.commands
 import etl.config
 import etl.config.dw
 import etl.db
