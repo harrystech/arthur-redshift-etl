@@ -642,7 +642,8 @@ class ShowRandomPassword(SubCommand):
     def callback(self, args):
         random_password = uuid.uuid4().hex
         example_password = random_password[:16].upper() + random_password[16:].lower()
-        print(example_password)
+        # Ignore CodeQL alert here since this is really meant to print an example password.
+        print(example_password)  # lgtm[py/clear-text-logging-sensitive-data]
 
 
 class CreateGroupsCommand(SubCommand):
