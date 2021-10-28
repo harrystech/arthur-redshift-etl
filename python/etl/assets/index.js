@@ -132,7 +132,7 @@ function updateEtlEvents(etlEvents, lastModified) {
     for (i = 0; i < len; i++) {
         e = etlEvents[i];
         if (e.event === "fail") {
-            document.getElementById("event-" + e.target).setAttribute("title", e.errors[0].message)
+            document.getElementById("event-" + e.target).setAttribute("title", e.errors[0].message);
         }
     }
     setTimeout(fetchEtlEvents, 1000);

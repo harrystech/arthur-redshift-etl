@@ -410,7 +410,7 @@ def _get_encrypted_password(cx, user) -> Optional[str]:
     if password is None:
         return None
     md5 = hashlib.md5()
-    md5.update((password + user).encode())
+    md5.update((password + user).encode())  # lgtm[py/weak-sensitive-data-hashing]
     return "md5" + md5.hexdigest()
 
 
@@ -418,7 +418,10 @@ def create_user(cx, user, group):
     password = _get_encrypted_password(cx, user)
     if password is None:
         logger.warning("Missing entry in PGPASSFILE file for '%s'", user)
-        raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
+        # SuppressWarnings: We need the user name in the output to be actionable feedback.
+        raise ETLRuntimeError(
+            f"password missing from PGPASSFILE for user '{user}'"
+        )  # lgtm[py/clear-text-logging-sensitive-data]
     execute(cx, """CREATE USER "{}" IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
 
 
