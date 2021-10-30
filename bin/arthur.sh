@@ -6,8 +6,8 @@
 # installed and so is nicer for end-users of Arthur.
 #
 # This can be added to your data warehouse repo or retrieved ad-hoc using:
-#   curl -o arthur.sh https://raw.githubusercontent.com/harrystech/arthur-redshift-etl/master/bin/arthur.sh
-#   chmod +x ./arthur.sh
+#   curl -o bin/arthur.sh https://raw.githubusercontent.com/harrystech/arthur-redshift-etl/master/bin/arthur.sh
+#   chmod +x bin/arthur.sh
 
 if ! type docker >/dev/null ; then
   echo "You need to install a Docker environment first." 1>&2
