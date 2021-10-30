@@ -109,7 +109,7 @@ The EMR releases 4.5 and later include `python3` so there's no need to install P
 #### Additional packages
 
 While our EC2 installations will use `requirements.txt` (see [bootstrap.sh](./bin/bootstrap.sh)),
-you should always use `requirements-dev.txt` for local development. The packages listed in that
+you should always use `requirements-all.txt` for local development. The packages listed in that
 file are installed when building the Docker image.
 
 ### Running unit tests and type checker

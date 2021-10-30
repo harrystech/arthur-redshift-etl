@@ -1,9 +1,11 @@
-*.sw*
+# Temporary and log files
+*.RData
 *.log
 *.log.[0-9]
 *.out
 *.pyc
-*.RData
+*.sw*
+.coverage
 
 # NOTE Adding buildinfo here forces a full build when checking out a new branch.
 /docs/.buildinfo
@@ -14,13 +16,13 @@
 # Release information is created by upload_env.sh
 /python/etl/config/release.txt
 
-# temp data (including generated files)
+# Temp data (including generated files)
 /config
 /data/
 /schemas
 /tmp/
 
-# virtual environment, local install and documentation build
+# Virtual environment, local install and documentation build
 Brewfile.lock.json
 arthur_venv/
 venv/

@@ -17,3 +17,11 @@ source arthur_venv/bin/activate
 python3 setup.py develop
 python3 -m unittest --verbose
 ```
+
+## Running With Coverage Reports
+
+```shell
+coverage3 run -m unittest --verbose
+coverage3 report --skip-empty
+coverage3 report --skip-empty --show-missing
+```
