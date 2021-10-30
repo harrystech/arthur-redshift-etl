@@ -43,10 +43,10 @@ jobs:
 
     - name: Build and push with version tags
       id: docker_build
-      if: ${{ github.event.release.tag_name != '' }}
+      if: ${{ github.event_name == 'release' && github.event.release.tag_name != '' }}
       uses: docker/build-push-action@v2
       with:
         context: .
         labels: ${{ steps.meta.outputs.labels }}
-        push: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        push: ${{ github.event.action == 'published' }}
         tags: ${{ steps.meta.outputs.tags }}
