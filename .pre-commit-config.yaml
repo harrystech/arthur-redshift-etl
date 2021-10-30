@@ -56,8 +56,8 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - "mypy-boto3~=1.18"
-          - "types-PyYAML==5.4.12"
+          - "mypy-boto3~=1.19"
+          - "types-PyYAML==6.0.0"
           - "types-setuptools==57.4.2"
           - "types-simplejson==3.17.1"
           - "types-tabulate==0.8.3"

@@ -15,8 +15,9 @@ import funcy
 import yaml
 import yaml.parser
 
+# Test whether we can use the faster CSafeLoader.
 try:
-    from yaml import CSafeLoader as SafeLoader
+    from yaml import CSafeLoader as SafeLoader  # lgtm[py/import-and-import-from]
 except ImportError:
     from yaml import SafeLoader  # type: ignore
 

@@ -18,7 +18,7 @@ from etl.config.dw import DataWarehouseSchema
 from etl.design import Attribute, ColumnDefinition, TableDesign, diff_table_designs
 from etl.errors import ETLSystemError, TableDesignValidationError
 from etl.names import TableName, TableSelector, TempTableName, join_with_single_quotes
-from etl.relation import RelationDescription
+from etl.relation import RelationDescription  # lgtm[py/import-and-import-from]
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
