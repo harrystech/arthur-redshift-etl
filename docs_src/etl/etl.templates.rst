@@ -1,7 +1,0 @@
-etl.templates package
-=====================
-
-.. automodule:: etl.templates
-   :members:
-   :undoc-members:
-   :show-inheritance:

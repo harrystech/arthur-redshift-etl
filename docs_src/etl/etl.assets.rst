@@ -1,7 +1,0 @@
-etl.assets package
-==================
-
-.. automodule:: etl.assets
-   :members:
-   :undoc-members:
-   :show-inheritance:

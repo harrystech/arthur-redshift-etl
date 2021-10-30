@@ -16,6 +16,7 @@ esac
 echo "Updating documentation into ./docs"
 
 set -o verbose
+sphinx-apidoc --module-first --separate --ext-autodoc --ext-doctest --ext-viewcode --output docs_src/etl python/etl
 sphinx-build -M html ./docs_src ./build "$@"
 cp -a "./build/html" "./docs/"
 

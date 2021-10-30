@@ -8,6 +8,9 @@
 # NOTE Adding buildinfo here forces a full build when checking out a new branch.
 /docs/.buildinfo
 
+# Rebuild using autodoc
+/docs_src/etl/
+
 # Our github pages setup is broken. Until we fix it, ignore generated docs.
 /docs/
 
