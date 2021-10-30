@@ -33,3 +33,6 @@ jobs:
         AWS_DEFAULT_REGION: us-east-1
       run: |-
         python3 -m python.etl.selftest
+    - name: Run unit tests
+      run: |-
+        python3 -m unittest --verbose

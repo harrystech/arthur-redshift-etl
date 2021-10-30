@@ -31,13 +31,13 @@ jobs:
         python3 -m pip install --requirement requirements-linters.txt
     - name: Lint with black
       run: |-
-        black --check python/ setup.py
+        black --check python/ setup.py tests/
     - name: Lint with isort
       run: |-
-        isort --check-only python/ setup.py
+        isort --check-only python/ setup.py tests/
     - name: Lint with flake8
       run: |-
-        flake8 python setup.py
+        flake8 python setup.py tests/
 
   mypy:
     runs-on: ubuntu-latest
