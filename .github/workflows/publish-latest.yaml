@@ -8,9 +8,6 @@ on:
     types:
     - published
 
-env:
-  IMAGE_TAG: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl:latest
-
 jobs:
   build-and-push-image:
     name: Push Docker image to GitHub Packages
@@ -33,10 +30,23 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1
 
-    - name: Build and, for releases, push "latest" tag
+    - name: Build Docker meta information
+      id: meta
+      uses: docker/metadata-action@v3
+      with:
+        images: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl
+        tags: |
+          type=ref,event=tag
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{version}}
+          type=sha
+
+    - name: Build and push with version tags
       id: docker_build
+      if: ${{ github.event.release.tag_name != '' }}
       uses: docker/build-push-action@v2
       with:
         context: .
+        labels: ${{ steps.meta.outputs.labels }}
         push: ${{ github.event_name == 'release' && github.event.action == 'published' }}
-        tags: ${{ env.IMAGE_TAG }}
+        tags: ${{ steps.meta.outputs.tags }}
