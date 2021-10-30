@@ -122,7 +122,9 @@ class SparkExtractor(DatabaseExtractor):
         )
         predicates = []
         for low, high in boundaries:
-            predicates.append('({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high))
+            predicates.append(
+                '({} <= "{}" AND "{}" < {})'.format(low, partition_key, partition_key, high)
+            )
         self.logger.debug(
             "Predicates to split '%s':\n    %s",
             relation.source_table_name.identifier,

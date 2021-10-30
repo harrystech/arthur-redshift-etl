@@ -56,7 +56,9 @@ class DataPipelineObject:
             field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field
         }
         self.string_values = {
-            field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
+            field["key"]: field["stringValue"]
+            for field in description["fields"]
+            if "stringValue" in field
         }
         self.parent_object: Optional["DataPipelineObject"] = None
 
@@ -118,7 +120,9 @@ class DataPipelineObject:
         elapsed_hours = (parsed_end_time - parsed_start_time).total_seconds() // 60 // 60
         if elapsed_hours < 1:
             # TODO(tom): Once we're on Python 3.8, we should add 'Final["minute"]' etc.
-            return parsed_end_time.humanize(parsed_start_time, granularity=["minute"], only_distance=True)
+            return parsed_end_time.humanize(
+                parsed_start_time, granularity=["minute"], only_distance=True
+            )
         if elapsed_hours < 12:
             return parsed_end_time.humanize(
                 parsed_start_time, granularity=["hour", "minute"], only_distance=True
@@ -172,7 +176,9 @@ class DataPipeline:
         self.name = description["name"]
         self.pipeline_id = description["pipelineId"]
         self.string_values = {
-            field["key"]: field["stringValue"] for field in description["fields"] if "stringValue" in field
+            field["key"]: field["stringValue"]
+            for field in description["fields"]
+            if "stringValue" in field
         }
         self.tags = description["tags"]
         self.client = client
@@ -250,7 +256,9 @@ class DataPipeline:
         evaluate_expressions = evaluate_expressions and sphere in ("ATTEMPT", "INSTANCE")
         for ids_chunk in funcy.chunks(chunk_size, object_ids):
             response_iterator = paginator.paginate(
-                pipelineId=self.pipeline_id, objectIds=ids_chunk, evaluateExpressions=evaluate_expressions
+                pipelineId=self.pipeline_id,
+                objectIds=ids_chunk,
+                evaluateExpressions=evaluate_expressions,
             )
             for pipeline_object in response_iterator.search("pipelineObjects[]"):
                 yield DataPipelineObject(pipeline_object)
@@ -455,7 +463,14 @@ def _show_pipeline_details(pipeline) -> None:
                 )
                 for instance in sorted(instances)
             ],
-            header_row=["Instance Name", "Type", "Status", "Actual Start Time", "Actual End Time", "Elapsed"],
+            header_row=[
+                "Instance Name",
+                "Type",
+                "Status",
+                "Actual Start Time",
+                "Actual End Time",
+                "Elapsed",
+            ],
             max_column_width=80,
         )
     )

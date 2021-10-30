@@ -461,7 +461,9 @@ class TableSelector:
         for pattern in self._patterns:
             found = fnmatch.filter(self._base_schemas, pattern.schema)
             if not found:
-                raise ValueError("bad pattern (no match against base schemas): {}".format(pattern.identifier))
+                raise ValueError(
+                    "bad pattern (no match against base schemas): {}".format(pattern.identifier)
+                )
 
     def __len__(self) -> int:
         return len(self._patterns)

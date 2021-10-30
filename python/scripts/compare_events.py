@@ -124,7 +124,9 @@ def print_comparison_table(previous_values, current_values, column):
     """Print differences between runs, sorted by relation."""
     all_events = frozenset(previous_values).union(current_values)
     has_large_diff = frozenset(
-        event for event in all_events if show_delta(previous_values[event], current_values[event], column)
+        event
+        for event in all_events
+        if show_delta(previous_values[event], current_values[event], column)
     )
     table = sorted(
         (

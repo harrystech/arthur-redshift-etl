@@ -75,7 +75,9 @@ class DataWarehouseSchema:
         self.is_external = schema_info.get("external", False)
         self.is_upstream_source = self.is_database_source or self.is_static_source or self.is_external
         self.has_transformations = not self.is_upstream_source
-        self.is_an_unload_target = "s3_bucket" in schema_info and "s3_unload_path_template" in schema_info
+        self.is_an_unload_target = (
+            "s3_bucket" in schema_info and "s3_unload_path_template" in schema_info
+        )
         # How to access the source of the schema (per DSN (of source or DW)? per S3?)
         if self.is_database_source:
             self._dsn_env_var = schema_info["read_access"]

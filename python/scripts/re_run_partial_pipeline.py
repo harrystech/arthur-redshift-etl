@@ -42,7 +42,9 @@ def get_scheduled_component_ids(client, pipeline_id):
     paginator = client.get_paginator("query_objects")
     response_iterator = paginator.paginate(
         pipelineId=pipeline_id,
-        query={"selectors": [{"fieldName": "@status", "operator": {"type": "EQ", "values": ["SCHEDULED"]}}]},
+        query={
+            "selectors": [{"fieldName": "@status", "operator": {"type": "EQ", "values": ["SCHEDULED"]}}]
+        },
         sphere="COMPONENT",
     )
     return list(funcy.cat(response["ids"] for response in response_iterator))
@@ -117,7 +119,8 @@ def list_pipelines():
     if not statuses:
         print("Found no scheduled ETL pipelines")
         print(
-            "(A pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked up here.)"
+            "A pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked "
+            "up here."
         )
         return
     for status in sorted(statuses, key=itemgetter("name")):

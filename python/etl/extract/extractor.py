@@ -78,7 +78,9 @@ class Extractor:
         }
 
     def extract_table(self, source: DataWarehouseSchema, relation: RelationDescription):
-        raise NotImplementedError("forgot to implement extract_table in {}".format(self.__class__.__name__))
+        raise NotImplementedError(
+            "forgot to implement extract_table in {}".format(self.__class__.__name__)
+        )
 
     def extract_table_with_retry(
         self, source: DataWarehouseSchema, relation: RelationDescription, current_index, final_index
@@ -96,7 +98,10 @@ class Extractor:
                 "extract",
                 options=self.options_info(),
                 source=self.source_info(source, relation),
-                destination={"bucket_name": relation.bucket_name, "object_key": relation.manifest_file_name},
+                destination={
+                    "bucket_name": relation.bucket_name,
+                    "object_key": relation.manifest_file_name,
+                },
                 index={"current": current_index, "final": final_index, "name": source.name},
                 dry_run=self.dry_run,
             ):
@@ -119,7 +124,9 @@ class Extractor:
             raise
         return True
 
-    def extract_source(self, source: DataWarehouseSchema, relations: List[RelationDescription]) -> List[str]:
+    def extract_source(
+        self, source: DataWarehouseSchema, relations: List[RelationDescription]
+    ) -> List[str]:
         """
         Iterate through given relations to extract data from (upstream) source schemas.
 
@@ -159,7 +166,9 @@ class Extractor:
         ) as executor:
             futures = []
             for source_name, relation_group in groupby(self.relations, attrgetter("source_name")):
-                future = executor.submit(self.extract_source, self.schemas[source_name], list(relation_group))
+                future = executor.submit(
+                    self.extract_source, self.schemas[source_name], list(relation_group)
+                )
                 futures.append(future)
             if self.keep_going:
                 done, not_done = concurrent.futures.wait(
@@ -171,7 +180,8 @@ class Extractor:
                 )
         if self.failed_sources:
             self.logger.error(
-                "Failed to extract from these source(s): %s", join_with_single_quotes(self.failed_sources)
+                "Failed to extract from these source(s): %s",
+                join_with_single_quotes(self.failed_sources),
             )
 
         # Note that iterating over result of futures may raise an exception which surfaces
@@ -205,7 +215,9 @@ class Extractor:
 
         This will also test for the presence of the _SUCCESS file (added by map-reduce jobs).
         """
-        self.logger.info("Preparing manifest file for data in 's3://%s/%s'", source_bucket, source_prefix)
+        self.logger.info(
+            "Preparing manifest file for data in 's3://%s/%s'", source_bucket, source_prefix
+        )
 
         have_success = etl.s3.get_s3_object_last_modified(
             source_bucket, source_prefix + "/_SUCCESS", wait=self.needs_to_wait and not self.dry_run
@@ -243,4 +255,6 @@ class Extractor:
             etl.s3.upload_data_to_s3(manifest, relation.bucket_name, relation.manifest_file_name)
 
             # Make sure file exists before proceeding
-            etl.s3.get_s3_object_last_modified(relation.bucket_name, relation.manifest_file_name, wait=True)
+            etl.s3.get_s3_object_last_modified(
+                relation.bucket_name, relation.manifest_file_name, wait=True
+            )

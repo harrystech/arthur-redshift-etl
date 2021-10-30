@@ -21,7 +21,9 @@ class Content:
             self.content_type, self.content_encoding = "application/json", "UTF-8"
             self.cache_control = "no-cache, no-store, must-revalidate"
         self.content_length = len(self.content)
-        self.last_modified = datetime.datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %Z")
+        self.last_modified = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%a, %d %b %Y %H:%M:%S %Z"
+        )
 
 
 def asset_exists(name: str) -> bool:

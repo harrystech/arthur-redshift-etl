@@ -49,7 +49,10 @@ def upload_settings(config_paths: Iterable[str], bucket_name: str, prefix: str, 
     """
     settings_files = etl.config.gather_setting_files(config_paths)
     logger.info(
-        "Found %d settings file(s) to deploy to 's3://%s/%s/config'", len(settings_files), bucket_name, prefix
+        "Found %d settings file(s) to deploy to 's3://%s/%s/config'",
+        len(settings_files),
+        bucket_name,
+        prefix,
     )
 
     files = [(local_file, f"config/{os.path.basename(local_file)}") for local_file in settings_files]
@@ -99,6 +102,8 @@ def sync_with_s3(
         etl.file_sets.delete_data_files_in_s3(bucket_name, prefix, delete_data_pattern, dry_run=dry_run)
 
     if delete_schemas_pattern is not None:
-        etl.file_sets.delete_schemas_files_in_s3(bucket_name, prefix, delete_schemas_pattern, dry_run=dry_run)
+        etl.file_sets.delete_schemas_files_in_s3(
+            bucket_name, prefix, delete_schemas_pattern, dry_run=dry_run
+        )
 
     etl.s3.upload_files(files, bucket_name, prefix, dry_run)

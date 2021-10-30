@@ -153,7 +153,9 @@ def validate_column_references(table_design):
         [[inner_name, this_columns]] = description.items()
         unknown = join_with_single_quotes(frozenset(this_columns).difference(valid_columns))
         if unknown:
-            raise TableDesignSemanticError(f"unknown {inner_name} column(s) in table {outer_name}: {unknown}")
+            raise TableDesignSemanticError(
+                f"unknown {inner_name} column(s) in table {outer_name}: {unknown}"
+            )
 
 
 def validate_semantics_of_view(table_design):
@@ -204,7 +206,9 @@ def validate_semantics_of_table(table_design):
     validate_semantics_of_table_or_ctas(table_design)
 
     if "depends_on" in table_design:
-        raise TableDesignSemanticError("upstream table '%s' has dependencies listed" % table_design["name"])
+        raise TableDesignSemanticError(
+            "upstream table '%s' has dependencies listed" % table_design["name"]
+        )
 
     constraints = table_design.get("constraints", [])
     constraint_types_in_design = [
@@ -253,7 +257,9 @@ def validate_table_design_semantics(table_design, table_name):
         validate_semantics_of_view(table_design)
         if schema.is_upstream_source:
             raise TableDesignSemanticError(
-                "invalid upstream source '{}' in view '{}'".format(table_name.schema, table_name.identifier)
+                "invalid upstream source '{}' in view '{}'".format(
+                    table_name.schema, table_name.identifier
+                )
             )
     elif table_design["source_name"] == "CTAS":
         validate_semantics_of_ctas(table_design)

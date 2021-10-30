@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def write_columns_file(relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool) -> None:
+def write_columns_file(
+    relation: RelationDescription, bucket_name: str, prefix: str, dry_run: bool
+) -> None:
     """Write out a YAML file into the same folder as the CSV files with a list of the columns."""
     data = {
         "columns": relation.unquoted_columns,
@@ -119,7 +121,9 @@ def unload_to_s3(
     dry_run: bool,
 ) -> None:
     """Create CSV files for selected tables based on the S3 path in an "unload" source."""
-    logger.info("Loading table design for %d relation(s) to look for unloadable relations", len(relations))
+    logger.info(
+        "Loading table design for %d relation(s) to look for unloadable relations", len(relations)
+    )
     etl.relation.RelationDescription.load_in_parallel(relations)
 
     unloadable_relations = [relation for relation in relations if relation.is_unloadable]
@@ -145,7 +149,12 @@ def unload_to_s3(
             try:
                 index = {"current": i + 1, "final": len(relation_target_tuples)}
                 unload_relation(
-                    conn, relation, unload_schema, index, allow_overwrite=allow_overwrite, dry_run=dry_run
+                    conn,
+                    relation,
+                    unload_schema,
+                    index,
+                    allow_overwrite=allow_overwrite,
+                    dry_run=dry_run,
                 )
             except Exception as exc:
                 if not keep_going:

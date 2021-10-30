@@ -198,7 +198,8 @@ class RelationDescription:
             max_workers=max_workers, thread_name_prefix="load-parallel"
         ) as executor:
             executor.map(
-                lambda relation: relation.load(tqdm_bar.update), remaining_relations[parallel_start_index:]
+                lambda relation: relation.load(tqdm_bar.update),
+                remaining_relations[parallel_start_index:],
             )
 
         tqdm_bar.close()
@@ -280,7 +281,9 @@ class RelationDescription:
             if self.sql_file_name is None:
                 raise MissingQueryError("Missing SQL file for '{}'".format(self.identifier))
             if self.bucket_name:
-                with closing(etl.s3.get_s3_object_content(self.bucket_name, self.sql_file_name)) as content:
+                with closing(
+                    etl.s3.get_s3_object_content(self.bucket_name, self.sql_file_name)
+                ) as content:
                     query_stmt = content.read().decode()
             else:
                 with codecs.open(self.sql_file_name, encoding="utf-8") as f:
@@ -300,7 +303,7 @@ class RelationDescription:
 
     @property
     def source_name(self):
-        # TODO(tom): Change the name of this property since it's confusing given table_design["source_name"]
+        # TODO(tom): Change the name of this property since there's already table_design["source_name"]
         return self.target_table_name.schema
 
     @property
@@ -363,7 +366,8 @@ class RelationDescription:
                 relations.append(cls(file_set))
             else:
                 logger.warning(
-                    "Found file(s) without matching table design: %s", join_with_single_quotes(file_set.files)
+                    "Found file(s) without matching table design: %s",
+                    join_with_single_quotes(file_set.files),
                 )
 
         if required_relation_selector:
@@ -436,9 +440,7 @@ class RelationDescription:
         else:
             # Should be impossible given json schema
             raise ValueError(
-                "Unsupported type in split_by field of extract_settings in {self}: {split_by_setting}".format(
-                    self=self, split_by_setting=split_by_setting
-                )
+                f"unsupported type in split_by field of extract_settings in {self}: {split_by_setting}"
             )
 
         if not partition_key:
@@ -463,7 +465,8 @@ class RelationDescription:
             return partition_key
 
         logger.warning(
-            "Column '%s' is not int, long, date or timestamp so is not usable as a partition key for '%s'",
+            "Column '%s' is not int, long, date or timestamp so is not usable as a partition key "
+            "for '%s'",
             partition_key,
             self.identifier,
         )
@@ -484,7 +487,9 @@ class RelationDescription:
                 temp_view.is_late_binding_view = True
                 ddl_stmt += "\nWITH NO SCHEMA BINDING"
 
-            logger.info("Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier)
+            logger.info(
+                "Creating view '%s' to match relation '%s'", temp_view.identifier, self.identifier
+            )
             etl.db.execute(conn, ddl_stmt)
 
             try:
@@ -581,7 +586,9 @@ def _sort_by_dependencies(descriptions: Sequence[SortableRelationDescription]) -
         if minimum_order > nr_relations:
             raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
 
-        if all(relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed):
+        if all(
+            relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed
+        ):
             # Relation has no dependencies (all([]) == True) or has all its dependencies evaluated.
             latest_order += 1
             description.order = latest_order
@@ -597,7 +604,9 @@ def _sort_by_dependencies(descriptions: Sequence[SortableRelationDescription]) -
             queue.put((max(latest_order, minimum_order) + 1, tie_breaker, description))
 
 
-def order_by_dependencies(relation_descriptions: Sequence[RelationDescription]) -> List[RelationDescription]:
+def order_by_dependencies(
+    relation_descriptions: Sequence[RelationDescription],
+) -> List[RelationDescription]:
     """
     Sort the relations such that any dependents surely are loaded afterwards.
 
@@ -659,7 +668,9 @@ def set_required_relations(
     # Walk through descriptions in reverse dependency order, expanding required set based on
     # dependency fan-out.
     for description in ordered_descriptions[::-1]:
-        if any([description.target_table_name in required.dependencies for required in required_relations]):
+        if any(
+            [description.target_table_name in required.dependencies for required in required_relations]
+        ):
             required_relations.append(description)
 
     for relation in ordered_descriptions:
@@ -668,7 +679,9 @@ def set_required_relations(
         relation._is_required = True
 
     logger.info(
-        "Marked %d relation(s) as required based on selector: %s", len(required_relations), required_selector
+        "Marked %d relation(s) as required based on selector: %s",
+        len(required_relations),
+        required_selector,
     )
 
 
@@ -765,12 +778,16 @@ def select_in_execution_order(
     transformations = [relation for relation in selected if relation.is_transformation]
     if continue_from in (":transformations", ":transformation"):
         if transformations:
-            logger.info("Continuing with %d transformation(s) in selected relations", len(transformations))
+            logger.info(
+                "Continuing with %d transformation(s) in selected relations", len(transformations)
+            )
             return transformations
         raise InvalidArgumentError("found no transformations to continue from")
 
     logger.info("Trying to fast forward to '%s' within %d relation(s)", continue_from, len(selected))
-    starting_from_match = list(fy.dropwhile(lambda relation: relation.identifier != continue_from, selected))
+    starting_from_match = list(
+        fy.dropwhile(lambda relation: relation.identifier != continue_from, selected)
+    )
     if starting_from_match:
         logger.info(
             "Continuing with %d relation(s) after skipping %d",
@@ -779,7 +796,9 @@ def select_in_execution_order(
         )
         return starting_from_match
 
-    single_schema = frozenset(fy.filter(lambda relation: relation.source_name == continue_from, selected))
+    single_schema = frozenset(
+        fy.filter(lambda relation: relation.source_name == continue_from, selected)
+    )
     if single_schema.intersection(transformations):
         raise InvalidArgumentError(f"schema '{continue_from}' contains transformations")
     if single_schema:
@@ -827,7 +846,8 @@ def create_index(
             print(f"{schema_info['description']}\n")
 
         rows = (
-            [relation.target_table_name.table, relation.description] for relation in schema_info["relations"]
+            [relation.target_table_name.table, relation.description]
+            for relation in schema_info["relations"]
         )
         print(tabulate(rows, headers=["Relation", "Description"], tablefmt="pipe"))
 
@@ -885,7 +905,9 @@ if __name__ == "__main__":
     selector = TableSelector(base_schemas=base_schemas)
     required_selector = dw_config.required_in_full_load_selector
     file_sets = etl.file_sets.find_file_sets(uri_parts, selector)
-    descriptions = RelationDescription.from_file_sets(file_sets, required_relation_selector=required_selector)
+    descriptions = RelationDescription.from_file_sets(
+        file_sets, required_relation_selector=required_selector
+    )
     if len(sys.argv) > 1:
         selector = TableSelector(sys.argv[1:])
         descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
