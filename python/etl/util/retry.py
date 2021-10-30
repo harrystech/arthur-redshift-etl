@@ -41,7 +41,8 @@ def call_with_retry(max_retries: int, func: Callable, *args, **kwargs) -> None:
                 ) from exc
             sleep_time = 5 ** (max_retries - remaining_attempts + 1)
             logger.warning(
-                "Encountered the following error, but retrying %s more time(s) after %d second sleep: %s",
+                "Encountered the following error, but retrying %s more time(s) "
+                "after %d second sleep: %s",
                 remaining_attempts - 1,
                 sleep_time,
                 str(exc),

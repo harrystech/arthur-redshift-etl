@@ -119,7 +119,8 @@ def list_pipelines():
     if not statuses:
         print("Found no scheduled ETL pipelines")
         print(
-            "(A pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked up here.)"
+            "A pipeline must have a name containing 'ETL' and be in SCHEDULED state to be picked "
+            "up here."
         )
         return
     for status in sorted(statuses, key=itemgetter("name")):

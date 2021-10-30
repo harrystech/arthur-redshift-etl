@@ -201,7 +201,8 @@ def delete_objects(
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
 
     If the optional parameter "wait" is true, then we'll wait until the object has actually been
-    deleted. If optional parameter "hdfs_wait" is true, we will confirm each key's removal using `hdfs ls`.
+    deleted. If optional parameter "hdfs_wait" is true, we will confirm each key's removal using
+    `hdfs ls`.
     """
     bucket = _get_s3_bucket(bucket_name)
     chunk_size = min(100, len(object_keys))  # seemed reasonable at the time

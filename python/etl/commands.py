@@ -915,7 +915,7 @@ class SyncWithS3Command(SubCommand):
             "--delete",
             action="store_true",
             default=False,
-            help="delete matching table design and SQL files to make sure target has no extraneous files",
+            help="delete matching table design and SQL files to ensure target has no extraneous files",
         )
         parser.add_argument(
             "-f",
@@ -1158,7 +1158,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
         group.add_argument(
             "--into-schema",
             dest="target_schema",
-            help="build relations in this target schema (selected relations must not depend on each other)",
+            help="build relations into this schema (selected relations must not depend on each other)",
         )
 
     def callback(self, args):

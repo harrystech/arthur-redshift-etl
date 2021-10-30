@@ -521,10 +521,10 @@ def grant_select_on_all_tables_in_schema(cx: Connection, schema: str, groups: It
 def grant_select_and_write_on_all_tables_in_schema(
     cx: Connection, schema: str, groups: Iterable[str]
 ) -> None:
-    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
+    quoted_groups = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
     execute(
         cx,
-        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_group_list}',
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_groups}',
     )
 
 

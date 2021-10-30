@@ -303,7 +303,7 @@ class RelationDescription:
 
     @property
     def source_name(self):
-        # TODO(tom): Change the name of this property since it's confusing given table_design["source_name"]
+        # TODO(tom): Change the name of this property since there's already table_design["source_name"]
         return self.target_table_name.schema
 
     @property
@@ -440,9 +440,7 @@ class RelationDescription:
         else:
             # Should be impossible given json schema
             raise ValueError(
-                "Unsupported type in split_by field of extract_settings in {self}: {split_by_setting}".format(
-                    self=self, split_by_setting=split_by_setting
-                )
+                f"unsupported type in split_by field of extract_settings in {self}: {split_by_setting}"
             )
 
         if not partition_key:
@@ -467,7 +465,8 @@ class RelationDescription:
             return partition_key
 
         logger.warning(
-            "Column '%s' is not int, long, date or timestamp so is not usable as a partition key for '%s'",
+            "Column '%s' is not int, long, date or timestamp so is not usable as a partition key "
+            "for '%s'",
             partition_key,
             self.identifier,
         )
