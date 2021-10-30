@@ -28,7 +28,7 @@ from psycopg2.extensions import connection as Connection  # only used for typing
 
 import etl.text
 from etl.errors import ETLRuntimeError
-from etl.timer import Timer
+from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

@@ -77,8 +77,8 @@ from etl.errors import (
 from etl.names import TableName, TableSelector, TempTableName
 from etl.relation import RelationDescription
 from etl.text import format_lines, join_with_double_quotes, join_with_single_quotes
-from etl.timer import Timer
 from etl.util.retry import call_with_retry
+from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

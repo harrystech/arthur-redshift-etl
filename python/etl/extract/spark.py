@@ -11,7 +11,7 @@ from etl.config.dw import DataWarehouseSchema
 from etl.extract.database_extractor import DatabaseExtractor
 from etl.names import TableName
 from etl.relation import RelationDescription
-from etl.timer import Timer
+from etl.util.timer import Timer
 
 
 class SparkExtractor(DatabaseExtractor):

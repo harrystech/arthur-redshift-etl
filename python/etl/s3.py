@@ -17,7 +17,7 @@ import simplejson as json
 from tqdm import tqdm
 
 import etl.config
-import etl.timer
+import etl.util.timer
 from etl.errors import ETLRuntimeError, S3ServiceError
 from etl.json_encoder import FancyJsonEncoder
 
@@ -154,7 +154,7 @@ def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str
     The sequence of files must consist of tuples of ("local_name", "remote_name").
     """
     max_workers = min(len(files), 10)
-    timer = etl.timer.Timer()
+    timer = etl.util.timer.Timer()
 
     common_path = _keep_common_path([object_key for _, object_key in files])
     description = "Uploading files to S3" if not dry_run else "Dry-run: Uploading files to S3"
@@ -206,7 +206,7 @@ def delete_objects(
     """
     bucket = _get_s3_bucket(bucket_name)
     chunk_size = min(100, len(object_keys))  # seemed reasonable at the time
-    timer = etl.timer.Timer()
+    timer = etl.util.timer.Timer()
 
     common_prefix = _keep_common_path(object_keys)
     description = "Deleting files in S3" if not dry_run else "Dry-run: Deleting files in S3"

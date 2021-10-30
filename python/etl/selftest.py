@@ -32,9 +32,9 @@ import etl.s3
 import etl.sync
 import etl.templates
 import etl.text
-import etl.timer
 import etl.unload
 import etl.util
+import etl.util.timer
 import etl.validate
 
 logger = logging.getLogger(__name__)

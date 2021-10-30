@@ -36,7 +36,7 @@ import etl.db
 import etl.design.load
 import etl.file_sets
 import etl.s3
-import etl.timer
+import etl.util.timer
 from etl.config.dw import DataWarehouseSchema
 from etl.errors import CyclicDependencyError, ETLRuntimeError, InvalidArgumentError, MissingQueryError
 from etl.names import TableName, TableSelector, TempTableName
@@ -170,7 +170,7 @@ class RelationDescription:
             return
 
         # This section loads threads directly up to the "parallel start index".
-        timer = etl.timer.Timer()
+        timer = etl.util.timer.Timer()
         parallel_start_index = 2 if len(remaining_relations) == 2 else 1
         for relation in remaining_relations[:parallel_start_index]:
             relation.load()
