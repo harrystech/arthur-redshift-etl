@@ -69,7 +69,10 @@ class S3Uploader:
     def __call__(self, filename: str, object_key: str) -> None:
         if self.dry_run:
             logger.debug(
-                "Dry-run: Skipping upload of '%s' to 's3://%s/%s'", filename, self.bucket_name, object_key
+                "Dry-run: Skipping upload of '%s' to 's3://%s/%s'",
+                filename,
+                self.bucket_name,
+                object_key,
             )
             self.callback()
             return
@@ -83,7 +86,9 @@ class S3Uploader:
             bucket.upload_file(filename, object_key, **upload_kwargs)
         except botocore.exceptions.ClientError as exc:
             error_code = exc.response["Error"]["Code"]
-            logger.error("Error code %s for object 's3://%s/%s'", error_code, self.bucket_name, object_key)
+            logger.error(
+                "Error code %s for object 's3://%s/%s'", error_code, self.bucket_name, object_key
+            )
             raise
         except Exception:
             logger.error("Unknown error occurred during upload", exc_info=True)
@@ -162,7 +167,9 @@ def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str
         max_workers=max_workers, thread_name_prefix="sync-parallel"
     ) as executor:
         for local_filename, remote_filename in files:
-            futures.append(executor.submit(uploader.__call__, local_filename, f"{prefix}/{remote_filename}"))
+            futures.append(
+                executor.submit(uploader.__call__, local_filename, f"{prefix}/{remote_filename}")
+            )
 
     errors = 0
     for future in concurrent.futures.as_completed(futures):
@@ -256,7 +263,9 @@ def delete_objects(
             for key in object_keys:
                 if key in confirmed_deleted:
                     continue
-                process = subprocess.run(["hadoop", "fs", "-ls", f"s3a://{bucket_name}/{key}"], timeout=60)
+                process = subprocess.run(
+                    ["hadoop", "fs", "-ls", f"s3a://{bucket_name}/{key}"], timeout=60
+                )
                 if process.returncode == 0:
                     logger.error("HDFS did not confirm deletion of 's3://%s/%s'", bucket_name, key)
                     time.sleep(5)

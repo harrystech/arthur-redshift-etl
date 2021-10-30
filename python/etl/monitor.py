@@ -350,7 +350,9 @@ class DynamoDBStorage(PayloadDispatcher):
         try:
             table = dynamodb.Table(self.table_name)
             status = table.table_status
-            logger.info(f"Found existing events table '{self.table_name}' in DynamoDB (status: {status})")
+            logger.info(
+                f"Found existing events table '{self.table_name}' in DynamoDB (status: {status})"
+            )
         except botocore.exceptions.ClientError as exc:
             # Check whether this is just a ResourceNotFoundException (sadly a 400, not a 404)
             if exc.response["ResponseMetadata"]["HTTPStatusCode"] != 400:
@@ -359,7 +361,9 @@ class DynamoDBStorage(PayloadDispatcher):
             table = None
             status = None
         if not (status == "ACTIVE" or create_if_not_exists):
-            raise ETLRuntimeError("DynamoDB table '%s' does not exist or is not active" % self.table_name)
+            raise ETLRuntimeError(
+                "DynamoDB table '%s' does not exist or is not active" % self.table_name
+            )
         if table is None:
             logger.info(f"Creating DynamoDB table: '{self.table_name}'")
             table = dynamodb.create_table(
@@ -552,7 +556,9 @@ class MemoryStorage(PayloadDispatcher):
 
         class BackgroundServer(threading.Thread):
             def run(self):
-                logger.info("Starting background server for monitor on port %d", MemoryStorage.SERVER_PORT)
+                logger.info(
+                    "Starting background server for monitor on port %d", MemoryStorage.SERVER_PORT
+                )
                 try:
                     httpd = _ThreadingSimpleServer(
                         (MemoryStorage.SERVER_HOST, MemoryStorage.SERVER_PORT), handler_class
@@ -621,7 +627,9 @@ def _query_for_etls(step=None, hours_ago=0, days_ago=0) -> List[dict]:
         ReturnConsumedCapacity="TOTAL",
     )
     if "LastEvaluatedKey" in response:
-        logger.warning("This is is a partial result! Last evaluated key: '%s'", response["LastEvaluatedKey"])
+        logger.warning(
+            "This is is a partial result! Last evaluated key: '%s'", response["LastEvaluatedKey"]
+        )
 
     logger.info(
         "Query result: count = %d, scanned count = %d, consumed capacity = %f",
@@ -699,7 +707,9 @@ def scan_etl_events(etl_id, selected_columns: Optional[Iterable[str]] = None) ->
         # Scope down to selected keys and format the columns.
         rows.extend([_format_output_column(key, item[key]) for key in keys] for item in items)
 
-    logger.info("Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity)
+    logger.info(
+        "Scan result: scanned count = %d, consumed capacity = %f", scanned_count, consumed_capacity
+    )
     if "timestamp" in keys:
         rows.sort(key=itemgetter(keys.index("timestamp")))
     else:
@@ -739,7 +749,9 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":target"] = target
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
-        events = [{key: fy.get_in(item, key.split(".")) for key in self.keys} for item in response["Items"]]
+        events = [
+            {key: fy.get_in(item, key.split(".")) for key in self.keys} for item in response["Items"]
+        ]
         # Return latest event or None
         if events:
             events.sort(key=itemgetter("timestamp"))
@@ -794,7 +806,8 @@ class BackgroundQueriesRunner(threading.Thread):
                 idle = Timer()
             elif self.idle_time_out and idle.elapsed > self.idle_time_out:
                 logger.info(
-                    "Idle time-out: Waited for %d seconds but no events arrived, " "%d target(s) remaining",
+                    "Idle time-out: Waited for %d seconds but no events arrived, "
+                    "%d target(s) remaining",
                     self.idle_time_out,
                     len(targets),
                 )
@@ -802,7 +815,9 @@ class BackgroundQueriesRunner(threading.Thread):
             if query_loop.elapsed < self.update_interval:
                 time.sleep(self.update_interval - query_loop.elapsed)
         logger.info(
-            "Found events for %d out of %d target(s)", len(self.targets) - len(targets), len(self.targets)
+            "Found events for %d out of %d target(s)",
+            len(self.targets) - len(targets),
+            len(self.targets),
         )
         self.queue.put(None)
 
@@ -821,7 +836,13 @@ def recently_extracted_targets(source_relations, start_time):
     start_as_epoch = timegm(start_time.utctimetuple())
     timeout = 60 * 60
     extract_querying_thread = BackgroundQueriesRunner(
-        targets, query, consumer_queue, start_as_epoch, update_interval=30, idle_time_out=timeout, daemon=True
+        targets,
+        query,
+        consumer_queue,
+        start_as_epoch,
+        update_interval=30,
+        idle_time_out=timeout,
+        daemon=True,
     )
     extract_querying_thread.start()
     extracted_targets = set()

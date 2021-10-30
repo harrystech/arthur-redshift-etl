@@ -84,7 +84,9 @@ def execute_or_bail(sub_command: str):
         logger.error("ETL never got off the ground: %r", exc)
         croak(exc, 1)
     except ETLError as exc:
-        logger.critical("Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc, exc_info=True)
+        logger.critical(
+            "Something bad happened in the ETL: %s\n%s", type(exc).__name__, exc, exc_info=True
+        )
         if exc.__cause__ is not None:
             exc_cause_type = type(exc.__cause__)
             logger.info(
@@ -216,7 +218,11 @@ def submit_step(cluster_id, sub_command):
         step_id = response["StepIds"][0]
         status = client.describe_step(ClusterId=cluster_id, StepId=step_id)
         json.dump(
-            status["Step"], sys.stdout, indent="    ", sort_keys=True, cls=etl.json_encoder.FancyJsonEncoder
+            status["Step"],
+            sys.stdout,
+            indent="    ",
+            sort_keys=True,
+            cls=etl.json_encoder.FancyJsonEncoder,
         )
         sys.stdout.write("\n")
     except Exception as exc:
@@ -306,7 +312,9 @@ def build_basic_parser(prog_name, description=None):
         action="append",
         default=[default_config],
     )
-    group.add_argument("--submit-to-cluster", help="submit this command to the cluster", dest="cluster_id")
+    group.add_argument(
+        "--submit-to-cluster", help="submit this command to the cluster", dest="cluster_id"
+    )
 
     # Set some defaults (in case no sub-command's add_to_parser is called)
     parser.set_defaults(prolix=None)
@@ -402,7 +410,9 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
     """
     options = frozenset(option_names)
     if "dry-run" in options:
-        parser.add_argument("-n", "--dry-run", help="do not modify stuff", default=False, action="store_true")
+        parser.add_argument(
+            "-n", "--dry-run", help="do not modify stuff", default=False, action="store_true"
+        )
     if "prefix" in options:
         parser.add_argument(
             "-p",
@@ -422,7 +432,12 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             default="file",
         )
         group.add_argument(
-            "-r", "--remote-files", help="use files in S3", action="store_const", const="s3", dest="scheme"
+            "-r",
+            "--remote-files",
+            help="use files in S3",
+            action="store_const",
+            const="s3",
+            dest="scheme",
         )
     if "max-concurrency" in options:
         parser.add_argument(
@@ -487,7 +502,9 @@ class SubCommand(abc.ABC):
     # By default, commands do not have monitor events.
     uses_monitor = False
 
-    def __init__(self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None) -> None:
+    def __init__(
+        self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None
+    ) -> None:
         self.name = name
         self.help = help_
         self.description = description
@@ -688,7 +705,10 @@ class CreateUserCommand(SubCommand):
     def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.create_new_user(
-                args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
+                args.username,
+                group=args.group,
+                add_user_schema=args.add_user_schema,
+                dry_run=args.dry_run,
             )
 
 
@@ -715,7 +735,10 @@ class UpdateUserCommand(SubCommand):
     def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.update_user(
-                args.username, group=args.group, add_user_schema=args.add_user_schema, dry_run=args.dry_run
+                args.username,
+                group=args.group,
+                add_user_schema=args.add_user_schema,
+                dry_run=args.dry_run,
             )
 
 
@@ -998,7 +1021,9 @@ class ExtractToS3Command(SubCommand):
             sys.exit(1)
 
         descriptions = self.find_relation_descriptions(
-            args, default_scheme="s3", required_relation_selector=dw_config.required_in_full_load_selector
+            args,
+            default_scheme="s3",
+            required_relation_selector=dw_config.required_in_full_load_selector,
         )
         etl.extract.extract_upstream_sources(
             args.extractor,
@@ -1140,7 +1165,9 @@ class UpgradeDataWarehouseCommand(SubCommand):
         if args.target_schema and len(args.pattern) == 0:
             raise InvalidArgumentError("option '--into-schema' requires that relations are selected")
         if args.include_immediate_views and not args.only_selected:
-            logger.warning("Option '--include-immediate-views' is default unless '--only-selected' is used")
+            logger.warning(
+                "Option '--include-immediate-views' is default unless '--only-selected' is used"
+            )
         if args.target_schema and not args.only_selected:
             logger.warning("Option '--into-schema' implies '--only-selected'")
             args.only_selected = True
@@ -1303,7 +1330,10 @@ class CreateSchemasCommand(SubCommand):
             "-b", "--with-backup", help="backup any existing schemas", default=False, action="store_true"
         )
         group.add_argument(
-            "--with-staging", help="create schemas in staging position", default=False, action="store_true"
+            "--with-staging",
+            help="create schemas in staging position",
+            default=False,
+            action="store_true",
         )
 
     def callback(self, args):
@@ -1313,7 +1343,9 @@ class CreateSchemasCommand(SubCommand):
         with etl.db.log_error():
             if args.with_backup:
                 etl.data_warehouse.backup_schemas(schemas, dry_run=args.dry_run)
-            etl.data_warehouse.create_schemas(schemas, use_staging=args.with_staging, dry_run=args.dry_run)
+            etl.data_warehouse.create_schemas(
+                schemas, use_staging=args.with_staging, dry_run=args.dry_run
+            )
 
 
 class PromoteSchemasCommand(SubCommand):
@@ -1604,7 +1636,9 @@ class PingCommand(SubCommand):
                 selected = args.for_schema.selected_schemas()
             except ValueError as exc:
                 raise InvalidArgumentError("patterns must match schemas") from exc
-            logger.info("Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected))
+            logger.info(
+                "Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected)
+            )
             dsn_list = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
         with etl.db.log_error():
             for dsn in dsn_list:
@@ -1736,7 +1770,9 @@ class RenderTemplateCommand(SubCommand):
 class ShowValueCommand(SubCommand):
     def __init__(self):
         super().__init__(
-            "show_value", "show variable setting", "Print value of variable based on the configuration files."
+            "show_value",
+            "show variable setting",
+            "Print value of variable based on the configuration files.",
         )
 
     def add_arguments(self, parser):

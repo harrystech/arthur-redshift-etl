@@ -142,7 +142,9 @@ def add_auto_encoding(table_design: dict) -> None:
     """Modify table design in-place to add encodings of columns (in 'auto_encoding')."""
     columns = {column["name"]: ColumnDefinition.from_dict(column) for column in table_design["columns"]}
     # Use any encoding already defined in the table design.
-    encoding = {column.name: column.encoding for column in columns.values() if column.encoding is not None}
+    encoding = {
+        column.name: column.encoding for column in columns.values() if column.encoding is not None
+    }
     # Find all distribution and sort keys.
     for attribute in table_design.get("attributes", {}).values():
         if isinstance(attribute, str):
@@ -179,7 +181,9 @@ def add_auto_encoding(table_design: dict) -> None:
 
 def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) -> str:
     """Assemble the DDL of a table in a Redshift data warehouse."""
-    if (etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON") == "AUTO":
+    if (
+        etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
+    ) == "AUTO":
         add_auto_encoding(table_design)
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
@@ -326,7 +330,9 @@ def copy_using_manifest(
 ) -> None:
 
     credentials = "aws_iam_role={}".format(aws_iam_role)
-    data_format_parameters = determine_data_format_parameters(data_format, format_option, file_compression)
+    data_format_parameters = determine_data_format_parameters(
+        data_format, format_option, file_compression
+    )
 
     compupdate = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
     if compupdate == "AUTO":
@@ -379,7 +385,9 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
         return
 
     rows = etl.db.query(conn, stmt)
-    summary = "    " + "\n    ".join("'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows)
+    summary = "    " + "\n    ".join(
+        "'{filename}' ({lines_scanned} line(s))".format_map(row) for row in rows
+    )
     # TODO(tom): Check whether this is redundant with query_load_summary
     logger.info(
         f"Copied {len(rows)} file(s) into '{table_name:x}' using manifest '{s3_uri}':\n" f"{summary}",

@@ -73,7 +73,9 @@ def validate_relation_description(
     return relation
 
 
-def validate_semantics(relations: List[RelationDescription], keep_going=False) -> List[RelationDescription]:
+def validate_semantics(
+    relations: List[RelationDescription], keep_going=False
+) -> List[RelationDescription]:
     """
     Load local design files and validate them along the way against schemas and semantics.
 
@@ -81,7 +83,9 @@ def validate_semantics(relations: List[RelationDescription], keep_going=False) -
     """
     # TODO With Python 3.6, we should pass in a thread_name_prefix
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        result = executor.map(lambda relation: validate_relation_description(relation, keep_going), relations)
+        result = executor.map(
+            lambda relation: validate_relation_description(relation, keep_going), relations
+        )
     # Drop all relations from the result which returned None (meaning they failed validation).
     return list(filter(None, result))  # type: ignore
 
@@ -124,7 +128,9 @@ def validate_dependencies(
     if tmp_view_name.is_late_binding_view:
         dependencies = etl.design.bootstrap.fetch_dependency_hints(conn, relation.query_stmt)
         if dependencies is None:
-            logger.warning("Unable to validate '%s' which depends on external tables", relation.identifier)
+            logger.warning(
+                "Unable to validate '%s' which depends on external tables", relation.identifier
+            )
             return
         logger.info(
             "Dependencies of '%s' per query plan: %s",
@@ -134,7 +140,9 @@ def validate_dependencies(
     else:
         dependencies = etl.design.bootstrap.fetch_dependencies(conn, tmp_view_name)
         logger.info(
-            "Dependencies of '%s' per catalog: %s", relation.identifier, join_with_single_quotes(dependencies)
+            "Dependencies of '%s' per catalog: %s",
+            relation.identifier,
+            join_with_single_quotes(dependencies),
         )
 
     difference = compare_query_to_design(dependencies, relation.table_design.get("depends_on", []))
@@ -210,7 +218,9 @@ def validate_single_transform(
         )
 
 
-def validate_transforms(dsn: dict, relations: List[RelationDescription], keep_going: bool = False) -> None:
+def validate_transforms(
+    dsn: dict, relations: List[RelationDescription], keep_going: bool = False
+) -> None:
     """
     Validate transforms (CTAS or VIEW relations) by trying to run them in the database.
 
@@ -347,7 +357,9 @@ def validate_upstream_columns(conn: Connection, table: RelationDescription) -> N
 
     current_columns = frozenset(column.name for column in columns_info)
     design_columns = frozenset(
-        column["name"] for column in table.table_design["columns"] if not column["name"].startswith("etl__")
+        column["name"]
+        for column in table.table_design["columns"]
+        if not column["name"].startswith("etl__")
     )
     design_required_columns = frozenset(
         column["name"]
@@ -458,7 +470,9 @@ def validate_upstream_constraints(conn: Connection, table: RelationDescription) 
             )
 
 
-def validate_upstream_table(conn: Connection, table: RelationDescription, keep_going: bool = False) -> None:
+def validate_upstream_table(
+    conn: Connection, table: RelationDescription, keep_going: bool = False
+) -> None:
     """Validate table design of an upstream table against its source database."""
     try:
         with etl.db.log_error():

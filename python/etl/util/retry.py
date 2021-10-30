@@ -28,7 +28,9 @@ def call_with_retry(max_retries: int, func: Callable, *args, **kwargs) -> None:
         elif remaining_attempts == total_attempts:
             logger.debug("Starting on first of %d attempt(s)", total_attempts)
         else:
-            logger.debug("There are now only %d of %d attempt(s) left", remaining_attempts, total_attempts)
+            logger.debug(
+                "There are now only %d of %d attempt(s) left", remaining_attempts, total_attempts
+            )
         try:
             func(*args, **kwargs)
         except TransientETLError as exc:

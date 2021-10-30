@@ -195,7 +195,9 @@ class LoadableRelation:
         ]  # do DAG operations in terms of RelationDescriptions
         dependent_relations = etl.relation.find_dependents(unpacked, [self._relation_description])
         dependent_relation_identifiers = {r.identifier for r in dependent_relations}
-        return [loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers]
+        return [
+            loadable for loadable in relations if loadable.identifier in dependent_relation_identifiers
+        ]
 
     def mark_failure(self, relations: Sequence["LoadableRelation"], exc_info=True) -> None:
         """Mark this relation as failed and set dependents (stored in :relations) to skip_copy."""
@@ -322,14 +324,18 @@ def create_table(
         message = "Creating temporary table for {:x}".format(relation)
         is_temp = True
 
-    ddl_stmt = etl.dialect.redshift.build_table_ddl(ddl_table_name, relation.table_design, is_temp=is_temp)
+    ddl_stmt = etl.dialect.redshift.build_table_ddl(
+        ddl_table_name, relation.table_design, is_temp=is_temp
+    )
     etl.db.run(conn, message, ddl_stmt, dry_run=dry_run)
 
 
 def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
     """Create VIEW using the relation's query."""
     ddl_view_name = relation.target_table_name
-    stmt = etl.dialect.redshift.build_view_ddl(ddl_view_name, relation.unquoted_columns, relation.query_stmt)
+    stmt = etl.dialect.redshift.build_view_ddl(
+        ddl_view_name, relation.unquoted_columns, relation.query_stmt
+    )
     etl.db.run(conn, "Creating view {:x}".format(relation), stmt, dry_run=dry_run)
 
 
@@ -340,7 +346,9 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
     It's ok if the relation doesn't already exist.
     """
     try:
-        kind = etl.db.relation_kind(conn, relation.target_table_name.schema, relation.target_table_name.table)
+        kind = etl.db.relation_kind(
+            conn, relation.target_table_name.schema, relation.target_table_name.table
+        )
         if kind is not None:
             stmt = """DROP {} {} CASCADE""".format(kind, relation)
             etl.db.run(conn, "Dropping {} {:x}".format(kind.lower(), relation), stmt, dry_run=dry_run)
@@ -404,7 +412,9 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
             )
         else:
             logger.info(
-                "Granting write access on {:x} to {}".format(relation, join_with_single_quotes(writer_groups))
+                "Granting write access on {:x} to {}".format(
+                    relation, join_with_single_quotes(writer_groups)
+                )
             )
             for writer in writer_groups:
                 etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
@@ -529,7 +539,9 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
         ]
         insert_from_query(conn, relation, table_name=temp_name, columns=temp_columns, dry_run=dry_run)
 
-        inner_stmt = "SELECT {} FROM {}".format(join_with_double_quotes(relation.unquoted_columns), temp_name)
+        inner_stmt = "SELECT {} FROM {}".format(
+            join_with_double_quotes(relation.unquoted_columns), temp_name
+        )
         if relation.target_table_name.table.startswith("dim_"):
             missing_dimension = create_missing_dimension_row(relation.table_design["columns"])
             inner_stmt += "\nUNION ALL SELECT {}".format(", ".join(missing_dimension))
@@ -543,7 +555,10 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
 def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
     """Update table statistics."""
     etl.db.run(
-        conn, "Running analyze step on table {:x}".format(table), "ANALYZE {}".format(table), dry_run=dry_run
+        conn,
+        "Running analyze step on table {:x}".format(table),
+        "ANALYZE {}".format(table),
+        dry_run=dry_run,
     )
 
 
@@ -739,7 +754,9 @@ def build_one_relation_using_pool(pool, relation: LoadableRelation, dry_run=Fals
         # Add (some) exception information close to when it happened
         message = str(exc).split("\n", 1)[0]
         if relation.is_required:
-            logger.error("Exception information for required relation {:x}: {}".format(relation, message))
+            logger.error(
+                "Exception information for required relation {:x}: {}".format(relation, message)
+            )
         else:
             logger.error("Exception information for relation {:x}: {}".format(relation, message))
         pool.putconn(conn, close=True)
@@ -759,7 +776,10 @@ def vacuum(relations: Sequence[RelationDescription], dry_run=False) -> None:
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for relation in relations:
             etl.db.run(
-                conn, "Running vacuum on {:x}".format(relation), "VACUUM {}".format(relation), dry_run=dry_run
+                conn,
+                "Running vacuum on {:x}".format(relation),
+                "VACUUM {}".format(relation),
+                dry_run=dry_run,
             )
     if not dry_run:
         logger.info("Ran vacuum for %d table(s) (%s)", len(relations), timer)
@@ -834,9 +854,13 @@ def create_source_tables_when_ready(
                     to_load.qsize(),
                     timer.elapsed,
                 )
-                if checkpoint_queue_size_cutoff == to_poll.qsize() and timer.elapsed > checkpoint_time_cutoff:
+                if (
+                    checkpoint_queue_size_cutoff == to_poll.qsize()
+                    and timer.elapsed > checkpoint_time_cutoff
+                ):
                     raise ETLRuntimeError(
-                        "No new extracts found in last %s seconds, bailing out" % idle_termination_seconds
+                        "No new extracts found in last %s seconds, bailing out"
+                        % idle_termination_seconds
                     )
                 else:
                     if to_poll.qsize():
@@ -933,7 +957,9 @@ def create_source_tables_when_ready(
         logger.info("Poller joined or checkpoint timeout reached")
         # Update checkpoint for timer to have made an update
         checkpoint_time_cutoff = timer.elapsed + idle_termination_seconds
-        logger.info("Current elapsed time: %s; cancel if no progress by %s", timer, checkpoint_time_cutoff)
+        logger.info(
+            "Current elapsed time: %s; cancel if no progress by %s", timer, checkpoint_time_cutoff
+        )
         # Update last known queue size
         checkpoint_queue_size_cutoff = to_poll.qsize()
         logger.info("Current queue length: %s", checkpoint_queue_size_cutoff)
@@ -957,7 +983,9 @@ def create_source_tables_when_ready(
 
     failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
-        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
+        logger.error(
+            "These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed)
+        )
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
@@ -1020,7 +1048,9 @@ def create_source_tables_in_parallel(
 
     failed = [relation.identifier for relation in source_relations if relation.failed]
     if failed:
-        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
+        logger.error(
+            "These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed)
+        )
     logger.info("Finished with %d relation(s) in source schemas (%s)", len(source_relations), timer)
 
 
@@ -1059,7 +1089,9 @@ def create_transformations_sequentially(
 
     failed = [relation.identifier for relation in transformations if relation.failed]
     if failed:
-        logger.error("These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed))
+        logger.error(
+            "These %d relation(s) failed to build: %s", len(failed), join_with_single_quotes(failed)
+        )
     skipped = [
         relation.identifier
         for relation in transformations
@@ -1069,7 +1101,9 @@ def create_transformations_sequentially(
         logger.warning(
             "These %d relation(s) were left empty: %s", len(skipped), join_with_single_quotes(skipped)
         )
-    logger.info("Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer)
+    logger.info(
+        "Finished with %d relation(s) in transformation schemas (%s)", len(transformations), timer
+    )
 
 
 def create_relations(
@@ -1142,7 +1176,9 @@ def load_data_warehouse(
         use_staging=use_staging,
     )
     traversed_schemas = find_traversed_schemas(relations)
-    logger.info("Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas))
+    logger.info(
+        "Starting to load %d relation(s) in %d schema(s)", len(relations), len(traversed_schemas)
+    )
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True)) as conn:
@@ -1303,7 +1339,9 @@ def update_data_warehouse(
         if len(source_relations) > len(extracted_targets):
             raise MissingExtractEventError(source_relations, extracted_targets)
     elif source_relations:
-        logger.info("Attempting to use existing manifests for source relations without verifying recency.")
+        logger.info(
+            "Attempting to use existing manifests for source relations without verifying recency."
+        )
 
     relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
     logger.info("Starting to update %d tables(s) within a transaction", len(relations))
