@@ -16,9 +16,10 @@ fi
 
 set -o errexit
 
-config_dir="$DATA_WAREHOUSE_CONFIG"
-docker_image="ghcr.io/harrystech/arthur-redshift-etl/arthur-etl:latest"
 aws_profile="${AWS_PROFILE-${AWS_DEFAULT_PROFILE-default}}"
+config_dir="$DATA_WAREHOUSE_CONFIG"
+docker_image="ghcr.io/harrystech/arthur-redshift-etl/arthur-etl"
+tag="latest"
 target_env="${ARTHUR_DEFAULT_PREFIX-$USER}"
 verbose=0
 
@@ -47,11 +48,15 @@ Default values are shown above and can be overridden as:
 * Use <target_env> to override \$ARTHUR_DEFAULT_PREFIX.
 * Use <aws_profile> to override \$AWS_PROFILE.
 
+Advanced option: [-t tag]
+  If you would like to run a version other than the latest, you can
+  pass in the version after "-t". (The default is "$tag".)
+
 EOF
   exit "${1-0}"
 }
 
-while getopts ":hc:p:e:v" opt; do
+while getopts ":hc:e:p:t:v" opt; do
   case "$opt" in
     h)
       show_usage_and_exit
@@ -64,6 +69,9 @@ while getopts ":hc:p:e:v" opt; do
       ;;
     p)
       aws_profile="$OPTARG"
+      ;;
+    t)
+      tag="$OPTARG"
       ;;
     v)
       verbose=1
@@ -110,9 +118,6 @@ config_path=$(basename "$config_abs_path")
 #   - AWS_PROFILE to pick the right user or role with access to ETL admin privileges
 #   - DATA_WAREHOUSE_CONFIG so that Arthur finds the configuration files
 
-echo "Using Arthur ETL package: $docker_image"
-echo
-
 if [[ "$verbose" != "0" ]]; then
     set -o xtrace
 fi
@@ -121,10 +126,11 @@ docker run --rm --interactive --tty \
     --env ARTHUR_DEFAULT_PREFIX="$target_env" \
     --env AWS_PROFILE="$aws_profile" \
     --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+    --pull always \
     --sysctl net.ipv4.tcp_keepalive_time=300 \
     --sysctl net.ipv4.tcp_keepalive_intvl=60 \
     --sysctl net.ipv4.tcp_keepalive_probes=9 \
     --volume ~/.aws:/home/arthur/.aws \
     --volume ~/.ssh:/home/arthur/.ssh:ro \
     --volume "$data_warehouse_path:/opt/data-warehouse" \
-    "$docker_image"
+    "$docker_image:$tag"
