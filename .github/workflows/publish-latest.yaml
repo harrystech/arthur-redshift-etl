@@ -36,10 +36,11 @@ jobs:
       uses: docker/metadata-action@v3
       with:
         images: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl
+        # Use the original tag ref, the SHA1, and versions derived from the tag.
         tags: |
           type=ref,event=tag
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{version}}
+          type=semver,pattern=v{{major}}.{{minor}}
+          type=semver,pattern=v{{version}}
           type=sha
 
     - name: Build and push with version tags
