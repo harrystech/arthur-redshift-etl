@@ -1,21 +1,15 @@
 etl.dialect package
 ===================
 
-Submodules
-----------
-
-etl.dialect.redshift module
----------------------------
-
-.. automodule:: etl.dialect.redshift
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
 .. automodule:: etl.dialect
    :members:
    :undoc-members:
    :show-inheritance:
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   etl.dialect.redshift

@@ -1,7 +1,7 @@
-etl.assets package
+etl.explain module
 ==================
 
-.. automodule:: etl.assets
+.. automodule:: etl.explain
    :members:
    :undoc-members:
    :show-inheritance:

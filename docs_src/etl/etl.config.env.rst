@@ -1,7 +1,7 @@
-etl.templates package
+etl.config.env module
 =====================
 
-.. automodule:: etl.templates
+.. automodule:: etl.config.env
    :members:
    :undoc-members:
    :show-inheritance:

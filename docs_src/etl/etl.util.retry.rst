@@ -1,7 +1,7 @@
-etl.templates package
+etl.util.retry module
 =====================
 
-.. automodule:: etl.templates
+.. automodule:: etl.util.retry
    :members:
    :undoc-members:
    :show-inheritance:

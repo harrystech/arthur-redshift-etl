@@ -1,7 +1,7 @@
-etl.assets package
+etl.monitor module
 ==================
 
-.. automodule:: etl.assets
+.. automodule:: etl.monitor
    :members:
    :undoc-members:
    :show-inheritance:
