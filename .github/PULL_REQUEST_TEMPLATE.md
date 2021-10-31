@@ -2,11 +2,11 @@
 
 <!-- What is changing and why? Also, describe design patterns. Highlight functional areas. -->
 
-### User-visible changes
+### User-visible Changes
 
 <!-- Describe what changes for users of Arthur -->
 
-### Internal changes
+### Internal Changes
 
 <!-- Describe what changes behind the scenes -->
 
