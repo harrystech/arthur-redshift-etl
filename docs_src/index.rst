@@ -15,16 +15,18 @@ Code Documentation
 
    etl/modules
 
-Installation
-============
+Developing
+==========
 
 .. toctree::
    :maxdepth: 2
 
    install
 
-Indices and Tables
-==================
+   run_profiler
+
+Indices, Tables, Search
+=======================
 
 * :ref:`genindex`
 * :ref:`modindex`
