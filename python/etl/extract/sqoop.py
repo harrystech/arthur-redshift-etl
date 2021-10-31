@@ -265,11 +265,11 @@ class SqoopExtractor(DatabaseExtractor):
                 raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
 
-class FakeSqoopExtractor(SqoopExtractor):
+class DummySqoopExtractor(SqoopExtractor):
     """
-    This extractor runs '/usr/bin/false' which means that extraction fails.
+    This extractor runs '/usr/bin/false', which means that extraction always fails.
 
-    Used for testing outside EMR.
+    Used for testing outside EMR and to test control flow (like retries).
     """
 
     def __init__(self, *args, **kwargs):

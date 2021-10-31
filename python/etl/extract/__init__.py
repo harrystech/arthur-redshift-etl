@@ -29,9 +29,10 @@ import logging
 from typing import Dict, List
 
 from etl.config.dw import DataWarehouseSchema
+from etl.errors import ETLSystemError
 from etl.extract.extractor import Extractor
 from etl.extract.manifest_only import ManifestOnlyExtractor
-from etl.extract.sqoop import SqoopExtractor
+from etl.extract.sqoop import DummySqoopExtractor, SqoopExtractor
 from etl.extract.static import StaticExtractor
 from etl.relation import RelationDescription
 from etl.text import join_with_single_quotes
@@ -77,7 +78,7 @@ def extract_upstream_sources(
         database_extractor: Extractor = ManifestOnlyExtractor(
             database_sources, applicable, keep_going, dry_run
         )
-    else:
+    elif extract_type == "sqoop":
         database_extractor = SqoopExtractor(
             database_sources,
             applicable,
@@ -86,6 +87,17 @@ def extract_upstream_sources(
             keep_going=keep_going,
             dry_run=dry_run,
         )
+    elif extract_type == "dummy-sqoop":
+        database_extractor = DummySqoopExtractor(
+            database_sources,
+            applicable,
+            max_partitions=max_partitions,
+            use_sampling=use_sampling,
+            keep_going=keep_going,
+            dry_run=dry_run,
+        )
+    else:
+        raise ETLSystemError(f"unexpected extraction type: '{extract_type}'")
     database_extractor.extract_sources()
 
 

@@ -957,11 +957,18 @@ class ExtractToS3Command(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--with-sqoop",
-            help="extract data using Sqoop (using 'sqoop import', this is the default)",
-            const="sqoop",
             action="store_const",
-            dest="extractor",
+            const="sqoop",
             default="sqoop",
+            dest="extractor",
+            help="extract data using Sqoop (using the 'sqoop import' tool, this is the default)",
+        )
+        group.add_argument(
+            "--fail-sqoop-jobs",
+            action="store_const",
+            const="dummy-sqoop",
+            dest="extractor",
+            help="for debugging of error handling, fail the sqoop job immediately",
         )
         group.add_argument(
             "--use-existing-csv-files",
@@ -997,8 +1004,6 @@ class ExtractToS3Command(SubCommand):
         max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
         if max_partitions < 1:
             raise InvalidArgumentError("option for max partitions must be >= 1")
-        if args.extractor not in ("sqoop", "manifest-only"):
-            raise ETLSystemError("bad extractor value: {}".format(args.extractor))
 
         descriptions = self.find_relation_descriptions(
             args,
