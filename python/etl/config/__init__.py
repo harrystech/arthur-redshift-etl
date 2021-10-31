@@ -1,10 +1,16 @@
 """
-This module provides global access to settings.  Always treat them nicely and read-only.
+Configuration files cover settings and DSNs.
 
 We use the term "config" files to refer to all files that may reside in the "config" directory:
   * "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
   * Environment files (with variables used in connections)
   * Other files (like release notes)
+
+For settings and environment files, files are loaded in alphabetical order and they keep updating
+values so that only the last one is kept.
+
+To see the final value of settings based on the order of files, use:
+  arthur.py settings --verbose
 """
 
 import datetime
@@ -47,7 +53,7 @@ _mapped_config: Optional[Dict[str, str]] = None
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
-def package_version(package_name="redshift_etl"):
+def package_version(package_name="redshift_etl") -> str:
     return f"{package_name} v{pkg_resources.get_distribution(package_name).version}"
 
 
