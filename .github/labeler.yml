@@ -1,0 +1,6 @@
+python:
+  - '*.py'
+
+documentation:
+  - '*.md'
+  - '*.rst'
