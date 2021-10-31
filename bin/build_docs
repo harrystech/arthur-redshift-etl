@@ -5,26 +5,27 @@ set -o errexit -o nounset
 case "${1-}" in
   -h|--help|help)
     cat <<USAGE
+
 Usage: $0 [sphinx opts]
 
 Build or update documentation using Sphinx. Any commmand line args are passed to Sphinx.
+The API documentation is automatically created during this step.
 
 USAGE
   exit
 esac
 
-echo "Updating documentation into ./docs"
+echo "Updating documentation into docs/html"
 
 set -o verbose
-sphinx-apidoc --module-first --separate --ext-autodoc --ext-doctest --ext-viewcode --output docs_src/etl python/etl
-sphinx-build -M html ./docs_src ./build "$@"
+sphinx-apidoc --module-first --separate --ext-autodoc --ext-doctest --ext-viewcode --output "docs/source/etl" "python/etl"
+sphinx-build -M html "docs/source" "./build" "$@"
 cp -a "./build/html" "./docs/"
 
 set +o verbose
-echo "The HTML pages were copied into docs."
 
 cat <<OPEN_HTML
-
+The HTML pages were copied into docs/html.
 To view the documentation, run:
 
 open docs/html/index.html
