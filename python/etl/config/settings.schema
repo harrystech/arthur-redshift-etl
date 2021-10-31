@@ -44,12 +44,7 @@
                 "comment": { "type": "string" },
                 "description": { "type": "string" },
                 "group": { "$ref": "#/$defs/identifier" },
-                "groups": {
-                    "items": { "$ref": "#/$defs/identifier" },
-                    "maxItems": 1,
-                    "minItems": 1,
-                    "type": "array"
-                },
+                "groups": { "$ref": "#/$defs/identifier_list" },
                 "name": { "$ref": "#/$defs/identifier" },
                 "schema": { "$ref": "#/$defs/identifier" }
             },

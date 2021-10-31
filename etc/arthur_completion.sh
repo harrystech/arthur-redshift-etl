@@ -22,7 +22,7 @@ _arthur_completion()
                 create_groups
                 create_index
                 create_schemas
-                create_user
+                create_users
                 delete_finished_pipelines
                 design
                 explain

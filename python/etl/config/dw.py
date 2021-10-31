@@ -11,7 +11,7 @@ from etl.errors import ETLConfigError, InvalidEnvironmentError
 
 class DataWarehouseUser:
     """
-    Data warehouse users have always a name and group associated with them.
+    Data warehouse users have always a name and a list of groups associated with them.
 
     Users may have a schema "belong" to them which they then have write access to. This is useful
     for system users, mostly, since end users should treat the data warehouse as read-only.
@@ -20,13 +20,13 @@ class DataWarehouseUser:
     def __init__(self, user_info) -> None:
         self.name = user_info["name"]
         self.comment = user_info.get("comment")
-        # TODO(tom): Support an array of group names using "#/$defs/identifier_list".
         if "group" in user_info:
             # Backward compatibility: support single group "group".
-            self.group = user_info["group"]
+            self.groups = [user_info["group"]]
+        elif "groups" in user_info:
+            self.groups = user_info["groups"]
         else:
-            # Forward compatibility: for now, just pick the only element from the list.
-            [self.group] = user_info["groups"]
+            self.groups = []
         self.schema = user_info.get("schema")
 
 
@@ -188,6 +188,7 @@ class DataWarehouseConfig:
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
         self._check_access_to_cluster()
+
         self.users = self.parse_users(dw_settings)
         schema_owner_map = {user.schema: user.name for user in self.users if user.schema}
 
@@ -205,7 +206,7 @@ class DataWarehouseConfig:
         # Schemas may grant access to groups that have no bootstrapped users.
         # So we "union" groups mentioned for users and groups mentioned for schemas.
         self.groups = sorted(
-            {user.group for user in self.users}.union(
+            {group for user in self.users for group in user.groups}.union(
                 {group for schema in self.schemas for group in schema.groups}
             )
         )
@@ -220,12 +221,13 @@ class DataWarehouseConfig:
 
     @staticmethod
     def parse_default_group(dw_settings: dict) -> str:
-        """Return default group for users based on a user called "default"."""
+        """Return default group based on a user called "default"."""
         try:
             [user_settings] = [user for user in dw_settings["users"] if user["name"] == "default"]
         except ValueError:
             raise ETLConfigError("failed to find user 'default'")
-        return DataWarehouseUser(user_settings).group
+        # TODO(tom): make sure there's exactly one group.
+        return DataWarehouseUser(user_settings).groups[0]
 
     def parse_schemas(
         self, partial_settings: Iterable[dict], schema_owner_map: dict

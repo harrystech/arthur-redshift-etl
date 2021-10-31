@@ -57,7 +57,7 @@ you can simply use `../arthur-redshift-etl/` to find your way back to this ETL c
 
 Although the Redshift cluster can be administered using the AWS console and `psql`, some
 helper scripts will make setting up the cluster consistently much easier.
-(See below for `initialize` and `create_user`.)
+(See below for `initialize`, `create_groups`, and `create_users`.)
 
 Also, add the AWS IAM role that the database owner may assume within Redshift
 to your settings file so that Redshift has the needed permissions to access the
@@ -166,7 +166,7 @@ Don't forget to run `terminate_emr_cluster.sh` when you're done.
 | ---- | ---- |
 | `initialize`  | Create schemas, groups and users |
 | `create_groups` | Create groups that are mentioned in the configuration file |
-| `create_user` | Create (or configure) users that are not mentioned in the configuration file |
+| `create_users` | Create users that are mentioned in the configuration file |
 
 ```shell
 # The commands to setup the data warehouse users and groups or any database is by ADMIN (connected to `dev`)

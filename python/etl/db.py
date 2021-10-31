@@ -420,7 +420,7 @@ def _get_encrypted_password(cx, user) -> Optional[str]:
     return "md5" + md5.hexdigest()
 
 
-def create_user(cx: Connection, user: str, group: str) -> None:
+def create_user(cx: Connection, user: str) -> None:
     password = _get_encrypted_password(cx, user)
     if password is None:
         logger.warning("Missing entry in PGPASSFILE file for '%s'", user)
@@ -428,7 +428,7 @@ def create_user(cx: Connection, user: str, group: str) -> None:
         raise ETLRuntimeError(
             f"password missing from PGPASSFILE for user '{user}'"
         )  # lgtm[py/clear-text-logging-sensitive-data]
-    execute(cx, f"""CREATE USER "{user}" IN GROUP "{group}" PASSWORD %s""", (password,))
+    execute(cx, f"""CREATE USER "{user}" PASSWORD %s""", (password,))
 
 
 def alter_password(cx: Connection, user: str, ignore_missing_password=False) -> None:

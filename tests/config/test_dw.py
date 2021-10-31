@@ -36,6 +36,6 @@ class TestConfigDW(unittest.TestCase):
         found = etl.config.dw.DataWarehouseConfig.parse_users(self.settings)
         self.assertEqual(len(found), 2)
         self.assertEqual(found[0].name, "etl")
-        self.assertEqual(found[0].group, "etl")
+        self.assertEqual(found[0].groups, ["etl"])
         self.assertEqual(found[1].name, "a_user")
-        self.assertEqual(found[1].group, "a_group")
+        self.assertEqual(found[1].groups, ["a_group"])

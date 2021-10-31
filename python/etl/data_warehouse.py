@@ -81,7 +81,7 @@ def create_external_schema_and_grant_access(
 
 
 def create_schema_and_grant_access(
-    conn: Connection, schema: DataWarehouseSchema, owner: str = None, use_staging=False, dry_run=False
+    conn: Connection, schema: DataWarehouseSchema, owner=None, use_staging=False, dry_run=False
 ) -> None:
     group_names = join_with_single_quotes(schema.groups)
     name = schema.staging_name if use_staging else schema.name
@@ -258,32 +258,46 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
         )
 
 
-def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
+def _create_user(conn: Connection, user: DataWarehouseUser, dry_run=False):
     """
-    Create user in its group, or add user to its group.
+    Create user (or skip if user already exists).
 
     The connection may point to 'dev' database since users are tied to the cluster, not a database.
     """
     with conn:
-        if only_update or etl.db.user_exists(conn, user.name):
-            if dry_run:
-                logger.info("Dry-run: Skipping adding user '%s' to group '%s'", user.name, user.group)
-                logger.info("Dry-run: Skipping updating password for user '%s'", user.name)
-            else:
-                logger.info("Adding user '%s' to group '%s'", user.name, user.group)
-                etl.db.alter_group_add_user(conn, user.group, user.name)
-                logger.info("Updating password for user '%s'", user.name)
-                etl.db.alter_password(conn, user.name, ignore_missing_password=True)
-        else:
-            if dry_run:
-                logger.info("Dry-run: Skipping creating user '%s' in group '%s'", user.name, user.group)
-            else:
-                logger.info("Creating user '%s' in group '%s'", user.name, user.group)
-                etl.db.create_user(conn, user.name, user.group)
+        if etl.db.user_exists(conn, user.name):
+            logger.info("User '%s' already exists", user.name)
+            return
+
+        if dry_run:
+            logger.info("Dry-run: Skipping creating user '%s'", user.name)
+            return
+        logger.info("Creating user '%s'", user.name)
+        etl.db.create_user(conn, user.name)
+
+
+def _update_user_groups(conn: Connection, user: DataWarehouseUser, dry_run=False):
+    """
+    Add user to the groups per configuration.
+
+    NOTE That we currently do not remove users from groups, so we do not override changes.
+    """
+    with conn:
+        if dry_run:
+            logger.info(
+                "Dry-run: Skipping adding user '%s' to group(s): %s",
+                user.name,
+                join_with_single_quotes(user.groups),
+            )
+            return
+
+        logger.info("Adding user '%s' to group(s): %s", user.name, join_with_single_quotes(user.groups))
+        for group in user.groups:
+            etl.db.alter_group_add_user(conn, group, user.name)
 
 
 def _create_schema_for_user(conn: Connection, user: DataWarehouseUser, etl_group: str, dry_run=False):
-    groups = [user.group, etl_group]
+    groups = user.groups + [etl_group]
     user_schema = etl.config.dw.DataWarehouseSchema(
         {"name": user.schema, "owner": user.name, "readers": groups}
     )
@@ -333,14 +347,12 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
             "Refused to initialize non-validation database '%s' without the --force option"
             % database_name
         )
-    # Create all defined users which includes the ETL user needed before next step (so that
-    # database is owned by ETL). Also create all groups referenced in the configuration.
+    # Create the ETL user so that it can own the database.
     if with_user_creation:
-        groups = sorted(frozenset(group for schema in config.schemas for group in schema.groups))
         with closing(etl.db.connection(config.dsn_admin, readonly=dry_run)) as conn:
-            _create_groups(conn, groups, dry_run=dry_run)
-            for user in config.users:
-                _create_or_update_user(conn, user, dry_run=dry_run)
+            _create_groups(conn, config.owner.groups, dry_run=dry_run)
+            _create_user(conn, config.owner, dry_run=dry_run)
+            _update_user_groups(conn, config.owner, dry_run=dry_run)
 
     if dry_run:
         logger.info(
@@ -355,75 +367,108 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
             )
             etl.db.drop_and_create_database(conn, database_name, config.owner.name)
 
-    with closing(
-        etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)
-    ) as conn:
+    with closing(etl.db.connection(config.dsn_admin_on_etl_db, readonly=dry_run)) as conn:
         if dry_run:
             logger.info("Dry-run: Skipping dropping of PUBLIC schema in '%s'", database_name)
         else:
             logger.info("Dropping PUBLIC schema in '%s'", database_name)
-            etl.db.drop_schema(conn, "PUBLIC")
+            with conn:
+                etl.db.drop_schema(conn, "PUBLIC")
+
         if with_user_creation:
+            non_owner_groups = [group for group in config.groups if group not in config.owner.groups]
+            _create_groups(conn, non_owner_groups, dry_run=dry_run)
             for user in config.users:
+                if user.name != config.owner.name:
+                    _create_user(conn, user, dry_run=dry_run)
+                    if user.groups:
+                        _update_user_groups(conn, user, dry_run=dry_run)
                 if user.schema:
-                    _create_schema_for_user(conn, user, config.groups[0], dry_run=dry_run)
+                    _create_schema_for_user(conn, user, config.owner.groups[0], dry_run=dry_run)
                 _update_search_path(conn, user, dry_run=dry_run)
 
 
-def create_or_update_user(
-    user_name: str, group_name=None, add_user_schema=False, only_update=False, dry_run=False
+def _create_or_update_user(
+    conn: Connection, user: DataWarehouseUser, add_user_schema=False, dry_run=False
 ) -> None:
     """
     Add new user to cluster or update existing user.
 
-    Either pick a group or accept the default group (from settings).
-    If the group does not yet exist, then we create the user's group here.
-
+    If their group does not yet exist, then we create the user's groups here.
     If so advised, creates a schema for the user, making sure that the ETL user keeps read access
     via its group. So this assumes that the connection string points to the ETL database, not 'dev'.
+    If the user has a schema configured, then that is always created.
     """
     config = etl.config.get_dw_config()
-    # Find user in the list of pre-defined users or create new user instance with default settings
+
+    _create_groups(conn, user.groups, dry_run=dry_run)
+    _create_user(conn, user, dry_run=dry_run)
+    if user.groups:
+        _update_user_groups(conn, user, dry_run=dry_run)
+    if not add_user_schema:
+        return
+
+    # This allows to add a schema with the same name as the user without configuring it.
+    schema_user = DataWarehouseUser(
+        {
+            "name": user.name,
+            "groups": user.groups,
+            "schema": user.name if not user.schema else user.schema,
+        }
+    )
+    with conn:
+        _create_schema_for_user(conn, schema_user, config.owner.groups[0], dry_run=dry_run)
+        _update_search_path(conn, schema_user, dry_run=dry_run)
+
+
+def create_users(users: Sequence[str], dry_run=False) -> None:
+    """
+    Create all users that are defined in configuration files.
+
+    This is a callback of a command.
+    """
+    config = etl.config.get_dw_config()
+    known_names = [user.name for user in config.users]
+    missing_names = frozenset(users).difference(known_names)
+    if not users:
+        # None selected means create all.
+        selected = config.users
+    elif not missing_names:
+        selected = [user for user in config.users if user.name in users]
+    else:
+        raise ETLConfigError(f"users: {join_with_single_quotes(missing_names)} are not configured")
+
+    with closing(etl.db.connection(config.dsn_admin_on_etl_db, readonly=dry_run)) as conn:
+        for user in selected:
+            _create_or_update_user(conn, user, dry_run=dry_run)
+
+
+def update_user(user_name: str, add_user_schema=False, dry_run=False) -> None:
+    """
+    Update a current user and optionally add a schema for their use.
+
+    This is a callback of a command.
+    """
+    config = etl.config.get_dw_config()
+    # Find user in the list of pre-defined users.
     for user in config.users:
         if user.name == user_name:
             break
     else:
-        info = {"name": user_name, "group": group_name or config.default_group}
-        if add_user_schema:
-            info["schema"] = user_name
-        user = etl.config.dw.DataWarehouseUser(info)
-
-    if user.name == "default":
-        raise ValueError("illegal user name '%s'" % user.name)
-    if user.group not in config.groups and user.group != config.default_group:
-        raise ValueError("specified group ('%s') not present in DataWarehouseConfig" % user.group)
+        raise ETLConfigError(f"user '{user_name}' has not been configured")
 
     with closing(etl.db.connection(config.dsn_admin_on_etl_db, readonly=dry_run)) as conn:
-        _create_groups(conn, [user.group], dry_run=dry_run)
-        _create_or_update_user(conn, user, only_update=only_update, dry_run=dry_run)
+        _create_or_update_user(conn, user, add_user_schema=add_user_schema, dry_run=dry_run)
 
-        with conn:
-            if add_user_schema:
-                _create_schema_for_user(conn, user, config.groups[0], dry_run=dry_run)
-            elif user.schema is not None:
-                logger.warning(
-                    "User '%s' has schema '%s' configured but adding that was not requested",
-                    user.name,
-                    user.schema,
-                )
-            _update_search_path(conn, user, dry_run=dry_run)
+    if dry_run:
+        logger.info("Dry-run: Skipping updating password for user '%s'", user.name)
+        return
 
-
-def create_new_user(new_user, group=None, add_user_schema=False, dry_run=False):
-    create_or_update_user(
-        new_user, group, add_user_schema=add_user_schema, only_update=False, dry_run=dry_run
-    )
-
-
-def update_user(old_user, group=None, add_user_schema=False, dry_run=False):
-    create_or_update_user(
-        old_user, group, add_user_schema=add_user_schema, only_update=True, dry_run=dry_run
-    )
+    logger.info("Updating password for user '%s'", user.name)
+    with closing(
+        etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)
+    ) as conn:
+        etl.db.alter_password(conn, user.name, ignore_missing_password=True)
 
 
 def list_users(transpose=False) -> None:
@@ -437,11 +482,12 @@ def list_users(transpose=False) -> None:
         header = ["group", "users"]
         groups = defaultdict(list)
         for user in config.users:
-            groups[user.group].append(user.name)
+            for group in user.groups:
+                groups[group].append(user.name)
         rows = [[group, ", ".join(sorted(groups[group]))] for group in sorted(groups)]
     else:
         header = ["user", "groups", "comment"]
-        rows = [[user.name, user.group, user.comment or ""] for user in config.users]
+        rows = [[user.name, ", ".join(user.groups), user.comment or ""] for user in config.users]
     print(etl.text.format_lines(rows, header_row=header))
 
 
