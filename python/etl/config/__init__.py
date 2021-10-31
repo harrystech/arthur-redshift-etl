@@ -7,9 +7,13 @@ We use the term "config" files to refer to all files that may reside in the "con
   * Other files (like release notes)
 
 For settings and environment files, files are loaded in alphabetical order and they keep updating
-values so that only the last one is kept.
+values so that only the last one is kept. If you want to ensure a particular order, your best option
+is to prefix the files with a number sequence:
+  01_general.yaml
+  02_deploy.yaml
+and so on.
 
-To see the final value of settings based on the order of files, use:
+To inspect the final value of settings (and see the order of files loaded), use:
   arthur.py settings --verbose
 """
 
@@ -32,6 +36,7 @@ from simplejson.errors import JSONDecodeError
 import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
+from etl.text import join_with_single_quotes
 
 # The json_schema package doesn't have a nice parent class for its exceptions.
 VALIDATION_SCHEMA_ERRORS = (
@@ -144,6 +149,10 @@ def _build_config_map(settings):
     for section in frozenset(settings).difference({"data_warehouse", "sources", "type_maps"}):
         for name, value in _flatten_hierarchy(section, settings[section]):
             mapping[name] = value
+    # The setting for required relations is rather handy to surface here.
+    mapping["data_warehouse.required_for_success"] = join_with_single_quotes(
+        settings["data_warehouse"].get("required_for_success", [])
+    )
     return mapping
 
 
