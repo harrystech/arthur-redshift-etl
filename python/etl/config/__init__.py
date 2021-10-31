@@ -58,8 +58,12 @@ _mapped_config: Optional[Dict[str, str]] = None
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
+def arthur_version(package_name="redshift_etl") -> str:
+    return f"v{pkg_resources.get_distribution(package_name).version}"
+
+
 def package_version(package_name="redshift_etl") -> str:
-    return f"{package_name} v{pkg_resources.get_distribution(package_name).version}"
+    return f"{package_name} {arthur_version()}"
 
 
 def get_dw_config():
@@ -294,7 +298,8 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
     if _mapped_config is not None:
         _mapped_config["data_warehouse.owner.name"] = _dw_config.owner.name
 
-    set_config_value("version", package_version())
+    set_config_value("package_version", package_version())
+    set_config_value("version", arthur_version())
 
 
 def validate_with_schema(obj: dict, schema_name: str) -> None:
