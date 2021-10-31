@@ -21,7 +21,7 @@ class SqoopExtractor(DatabaseExtractor):
     """
     This extractor manages parallel SQL database extraction via MapReduce using Sqoop.
 
-    See http://sqoop.apache.org/
+    See http://sqoop.apache.org/ and https://attic.apache.org/projects/sqoop.html
     """
 
     def __init__(
@@ -33,7 +33,6 @@ class SqoopExtractor(DatabaseExtractor):
         keep_going: bool,
         dry_run: bool,
     ) -> None:
-
         super().__init__(
             "sqoop", schemas, relations, max_partitions, use_sampling, keep_going, dry_run=dry_run
         )
@@ -261,7 +260,7 @@ class SqoopExtractor(DatabaseExtractor):
             self.logger.debug("Sqoop stdout:%s", nice_out)
             self.logger.debug("Sqoop stderr:%s", nice_err)
             if sqoop.returncode != 0:
-                # TODO: Be more intelligent about detecting whether certain Sqoop errors are
+                # TODO(tom): Be more intelligent about detecting whether certain Sqoop errors are
                 # retryable, instead of assuming they all are.
                 raise SqoopExecutionError("Sqoop failed with return code %s" % sqoop.returncode)
 
