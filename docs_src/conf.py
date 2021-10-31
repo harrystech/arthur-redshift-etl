@@ -28,6 +28,7 @@ version = "1.54"
 # -- General configuration ---------------------------------------------------
 
 extensions = [
+    "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
