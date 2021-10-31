@@ -39,12 +39,4 @@ jobs:
       # TODO(tom): Keep increasing coverage so that we can raise the fail-under value.
       run: |-
         coverage3 run -m unittest --verbose
-        coverage3 html --directory=docs/coverage_html/ --no-skip-covered --skip-empty
-    - name: Archive code coverage results
-      uses: actions/upload-artifact@v2
-      with:
-        name: code-coverage-report
-        path: docs/coverage_html/
-    - name: Test code coverage
-      run: |-
-        coverage3 report --fail-under=25 --skip-empty
+        coverage3 report --fail-under=25 --no-skip-covered --show-missing --skip-empty
