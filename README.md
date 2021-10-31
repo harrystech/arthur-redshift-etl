@@ -17,10 +17,13 @@
 ```
 
 Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem.
+
 Arthur is designed to manage a warehouse in full-rebuild mode where the entire warehouse is rebuilt,
-from scratch, every night. Arthur is not designed to support streaming or micro-batch ETLs.
-Arthur is best suited for organizations whose data are managed in a stateful transactional database and have
-lots of complicated business logic for their data transformations that they want to be able to manage effectively.
+from scratch, every night and then updated using refresh runs during the day.
+Arthur is not designed to support streaming or micro-batch ETLs.
+Arthur is best suited for organizations whose data are managed in a stateful transactional database
+and have lots of complicated business logic for their data transformations that they want to be able
+to manage effectively.
 
 _If you’re interested in this approach or are in a similar situation, then we’d like to talk to you._
 _Please reach out and let’s have a data & analytics meetup._
@@ -355,28 +358,19 @@ You can also run the linters directly:
 pre-commit run
 ```
 
-#### Installing linters locally
+#### Running linters and formatters locally
 
-To use the linters (`isort`, `black`, `flake8`, `mypy`) locally, install them using:
+To use the linters (`isort`, `black`, `flake8`, `mypy`) locally, install them
+into a virtual environment:
 ```
-python3 -m venv arthur_venv
+bin/build_virtual_env
 source arthur_venv/bin/activate
-python3 -m pip install --upgrade pip==20.3.4
-python3 -m pip install --requirement requirements-linters.txt
 ```
 
-##### Running formatters locally
-
+Then you can run:
 ```shell
-black python/ setup.py
-isort python/ setup.py
-```
-
-##### Running linters locally
-
-```shell
-black --check python/ setup.py
-isort --check-only python/ setup.py
+black python/ setup.py tests/
+isort python/ setup.py tests/
 flake8 python setup.py
 mypy python
 ```
