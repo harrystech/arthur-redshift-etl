@@ -227,12 +227,16 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
     with conn:
         for group in groups:
             if etl.db.group_exists(conn, group):
-                logger.info("Skipping group '%s' which already exists", group)
+                logger.info(
+                    "Skipping group '%s' which already exists", group
+                )  # lgtm[py/clear-text-logging-sensitive-data]
                 continue
             if dry_run:
-                logger.info("Dry-run: Skipping creating group '%s'", group)
+                logger.info(
+                    "Dry-run: Skipping creating group '%s'", group
+                )  # lgtm[py/clear-text-logging-sensitive-data]
                 continue
-            logger.info("Creating group '%s'", group)
+            logger.info("Creating group '%s'", group)  # lgtm[py/clear-text-logging-sensitive-data]
             etl.db.create_group(conn, group)
 
 
