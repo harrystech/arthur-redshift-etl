@@ -13,6 +13,7 @@ For user management, we require to have passwords for all declared users in a ~/
 """
 
 import logging
+from collections import defaultdict
 from contextlib import closing
 from typing import Iterable, Sequence
 
@@ -49,6 +50,8 @@ def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dr
     Create schemas and grant access.
 
     It's ok if any of the schemas already exist, in which case the owner and privileges are updated.
+
+    This is a callback for a command.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
@@ -177,14 +180,19 @@ def restore_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> No
     """
     For the schemas that we need or want, rename the backups and restore access.
 
-    This is the inverse of backup_schemas.
-    Useful if bad data is in standard schemas
+    This is the inverse of backup_schemas. Useful if bad data is in standard schemas
+
+    This is a callback for a command.
     """
     _promote_schemas(schemas, "backup", dry_run=dry_run)
 
 
 def publish_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
-    """Backup current occupants of standard position and put staging schemas there."""
+    """
+    Backup current occupants of standard position and put staging schemas there.
+
+    This is a callback for a command.
+    """
     backup_schemas(schemas, dry_run=dry_run)
     _promote_schemas(schemas, "staging", dry_run=dry_run)
 
@@ -219,6 +227,7 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
     with conn:
         for group in groups:
             if etl.db.group_exists(conn, group):
+                logger.info("Skipping group '%s' which already exists", group)
                 continue
             if dry_run:
                 logger.info("Dry-run: Skipping creating group '%s'", group)
@@ -278,6 +287,8 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
     You have to set `force` to true if the name of the database doesn't start with 'validation'.
 
     Optionally use `with_user_creation` flag to create users and groups.
+
+    This is a callback of a command.
     """
     config = etl.config.get_dw_config()
     try:
@@ -386,6 +397,25 @@ def update_user(old_user, group=None, add_user_schema=False, dry_run=False):
     )
 
 
+def list_users(transpose=False) -> None:
+    """
+    List all users and their groups (or list all groups and their users if transposed).
+
+    This is a callback of a command.
+    """
+    config = etl.config.get_dw_config()
+    if transpose:
+        header = ["group", "users"]
+        groups = defaultdict(list)
+        for user in config.users:
+            groups[user.group].append(user.name)
+        rows = [[group, ", ".join(sorted(groups[group]))] for group in sorted(groups)]
+    else:
+        header = ["user", "groups"]
+        rows = [[user.name, user.group] for user in config.users]
+    print(etl.text.format_lines(rows, header_row=header))
+
+
 def list_open_transactions(cx):
     """
     Look for sessions that by other users that might interfere with the ETL.
@@ -436,7 +466,11 @@ def terminate_sessions_with_transaction_locks(cx, dry_run=False) -> None:
 
 
 def terminate_sessions(dry_run=False) -> None:
-    """Terminate sessions that currently hold locks on (user or system) tables."""
+    """
+    Terminate sessions that currently hold locks on (user or system) tables.
+
+    This is a callback for a command.
+    """
     dsn_admin = etl.config.get_dw_config().dsn_admin_on_etl_db
     with closing(etl.db.connection(dsn_admin, autocommit=True)) as conn:
         etl.db.execute(conn, "SET query_group TO 'superuser'")

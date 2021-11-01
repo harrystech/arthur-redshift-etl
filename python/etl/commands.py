@@ -352,6 +352,7 @@ def build_full_parser(prog_name):
         ShowRandomPassword,
         CreateGroupsCommand,
         CreateUserCommand,
+        ListUsersCommand,
         UpdateUserCommand,
         RunSqlCommand,
         # Commands to help with table designs and uploading them
@@ -710,6 +711,22 @@ class CreateUserCommand(SubCommand):
                 add_user_schema=args.add_user_schema,
                 dry_run=args.dry_run,
             )
+
+
+class ListUsersCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "list_users",
+            "list users as they are configured",
+            "List all users and their groups in the way that they are configurd.",
+        )
+
+    def add_arguments(self, parser):
+        parser.add_argument("-t", "--transpose", help="group list by user's groups", action="store_true")
+
+    def callback(self, args):
+        with etl.db.log_error():
+            etl.data_warehouse.list_users(transpose=args.transpose)
 
 
 class UpdateUserCommand(SubCommand):
