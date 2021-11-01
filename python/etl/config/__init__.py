@@ -116,9 +116,8 @@ def set_safe_config_value(name: str, value: str) -> None:
 def get_config_map() -> Dict[str, str]:
     if _mapped_config is None:
         return {}
-    else:
-        # Since the mapped config is flattened, we don't worry about a deep copy here.
-        return dict(_mapped_config)
+    # Since the mapped config is flattened, we don't worry about a deep copy here.
+    return dict(_mapped_config)
 
 
 def _flatten_hierarchy(prefix, props):

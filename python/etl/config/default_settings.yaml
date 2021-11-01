@@ -34,7 +34,7 @@
       {
         # Default group specified as group of pseudo-user "default"
         "name": "default",
-        "group": "analyst_ro"
+        "group": "analyst"
       }
     ]
   },
