@@ -292,7 +292,10 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
     try:
         jsonschema.validate(obj, schema, format_checker=jsonschema.draft7_format_checker)
     except VALIDATION_SCHEMA_ERRORS as exc:
-        raise SchemaValidationError(f"failed to validate against '{schema_name}'") from exc
+        # TODO(tom): Is json_path always set?
+        raise SchemaValidationError(
+            f"failed to validate '{exc.json_path}' against '{schema_name}'"
+        ) from exc
 
 
 def gather_setting_files(config_files: Iterable[str]) -> List[str]:
