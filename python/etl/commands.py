@@ -957,18 +957,18 @@ class ExtractToS3Command(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--with-sqoop",
-            help="extract data using Sqoop (using 'sqoop import', this is the default)",
-            const="sqoop",
             action="store_const",
-            dest="extractor",
+            const="sqoop",
             default="sqoop",
+            dest="extractor",
+            help="extract data using Sqoop (using the 'sqoop import' tool, this is the default)",
         )
         group.add_argument(
-            "--with-spark",
-            help="extract data using Spark Dataframe (using submit_arthur.sh)",
-            const="spark",
+            "--fail-sqoop-jobs",
             action="store_const",
+            const="dummy-sqoop",
             dest="extractor",
+            help="for debugging of error handling, fail the sqoop job immediately",
         )
         group.add_argument(
             "--use-existing-csv-files",
@@ -1004,21 +1004,6 @@ class ExtractToS3Command(SubCommand):
         max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
         if max_partitions < 1:
             raise InvalidArgumentError("option for max partitions must be >= 1")
-        if args.extractor not in ("sqoop", "spark", "manifest-only"):
-            raise ETLSystemError("bad extractor value: {}".format(args.extractor))
-
-        # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
-        # (Without this step, the Spark context is unknown and we won't be able to create a
-        # SQL context.)
-        if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
-            # Try the full path (in the EMR cluster), or try without path and hope for the best.
-            submit_arthur = etl.config.etl_tmp_dir("venv/bin/submit_arthur.sh")
-            if not os.path.exists(submit_arthur):
-                submit_arthur = "submit_arthur.sh"
-            logger.info("Restarting to submit to cluster (using '%s')", submit_arthur)
-            print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
-            os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
-            sys.exit(1)
 
         descriptions = self.find_relation_descriptions(
             args,

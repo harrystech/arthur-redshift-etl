@@ -143,15 +143,6 @@ aws s3 sync --delete --exclude '*' \
     --include bootstrap.sh --include create_validation_credentials --include send_health_check.sh --include sync_env.sh \
     ./bin "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/bin"
 
-# Users who don't intend to use Spark may not have the jars directory.
-if [[ -d "jars" ]]; then
-    aws s3 sync --delete \
-        --exclude '*' \
-        --include postgresql-9.4.1208.jar \
-        --include RedshiftJDBC41-1.2.1.1001.jar \
-        jars "s3://$PROJ_BUCKET/$PROJ_TARGET_ENVIRONMENT/jars"
-fi
-
 set +o xtrace
 
 # If you're confident enough to use "-y", you should know already about next steps.

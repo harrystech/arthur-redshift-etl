@@ -33,7 +33,6 @@ setup(
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",
         "python/scripts/sns_subscribe.sh",
-        "python/scripts/submit_arthur.sh",
         "python/scripts/terminate_emr_cluster.sh",
     ],
     url="https://github.com/harrystech/arthur-redshift-etl",
