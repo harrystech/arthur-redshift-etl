@@ -31,7 +31,6 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 import etl.config
 import etl.file_sets
 import etl.s3
-import etl.timer
 from etl.errors import MissingQueryError
 from etl.names import TableSelector
 from etl.relation import RelationDescription

@@ -1,9 +1,11 @@
-*.sw*
+# Temporary and log files
+*.RData
 *.log
 *.log.[0-9]
 *.out
 *.pyc
-*.RData
+*.sw*
+.coverage
 
 # Documentation (build stash, auto-generated files, output)
 /build/

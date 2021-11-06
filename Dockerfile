@@ -50,7 +50,7 @@ COPY requirements*.txt /tmp/
 RUN python3 -m venv "/opt/local/$PROJ_NAME/venv" && \
     source "/opt/local/$PROJ_NAME/venv/bin/activate" && \
     python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check --no-cache-dir && \
-    python3 -m pip install --requirement /tmp/requirements-dev.txt --disable-pip-version-check --no-cache-dir
+    python3 -m pip install --requirement /tmp/requirements-all.txt --disable-pip-version-check --no-cache-dir
 
 # Create an empty .pgpass file to help with create_user and update_user commands.
 RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /home/arthur/.pgpass \

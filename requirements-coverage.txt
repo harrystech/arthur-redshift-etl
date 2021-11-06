@@ -1,0 +1,2 @@
+# Add coverage packages for unit tests.
+coverage~=6.1

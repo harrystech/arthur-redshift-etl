@@ -17,11 +17,12 @@ esac
 
 echo "Creating or upating virutal environment in $ARTHUR_VENV"
 python3 -m venv "$ARTHUR_VENV"
+# shellcheck disable=SC1091
 source "$ARTHUR_VENV/bin/activate"
 
 echo "Creating or upating packages using pip..."
 python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check
-python3 -m pip install --upgrade --requirement ./requirements-dev.txt --disable-pip-version-check
+python3 -m pip install --upgrade --requirement ./requirements-all.txt --disable-pip-version-check
 
 echo "# To use this setup, you need to run:"
 echo "source '$ARTHUR_VENV/bin/activate'"
