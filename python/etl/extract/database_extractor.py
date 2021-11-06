@@ -9,7 +9,8 @@ from etl.relation import RelationDescription
 
 
 class DatabaseExtractor(Extractor):
-    """Parent class for database extractors.
+    """
+    Parent class for database extractors.
 
     This class pulls out parameters and helps with partitioning and sampling.
     """
@@ -49,8 +50,7 @@ class DatabaseExtractor(Extractor):
         """
         if self.use_sampling_with_table(size):
             return 100 * 1024 ** 2
-        else:
-            return 10 * 1024 ** 2
+        return 10 * 1024 ** 2
 
     def maximize_partitions(self, table_size: int) -> int:
         """
