@@ -71,6 +71,11 @@
                 "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
                 "tags": { "$ref": "#/$defs/tag_list" },
+                "read_access": { "$ref": "#/$defs/identifier" },
+                "include_tables": { "$ref": "#/$defs/glob_pattern_list" },
+                "exclude_tables": { "$ref": "#/$defs/glob_pattern_list" },
+                "readers": { "$ref": "#/$defs/identifier_list" },
+                "writers": { "$ref": "#/$defs/identifier_list" }
             },
             "required": [ "name", "read_access", "include_tables" ],
             "additionalProperties": false
@@ -258,7 +263,7 @@
                         "properties": {
                             "name": { "$ref": "#/$defs/identifier" },
                             "description": { "type": "string" },
-                            "groups": { "$ref": "#/$defs/identifier_list" }
+                            "groups": { "$ref": "#/$defs/identifier_list" },
                             "tags": { "$ref": "#/$defs/tag_list" }
                         },
                         "required": [ "name" ],

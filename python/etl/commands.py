@@ -7,6 +7,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 
 import abc
 import argparse
+import itertools
 import logging
 import os
 import shlex
@@ -18,7 +19,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable, List, Optional
 
 import boto3
-import funcy as fy
 import simplejson as json
 from termcolor import colored
 
@@ -1760,9 +1760,9 @@ class TagsCommand(SubCommand):
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         tags = set()
-        for schema in fy.chain(dw_config.schemas, dw_config.external_schemas):
+        for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
             tags.update(schema.tags)
-        print(join_with_single_quotes(tags))
+        print(f"Tags: {join_with_single_quotes(tags)}")
 
 
 class RenderTemplateCommand(SubCommand):
