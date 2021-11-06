@@ -1,10 +1,20 @@
 """
-This module provides global access to settings.  Always treat them nicely and read-only.
+Configuration files cover settings and DSNs.
 
 We use the term "config" files to refer to all files that may reside in the "config" directory:
   * "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
   * Environment files (with variables used in connections)
   * Other files (like release notes)
+
+For settings and environment files, files are loaded in alphabetical order and they keep updating
+values so that only the last one is kept. If you want to ensure a particular order, your best option
+is to prefix the files with a number sequence:
+  01_general.yaml
+  02_deploy.yaml
+and so on.
+
+To inspect the final value of settings (and see the order of files loaded), use:
+  arthur.py settings --verbose
 """
 
 import datetime
@@ -26,6 +36,7 @@ from simplejson.errors import JSONDecodeError
 import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
 from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
+from etl.text import join_with_single_quotes
 
 # The json_schema package doesn't have a nice parent class for its exceptions.
 VALIDATION_SCHEMA_ERRORS = (
@@ -47,8 +58,12 @@ _mapped_config: Optional[Dict[str, str]] = None
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
-def package_version(package_name="redshift_etl"):
-    return f"{package_name} v{pkg_resources.get_distribution(package_name).version}"
+def arthur_version(package_name="redshift_etl") -> str:
+    return f"v{pkg_resources.get_distribution(package_name).version}"
+
+
+def package_version(package_name="redshift_etl") -> str:
+    return f"{package_name} {arthur_version()}"
 
 
 def get_dw_config():
@@ -138,6 +153,10 @@ def _build_config_map(settings):
     for section in frozenset(settings).difference({"data_warehouse", "sources", "type_maps"}):
         for name, value in _flatten_hierarchy(section, settings[section]):
             mapping[name] = value
+    # The setting for required relations is rather handy to surface here.
+    mapping["data_warehouse.required_for_success"] = join_with_single_quotes(
+        settings["data_warehouse"].get("required_for_success", [])
+    )
     return mapping
 
 
@@ -279,7 +298,8 @@ def load_config(config_files: Iterable[str], default_file: str = "default_settin
     if _mapped_config is not None:
         _mapped_config["data_warehouse.owner.name"] = _dw_config.owner.name
 
-    set_config_value("version", package_version())
+    set_config_value("package_version", package_version())
+    set_config_value("version", arthur_version())
 
 
 def validate_with_schema(obj: dict, schema_name: str) -> None:
