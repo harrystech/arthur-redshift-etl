@@ -7,11 +7,11 @@
 *.sw*
 .coverage
 
-# NOTE Adding buildinfo here forces a full build when checking out a new branch.
+# Documentation (build stash, auto-generated files, output)
+/build/
 /docs/.buildinfo
-
-# Our github pages setup is broken. Until we fix it, ignore generated docs.
-/docs/
+/docs/source/etl/
+/docs/html/
 
 # Release information is created by upload_env.sh
 /python/etl/config/release.txt
@@ -22,11 +22,9 @@
 /schemas
 /tmp/
 
-# Virtual environment, local install and documentation build
+# Virtual environment, local install, etc.
 Brewfile.lock.json
 arthur_venv/
-venv/
-/build/
 /dist/
 *.egg-info
 /.mypy_cache
