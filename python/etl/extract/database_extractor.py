@@ -119,7 +119,9 @@ class DatabaseExtractor(Extractor):
         )
         return partitions
 
-    def select_statement(self, relation: RelationDescription, add_sampling_on_column: Optional[str]) -> str:
+    def select_statement(
+        self, relation: RelationDescription, add_sampling_on_column: Optional[str]
+    ) -> str:
         """
         Create "SELECT statement with quoted identifiers and base WHERE clause.
 
@@ -130,7 +132,9 @@ class DatabaseExtractor(Extractor):
         Note the existence of the WHERE clause which allows appending more conditions.
         """
         selected_columns = relation.get_columns_with_casts()
-        statement = """SELECT {} FROM {}""".format(", ".join(selected_columns), relation.source_table_name)
+        statement = """SELECT {} FROM {}""".format(
+            ", ".join(selected_columns), relation.source_table_name
+        )
 
         condition = relation.table_design.get("extract_settings", {}).get("condition", "TRUE")
 
@@ -143,7 +147,9 @@ class DatabaseExtractor(Extractor):
                 relation.source_name,
                 relation.source_table_name.identifier,
             )
-            statement += """ WHERE (({}) AND ("{}" % 10) = 1)""".format(condition, add_sampling_on_column)
+            statement += """ WHERE (({}) AND ("{}" % 10) = 1)""".format(
+                condition, add_sampling_on_column
+            )
 
         return statement
 

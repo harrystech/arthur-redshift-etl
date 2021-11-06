@@ -47,7 +47,9 @@ leader_only_functions = [
 
 # The pattern matches while ignoring case if the name (or whatever is in {}) is not preceded
 # by '.' and not in a word.
-leader_only_compiled = {name: re.compile(r"(?i)(?<!\.)\b{}\b".format(name)) for name in leader_only_functions}
+leader_only_compiled = {
+    name: re.compile(r"(?i)(?<!\.)\b{}\b".format(name)) for name in leader_only_functions
+}
 
 
 def explain_queries(dsn: dict, relations: List[RelationDescription]) -> None:
@@ -81,7 +83,9 @@ def explain_queries(dsn: dict, relations: List[RelationDescription]) -> None:
         for relation in transforms:
             logger.info("Retrieving query plan for '%s'", relation.identifier)
             plan = etl.db.explain(conn, relation.query_stmt)
-            print("Query plan for query of '{0.identifier}':\n | {1}".format(relation, "\n | ".join(plan)))
+            print(
+                "Query plan for query of '{0.identifier}':\n | {1}".format(relation, "\n | ".join(plan))
+            )
             if any(row == "" for row in plan):
                 queries_with_temps += 1
             for ds in bad_distribution_styles:

@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def fetch_tables(cx: Connection, source: DataWarehouseSchema, selector: TableSelector) -> List[TableName]:
+def fetch_tables(
+    cx: Connection, source: DataWarehouseSchema, selector: TableSelector
+) -> List[TableName]:
     """
     Retrieve tables (matching selector) for this source, return as a list of TableName instances.
 
@@ -61,11 +63,14 @@ def fetch_tables(cx: Connection, source: DataWarehouseSchema, selector: TableSel
                 if source_table_name.match_pattern(accept_pattern):
                     if selector.match(target_table_name):
                         found.append(source_table_name)
-                        logger.debug("Table '%s' is included in result set", source_table_name.identifier)
+                        logger.debug(
+                            "Table '%s' is included in result set", source_table_name.identifier
+                        )
                         break
                     else:
                         logger.debug(
-                            "Table '%s' matches allowlist but is not selected", source_table_name.identifier
+                            "Table '%s' matches allowlist but is not selected",
+                            source_table_name.identifier,
                         )
     logger.info(
         "Found %d table(s) matching patterns; allowlist=%s, denylist=%s, subset='%s'",
@@ -273,7 +278,9 @@ def fetch_dependency_hints(cx: Connection, stmt: str) -> Optional[List[str]]:
     return sorted(s3_dependencies)
 
 
-def create_partial_table_design(conn: Connection, source_table_name: TableName, target_table_name: TableName):
+def create_partial_table_design(
+    conn: Connection, source_table_name: TableName, target_table_name: TableName
+):
     """
     Start a table design for the relation.
 
@@ -505,7 +512,9 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
 
     new_sql_type = new_column["sql_type"]
     old_sql_type = old_column["sql_type"].strip()
-    logger.debug("Trying to update column '%s': new='%s', old='%s'", column_name, new_sql_type, old_sql_type)
+    logger.debug(
+        "Trying to update column '%s': new='%s', old='%s'", column_name, new_sql_type, old_sql_type
+    )
 
     # Upgrade to "larger" type if that was selected previously.
     if new_sql_type in ("integer", "bigint"):
@@ -519,7 +528,9 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
             )
         return new_column
 
-    numeric_re = re.compile(r"(?:numeric|decimal)\(\s*(?P<precision>\d+),\s*(?P<scale>\d+)\)", re.IGNORECASE)
+    numeric_re = re.compile(
+        r"(?:numeric|decimal)\(\s*(?P<precision>\d+),\s*(?P<scale>\d+)\)", re.IGNORECASE
+    )
     new_numeric = numeric_re.search(new_sql_type)
     if new_numeric:
         old_numeric = numeric_re.search(old_sql_type)
@@ -567,8 +578,12 @@ def create_table_design_for_ctas(
     If tables are referenced, they are added in the dependencies list.
     If :update is True, try to merge additional information from any existing table design file.
     """
-    update_keys = ["description", "unload_target", "columns", "constraints", "attributes"] if update else None
-    table_design = create_partial_table_design_for_transformation(conn, tmp_view_name, relation, update_keys)
+    update_keys = (
+        ["description", "unload_target", "columns", "constraints", "attributes"] if update else None
+    )
+    table_design = create_partial_table_design_for_transformation(
+        conn, tmp_view_name, relation, update_keys
+    )
     table_design["source_name"] = "CTAS"
     return table_design
 
@@ -587,7 +602,9 @@ def create_table_design_for_view(
     update_keys = ["description", "unload_target", "columns"] if update else None
     # This creates a full column description with types (testing the type-maps), then drops all of
     # that except for names and descriptions.
-    table_design = create_partial_table_design_for_transformation(conn, tmp_view_name, relation, update_keys)
+    table_design = create_partial_table_design_for_transformation(
+        conn, tmp_view_name, relation, update_keys
+    )
     table_design["columns"] = [
         {key: value for key, value in column.items() if key in ("name", "description")}
         for column in table_design["columns"]
@@ -612,7 +629,9 @@ def create_table_design_for_transformation(
                 "Looks like %s has external dependencies, proceeding with caution", relation.identifier
             )
             if kind == "VIEW":
-                raise RuntimeError("VIEW not supported for transformations that depend on external tables")
+                raise RuntimeError(
+                    "VIEW not supported for transformations that depend on external tables"
+                )
             return create_table_design_for_ctas(conn, tmp_view_name, relation, update)
 
     with relation.matching_temporary_view(conn, as_late_binding_view=False) as tmp_view_name:
@@ -710,7 +729,11 @@ def create_table_designs_from_source(
                     source_dir, f"{source_table_name.schema}-{source_table_name.table}.yaml"
                 )
                 save_table_design(
-                    target_table_name, table_design, filename, overwrite=update or replace, dry_run=dry_run
+                    target_table_name,
+                    table_design,
+                    filename,
+                    overwrite=update or replace,
+                    dry_run=dry_run,
                 )
 
         logger.info("Done with %d table(s) from source '%s'", len(source_tables), source.name)
@@ -738,7 +761,9 @@ def create_table_designs_from_source(
     return len(source_tables)
 
 
-def bootstrap_sources(selector, table_design_dir, local_files, update=False, replace=False, dry_run=False):
+def bootstrap_sources(
+    selector, table_design_dir, local_files, update=False, replace=False, dry_run=False
+):
     """
     Download schemas from database tables and write or update local design files.
 
@@ -800,7 +825,9 @@ def bootstrap_transformations(
         try:
             RelationDescription.load_in_parallel(relations)
         except Exception:
-            logger.warning("Make sure that table design files exist and are valid before trying to update")
+            logger.warning(
+                "Make sure that table design files exist and are valid before trying to update"
+            )
             raise
 
     check_only_errors = 0
@@ -858,6 +885,8 @@ def bootstrap_transformations(
             )
 
     if check_only_errors:
-        raise TableDesignValidationError(f"found {check_only_errors} table design(s) that would be rewritten")
+        raise TableDesignValidationError(
+            f"found {check_only_errors} table design(s) that would be rewritten"
+        )
     if check_only:
         print("Congratulations. There were no changes in table design files.")

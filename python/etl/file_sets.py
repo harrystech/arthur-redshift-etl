@@ -67,7 +67,9 @@ class FileInfo:
         re.VERBOSE,
     )
 
-    def __init__(self, filename, schema_name, source_schema_name, table_name, file_type, file_format) -> None:
+    def __init__(
+        self, filename, schema_name, source_schema_name, table_name, file_type, file_format
+    ) -> None:
         self.filename = filename
         self.schema_name = schema_name
         self.source_schema_name = source_schema_name
@@ -216,7 +218,9 @@ class RelationFileSet:
             extensions.append(".manifest")
         if self._data_files:
             extensions.append("/csv/*")
-        return "{}('{}{{{}}}')".format(self.__class__.__name__, self.source_path_name, ",".join(extensions))
+        return "{}('{}{{{}}}')".format(
+            self.__class__.__name__, self.source_path_name, ",".join(extensions)
+        )
 
     def bind_to_uri(self, scheme, netloc, path):
         self.scheme = scheme
@@ -237,9 +241,9 @@ class RelationFileSet:
         if self.scheme == "s3":
             return etl.s3.object_stat(self.netloc, filename)
         elif self.scheme == "file":
-            return os.path.getsize(filename), datetime.utcfromtimestamp(os.path.getmtime(filename)).isoformat(
-                " "
-            )
+            return os.path.getsize(filename), datetime.utcfromtimestamp(
+                os.path.getmtime(filename)
+            ).isoformat(" ")
         else:
             raise ETLSystemError("illegal scheme in file set")
 
@@ -336,7 +340,9 @@ def find_file_sets(uri_parts, selector, allow_empty=False):
                 if allow_empty:
                     file_sets = []
                 else:
-                    raise FileNotFoundError("Found no matching files in '{}' for '{}'".format(path, selector))
+                    raise FileNotFoundError(
+                        "Found no matching files in '{}' for '{}'".format(path, selector)
+                    )
         elif allow_empty:
             logger.warning("Failed to find directory: '%s'", path)
             file_sets = []
@@ -384,7 +390,9 @@ def _find_file_sets_from(iterable, selector):
             file_set.add_data_file(file_info.filename)
 
     file_sets = sorted(target_map.values())
-    logger.info("Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets))
+    logger.info(
+        "Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets)
+    )
     return file_sets
 
 
@@ -396,7 +404,9 @@ def find_data_files_in_s3(bucket_name: str, prefix: str) -> Iterator[str]:
             yield file_info.filename
 
 
-def delete_data_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run=False) -> None:
+def delete_data_files_in_s3(
+    bucket_name: str, prefix: str, selector: TableSelector, dry_run=False
+) -> None:
     """Delete all data files that match this prefix and selector pattern."""
     data_files = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data")
     deletable = [file_info.filename for file_info in _find_matching_files_from(data_files, selector)]
@@ -406,7 +416,9 @@ def delete_data_files_in_s3(bucket_name: str, prefix: str, selector: TableSelect
     etl.s3.delete_objects(bucket_name, deletable, dry_run=dry_run)
 
 
-def delete_schemas_files_in_s3(bucket_name: str, prefix: str, selector: TableSelector, dry_run=False) -> None:
+def delete_schemas_files_in_s3(
+    bucket_name: str, prefix: str, selector: TableSelector, dry_run=False
+) -> None:
     """Delete all table design and SQL files that match this prefix and selector pattern."""
     schemas_files = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/schemas")
     deletable = [file_info.filename for file_info in _find_matching_files_from(schemas_files, selector)]

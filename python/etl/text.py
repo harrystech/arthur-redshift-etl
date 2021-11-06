@@ -102,7 +102,11 @@ class ColumnWrapper(textwrap.TextWrapper):
         """
         chunk = text.rstrip()
         if len(chunk) > self.width:
-            return [chunk[: self.width - len(self.placeholder) - 1], " ", "?" * (len(self.placeholder) + 1)]
+            return [
+                chunk[: self.width - len(self.placeholder) - 1],
+                " ",
+                "?" * (len(self.placeholder) + 1),
+            ]
         else:
             return [chunk]
 
@@ -165,7 +169,8 @@ def format_lines(
         drop_whitespace=False,
     )
     matrix = [
-        [wrapper.fill(column) if isinstance(column, str) else column for column in row] for row in value_rows
+        [wrapper.fill(column) if isinstance(column, str) else column for column in row]
+        for row in value_rows
     ]
 
     if has_header:
@@ -181,7 +186,9 @@ def format_lines(
     # Quick check whether we built the matrix correctly.
     for i, row in enumerate(matrix):
         if len(row) != column_count:
-            raise ValueError(f"unexpected length of row {i + 1}: got {len(row)}, expected {column_count}")
+            raise ValueError(
+                f"unexpected length of row {i + 1}: got {len(row)}, expected {column_count}"
+            )
 
     if row_count == 0 and not (has_header or header_row):
         formatted = ""

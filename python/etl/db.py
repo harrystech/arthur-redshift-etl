@@ -222,7 +222,9 @@ def execute(cx, stmt, args=(), return_result=False):
         with Timer() as timer:
             cursor.execute(executable_statement)
         if cursor.rowcount is not None and cursor.rowcount > 0:
-            logger.debug("QUERY STATUS: %s [rowcount=%d] (%s)", cursor.statusmessage, cursor.rowcount, timer)
+            logger.debug(
+                "QUERY STATUS: %s [rowcount=%d] (%s)", cursor.statusmessage, cursor.rowcount, timer
+            )
         else:
             logger.debug("QUERY STATUS: %s (%s)", cursor.statusmessage, timer)
         if cx.notices and logger.isEnabledFor(logging.DEBUG):
@@ -269,7 +271,9 @@ def format_result(dict_rows, skip_rows_count=False) -> str:
     else:
         keys = []
     return etl.text.format_lines(
-        [[row[key] for key in keys] for row in dict_rows], header_row=keys, skip_rows_count=skip_rows_count
+        [[row[key] for key in keys] for row in dict_rows],
+        header_row=keys,
+        skip_rows_count=skip_rows_count,
     )
 
 
@@ -367,7 +371,9 @@ def log_error():
 
 
 def drop_and_create_database(cx: Connection, database: str, owner: str) -> None:
-    exists = query(cx, f"SELECT 1 AS check_database FROM pg_catalog.pg_database WHERE datname = '{database}'")
+    exists = query(
+        cx, f"SELECT 1 AS check_database FROM pg_catalog.pg_database WHERE datname = '{database}'"
+    )
     if exists:
         execute(cx, """DROP DATABASE {}""".format(database))
     execute(cx, """CREATE DATABASE {} WITH OWNER {}""".format(database, owner))
@@ -515,10 +521,10 @@ def grant_select_on_all_tables_in_schema(cx: Connection, schema: str, groups: It
 def grant_select_and_write_on_all_tables_in_schema(
     cx: Connection, schema: str, groups: Iterable[str]
 ) -> None:
-    quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
+    quoted_groups = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
     execute(
         cx,
-        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_group_list}',
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_groups}',
     )
 
 
@@ -564,7 +570,9 @@ def grant_select(cx, schema, table, group):
 def grant_select_and_write(cx, schema, table, group):
     execute(
         cx,
-        """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(schema, table, group),
+        """GRANT SELECT, INSERT, UPDATE, DELETE ON "{}"."{}" TO GROUP "{}" """.format(
+            schema, table, group
+        ),
     )
 
 

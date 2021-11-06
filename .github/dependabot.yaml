@@ -1,4 +1,5 @@
 version: 2
+
 updates:
   - assignees:
       - "thomas-vogels"
@@ -8,5 +9,13 @@ updates:
     reviewers:
       - "harrystech/data-eng"
     schedule:
-      day: "monday"
+      interval: "weekly"
+
+  - assignees:
+      - "thomas-vogels"
+    directory: "/"
+    package-ecosystem: "github-actions"
+    reviewers:
+      - "harrystech/data-eng"
+    schedule:
       interval: "weekly"

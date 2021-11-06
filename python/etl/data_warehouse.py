@@ -127,14 +127,19 @@ def _promote_schemas(schemas: Iterable[DataWarehouseSchema], from_where: str, dr
             return
 
         logger.info(
-            "Promoting %d schema(s) from %s position: %s", len(need_promotion), from_where, selected_names
+            "Promoting %d schema(s) from %s position: %s",
+            len(need_promotion),
+            from_where,
+            selected_names,
         )
         for from_name in need_promotion:
             schema = from_name_schema_lookup[from_name]
             logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
             etl.db.drop_schema(conn, schema.name)
             etl.db.alter_schema_rename(conn, from_name, schema.name)
-            logger.info("Granting readers and writers access to schema '%s' after promotion", schema.name)
+            logger.info(
+                "Granting readers and writers access to schema '%s' after promotion", schema.name
+            )
             grant_schema_permissions(conn, schema)
 
 
@@ -159,7 +164,9 @@ def backup_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> Non
 
         logger.info("Creating backup of schema(s) %s", selected_names)
         for schema in [schema_lookup[name] for name in found]:
-            logger.info("Revoking access from readers and writers to schema '%s' before backup", schema.name)
+            logger.info(
+                "Revoking access from readers and writers to schema '%s' before backup", schema.name
+            )
             revoke_schema_permissions(conn, schema)
             logger.info("Renaming schema '%s' to backup '%s'", schema.name, schema.backup_name)
             etl.db.drop_schema(conn, schema.backup_name)
@@ -284,7 +291,8 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
         logger.info("Initializing non-validation database '%s' forcefully as requested", database_name)
     else:
         raise ETLRuntimeError(
-            "Refused to initialize non-validation database '%s' without the --force option" % database_name
+            "Refused to initialize non-validation database '%s' without the --force option"
+            % database_name
         )
     # Create all defined users which includes the ETL user needed before next step (so that
     # database is owned by ETL). Also create all groups referenced in the configuration.
@@ -298,14 +306,18 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
     owner_name = config.owner.name
     if dry_run:
         logger.info(
-            "Dry-run: Skipping drop and create of database '%s' with owner '%s'", database_name, owner_name
+            "Dry-run: Skipping drop and create of database '%s' with owner '%s'",
+            database_name,
+            owner_name,
         )
     else:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True)) as conn:
             logger.info("Dropping and creating database '%s' with owner '%s'", database_name, owner_name)
             etl.db.drop_and_create_database(conn, database_name, owner_name)
 
-    with closing(etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)) as conn:
+    with closing(
+        etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)
+    ) as conn:
         if dry_run:
             logger.info("Dry-run: Skipping dropping of PUBLIC schema in '%s'", database_name)
         else:
@@ -369,7 +381,9 @@ def create_new_user(new_user, group=None, add_user_schema=False, dry_run=False):
 
 
 def update_user(old_user, group=None, add_user_schema=False, dry_run=False):
-    create_or_update_user(old_user, group, add_user_schema=add_user_schema, only_update=True, dry_run=dry_run)
+    create_or_update_user(
+        old_user, group, add_user_schema=add_user_schema, only_update=True, dry_run=dry_run
+    )
 
 
 def list_open_transactions(cx):
