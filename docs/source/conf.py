@@ -23,7 +23,7 @@ copyright = "2017-%s, Harry's, Inc." % time.strftime("%Y")
 author = "Data Engineering at Harry's"
 
 # TODO(tom): Extract from setup.py
-version = "1.54"
+version = "1.55"
 
 # -- General configuration ---------------------------------------------------
 
