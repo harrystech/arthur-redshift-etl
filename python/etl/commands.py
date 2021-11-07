@@ -241,20 +241,24 @@ class WideHelpFormatter(argparse.RawTextHelpFormatter):
 
 class FancyArgumentParser(argparse.ArgumentParser):
     """
-    Fancier version of the argument parser supporting "@file".
+    Fancier version of the argument parser supporting `@file` to fetch additional arguments.
 
     Add feature to read command line arguments from files and support:
-        * One argument per line (whitespace is trimmed)
-        * Comments or empty lines (either are ignored)
+
+    - One argument per line (whitespace is trimmed)
+    - Comments or empty lines (either are ignored)
+
     This enables direct use of output from show_downstream_dependents and
     show_upstream_dependencies.
 
-    To use this feature, add an argument with "@" and have values ready inside of it, one per line:
-        cat > tables <<EOF
-        www.users
-        www.user_comments
-        EOF
-        arthur.py load @tables
+    Example:
+        To use this feature, add an argument with "@" and have values ready inside of it, one per line::
+
+            cat > tables <<EOF
+            www.users
+            www.user_comments
+            EOF
+            arthur.py load @tables
     """
 
     def __init__(self, **kwargs) -> None:
