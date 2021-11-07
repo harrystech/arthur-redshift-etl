@@ -7,6 +7,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 
 import abc
 import argparse
+import itertools
 import logging
 import os
 import shlex
@@ -367,6 +368,7 @@ def build_full_parser(prog_name):
         SyncWithS3Command,
         ShowDownstreamDependentsCommand,
         ShowUpstreamDependenciesCommand,
+        TagsCommand,
         # ETL commands to extract, load (or update), or transform
         ExtractToS3Command,
         LoadDataWarehouseCommand,
@@ -1742,6 +1744,25 @@ class ShowUpstreamDependenciesCommand(SubCommand):
             args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
         )
         etl.load.show_upstream_dependencies(relations, args.pattern)
+
+
+class TagsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "tags",
+            "list tags found in settings",
+            "Collect all the tags found in setting files.",
+        )
+
+    def add_arguments(self, parser):
+        pass
+
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
+        tags = set()
+        for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
+            tags.update(schema.tags)
+        print(f"Tags: {join_with_single_quotes(tags)}")
 
 
 class RenderTemplateCommand(SubCommand):

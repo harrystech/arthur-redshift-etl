@@ -3,6 +3,11 @@
     "title": "Settings",
     "description": "Schema for settings of data warehouse, upstream sources, and ETL",
     "$defs": {
+        "aws_arn": {
+            "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
+            "type": "string",
+            "pattern": "^arn:aws[^:]*:[^:]*:[^:]*:[0-9a-f]+:"
+        },
         "identifier": {
             "description": "Standard identifier (either SQL or AWS)",
             "type": "string",
@@ -15,6 +20,18 @@
             "items": { "$ref": "#/$defs/identifier" },
             "uniqueItems": true,
             "minItems": 1
+        },
+        "tag": {
+            "description": "Simple tag",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z_][-a-zA-Z0-9_]*$",
+            "type": "string"
+        },
+        "tag_list": {
+            "items": { "$ref": "#/$defs/tag" },
+            "type": "array",
+            "uniqueItems": true
         },
         "user_info": {
             "type": "object",
@@ -53,6 +70,7 @@
             "properties": {
                 "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
+                "tags": { "$ref": "#/$defs/tag_list" },
                 "read_access": { "$ref": "#/$defs/identifier" },
                 "include_tables": { "$ref": "#/$defs/glob_pattern_list" },
                 "exclude_tables": { "$ref": "#/$defs/glob_pattern_list" },
@@ -68,6 +86,7 @@
             "properties": {
                 "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
+                "tags": { "$ref": "#/$defs/tag_list" },
                 "s3_bucket": { "$ref": "#/$defs/bucket_template" },
                 "s3_path_template": { "$ref": "#/$defs/path_template" },
                 "s3_data_format": { "$ref": "#/$defs/s3_data_format" },
@@ -92,6 +111,7 @@
                 "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
                 "external": { "enum": [ true ] },
+                "tags": { "$ref": "#/$defs/tag_list" },
                 "groups": { "$ref": "#/$defs/identifier_list" },
                 "database": { "$ref": "#/$defs/identifier" },
                 "iam_role": { "$ref": "#/$defs/aws_arn" }
@@ -147,11 +167,6 @@
             },
             "required": [ "instance_type", "managed_security_group" ],
             "additionalProperties": false
-        },
-        "aws_arn": {
-            "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
-            "type": "string",
-            "pattern": "^arn:aws[^:]*:[^:]*:[^:]*:[0-9a-f]+:"
         }
     },
     "type": "object",
@@ -248,7 +263,8 @@
                         "properties": {
                             "name": { "$ref": "#/$defs/identifier" },
                             "description": { "type": "string" },
-                            "groups": { "$ref": "#/$defs/identifier_list" }
+                            "groups": { "$ref": "#/$defs/identifier_list" },
+                            "tags": { "$ref": "#/$defs/tag_list" }
                         },
                         "required": [ "name" ],
                         "additionalProperties": false

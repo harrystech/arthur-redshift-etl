@@ -83,8 +83,9 @@
         },
         "unload_target" : {
             "type": "string",
-            "description": "Optional. If the relation is unloadable will specify to which schemas."
+            "description": "Optional. If the relation is unloadable, this will specify the related schema."
         },
+        "tags": { "$ref": "#/definitions/tag_list" },
         "columns": {
             "oneOf": [
                 {

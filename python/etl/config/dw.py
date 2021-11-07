@@ -64,6 +64,7 @@ class DataWarehouseSchema:
     def __init__(self, schema_info, etl_access=None) -> None:
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
+        self.tags = frozenset(schema_info.get("tags", []))
         # Schemas have an 'owner' user (with ALL privileges)
         # and lists of 'reader' and 'writer' groups with corresponding permissions
         self.owner = schema_info["owner"]
