@@ -1,6 +1,6 @@
 # This is the set of packages need to run the code. All versions are pinned.
 arrow==1.2.1
-boto3==1.19.7
+boto3==1.19.12
 botocore~=1.22
 funcy==1.16
 jmespath==0.10.0
