@@ -95,15 +95,24 @@ def execute_or_bail(sub_command: str):
                 exc_cause_type.__module__,
                 exc_cause_type.__qualname__,
             )
-        logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
+        logger.info(
+            f"Ran for {timer.elapsed:.2f}s before this untimely end!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}}
+        )
         croak(exc, 2)
     except Exception as exc:
         logger.critical("Something terrible happened:", exc_info=True)
-        logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+        logger.info(
+            f"Ran for {timer.elapsed:.2f}s before encountering disaster!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}}
+        )
         croak(exc, 3)
     except BaseException as exc:
         logger.critical("Something really terrible happened:", exc_info=True)
-        logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+        logger.info(
+            f"Ran for {timer.elapsed:.2f}s before an exceptional termination!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}}
+        )
         croak(exc, 5)
     else:
         logger.info(
