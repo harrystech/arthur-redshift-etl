@@ -1055,7 +1055,7 @@ def create_source_tables_in_parallel(
 
 
 def create_transformations_sequentially(
-    relations: Sequence[LoadableRelation], wlm_query_slots: int, dry_run=False
+    relations: Sequence[LoadableRelation], wlm_query_slots: int, statement_timeout: int, dry_run=False
 ) -> None:
     """
     Create relations one-by-one.
@@ -1079,6 +1079,7 @@ def create_transformations_sequentially(
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
+        etl.dialect.redshift.set_statement_timeout(conn, statement_timeout, dry_run=dry_run)
         for relation in transformations:
             try:
                 build_one_relation(conn, relation, dry_run=dry_run)
@@ -1110,6 +1111,7 @@ def create_relations(
     relations: Sequence[LoadableRelation],
     max_concurrency=1,
     wlm_query_slots=1,
+    statement_timeout=0,
     concurrent_extract=False,
     dry_run=False,
 ) -> None:
@@ -1119,7 +1121,7 @@ def create_relations(
     else:
         create_source_tables_in_parallel(relations, max_concurrency, dry_run=dry_run)
 
-    create_transformations_sequentially(relations, wlm_query_slots, dry_run=dry_run)
+    create_transformations_sequentially(relations, wlm_query_slots, statement_timeout, dry_run=dry_run)
 
 
 # --- Section 5: "Callbacks" (functions that implement commands)
@@ -1133,6 +1135,7 @@ def load_data_warehouse(
     use_staging=True,
     max_concurrency=1,
     wlm_query_slots=1,
+    statement_timeout=0,
     concurrent_extract=False,
     skip_copy=False,
     skip_loading_sources=False,
@@ -1192,6 +1195,7 @@ def load_data_warehouse(
             relations,
             max_concurrency,
             wlm_query_slots,
+            statement_timeout,
             concurrent_extract=concurrent_extract,
             dry_run=dry_run,
         )
@@ -1211,6 +1215,7 @@ def upgrade_data_warehouse(
     selector: TableSelector,
     max_concurrency=1,
     wlm_query_slots=1,
+    statement_timeout=0,
     only_selected=False,
     include_immediate_views=False,
     continue_from: Optional[str] = None,
@@ -1292,13 +1297,14 @@ def upgrade_data_warehouse(
         )
         etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
 
-    create_relations(relations, max_concurrency, wlm_query_slots, dry_run=dry_run)
+    create_relations(relations, max_concurrency, wlm_query_slots, statement_timeout, dry_run=dry_run)
 
 
 def update_data_warehouse(
     all_relations: Sequence[RelationDescription],
     selector: TableSelector,
     wlm_query_slots=1,
+    statement_timeout=0,
     start_time: Optional[datetime] = None,
     only_selected=False,
     run_vacuum=False,
@@ -1348,6 +1354,7 @@ def update_data_warehouse(
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, readonly=dry_run)) as tx_conn, tx_conn as conn:
         etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
+        etl.dialect.redshift.set_statement_timeout(conn, statement_timeout, dry_run=dry_run)
         for relation in relations:
             build_one_relation(conn, relation, dry_run=dry_run)
 
