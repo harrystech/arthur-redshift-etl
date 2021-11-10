@@ -274,11 +274,11 @@ def log_load_error(cx):
                          , starttime
                          , colname
                          , type
-                         , trim(filename) AS filename
+                         , TRIM(filename) AS filename
                          , line_number
-                         , trim(err_reason) AS err_reason
+                         , TRIM(err_reason) AS err_reason
                       FROM stl_load_errors
-                     WHERE session = pg_backend_pid()
+                     WHERE session = PG_BACKEND_PID()
                      ORDER BY starttime DESC
                      LIMIT 1
                 """,
@@ -328,7 +328,6 @@ def copy_using_manifest(
     file_compression: Optional[str] = None,
     dry_run=False,
 ) -> None:
-
     credentials = "aws_iam_role={}".format(aws_iam_role)
     data_format_parameters = determine_data_format_parameters(
         data_format, format_option, file_compression
@@ -377,7 +376,7 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
         SELECT TRIM(filename) AS filename
              , lines_scanned
           FROM stl_load_commits
-         WHERE query = pg_last_copy_id()
+         WHERE query = PG_LAST_COPY_ID()
          ORDER BY TRIM(filename)
         """
     if dry_run:
@@ -533,6 +532,15 @@ def insert_from_query(
 def set_wlm_slots(conn: Connection, slots: int, dry_run: bool) -> None:
     etl.db.run(
         conn, f"Using {slots} WLM queue slot(s)", f"SET wlm_query_slot_count TO {slots}", dry_run=dry_run
+    )
+
+
+def set_statement_timeout(conn: Connection, statement_timeout: int, dry_run: bool) -> None:
+    etl.db.run(
+        conn,
+        f"Setting timeout for statements running in Redshift to {statement_timeout} ms",
+        f"SET statement_timeout TO {statement_timeout}",
+        dry_run=dry_run,
     )
 
 

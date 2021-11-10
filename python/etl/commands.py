@@ -411,12 +411,14 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
     They are "standard" in that the name and description should be the same when used
     by multiple sub-commands.
     """
-    options = frozenset(option_names)
+    options = set(option_names)
     if "dry-run" in options:
+        options.discard("dry-run")
         parser.add_argument(
             "-n", "--dry-run", help="do not modify stuff", default=False, action="store_true"
         )
     if "prefix" in options:
+        options.discard("prefix")
         parser.add_argument(
             "-p",
             "--prefix",
@@ -424,6 +426,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             default=etl.config.env.get_default_prefix(),
         )
     if "scheme" in options:
+        options.discard("scheme")
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "-l",
@@ -443,6 +446,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             dest="scheme",
         )
     if "max-concurrency" in options:
+        options.discard("max-concurrency")
         parser.add_argument(
             "-x",
             "--max-concurrency",
@@ -452,6 +456,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             "'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
+        options.discard("wlm-query-slots")
         parser.add_argument(
             "-w",
             "--wlm-query-slots",
@@ -460,7 +465,19 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             help="set the number of Redshift WLM query slots used for transformations"
             " (overrides 'resources.RedshiftCluster.wlm_query_slots')",
         )
+    if "statement-timeout" in options:
+        options.discard("statement-timeout")
+        parser.add_argument(
+            "-t",
+            "--statement-timeout",
+            metavar="MILLISECS",
+            type=int,
+            help="set the timeout before canceling a statement in Redshift. This time includes planning,"
+            " queueing in WLM, and execution time. (overrides "
+            "'resources.RedshiftCluster.statement_timeout')",
+        )
     if "skip-copy" in options:
+        options.discard("skip-copy")
         parser.add_argument(
             "-y",
             "--skip-copy",
@@ -468,6 +485,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             action="store_true",
         )
     if "continue-from" in options:
+        options.discard("continue-from")
         parser.add_argument(
             "--continue-from",
             help="skip forward in execution until the specified relation, then work forward from it"
@@ -476,6 +494,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             " otherwise specify an exact relation or source name)",
         )
     if "pattern" in options:
+        options.discard("pattern")
         parser.add_argument(
             "pattern",
             action=StorePatternAsSelector,
@@ -483,12 +502,15 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             nargs="*",
         )
     if "one-pattern" in options:
+        options.discard("one-pattern")
         parser.add_argument(
             "pattern",
             action=StorePatternAsSelector,
             help="glob pattern or identifier to select table or view",
             nargs=1,
         )
+    if options:
+        raise ETLSystemError(f"failed to consume all standard options (remaining: {options})")
 
 
 class StorePatternAsSelector(argparse.Action):
@@ -1055,7 +1077,16 @@ class LoadDataWarehouseCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(
-            parser, ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"]
+            parser,
+            [
+                "pattern",
+                "prefix",
+                "max-concurrency",
+                "wlm-query-slots",
+                "statement-timeout",
+                "skip-copy",
+                "dry-run",
+            ],
         )
         parser.add_argument(
             "--concurrent-extract",
@@ -1096,6 +1127,9 @@ class LoadDataWarehouseCommand(SubCommand):
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
+        statement_timeout = args.statement_timeout or etl.config.get_config_int(
+            "resources.RedshiftCluster.statement_timeout", 0
+        )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1104,6 +1138,7 @@ class LoadDataWarehouseCommand(SubCommand):
             args.pattern,
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             concurrent_extract=args.concurrent_extract,
             skip_copy=args.skip_copy,
             skip_loading_sources=args.skip_loading_sources,
@@ -1132,6 +1167,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                 "prefix",
                 "max-concurrency",
                 "wlm-query-slots",
+                "statement-timeout",
                 "continue-from",
                 "skip-copy",
                 "dry-run",
@@ -1185,6 +1221,9 @@ class UpgradeDataWarehouseCommand(SubCommand):
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
+        statement_timeout = args.statement_timeout or etl.config.get_config_int(
+            "resources.RedshiftCluster.statement_timeout", 0
+        )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1193,6 +1232,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
             args.pattern,
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             only_selected=args.only_selected,
             include_immediate_views=args.include_immediate_views,
             continue_from=args.continue_from,
@@ -1215,7 +1255,9 @@ class UpdateDataWarehouseCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "wlm-query-slots", "dry-run"])
+        add_standard_arguments(
+            parser, ["pattern", "prefix", "wlm-query-slots", "statement-timeout", "dry-run"]
+        )
         parser.add_argument(
             "--only-selected",
             help="only load data into selected relations"
@@ -1240,6 +1282,9 @@ class UpdateDataWarehouseCommand(SubCommand):
 
     def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        statement_timeout = args.statement_timeout or etl.config.get_config_int(
+            "resources.RedshiftCluster.statement_timeout", 0
+        )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1247,6 +1292,7 @@ class UpdateDataWarehouseCommand(SubCommand):
             relations,
             args.pattern,
             wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             only_selected=args.only_selected,
             run_vacuum=args.vacuum,
             start_time=args.scheduled_start_time,

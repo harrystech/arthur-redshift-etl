@@ -426,6 +426,10 @@
                         "wlm_query_slots": {
                             "type": "integer",
                             "minimum": 1
+                        },
+                        "statement_timeout": {
+                            "type": "integer",
+                            "minimum": 0
                         }
                     },
                     "additionalProperties": false
