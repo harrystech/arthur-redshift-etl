@@ -464,7 +464,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
         parser.add_argument(
             "-t",
             "--statement-timeout",
-            metavar="N",
+            metavar="MILLISECS",
             type=int,
             help="set the timeout before canceling a statement in Redshift. This time includes planning,"
             " queueing in WLM, and execution time. (overrides "
