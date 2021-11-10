@@ -588,11 +588,11 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
     statement_template = """
         SELECT DISTINCT
                {columns}
-          FROM {table}
+          FROM {_table}
          WHERE {condition}
          GROUP BY {columns}
         HAVING COUNT(*) > 1
-         LIMIT {limit}
+         LIMIT {_limit}
         """
     limit = 5  # arbitrarily chosen limit of examples to show
 
@@ -605,7 +605,7 @@ def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=Fal
             condition = "TRUE"
 
         statement = statement_template.format(
-            columns=quoted_columns, table=relation, condition=condition, limit=limit
+            columns=quoted_columns, _table=relation, condition=condition, _limit=limit
         )
         if dry_run:
             logger.info(
