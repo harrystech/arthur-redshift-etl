@@ -1,12 +1,14 @@
 """Provide "self-test" feature of Arthur, which executes all doctests."""
 
 import doctest
-import logging
+import pathlib
 import sys
 import unittest
-from typing import Optional
 
-# Skip etl.commands to avoid circular dependency
+import pkg_resources
+
+# Skip etl.commands to avoid circular dependency.
+# TODO(tom): There is a bug: doctests from etl.commands are not run with "python3 -m etl.selftest".
 import etl.config
 import etl.config.env
 import etl.config.settings
@@ -37,30 +39,38 @@ import etl.util
 import etl.util.timer
 import etl.validate
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
-
 
 def load_tests(loader, tests, pattern):
     """
-    Add tests within doctests so that the unittest runner picks them up.
+    Add tests from doctests and discover unittests in "tests" directory.
 
     See https://docs.python.org/3.5/library/unittest.html#load-tests-protocol
     """
     etl_modules = sorted(mod for mod in sys.modules if mod.startswith("etl"))
-    logger.info("Adding tests from %s", etl.names.join_with_single_quotes(etl_modules))
     for mod in etl_modules:
-        tests.addTests(doctest.DocTestSuite(mod))
+        test_suite = doctest.DocTestSuite(mod)
+        if test_suite.countTestCases():
+            print(f"Adding {test_suite.countTestCases()} doctest(s) from '{mod}'")
+            tests.addTests(test_suite)
+    # This assumes that "tests" is parallel to "python" directory.
+    etl_path = pathlib.PosixPath(pkg_resources.resource_filename("etl", "etl"))
+    start_dir = etl_path.parents[2].joinpath("tests")
+    if not start_dir.exists():
+        print(f"Skipping unittests (directory not found: '{start_dir}')", flush=True)
+        return tests
+
+    test_suite = loader.discover(start_dir)
+    print(f"Adding {test_suite.countTestCases()} unittests from '{start_dir}' directory", flush=True)
+    tests.addTests(test_suite)
     return tests
 
 
-def run_doctest(module_: Optional[str] = None, log_level: str = "INFO") -> None:
+def run_selftest(module_: str, log_level: str = "INFO") -> None:
+    # Translate log levels into numeric levels needed by unittest.
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
     print("Running doctests...", flush=True)
-    if module_ is None:
-        module_ = __name__
     test_runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=verbosity)
     test_program = unittest.main(
         module=module_, exit=False, testRunner=test_runner, verbosity=verbosity, argv=sys.argv[:2]
@@ -75,7 +85,7 @@ def run_doctest(module_: Optional[str] = None, log_level: str = "INFO") -> None:
 
 if __name__ == "__main__":
     try:
-        run_doctest()
+        run_selftest(__name__)
     except Exception as exc:
         print(exc)
         sys.exit(1)
