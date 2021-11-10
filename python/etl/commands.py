@@ -1071,7 +1071,7 @@ class LoadDataWarehouseCommand(SubCommand):
                 "prefix",
                 "max-concurrency",
                 "wlm-query-slots",
-                "statement_timeout",
+                "statement-timeout",
                 "skip-copy",
                 "dry-run",
             ],
