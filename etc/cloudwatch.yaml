@@ -1,0 +1,10 @@
+# Example settings to enable logging to AWS CloudWatch.
+{
+  "arthur_settings": {
+    "logging": {
+      "cloudwatch": {
+        "enabled": true
+      }
+    }
+  }
+}

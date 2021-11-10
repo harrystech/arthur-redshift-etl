@@ -54,3 +54,5 @@ def tail(prefix: str, start_time: datetime) -> None:
             stream_name = event["logStreamName"]
             message = json.loads(event["message"])
             print(f"{stream_name} {message['gmtime']} {message['log_level']} {message['message']}")
+            if "metrics" in message:
+                print(f"{stream_name} {message['gmtime']} (metrics) {message['metrics']}")
