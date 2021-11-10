@@ -7,7 +7,6 @@ so that they can be leveraged by utilities in addition to the top-level script.
 
 import abc
 import argparse
-import itertools
 import logging
 import os
 import shlex
@@ -338,61 +337,56 @@ def build_full_parser(prog_name):
     # Details for sub-commands lives with sub-classes of sub-commands.
     # Hungry? Get yourself a sub-way.
     subparsers = parser.add_subparsers(
-        help="specify one of these sub-commands (which can all provide more help)",
+        help="choose one of these sub-commands (use '-h' to see the sub-command's help)",
         title="available sub-commands",
         dest="sub_command",
     )
     for klass in [
-        # TODO(tom): Split into common and infrequent commands, sort alphabetically.
-        # Commands to deal with data warehouse as admin
-        InitializeSetupCommand,
-        ShowRandomPassword,
-        CreateGroupsCommand,
-        CreateUserCommand,
-        ListUsersCommand,
-        UpdateUserCommand,
-        RunSqlCommand,
-        # Commands to help with table designs and uploading them
+        # Command classes are sorted alphabetically. This makes it easier to find commands
+        # in the growing list of sub-commands. It also reduces friction when updating
+        # this list since we can avoid looking for "right" group or order.
         BootstrapSourcesCommand,
         BootstrapTransformationsCommand,
-        ValidateDesignsCommand,
-        ExplainQueryCommand,
-        RunQueryCommand,
         CheckConstraintsCommand,
-        ShowDdlCommand,
-        CreateIndexCommand,
-        SyncWithS3Command,
-        ShowDownstreamDependentsCommand,
-        ShowUpstreamDependenciesCommand,
-        TagsCommand,
-        # ETL commands to extract, load (or update), or transform
-        ExtractToS3Command,
-        LoadDataWarehouseCommand,
-        UpgradeDataWarehouseCommand,
-        UpdateDataWarehouseCommand,
-        UnloadDataToS3Command,
-        # Helper commands (database)
         CreateExternalSchemasCommand,
+        CreateGroupsCommand,
+        CreateIndexCommand,
         CreateSchemasCommand,
-        PromoteSchemasCommand,
-        PingCommand,
-        TerminateSessionsCommand,
-        VacuumCommand,
-        # Helper commands (filesystem)
+        CreateUserCommand,
+        DeleteFinishedPipelinesCommand,
+        ExplainQueryCommand,
+        ExtractToS3Command,
+        InitializeSetupCommand,
         ListFilesCommand,
-        # Environment commands
+        ListTagsCommand,
+        ListUsersCommand,
+        LoadDataWarehouseCommand,
+        PingCommand,
+        PromoteSchemasCommand,
+        QueryEventsCommand,
         RenderTemplateCommand,
+        RunQueryCommand,
+        RunSqlCommand,
+        SelfTestCommand,
+        ShowDdlCommand,
+        ShowDownstreamDependentsCommand,
+        ShowHelpCommand,
+        ShowPipelinesCommand,
+        ShowRandomPassword,
+        ShowUpstreamDependenciesCommand,
         ShowValueCommand,
         ShowVarsCommand,
-        ShowPipelinesCommand,
-        DeleteFinishedPipelinesCommand,
-        QueryEventsCommand,
         SummarizeEventsCommand,
+        SyncWithS3Command,
         TailEventsCommand,
         TailLogsCommand,
-        # General and development commands
-        ShowHelpCommand,
-        SelfTestCommand,
+        TerminateSessionsCommand,
+        UnloadDataToS3Command,
+        UpdateDataWarehouseCommand,
+        UpdateUserCommand,
+        UpgradeDataWarehouseCommand,
+        VacuumCommand,
+        ValidateDesignsCommand,
     ]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
@@ -1788,10 +1782,10 @@ class ShowUpstreamDependenciesCommand(SubCommand):
         etl.load.show_upstream_dependencies(relations, args.pattern)
 
 
-class TagsCommand(SubCommand):
+class ListTagsCommand(SubCommand):
     def __init__(self):
         super().__init__(
-            "tags",
+            "list_tags",
             "list tags found in settings",
             "Collect all the tags found in setting files.",
         )
@@ -1800,11 +1794,11 @@ class TagsCommand(SubCommand):
         pass
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
-        tags = set()
-        for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
-            tags.update(schema.tags)
-        print(f"Tags: {join_with_single_quotes(tags)}")
+        tags = etl.config.get_tags()
+        if tags:
+            print(f"Tags:\n{join_with_single_quotes(tags)}")
+        else:
+            print("No tags found")
 
 
 class RenderTemplateCommand(SubCommand):
@@ -2037,8 +2031,12 @@ class TailLogsCommand(SubCommand):
 
 class ShowHelpCommand(SubCommand):
     def __init__(self):
-        super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
         self.topics = ("config", "extract", "load", "pipeline", "sync", "unload", "validate")
+        super().__init__(
+            "help",
+            f"show help by topic ({', '.join(self.topics)})",
+            "Show helpful information around selected topic.",
+        )
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
@@ -2050,7 +2048,7 @@ class ShowHelpCommand(SubCommand):
 
 class SelfTestCommand(SubCommand):
     def __init__(self):
-        super().__init__("selftest", "run code tests of ETL", "Run self test of the ETL.")
+        super().__init__("selftest", "run code tests of ETL", "Run self test of the ETL code.")
 
     def add_arguments(self, parser):
         # For self-tests, dial logging back to (almost) nothing so that logging in console

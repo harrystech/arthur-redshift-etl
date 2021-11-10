@@ -29,6 +29,7 @@ _arthur_completion()
                 extract
                 help
                 initialize
+                list_tags
                 list_users
                 load
                 ls
