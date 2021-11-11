@@ -7,8 +7,7 @@ import unittest
 
 import pkg_resources
 
-# Skip etl.commands to avoid circular dependency.
-# TODO(tom): There is a bug: doctests from etl.commands are not run with "python3 -m etl.selftest".
+# Skip etl.commands to avoid circular dependency!
 import etl.config
 import etl.config.env
 import etl.config.settings
@@ -70,8 +69,9 @@ def run_selftest(module_: str, log_level: str = "INFO") -> None:
     verbosity_levels = {"DEBUG": 2, "INFO": 1, "WARNING": 0, "CRITICAL": 0}
     verbosity = verbosity_levels.get(log_level, 1)
 
-    print("Running doctests...", flush=True)
+    print("Running selftest...", flush=True)
     test_runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=verbosity)
+    # Pass commandline args after first two (usually: "arthur.py" and "selftest").
     test_program = unittest.main(
         module=module_, exit=False, testRunner=test_runner, verbosity=verbosity, argv=sys.argv[:2]
     )
@@ -84,6 +84,7 @@ def run_selftest(module_: str, log_level: str = "INFO") -> None:
 
 
 if __name__ == "__main__":
+    print("WARNING doctests from etl.commands are not run (use 'arthur.py selftest' instead)")
     try:
         run_selftest(__name__)
     except Exception as exc:
