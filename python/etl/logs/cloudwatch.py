@@ -44,7 +44,7 @@ def add_cloudwatch_logging(prefix: str) -> None:
     root_logger.addHandler(handler)
 
 
-def tail(prefix: str, start_time: datetime.datetime) -> None:
+def tail_logs(prefix: str, start_time: datetime.datetime, filter_warnings=False) -> None:
     """
     Fetch log lines from CloudWatch, filtering for `prefix` as the environment.
 
@@ -66,6 +66,8 @@ def tail(prefix: str, start_time: datetime.datetime) -> None:
         for event in response["events"]:
             stream_name = event["logStreamName"]
             message = json.loads(event["message"])
+            if filter_warnings and message["log_level"] in ("DEBUG", "INFO"):
+                continue
             print(f"{stream_name} {message['gmtime']} {message['log_level']} {message['message']}")
             if "metrics" in message:
                 print(f"{stream_name} {message['gmtime']} (metrics) {message['metrics']}")
