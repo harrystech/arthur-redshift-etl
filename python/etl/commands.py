@@ -2058,7 +2058,7 @@ class SelfTestCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
 
     def callback(self, args):
-        etl.selftest.run_doctest("etl", args.log_level)
+        etl.selftest.run_selftest("etl", args.log_level)
 
 
 if __name__ == "__main__":
