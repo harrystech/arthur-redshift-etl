@@ -358,7 +358,12 @@ You can also run the linters directly:
 pre-commit run
 ```
 
-#### Running linters and formatters locally
+Or you can re-run some linters with something like:
+```
+pre-commit run black --all-files
+```
+
+#### Running linters and formatters directly
 
 To use the linters (`isort`, `black`, `flake8`, `mypy`) locally, install them
 into a virtual environment:

@@ -12,7 +12,6 @@ import logging
 import os
 import shlex
 import sys
-import traceback
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -20,7 +19,6 @@ from typing import Iterable, List, Optional
 
 import boto3
 import simplejson as json
-from termcolor import colored
 
 import etl.config
 import etl.config.env
@@ -47,26 +45,11 @@ import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
+from etl.util import croak
 from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-
-def croak(error, exit_code):
-    """
-    Print first line of exception and then bail out with the exit code.
-
-    When you have a large stack trace, it's easy to miss the trigger and
-    so we call it out here again on stderr.
-    """
-    exception_only = traceback.format_exception_only(type(error), error)[0]
-    header = exception_only.splitlines()[0]
-    # Make sure to not send random ASCII sequences to a log file.
-    if sys.stderr.isatty():
-        header = colored(header, color="red", attrs=["bold"])
-    print(f"Bailing out: {header}", file=sys.stderr)
-    sys.exit(exit_code)
 
 
 @contextmanager
@@ -95,15 +78,24 @@ def execute_or_bail(sub_command: str):
                 exc_cause_type.__module__,
                 exc_cause_type.__qualname__,
             )
-        logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s before this untimely end!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
         croak(exc, 2)
     except Exception as exc:
         logger.critical("Something terrible happened:", exc_info=True)
-        logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s before encountering disaster!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
         croak(exc, 3)
     except BaseException as exc:
         logger.critical("Something really terrible happened:", exc_info=True)
-        logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s before an exceptional termination!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
         croak(exc, 5)
     else:
         logger.info(
