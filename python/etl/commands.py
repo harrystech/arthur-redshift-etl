@@ -7,6 +7,7 @@ so that they can be leveraged by utilities in addition to the top-level script.
 
 import abc
 import argparse
+import itertools
 import logging
 import os
 import shlex
@@ -46,7 +47,7 @@ import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
-from etl.timer import Timer
+from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -352,6 +353,7 @@ def build_full_parser(prog_name):
         ShowRandomPassword,
         CreateGroupsCommand,
         CreateUserCommand,
+        ListUsersCommand,
         UpdateUserCommand,
         RunSqlCommand,
         # Commands to help with table designs and uploading them
@@ -366,6 +368,7 @@ def build_full_parser(prog_name):
         SyncWithS3Command,
         ShowDownstreamDependentsCommand,
         ShowUpstreamDependenciesCommand,
+        TagsCommand,
         # ETL commands to extract, load (or update), or transform
         ExtractToS3Command,
         LoadDataWarehouseCommand,
@@ -408,12 +411,14 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
     They are "standard" in that the name and description should be the same when used
     by multiple sub-commands.
     """
-    options = frozenset(option_names)
+    options = set(option_names)
     if "dry-run" in options:
+        options.discard("dry-run")
         parser.add_argument(
             "-n", "--dry-run", help="do not modify stuff", default=False, action="store_true"
         )
     if "prefix" in options:
+        options.discard("prefix")
         parser.add_argument(
             "-p",
             "--prefix",
@@ -421,6 +426,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             default=etl.config.env.get_default_prefix(),
         )
     if "scheme" in options:
+        options.discard("scheme")
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "-l",
@@ -440,6 +446,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             dest="scheme",
         )
     if "max-concurrency" in options:
+        options.discard("max-concurrency")
         parser.add_argument(
             "-x",
             "--max-concurrency",
@@ -449,6 +456,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             "'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
+        options.discard("wlm-query-slots")
         parser.add_argument(
             "-w",
             "--wlm-query-slots",
@@ -457,7 +465,19 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             help="set the number of Redshift WLM query slots used for transformations"
             " (overrides 'resources.RedshiftCluster.wlm_query_slots')",
         )
+    if "statement-timeout" in options:
+        options.discard("statement-timeout")
+        parser.add_argument(
+            "-t",
+            "--statement-timeout",
+            metavar="MILLISECS",
+            type=int,
+            help="set the timeout before canceling a statement in Redshift. This time includes planning,"
+            " queueing in WLM, and execution time. (overrides "
+            "'resources.RedshiftCluster.statement_timeout')",
+        )
     if "skip-copy" in options:
+        options.discard("skip-copy")
         parser.add_argument(
             "-y",
             "--skip-copy",
@@ -465,6 +485,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             action="store_true",
         )
     if "continue-from" in options:
+        options.discard("continue-from")
         parser.add_argument(
             "--continue-from",
             help="skip forward in execution until the specified relation, then work forward from it"
@@ -473,6 +494,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             " otherwise specify an exact relation or source name)",
         )
     if "pattern" in options:
+        options.discard("pattern")
         parser.add_argument(
             "pattern",
             action=StorePatternAsSelector,
@@ -480,12 +502,15 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             nargs="*",
         )
     if "one-pattern" in options:
+        options.discard("one-pattern")
         parser.add_argument(
             "pattern",
             action=StorePatternAsSelector,
             help="glob pattern or identifier to select table or view",
             nargs=1,
         )
+    if options:
+        raise ETLSystemError(f"failed to consume all standard options (remaining: {options})")
 
 
 class StorePatternAsSelector(argparse.Action):
@@ -710,6 +735,22 @@ class CreateUserCommand(SubCommand):
                 add_user_schema=args.add_user_schema,
                 dry_run=args.dry_run,
             )
+
+
+class ListUsersCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "list_users",
+            "list users as they are configured",
+            "List all users and their groups in the way that they are configurd.",
+        )
+
+    def add_arguments(self, parser):
+        parser.add_argument("-t", "--transpose", help="group list by user's groups", action="store_true")
+
+    def callback(self, args):
+        with etl.db.log_error():
+            etl.data_warehouse.list_users(transpose=args.transpose)
 
 
 class UpdateUserCommand(SubCommand):
@@ -957,18 +998,18 @@ class ExtractToS3Command(SubCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--with-sqoop",
-            help="extract data using Sqoop (using 'sqoop import', this is the default)",
-            const="sqoop",
             action="store_const",
-            dest="extractor",
+            const="sqoop",
             default="sqoop",
+            dest="extractor",
+            help="extract data using Sqoop (using the 'sqoop import' tool, this is the default)",
         )
         group.add_argument(
-            "--with-spark",
-            help="extract data using Spark Dataframe (using submit_arthur.sh)",
-            const="spark",
+            "--fail-sqoop-jobs",
             action="store_const",
+            const="dummy-sqoop",
             dest="extractor",
+            help="for debugging of error handling, fail the sqoop job immediately",
         )
         group.add_argument(
             "--use-existing-csv-files",
@@ -1004,21 +1045,6 @@ class ExtractToS3Command(SubCommand):
         max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
         if max_partitions < 1:
             raise InvalidArgumentError("option for max partitions must be >= 1")
-        if args.extractor not in ("sqoop", "spark", "manifest-only"):
-            raise ETLSystemError("bad extractor value: {}".format(args.extractor))
-
-        # Make sure that there is a Spark environment. If not, re-launch with spark-submit.
-        # (Without this step, the Spark context is unknown and we won't be able to create a
-        # SQL context.)
-        if args.extractor == "spark" and "SPARK_ENV_LOADED" not in os.environ:
-            # Try the full path (in the EMR cluster), or try without path and hope for the best.
-            submit_arthur = etl.config.etl_tmp_dir("venv/bin/submit_arthur.sh")
-            if not os.path.exists(submit_arthur):
-                submit_arthur = "submit_arthur.sh"
-            logger.info("Restarting to submit to cluster (using '%s')", submit_arthur)
-            print("+ exec {} {}".format(submit_arthur, " ".join(sys.argv)), file=sys.stderr)
-            os.execvp(submit_arthur, (submit_arthur,) + tuple(sys.argv))
-            sys.exit(1)
 
         descriptions = self.find_relation_descriptions(
             args,
@@ -1051,7 +1077,16 @@ class LoadDataWarehouseCommand(SubCommand):
 
     def add_arguments(self, parser):
         add_standard_arguments(
-            parser, ["pattern", "prefix", "max-concurrency", "wlm-query-slots", "skip-copy", "dry-run"]
+            parser,
+            [
+                "pattern",
+                "prefix",
+                "max-concurrency",
+                "wlm-query-slots",
+                "statement-timeout",
+                "skip-copy",
+                "dry-run",
+            ],
         )
         parser.add_argument(
             "--concurrent-extract",
@@ -1092,6 +1127,9 @@ class LoadDataWarehouseCommand(SubCommand):
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
+        statement_timeout = args.statement_timeout or etl.config.get_config_int(
+            "resources.RedshiftCluster.statement_timeout", 0
+        )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1100,6 +1138,7 @@ class LoadDataWarehouseCommand(SubCommand):
             args.pattern,
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             concurrent_extract=args.concurrent_extract,
             skip_copy=args.skip_copy,
             skip_loading_sources=args.skip_loading_sources,
@@ -1128,6 +1167,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
                 "prefix",
                 "max-concurrency",
                 "wlm-query-slots",
+                "statement-timeout",
                 "continue-from",
                 "skip-copy",
                 "dry-run",
@@ -1181,6 +1221,9 @@ class UpgradeDataWarehouseCommand(SubCommand):
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
+        statement_timeout = args.statement_timeout or etl.config.get_config_int(
+            "resources.RedshiftCluster.statement_timeout", 0
+        )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1189,6 +1232,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
             args.pattern,
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             only_selected=args.only_selected,
             include_immediate_views=args.include_immediate_views,
             continue_from=args.continue_from,
@@ -1211,7 +1255,9 @@ class UpdateDataWarehouseCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        add_standard_arguments(parser, ["pattern", "prefix", "wlm-query-slots", "dry-run"])
+        add_standard_arguments(
+            parser, ["pattern", "prefix", "wlm-query-slots", "statement-timeout", "dry-run"]
+        )
         parser.add_argument(
             "--only-selected",
             help="only load data into selected relations"
@@ -1236,6 +1282,9 @@ class UpdateDataWarehouseCommand(SubCommand):
 
     def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
+        statement_timeout = args.statement_timeout or etl.config.get_config_int(
+            "resources.RedshiftCluster.statement_timeout", 0
+        )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1243,6 +1292,7 @@ class UpdateDataWarehouseCommand(SubCommand):
             relations,
             args.pattern,
             wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             only_selected=args.only_selected,
             run_vacuum=args.vacuum,
             start_time=args.scheduled_start_time,
@@ -1742,6 +1792,25 @@ class ShowUpstreamDependenciesCommand(SubCommand):
         etl.load.show_upstream_dependencies(relations, args.pattern)
 
 
+class TagsCommand(SubCommand):
+    def __init__(self):
+        super().__init__(
+            "tags",
+            "list tags found in settings",
+            "Collect all the tags found in setting files.",
+        )
+
+    def add_arguments(self, parser):
+        pass
+
+    def callback(self, args):
+        dw_config = etl.config.get_dw_config()
+        tags = set()
+        for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
+            tags.update(schema.tags)
+        print(f"Tags: {join_with_single_quotes(tags)}")
+
+
 class RenderTemplateCommand(SubCommand):
     def __init__(self):
         super().__init__(
@@ -1973,7 +2042,7 @@ class TailLogsCommand(SubCommand):
 class ShowHelpCommand(SubCommand):
     def __init__(self):
         super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
-        self.topics = ["extract", "load", "pipeline", "sync", "unload", "validate"]
+        self.topics = ("config", "extract", "load", "pipeline", "sync", "unload", "validate")
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")

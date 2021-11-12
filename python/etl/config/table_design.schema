@@ -2,7 +2,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Table Design",
     "description": "Description of a table design as a JSON schema",
-    "definitions": {
+    "$defs": {
         "table_name": {
             "description": "Fully qualified name of the table or view, <schema name>.<table name>",
             "type" : "string",
@@ -17,13 +17,13 @@
         },
         "column_list": {
             "type": "array",
-            "items": { "$ref": "#/definitions/identifier" },
+            "items": { "$ref": "#/$defs/identifier" },
             "minItems": 1,
             "uniqueItems": true
         },
         "one_column_as_list": {
             "type": "array",
-            "items": { "$ref": "#/definitions/identifier" },
+            "items": { "$ref": "#/$defs/identifier" },
             "minItems": 1,
             "maxItems": 1
         },
@@ -71,7 +71,7 @@
     },
     "type" : "object",
     "properties" : {
-        "name" : { "$ref": "#/definitions/table_name" },
+        "name" : { "$ref": "#/$defs/table_name" },
         "description": {
             "type": "string",
             "description": "Description of the table (may start with qualifier such as 'DEPRECATED')"
@@ -83,8 +83,9 @@
         },
         "unload_target" : {
             "type": "string",
-            "description": "Optional. If the relation is unloadable will specify to which schemas."
+            "description": "Optional. If the relation is unloadable, this will specify the related schema."
         },
+        "tags": { "$ref": "#/definitions/tag_list" },
         "columns": {
             "oneOf": [
                 {
@@ -93,18 +94,18 @@
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": { "$ref": "#/definitions/identifier" },
+                            "name": { "$ref": "#/$defs/identifier" },
                             "description": { "type": "string" },
-                            "sql_type": { "$ref": "#/definitions/data_type" },
-                            "source_sql_type": { "$ref": "#/definitions/data_type" },
-                            "expression": { "$ref": "#/definitions/expression" },
-                            "type": { "$ref": "#/definitions/generic_type" },
-                            "encoding": { "$ref": "#/definitions/compression_encoding" },
+                            "sql_type": { "$ref": "#/$defs/data_type" },
+                            "source_sql_type": { "$ref": "#/$defs/data_type" },
+                            "expression": { "$ref": "#/$defs/expression" },
+                            "type": { "$ref": "#/$defs/generic_type" },
+                            "encoding": { "$ref": "#/$defs/compression_encoding" },
                             "references": {
                                 "type": "array",
                                 "items": [
-                                    { "$ref": "#/definitions/table_name" },
-                                    { "$ref": "#/definitions/one_column_as_list" }
+                                    { "$ref": "#/$defs/table_name" },
+                                    { "$ref": "#/$defs/one_column_as_list" }
                                 ]
                             },
                             "not_null": { "type": "boolean" },
@@ -126,7 +127,7 @@
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": { "$ref": "#/definitions/identifier" },
+                            "name": { "$ref": "#/$defs/identifier" },
                             "description": { "type": "string" }
                         },
                         "required": [ "name" ],
@@ -143,10 +144,10 @@
                     "type": "object",
                     "description": "DEPRECATED format from v0.23.0 and earlier",
                     "properties": {
-                        "primary_key": { "$ref": "#/definitions/column_list" },
-                        "natural_key": { "$ref": "#/definitions/column_list" },
-                        "surrogate_key": { "$ref": "#/definitions/one_column_as_list" },
-                        "unique": { "$ref": "#/definitions/column_list" }
+                        "primary_key": { "$ref": "#/$defs/column_list" },
+                        "natural_key": { "$ref": "#/$defs/column_list" },
+                        "surrogate_key": { "$ref": "#/$defs/one_column_as_list" },
+                        "unique": { "$ref": "#/$defs/column_list" }
                     },
                     "additionalProperties": false
                 },
@@ -158,25 +159,25 @@
                         "oneOf": [
                             {
                                 "properties": {
-                                    "primary_key": { "$ref": "#/definitions/column_list" }
+                                    "primary_key": { "$ref": "#/$defs/column_list" }
                                 },
                                 "additionalProperties": false
                             },
                             {
                                 "properties": {
-                                    "natural_key": { "$ref": "#/definitions/column_list" }
+                                    "natural_key": { "$ref": "#/$defs/column_list" }
                                 },
                                 "additionalProperties": false
                             },
                             {
                                 "properties": {
-                                    "surrogate_key": { "$ref": "#/definitions/one_column_as_list" }
+                                    "surrogate_key": { "$ref": "#/$defs/one_column_as_list" }
                                 },
                                 "additionalProperties": false
                             },
                             {
                                 "properties": {
-                                    "unique": { "$ref": "#/definitions/column_list" }
+                                    "unique": { "$ref": "#/$defs/column_list" }
                                 },
                                 "additionalProperties": false
                             }
@@ -193,16 +194,16 @@
                 "distribution": {
                     "oneOf": [
                         { "enum": [ "all", "auto", "even", "ALL", "AUTO", "EVEN" ] },
-                        { "$ref": "#/definitions/one_column_as_list" }
+                        { "$ref": "#/$defs/one_column_as_list" }
                     ]
                 },
                 "compound_sort": {
                     "oneOf": [
                         { "enum": [ "auto", "AUTO" ] },
-                        { "$ref": "#/definitions/column_list" }
+                        { "$ref": "#/$defs/column_list" }
                     ]
                 },
-                "interleaved_sort": { "$ref": "#/definitions/column_list" }
+                "interleaved_sort": { "$ref": "#/$defs/column_list" }
             },
             "not": {
                 "required": [ "compound_sort", "interleaved_sort" ]
@@ -213,14 +214,14 @@
             "type": "object",
             "properties": {
                 "condition": {
-                    "$ref": "#/definitions/expression",
+                    "$ref": "#/$defs/expression",
                     "description": "Condition in SQL that will be part of the WHERE clause during extraction"
                 },
                 "split_by": { "oneOf": [
-                    { "$ref": "#/definitions/expression" },
-                    { "$ref": "#/definitions/one_column_as_list" }
+                    { "$ref": "#/$defs/expression" },
+                    { "$ref": "#/$defs/one_column_as_list" }
                 ] },
-                "boundary_query": { "$ref": "#/definitions/expression" },
+                "boundary_query": { "$ref": "#/$defs/expression" },
                 "num_partitions": {
                     "type": "integer",
                     "minimum": 1
@@ -231,7 +232,7 @@
         "depends_on": {
             "description": "List of all dependency tables of this transformation",
             "type": "array",
-            "items": { "$ref": "#/definitions/table_name" },
+            "items": { "$ref": "#/$defs/table_name" },
             "minItems": 1,
             "uniqueItems": true            
         }        

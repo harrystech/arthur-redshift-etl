@@ -2,7 +2,12 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Settings",
     "description": "Schema for settings of data warehouse, upstream sources, and ETL",
-    "definitions": {
+    "$defs": {
+        "aws_arn": {
+            "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
+            "type": "string",
+            "pattern": "^arn:aws[^:]*:[^:]*:[^:]*:[0-9a-f]+:"
+        },
         "identifier": {
             "description": "Standard identifier (either SQL or AWS)",
             "type": "string",
@@ -12,17 +17,29 @@
         },
         "identifier_list": {
             "type": "array",
-            "items": { "$ref": "#/definitions/identifier" },
+            "items": { "$ref": "#/$defs/identifier" },
             "uniqueItems": true,
             "minItems": 1
+        },
+        "tag": {
+            "description": "Simple tag",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z_][-a-zA-Z0-9_]*$",
+            "type": "string"
+        },
+        "tag_list": {
+            "items": { "$ref": "#/$defs/tag" },
+            "type": "array",
+            "uniqueItems": true
         },
         "user_info": {
             "type": "object",
             "properties": {
-                "name": { "$ref": "#/definitions/identifier" },
+                "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
-                "group": { "$ref": "#/definitions/identifier" },
-                "schema": { "$ref": "#/definitions/identifier" }
+                "group": { "$ref": "#/$defs/identifier" },
+                "schema": { "$ref": "#/$defs/identifier" }
             },
             "required": [ "name", "group" ],
             "additionalProperties": false
@@ -51,13 +68,14 @@
             "description": "Description of an upstream database with access, tables and permissions for the copy",
             "type": "object",
             "properties": {
-                "name": { "$ref": "#/definitions/identifier" },
+                "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
-                "read_access": { "$ref": "#/definitions/identifier" },
-                "include_tables": { "$ref": "#/definitions/glob_pattern_list" },
-                "exclude_tables": { "$ref": "#/definitions/glob_pattern_list" },
-                "readers": { "$ref": "#/definitions/identifier_list" },
-                "writers": { "$ref": "#/definitions/identifier_list" }
+                "tags": { "$ref": "#/$defs/tag_list" },
+                "read_access": { "$ref": "#/$defs/identifier" },
+                "include_tables": { "$ref": "#/$defs/glob_pattern_list" },
+                "exclude_tables": { "$ref": "#/$defs/glob_pattern_list" },
+                "readers": { "$ref": "#/$defs/identifier_list" },
+                "writers": { "$ref": "#/$defs/identifier_list" }
             },
             "required": [ "name", "read_access", "include_tables" ],
             "additionalProperties": false
@@ -66,15 +84,16 @@
             "description": "Description of an upstream source consisting of files in S3, may also be an unload target",
             "type": "object",
             "properties": {
-                "name": { "$ref": "#/definitions/identifier" },
+                "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
-                "s3_bucket": { "$ref": "#/definitions/bucket_template" },
-                "s3_path_template": { "$ref": "#/definitions/path_template" },
-                "s3_data_format": { "$ref": "#/definitions/s3_data_format" },
-                "s3_unload_path_template": { "$ref": "#/definitions/path_template" },
-                "include_tables": { "$ref": "#/definitions/glob_pattern_list" },
-                "readers": { "$ref": "#/definitions/identifier_list" },
-                "writers": { "$ref": "#/definitions/identifier_list" }
+                "tags": { "$ref": "#/$defs/tag_list" },
+                "s3_bucket": { "$ref": "#/$defs/bucket_template" },
+                "s3_path_template": { "$ref": "#/$defs/path_template" },
+                "s3_data_format": { "$ref": "#/$defs/s3_data_format" },
+                "s3_unload_path_template": { "$ref": "#/$defs/path_template" },
+                "include_tables": { "$ref": "#/$defs/glob_pattern_list" },
+                "readers": { "$ref": "#/$defs/identifier_list" },
+                "writers": { "$ref": "#/$defs/identifier_list" }
             },
             "anyOf": [
                 { "required": [ "name", "s3_bucket", "s3_path_template"  ] },
@@ -89,12 +108,13 @@
             "description": "Description of an external schema in AWS Redshift (listed in an AWS Glue Data Catalog)",
             "type": "object",
             "properties": {
-                "name": { "$ref": "#/definitions/identifier" },
+                "name": { "$ref": "#/$defs/identifier" },
                 "description": { "type": "string" },
                 "external": { "enum": [ true ] },
-                "groups": { "$ref": "#/definitions/identifier_list" },
-                "database": { "$ref": "#/definitions/identifier" },
-                "iam_role": { "$ref": "#/definitions/aws_arn" }
+                "tags": { "$ref": "#/$defs/tag_list" },
+                "groups": { "$ref": "#/$defs/identifier_list" },
+                "database": { "$ref": "#/$defs/identifier" },
+                "iam_role": { "$ref": "#/$defs/aws_arn" }
             },
             "required": [ "name", "external" ],
             "additionalProperties": false
@@ -147,11 +167,6 @@
             },
             "required": [ "instance_type", "managed_security_group" ],
             "additionalProperties": false
-        },
-        "aws_arn": {
-            "description": "See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html",
-            "type": "string",
-            "pattern": "^arn:aws[^:]*:[^:]*:[^:]*:[0-9a-f]+:"
         }
     },
     "type": "object",
@@ -231,12 +246,12 @@
         "data_warehouse": {
             "type": "object",
             "properties": {
-                "admin_access": { "$ref": "#/definitions/identifier" },
-                "etl_access": { "$ref": "#/definitions/identifier" },
-                "owner": { "$ref": "#/definitions/user_info" },
+                "admin_access": { "$ref": "#/$defs/identifier" },
+                "etl_access": { "$ref": "#/$defs/identifier" },
+                "owner": { "$ref": "#/$defs/user_info" },
                 "users": {
                     "type": "array",
-                    "items": { "$ref": "#/definitions/user_info" },
+                    "items": { "$ref": "#/$defs/user_info" },
                     "uniqueItems": true,
                     "minItems": 1
                 },
@@ -246,9 +261,10 @@
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": { "$ref": "#/definitions/identifier" },
+                            "name": { "$ref": "#/$defs/identifier" },
                             "description": { "type": "string" },
-                            "groups": { "$ref": "#/definitions/identifier_list" }
+                            "groups": { "$ref": "#/$defs/identifier_list" },
+                            "tags": { "$ref": "#/$defs/tag_list" }
                         },
                         "required": [ "name" ],
                         "additionalProperties": false
@@ -258,7 +274,7 @@
                 "required_for_success": {
                     "description": "List of patterns to identify 'required' relations whose fault will stop the ETL",
                     "oneOf": [
-                        { "$ref": "#/definitions/glob_pattern_list" },
+                        { "$ref": "#/$defs/glob_pattern_list" },
                         { "type": "boolean" }
                     ]
                 }
@@ -271,9 +287,9 @@
             "description": "List of upstream sources (databases or files in S3)",
             "items": {
                 "oneOf": [
-                    { "$ref": "#/definitions/upstream_database" },
-                    { "$ref": "#/definitions/upstream_static" },
-                    { "$ref": "#/definitions/upstream_external" }
+                    { "$ref": "#/$defs/upstream_database" },
+                    { "$ref": "#/$defs/upstream_static" },
+                    { "$ref": "#/$defs/upstream_external" }
                 ]
             },
             "minItems": 1,
@@ -311,13 +327,13 @@
             "properties": {
                 "iam_role": {
                     "description": "DEPRECATED Use the more specific IAM role for S3",
-                    "$ref": "#/definitions/aws_arn"
+                    "$ref": "#/$defs/aws_arn"
                 },
                 "s3": {
                     "type": "object",
                     "properties": {
-                        "bucket_name": { "$ref": "#/definitions/identifier" },
-                        "iam_role": { "$ref": "#/definitions/aws_arn" }
+                        "bucket_name": { "$ref": "#/$defs/identifier" },
+                        "iam_role": { "$ref": "#/$defs/aws_arn" }
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false
@@ -330,13 +346,13 @@
             "description": "Location and attributes for (temporary) storage for code and extracted data",
             "type": "object",
             "properties": {
-                "iam_role": { "$ref": "#/definitions/aws_arn" },
+                "iam_role": { "$ref": "#/$defs/aws_arn" },
                 "s3": {
                     "type": "object",
                     "properties": {
-                        "bucket_name": { "$ref": "#/definitions/identifier" },
-                        "iam_role": { "$ref": "#/definitions/aws_arn" },
-                        "upload_acl": { "$ref": "#/definitions/s3_acl" }
+                        "bucket_name": { "$ref": "#/$defs/identifier" },
+                        "iam_role": { "$ref": "#/$defs/aws_arn" },
+                        "upload_acl": { "$ref": "#/$defs/s3_acl" }
                     },
                     "required": [ "bucket_name" ],
                     "additionalProperties": false
@@ -348,19 +364,19 @@
         "resources": {
             "type": "object",
             "properties": {
-                "key_name": { "$ref": "#/definitions/identifier" },
+                "key_name": { "$ref": "#/$defs/identifier" },
                 "VPC": {
                     "type": "object",
                     "properties": {
-                        "region": { "$ref": "#/definitions/identifier" },
+                        "region": { "$ref": "#/$defs/identifier" },
                         "account": {
                             "type": "string",
                             "pattern": "^[0-9]+$"
                         },
-                        "name": { "$ref": "#/definitions/identifier" },
-                        "public_subnet": { "$ref": "#/definitions/identifier" },
-                        "private_subnet": { "$ref": "#/definitions/identifier" },
-                        "whitelist_security_group": { "$ref": "#/definitions/identifier" }
+                        "name": { "$ref": "#/$defs/identifier" },
+                        "public_subnet": { "$ref": "#/$defs/identifier" },
+                        "private_subnet": { "$ref": "#/$defs/identifier" },
+                        "whitelist_security_group": { "$ref": "#/$defs/identifier" }
                     },
                     "required": [ "region", "account", "name", "public_subnet", "whitelist_security_group" ],
                     "additionalProperties": false
@@ -370,8 +386,8 @@
                     "properties": {
                         "instance_type": { "type": "string" },
                         "image_id": { "type": "string" },
-                        "public_security_group": { "$ref": "#/definitions/identifier" },
-                        "iam_instance_profile": { "$ref": "#/definitions/identifier" }
+                        "public_security_group": { "$ref": "#/$defs/identifier" },
+                        "iam_instance_profile": { "$ref": "#/$defs/identifier" }
                     },
                     "required": [ "instance_type", "image_id", "public_security_group", "iam_instance_profile" ],
                     "additionalProperties": false
@@ -380,8 +396,8 @@
                     "type": "object",
                     "properties": {
                         "release_label": { "type": "string" },
-                        "master": { "$ref": "#/definitions/cluster_group" },
-                        "core": { "$ref": "#/definitions/cluster_group" },
+                        "master": { "$ref": "#/$defs/cluster_group" },
+                        "core": { "$ref": "#/$defs/cluster_group" },
                         "max_partitions": {
                             "description": "Maximum number of partitions during extract, limits num_partitions for each table",
                             "type": "integer",
@@ -394,7 +410,7 @@
                 "DataPipeline": {
                     "type": "object",
                     "properties": {
-                        "role": { "$ref": "#/definitions/identifier" }
+                        "role": { "$ref": "#/$defs/identifier" }
                     },
                     "required": [ "role" ],
                     "additionalProperties": false
@@ -402,7 +418,7 @@
                 "RedshiftCluster": {
                     "type": "object",
                     "properties": {
-                        "name": { "$ref": "#/definitions/identifier" },
+                        "name": { "$ref": "#/$defs/identifier" },
                         "max_concurrency": {
                             "type": "integer",
                             "minimum": 1
@@ -410,6 +426,10 @@
                         "wlm_query_slots": {
                             "type": "integer",
                             "minimum": 1
+                        },
+                        "statement_timeout": {
+                            "type": "integer",
+                            "minimum": 0
                         }
                     },
                     "additionalProperties": false
@@ -423,11 +443,11 @@
             "items": {
                 "type": "object",
                 "properties": {
-                    "unique-id": { "$ref": "#/definitions/identifier" },
+                    "unique-id": { "$ref": "#/$defs/identifier" },
                     "description": { "type": "string" },
                     "start-time": { "type": "string" },
                     "occurrences": { "type": "integer" },
-                    "patterns": { "$ref": "#/definitions/glob_pattern_list" }
+                    "patterns": { "$ref": "#/$defs/glob_pattern_list" }
                 },
                 "required": [ "unique-id", "description" ],
                 "additionalProperties": false

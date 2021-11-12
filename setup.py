@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-ARTHUR_VERSION = "1.54.0"
+ARTHUR_VERSION = "1.55.0"
 
 
 setup(
@@ -33,7 +33,6 @@ setup(
         "python/scripts/launch_emr_cluster.sh",
         "python/scripts/re_run_partial_pipeline.py",
         "python/scripts/sns_subscribe.sh",
-        "python/scripts/submit_arthur.sh",
         "python/scripts/terminate_emr_cluster.sh",
     ],
     url="https://github.com/harrystech/arthur-redshift-etl",

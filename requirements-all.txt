@@ -1,0 +1,6 @@
+# This is the only requirements file that includes others.
+# Use this file for the Docker image and virtual environments.
+--requirement requirements-coverage.txt
+--requirement requirements-docs.txt
+--requirement requirements-linters.txt
+--requirement requirements.txt

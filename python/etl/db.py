@@ -28,7 +28,7 @@ from psycopg2.extensions import connection as Connection  # only used for typing
 
 import etl.text
 from etl.errors import ETLRuntimeError
-from etl.timer import Timer
+from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -218,7 +218,7 @@ def execute(cx, stmt, args=(), return_result=False):
     with cx.cursor() as cursor:
         executable_statement = mogrify(cursor, stmt, args)
         printable_stmt = remove_password(executable_statement.decode())
-        logger.debug("QUERY:\n%s\n;", printable_stmt)
+        logger.debug("QUERY:\n%s\n;", printable_stmt)  # lgtm[py/clear-text-logging-sensitive-data]
         with Timer() as timer:
             cursor.execute(executable_statement)
         if cursor.rowcount is not None and cursor.rowcount > 0:

@@ -1,6 +1,6 @@
 """Data warehouse configuration based on config files for setup, sources, transformations, users."""
 
-from typing import Dict
+from typing import Dict, List
 
 import etl.config.env
 import etl.db
@@ -18,7 +18,7 @@ class DataWarehouseUser:
     data warehouse as read-only.
     """
 
-    def __init__(self, user_info):
+    def __init__(self, user_info) -> None:
         self.name = user_info["name"]
         self.group = user_info["group"]
         self.schema = user_info.get("schema")
@@ -61,9 +61,10 @@ class DataWarehouseSchema:
     those are really all the same here.
     """
 
-    def __init__(self, schema_info, etl_access=None):
+    def __init__(self, schema_info, etl_access=None) -> None:
         self.name = schema_info["name"]
         self.description = schema_info.get("description")
+        self.tags = frozenset(schema_info.get("tags", []))
         # Schemas have an 'owner' user (with ALL privileges)
         # and lists of 'reader' and 'writer' groups with corresponding permissions
         self.owner = schema_info["owner"]
@@ -155,22 +156,22 @@ class DataWarehouseSchema:
             return etl.db.parse_connection_string(etl.config.env.get(self._dsn_env_var))
 
     @property
-    def groups(self):
+    def groups(self) -> List[str]:
         return self.reader_groups + self.writer_groups
 
     @property
-    def backup_name(self):
+    def backup_name(self) -> str:
         return etl.names.as_backup_name(self.name)
 
     @property
-    def staging_name(self):
+    def staging_name(self) -> str:
         return etl.names.as_staging_name(self.name)
 
 
 class DataWarehouseConfig:
     """Pretty interface to create objects from the settings files."""
 
-    def __init__(self, settings):
+    def __init__(self, settings) -> None:
         dw_settings = settings["data_warehouse"]
         schema_settings = settings.get("sources", []) + dw_settings.get("transformations", [])
 

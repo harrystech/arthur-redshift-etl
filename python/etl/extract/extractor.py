@@ -20,8 +20,8 @@ from etl.config.dw import DataWarehouseSchema
 from etl.errors import DataExtractError, ETLRuntimeError, MissingCsvFilesError
 from etl.relation import RelationDescription
 from etl.text import join_with_single_quotes
-from etl.timer import Timer
 from etl.util.retry import call_with_retry
+from etl.util.timer import Timer
 
 
 class Extractor:

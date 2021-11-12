@@ -42,7 +42,7 @@ from etl.errors import (
 from etl.names import TableName, TempTableName
 from etl.relation import RelationDescription
 from etl.text import join_with_single_quotes
-from etl.timer import Timer
+from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

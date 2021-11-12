@@ -12,8 +12,7 @@ of upstream sources. The data is stored in gzipped CSV form, into a specified ke
         is storing historic data in S3 which is no longer in live database sources.
     (b) Database sources are tied to tables with data that is changing frequently. Here
         we require a database connection to query, dump data from these sources
-        and write them out to gzipped CSV files. There are two extract tools that can be
-        used for database sources: Spark or Sqoop.
+        and write them out to gzipped CSV files. We use Sqoop as the extract tool.
 
     Once the data has been extracted, the "extract" job checks for a _SUCCESS file. If
     this file is not present in the same keyspace as the data, the "extract" is considered
@@ -30,10 +29,10 @@ import logging
 from typing import Dict, List
 
 from etl.config.dw import DataWarehouseSchema
+from etl.errors import ETLSystemError
 from etl.extract.extractor import Extractor
 from etl.extract.manifest_only import ManifestOnlyExtractor
-from etl.extract.spark import SparkExtractor
-from etl.extract.sqoop import SqoopExtractor
+from etl.extract.sqoop import DummySqoopExtractor, SqoopExtractor
 from etl.extract.static import StaticExtractor
 from etl.relation import RelationDescription
 from etl.text import join_with_single_quotes
@@ -79,16 +78,7 @@ def extract_upstream_sources(
         database_extractor: Extractor = ManifestOnlyExtractor(
             database_sources, applicable, keep_going, dry_run
         )
-    elif extract_type == "spark":
-        database_extractor = SparkExtractor(
-            database_sources,
-            applicable,
-            max_partitions=max_partitions,
-            use_sampling=use_sampling,
-            keep_going=keep_going,
-            dry_run=dry_run,
-        )
-    else:
+    elif extract_type == "sqoop":
         database_extractor = SqoopExtractor(
             database_sources,
             applicable,
@@ -97,6 +87,17 @@ def extract_upstream_sources(
             keep_going=keep_going,
             dry_run=dry_run,
         )
+    elif extract_type == "dummy-sqoop":
+        database_extractor = DummySqoopExtractor(
+            database_sources,
+            applicable,
+            max_partitions=max_partitions,
+            use_sampling=use_sampling,
+            keep_going=keep_going,
+            dry_run=dry_run,
+        )
+    else:
+        raise ETLSystemError(f"unexpected extraction type: '{extract_type}'")
     database_extractor.extract_sources()
 
 
