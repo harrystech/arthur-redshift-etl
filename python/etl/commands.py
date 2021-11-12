@@ -44,7 +44,7 @@ import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
-from etl.util import croak
+from etl.util import croak, isoformat_datetime_string
 from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
@@ -281,11 +281,6 @@ class FancyArgumentParser(argparse.ArgumentParser):
         if len(args) > 1:
             raise ValueError("unrecognizable argument value in line: {}".format(arg_line.strip()))
         return args
-
-
-def isoformat_datetime_string(argument):
-    # "isoformat" is used as a verb here.
-    return datetime.strptime(argument, "%Y-%m-%dT%H:%M:%S")
 
 
 def build_basic_parser(prog_name, description=None):
@@ -2008,12 +2003,18 @@ class TailLogsCommand(SubCommand):
         super().__init__(
             "tail_logs",
             "show latest logs from CloudWatch",
-            "Show logs from CloudWatch for the last 15 minutes",
+            "Show logs from CloudWatch (by default, starting from 15 minutes ago)",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
-
+        parser.add_argument(
+            "-w",
+            "--warnings",  # TODO(tom): Should be "--warnings-and-above"?
+            action="store_true",
+            default=False,
+            help="skip INFO or DEBUG and focus on WARNING and above",
+        )
         start_time = (
             (datetime.utcnow() - timedelta(minutes=15)).replace(microsecond=0, tzinfo=None).isoformat()
         )
@@ -2021,12 +2022,12 @@ class TailLogsCommand(SubCommand):
             "-t",
             "--start-time",
             default=start_time,
-            help="beginning of time window (default: 15 minutes ago, '%s')" % start_time,
+            help=f"beginning of time window (default: '15 minutes ago', '{start_time}')",
             type=isoformat_datetime_string,
         )
 
     def callback(self, args):
-        etl.logs.cloudwatch.tail(args.prefix, args.start_time)
+        etl.logs.cloudwatch.tail_logs(args.prefix, args.start_time, filter_warnings=args.warnings)
 
 
 class ShowHelpCommand(SubCommand):
