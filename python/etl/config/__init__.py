@@ -22,6 +22,7 @@ To inspect the final value of settings (and see the order of files loaded), use:
 """
 
 import datetime
+import itertools
 import logging
 import os
 import os.path
@@ -137,6 +138,14 @@ def get_config_map() -> Dict[str, str]:
         return {}
     # Since the mapped config is flattened, we don't worry about a deep copy here.
     return dict(_mapped_config)
+
+
+def get_tags() -> List[str]:
+    dw_config = get_dw_config()
+    tags = set()
+    for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
+        tags.update(schema.tags)
+    return sorted(tags)
 
 
 def _flatten_hierarchy(prefix: str, props):
