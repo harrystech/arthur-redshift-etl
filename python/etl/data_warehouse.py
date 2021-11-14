@@ -23,7 +23,7 @@ import etl.config
 import etl.config.dw
 import etl.db
 import etl.dialect.redshift
-from etl.config.dw import DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema, DataWarehouseUser
 from etl.errors import ETLConfigError, ETLRuntimeError
 from etl.text import join_with_single_quotes
 
@@ -215,11 +215,14 @@ def revoke_schema_permissions(conn: Connection, schema: DataWarehouseSchema) -> 
 
 
 def create_groups(dry_run=False) -> None:
-    """Create all groups from the data warehouse configuration or just those passed in."""
+    """
+    Create all groups from the data warehouse configuration.
+
+    This is a callback of a command.
+    """
     config = etl.config.get_dw_config()
-    groups = sorted(frozenset(group for schema in config.schemas for group in schema.groups))
     with closing(etl.db.connection(config.dsn_admin_on_etl_db, readonly=dry_run)) as conn:
-        _create_groups(conn, groups, dry_run=dry_run)
+        _create_groups(conn, sorted(config.groups), dry_run=dry_run)
 
 
 def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> None:
@@ -240,7 +243,7 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
             etl.db.create_group(conn, group)
 
 
-def _create_or_update_user(conn: Connection, user, only_update=False, dry_run=False):
+def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
     """
     Create user in its group, or add user to its group.
 
@@ -264,14 +267,14 @@ def _create_or_update_user(conn: Connection, user, only_update=False, dry_run=Fa
                 etl.db.create_user(conn, user.name, user.group)
 
 
-def _create_schema_for_user(conn, user, etl_group, dry_run=False):
+def _create_schema_for_user(conn: Connection, user: DataWarehouseUser, etl_group: str, dry_run=False):
     user_schema = etl.config.dw.DataWarehouseSchema(
         {"name": user.schema, "owner": user.name, "readers": [user.group, etl_group]}
     )
     create_schema_and_grant_access(conn, user_schema, owner=user.name, dry_run=dry_run)
 
 
-def _update_search_path(conn, user, dry_run=False):
+def _update_search_path(conn: Connection, user: DataWarehouseUser, dry_run=False):
     """Non-system users have their schema in the search path, others get nothing (only "public")."""
     search_path = ["public"]
     if user.schema == user.name:
@@ -283,7 +286,7 @@ def _update_search_path(conn, user, dry_run=False):
         etl.db.alter_search_path(conn, user.name, search_path)
 
 
-def initial_setup(with_user_creation=False, force=False, dry_run=False):
+def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
     """
     Place named data warehouse database into initial state.
 
@@ -346,8 +349,8 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
 
 
 def create_or_update_user(
-    user_name, group_name=None, add_user_schema=False, only_update=False, dry_run=False
-):
+    user_name: str, group_name=None, add_user_schema=False, only_update=False, dry_run=False
+) -> None:
     """
     Add new user to cluster or update existing user.
 
@@ -415,8 +418,8 @@ def list_users(transpose=False) -> None:
             groups[user.group].append(user.name)
         rows = [[group, ", ".join(sorted(groups[group]))] for group in sorted(groups)]
     else:
-        header = ["user", "groups"]
-        rows = [[user.name, user.group] for user in config.users]
+        header = ["user", "groups", "comment"]
+        rows = [[user.name, user.group, user.comment or ""] for user in config.users]
     print(etl.text.format_lines(rows, header_row=header))
 
 

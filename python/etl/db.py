@@ -420,7 +420,7 @@ def _get_encrypted_password(cx, user) -> Optional[str]:
     return "md5" + md5.hexdigest()
 
 
-def create_user(cx, user, group):
+def create_user(cx: Connection, user: str, group: str) -> None:
     password = _get_encrypted_password(cx, user)
     if password is None:
         logger.warning("Missing entry in PGPASSFILE file for '%s'", user)
@@ -428,28 +428,28 @@ def create_user(cx, user, group):
         raise ETLRuntimeError(
             f"password missing from PGPASSFILE for user '{user}'"
         )  # lgtm[py/clear-text-logging-sensitive-data]
-    execute(cx, """CREATE USER "{}" IN GROUP "{}" PASSWORD %s""".format(user, group), (password,))
+    execute(cx, f"""CREATE USER "{user}" IN GROUP "{group}" PASSWORD %s""", (password,))
 
 
-def alter_password(cx, user, ignore_missing_password=False):
+def alter_password(cx: Connection, user: str, ignore_missing_password=False) -> None:
     password = _get_encrypted_password(cx, user)
     if password is None:
         logger.warning("Failed to find password in PGPASSFILE for '%s'", user)
         if not ignore_missing_password:
             raise ETLRuntimeError("password missing from PGPASSFILE for user '{}'".format(user))
         return
-    execute(cx, """ALTER USER "{}" PASSWORD %s""".format(user), (password,))
+    execute(cx, f"""ALTER USER "{user}" PASSWORD %s""", (password,))
 
 
-def alter_group_add_user(cx, group, user):
-    execute(cx, """ALTER GROUP "{}" ADD USER "{}" """.format(group, user))
+def alter_group_add_user(cx: Connection, group: str, user: str) -> None:
+    execute(cx, f"""ALTER GROUP "{group}" ADD USER "{user}" """)
 
 
-def alter_search_path(cx, user, schemas):
-    execute(cx, """ALTER USER "{}" SET SEARCH_PATH TO {}""".format(user, ", ".join(schemas)))
+def alter_search_path(cx: Connection, user: str, schemas: Iterable[str]) -> None:
+    execute(cx, f"""ALTER USER "{user}" SET SEARCH_PATH TO {", ".join(schemas)}""")
 
 
-def user_exists(cx, user) -> bool:
+def user_exists(cx: Connection, user: str) -> bool:
     rows = query(
         cx,
         """
@@ -536,7 +536,7 @@ def revoke_all_on_all_tables_in_schema(cx: Connection, schema: str, groups: Iter
 # ---- TABLES ----
 
 
-def relation_kind(cx, schema, table) -> Optional[str]:
+def relation_kind(cx: Connection, schema: str, table: str) -> Optional[str]:
     """
     Return "kind" of relation, either 'TABLE' or 'VIEW' for relations that actually exist.
 

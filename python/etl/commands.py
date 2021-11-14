@@ -727,7 +727,7 @@ class ListUsersCommand(SubCommand):
         super().__init__(
             "list_users",
             "list users as they are configured",
-            "List all users and their groups in the way that they are configurd.",
+            "List all users and their groups in the way that they are configured.",
         )
 
     def add_arguments(self, parser):
@@ -756,7 +756,7 @@ class UpdateUserCommand(SubCommand):
         parser.add_argument(
             "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
         )
-        parser.add_argument("username", help="name of existing user")
+        parser.add_argument("name", help="name of user")
 
     def callback(self, args):
         with etl.db.log_error():
