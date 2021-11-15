@@ -23,9 +23,10 @@ sphinx-apidoc \
     --ext-autodoc --ext-doctest --ext-viewcode \
     --output "docs/source/etl" "python/etl"
 sphinx-build -M html "docs/source" "./build" "$@"
-cp -a "./build/html" "./docs/"
 
 set +o verbose
+cp -a "./build/html" "./docs/"
+
 cat <<OPEN_HTML
 ------------------------------------------
 
