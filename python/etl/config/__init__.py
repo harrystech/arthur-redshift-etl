@@ -48,7 +48,6 @@ VALIDATION_SCHEMA_ERRORS = (
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
 # Global config objects - always use accessors!
 _dw_config: Optional[DataWarehouseConfig] = None
 _mapped_config: Optional[Dict[str, str]] = None
@@ -336,6 +335,11 @@ def gather_setting_files(config_files: Iterable[str]) -> List[str]:
         settings_found.add(filename)
         settings_with_path.append(fullname)
     return sorted(settings_with_path)
+
+
+def is_set(name: str):
+    if _mapped_config is not None:
+        return name in _mapped_config.keys()
 
 
 @lru_cache()
