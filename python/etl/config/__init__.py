@@ -65,6 +65,12 @@ def package_version(package_name="redshift_etl") -> str:
     return f"{package_name} {arthur_version()}"
 
 
+def is_config_set(name: str) -> bool:
+    if _mapped_config is not None:
+        return name in _mapped_config.keys()
+    return False
+
+
 def get_dw_config():
     return _dw_config
 
@@ -335,11 +341,6 @@ def gather_setting_files(config_files: Iterable[str]) -> List[str]:
         settings_found.add(filename)
         settings_with_path.append(fullname)
     return sorted(settings_with_path)
-
-
-def is_set(name: str):
-    if _mapped_config is not None:
-        return name in _mapped_config.keys()
 
 
 @lru_cache()

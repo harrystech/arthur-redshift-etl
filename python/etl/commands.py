@@ -1128,10 +1128,10 @@ class LoadDataWarehouseCommand(SubCommand):
             "resources.RedshiftCluster.max_concurrency", 1
         )
         statement_timeout = args.statement_timeout
-        if etl.config.is_set("resources.RedshiftCluster.statement_timeout"):
-            statement_timeout = statement_timeout or etl.config.get_config_int(
-                "resources.RedshiftCluster.statement_timeout"
-            )
+        if statement_timeout is None and etl.config.is_config_set(
+            "resources.RedshiftCluster.statement_timeout"
+        ):
+            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1224,10 +1224,10 @@ class UpgradeDataWarehouseCommand(SubCommand):
             "resources.RedshiftCluster.max_concurrency", 1
         )
         statement_timeout = args.statement_timeout
-        if etl.config.is_set("resources.RedshiftCluster.statement_timeout"):
-            statement_timeout = statement_timeout or etl.config.get_config_int(
-                "resources.RedshiftCluster.statement_timeout"
-            )
+        if statement_timeout is None and etl.config.is_config_set(
+            "resources.RedshiftCluster.statement_timeout"
+        ):
+            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1287,10 +1287,10 @@ class UpdateDataWarehouseCommand(SubCommand):
     def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         statement_timeout = args.statement_timeout
-        if etl.config.is_set("resources.RedshiftCluster.statement_timeout"):
-            statement_timeout = statement_timeout or etl.config.get_config_int(
-                "resources.RedshiftCluster.statement_timeout"
-            )
+        if statement_timeout is None and etl.config.is_config_set(
+            "resources.RedshiftCluster.statement_timeout"
+        ):
+            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
