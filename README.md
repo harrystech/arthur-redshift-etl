@@ -8,12 +8,12 @@
 ---
 
 ```
-                _   _                  _____          _     _     _  __ _     ______ _______ _
-     /\        | | | |                |  __ \        | |   | |   (_)/ _| |   |  ____|__   __| |
-    /  \   _ __| |_| |__  _   _ _ __  | |__) |___  __| |___| |__  _| |_| |_  | |__     | |  | |
-   / /\ \ | '__| __| '_ \| | | | '__| |  _  // _ \/ _` / __| '_ \| |  _| __| |  __|    | |  | |
-  / ____ \| |  | |_| | | | |_| | |    | | \ \  __/ (_| \__ \ | | | | | | |_  | |____   | |  | |____
- /_/    \_\_|   \__|_| |_|\__,_|_|    |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
+               _   _                  _____          _     _     _  __ _     ______ _______ _
+    /\        | | | |                |  __ \        | |   | |   (_)/ _| |   |  ____|__   __| |
+   /  \   _ __| |_| |__  _   _ _ __  | |__) |___  __| |___| |__  _| |_| |_  | |__     | |  | |
+  / /\ \ | '__| __| '_ \| | | | '__| |  _  // _ \/ _` / __| '_ \| |  _| __| |  __|    | |  | |
+ / ____ \| |  | |_| | | | |_| | |    | | \ \  __/ (_| \__ \ | | | | | | |_  | |____   | |  | |____
+/_/    \_\_|   \__|_| |_|\__,_|_|    |_|  \_\___|\__,_|___/_| |_|_|_|  \__| |______|  |_|  |______|
 ```
 
 Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem.
@@ -358,7 +358,12 @@ You can also run the linters directly:
 pre-commit run
 ```
 
-#### Running linters and formatters locally
+Or you can re-run some linters with something like:
+```
+pre-commit run black --all-files
+```
+
+#### Running linters and formatters directly
 
 To use the linters (`isort`, `black`, `flake8`, `mypy`) locally, install them
 into a virtual environment:

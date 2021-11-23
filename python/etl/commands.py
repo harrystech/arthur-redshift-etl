@@ -7,12 +7,10 @@ so that they can be leveraged by utilities in addition to the top-level script.
 
 import abc
 import argparse
-import itertools
 import logging
 import os
 import shlex
 import sys
-import traceback
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -20,7 +18,6 @@ from typing import Iterable, List, Optional
 
 import boto3
 import simplejson as json
-from termcolor import colored
 
 import etl.config
 import etl.config.env
@@ -47,26 +44,11 @@ import etl.unload
 import etl.validate
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
+from etl.util import croak, isoformat_datetime_string
 from etl.util.timer import Timer
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
-
-def croak(error, exit_code):
-    """
-    Print first line of exception and then bail out with the exit code.
-
-    When you have a large stack trace, it's easy to miss the trigger and
-    so we call it out here again on stderr.
-    """
-    exception_only = traceback.format_exception_only(type(error), error)[0]
-    header = exception_only.splitlines()[0]
-    # Make sure to not send random ASCII sequences to a log file.
-    if sys.stderr.isatty():
-        header = colored(header, color="red", attrs=["bold"])
-    print(f"Bailing out: {header}", file=sys.stderr)
-    sys.exit(exit_code)
 
 
 @contextmanager
@@ -95,15 +77,24 @@ def execute_or_bail(sub_command: str):
                 exc_cause_type.__module__,
                 exc_cause_type.__qualname__,
             )
-        logger.info("Ran for %.2fs before this untimely end!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s before this untimely end!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
         croak(exc, 2)
     except Exception as exc:
         logger.critical("Something terrible happened:", exc_info=True)
-        logger.info("Ran for %.2fs before encountering disaster!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s before encountering disaster!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
         croak(exc, 3)
     except BaseException as exc:
         logger.critical("Something really terrible happened:", exc_info=True)
-        logger.info("Ran for %.2fs before an exceptional termination!", timer.elapsed)
+        logger.info(
+            f"Ran '{sub_command}' for {timer.elapsed:.2f}s before an exceptional termination!",
+            extra={"metrics": {"elapsed": timer.elapsed, "sub_command": sub_command}},
+        )
         croak(exc, 5)
     else:
         logger.info(
@@ -241,20 +232,24 @@ class WideHelpFormatter(argparse.RawTextHelpFormatter):
 
 class FancyArgumentParser(argparse.ArgumentParser):
     """
-    Fancier version of the argument parser supporting "@file".
+    Fancier version of the argument parser supporting `@file` to fetch additional arguments.
 
     Add feature to read command line arguments from files and support:
-        * One argument per line (whitespace is trimmed)
-        * Comments or empty lines (either are ignored)
+
+    - One argument per line (whitespace is trimmed)
+    - Comments or empty lines (either are ignored)
+
     This enables direct use of output from show_downstream_dependents and
     show_upstream_dependencies.
 
-    To use this feature, add an argument with "@" and have values ready inside of it, one per line:
-        cat > tables <<EOF
-        www.users
-        www.user_comments
-        EOF
-        arthur.py load @tables
+    Example:
+        To use this feature, add an argument with "@" and have values ready inside of it, one per line::
+
+            cat > tables <<EOF
+            www.users
+            www.user_comments
+            EOF
+            arthur.py load @tables
     """
 
     def __init__(self, **kwargs) -> None:
@@ -286,11 +281,6 @@ class FancyArgumentParser(argparse.ArgumentParser):
         if len(args) > 1:
             raise ValueError("unrecognizable argument value in line: {}".format(arg_line.strip()))
         return args
-
-
-def isoformat_datetime_string(argument):
-    # "isoformat" is used as a verb here.
-    return datetime.strptime(argument, "%Y-%m-%dT%H:%M:%S")
 
 
 def build_basic_parser(prog_name, description=None):
@@ -342,61 +332,56 @@ def build_full_parser(prog_name):
     # Details for sub-commands lives with sub-classes of sub-commands.
     # Hungry? Get yourself a sub-way.
     subparsers = parser.add_subparsers(
-        help="specify one of these sub-commands (which can all provide more help)",
+        help="choose one of these sub-commands (use '-h' to see the sub-command's help)",
         title="available sub-commands",
         dest="sub_command",
     )
     for klass in [
-        # TODO(tom): Split into common and infrequent commands, sort alphabetically.
-        # Commands to deal with data warehouse as admin
-        InitializeSetupCommand,
-        ShowRandomPassword,
-        CreateGroupsCommand,
-        CreateUserCommand,
-        ListUsersCommand,
-        UpdateUserCommand,
-        RunSqlCommand,
-        # Commands to help with table designs and uploading them
+        # Command classes are sorted alphabetically. This makes it easier to find commands
+        # in the growing list of sub-commands. It also reduces friction when updating
+        # this list since we can avoid looking for "right" group or order.
         BootstrapSourcesCommand,
         BootstrapTransformationsCommand,
-        ValidateDesignsCommand,
-        ExplainQueryCommand,
-        RunQueryCommand,
         CheckConstraintsCommand,
-        ShowDdlCommand,
-        CreateIndexCommand,
-        SyncWithS3Command,
-        ShowDownstreamDependentsCommand,
-        ShowUpstreamDependenciesCommand,
-        TagsCommand,
-        # ETL commands to extract, load (or update), or transform
-        ExtractToS3Command,
-        LoadDataWarehouseCommand,
-        UpgradeDataWarehouseCommand,
-        UpdateDataWarehouseCommand,
-        UnloadDataToS3Command,
-        # Helper commands (database)
         CreateExternalSchemasCommand,
+        CreateGroupsCommand,
+        CreateIndexCommand,
         CreateSchemasCommand,
-        PromoteSchemasCommand,
-        PingCommand,
-        TerminateSessionsCommand,
-        VacuumCommand,
-        # Helper commands (filesystem)
+        CreateUserCommand,
+        DeleteFinishedPipelinesCommand,
+        ExplainQueryCommand,
+        ExtractToS3Command,
+        InitializeSetupCommand,
         ListFilesCommand,
-        # Environment commands
+        ListTagsCommand,
+        ListUsersCommand,
+        LoadDataWarehouseCommand,
+        PingCommand,
+        PromoteSchemasCommand,
+        QueryEventsCommand,
         RenderTemplateCommand,
+        RunQueryCommand,
+        RunSqlCommand,
+        SelfTestCommand,
+        ShowDdlCommand,
+        ShowDownstreamDependentsCommand,
+        ShowHelpCommand,
+        ShowPipelinesCommand,
+        ShowRandomPassword,
+        ShowUpstreamDependenciesCommand,
         ShowValueCommand,
         ShowVarsCommand,
-        ShowPipelinesCommand,
-        DeleteFinishedPipelinesCommand,
-        QueryEventsCommand,
         SummarizeEventsCommand,
+        SyncWithS3Command,
         TailEventsCommand,
         TailLogsCommand,
-        # General and development commands
-        ShowHelpCommand,
-        SelfTestCommand,
+        TerminateSessionsCommand,
+        UnloadDataToS3Command,
+        UpdateDataWarehouseCommand,
+        UpdateUserCommand,
+        UpgradeDataWarehouseCommand,
+        VacuumCommand,
+        ValidateDesignsCommand,
     ]:
         cmd = klass()
         cmd.add_to_parser(subparsers)
@@ -1792,10 +1777,10 @@ class ShowUpstreamDependenciesCommand(SubCommand):
         etl.load.show_upstream_dependencies(relations, args.pattern)
 
 
-class TagsCommand(SubCommand):
+class ListTagsCommand(SubCommand):
     def __init__(self):
         super().__init__(
-            "tags",
+            "list_tags",
             "list tags found in settings",
             "Collect all the tags found in setting files.",
         )
@@ -1804,11 +1789,11 @@ class TagsCommand(SubCommand):
         pass
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
-        tags = set()
-        for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
-            tags.update(schema.tags)
-        print(f"Tags: {join_with_single_quotes(tags)}")
+        tags = etl.config.get_tags()
+        if tags:
+            print(f"Tags:\n{join_with_single_quotes(tags)}")
+        else:
+            print("No tags found")
 
 
 class RenderTemplateCommand(SubCommand):
@@ -2018,12 +2003,18 @@ class TailLogsCommand(SubCommand):
         super().__init__(
             "tail_logs",
             "show latest logs from CloudWatch",
-            "Show logs from CloudWatch for the last 15 minutes",
+            "Show logs from CloudWatch (by default, starting from 15 minutes ago)",
         )
 
     def add_arguments(self, parser):
         add_standard_arguments(parser, ["prefix"])
-
+        parser.add_argument(
+            "-w",
+            "--warnings",  # TODO(tom): Should be "--warnings-and-above"?
+            action="store_true",
+            default=False,
+            help="skip INFO or DEBUG and focus on WARNING and above",
+        )
         start_time = (
             (datetime.utcnow() - timedelta(minutes=15)).replace(microsecond=0, tzinfo=None).isoformat()
         )
@@ -2031,18 +2022,22 @@ class TailLogsCommand(SubCommand):
             "-t",
             "--start-time",
             default=start_time,
-            help="beginning of time window (default: 15 minutes ago, '%s')" % start_time,
+            help=f"beginning of time window (default: '15 minutes ago', '{start_time}')",
             type=isoformat_datetime_string,
         )
 
     def callback(self, args):
-        etl.logs.cloudwatch.tail(args.prefix, args.start_time)
+        etl.logs.cloudwatch.tail_logs(args.prefix, args.start_time, filter_warnings=args.warnings)
 
 
 class ShowHelpCommand(SubCommand):
     def __init__(self):
-        super().__init__("help", "show help by topic", "Show helpful information around selected topic.")
         self.topics = ("config", "extract", "load", "pipeline", "sync", "unload", "validate")
+        super().__init__(
+            "help",
+            f"show help by topic ({', '.join(self.topics)})",
+            "Show helpful information around selected topic.",
+        )
 
     def add_arguments(self, parser):
         parser.set_defaults(log_level="CRITICAL")
@@ -2054,7 +2049,7 @@ class ShowHelpCommand(SubCommand):
 
 class SelfTestCommand(SubCommand):
     def __init__(self):
-        super().__init__("selftest", "run code tests of ETL", "Run self test of the ETL.")
+        super().__init__("selftest", "run code tests of ETL", "Run self test of the ETL code.")
 
     def add_arguments(self, parser):
         # For self-tests, dial logging back to (almost) nothing so that logging in console
@@ -2062,7 +2057,7 @@ class SelfTestCommand(SubCommand):
         parser.set_defaults(log_level="CRITICAL")
 
     def callback(self, args):
-        etl.selftest.run_doctest("etl", args.log_level)
+        etl.selftest.run_selftest("etl", args.log_level)
 
 
 if __name__ == "__main__":

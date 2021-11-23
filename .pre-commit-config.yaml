@@ -35,7 +35,7 @@ repos:
     hooks:
       - id: pyupgrade
   - repo: https://github.com/timothycrosley/isort
-    rev: 5.10.0
+    rev: 5.10.1
     hooks:
       - id: isort
   - repo: https://github.com/psf/black
@@ -56,8 +56,8 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - "mypy-boto3~=1.19"
-          - "types-PyYAML==6.0.0"
+          - "mypy-boto3~=1.20"
+          - "types-PyYAML==6.0.1"
           - "types-setuptools==57.4.2"
           - "types-simplejson==3.17.1"
           - "types-tabulate==0.8.3"

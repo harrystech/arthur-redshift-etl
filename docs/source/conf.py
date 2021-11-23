@@ -23,7 +23,7 @@ copyright = "2017-%s, Harry's, Inc." % time.strftime("%Y")
 author = "Data Engineering at Harry's"
 
 # TODO(tom): Extract from setup.py
-version = "1.55"
+version = "1.56"
 
 # -- General configuration ---------------------------------------------------
 
@@ -33,6 +33,8 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    # This must be after sphinx.ext.napoleon:
+    "sphinx_autodoc_typehints",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -43,8 +45,30 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["README.md"]
 
-needs_sphinx = "4.0"
+needs_sphinx = "4.3"
+
+# -- Options for extensions -------------------------------------------------
+
+napoleon_include_init_with_doc = True
+
 nitpicky = True
+
+# Adding standard libraries here to avoid too many warnings during build.
+nitpick_ignore = [
+    ("py:class", "abc.ABC"),
+    ("py:class", "botocore.response.StreamingBody"),
+    ("py:class", "datetime.datetime"),
+    ("py:class", "logging.Filter"),
+    ("py:class", "logging.Formatter"),
+    ("py:class", "simplejson.encoder.JSONEncoder"),
+    ("py:class", "string.Template"),
+    ("py:class", "textwrap.TextWrapper"),
+    ("py:class", "threading.Thread"),
+]
+nitpick_ignore_regex = [
+    ("py:class", r"argparse\..*"),
+    ("py:data", r"typing\..*"),
+]
 
 # -- Options for HTML output -------------------------------------------------
 

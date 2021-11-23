@@ -1,6 +1,7 @@
 python:
   - '*.py'
   - '**/*.py'
+  - 'requirements*.txt'
 
 documentation:
   - '*.md'

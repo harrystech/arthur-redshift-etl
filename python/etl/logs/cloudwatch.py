@@ -1,7 +1,7 @@
+import datetime
 import json
 import logging
 import logging.config
-from datetime import datetime
 
 import boto3
 import watchtower
@@ -14,10 +14,16 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def add_cloudwatch_logging(prefix) -> None:
+def add_cloudwatch_logging(prefix: str) -> None:
+    """
+    Add logging to CloudWatch by adding another handler and formatter to the log stream.
+
+    Args:
+        prefix: Top-level group of CloudWatch stream.
+    """
     session = boto3.session.Session()
     log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
-    now = datetime.utcnow()
+    now = datetime.datetime.utcnow()
     stream_name = f"{prefix}/{now.year}/{now.month}/{now.day}/{etl.monitor.Monitor.etl_id}"
 
     logger.info(f"Starting logging to CloudWatch stream '{log_group}/{stream_name}'")
@@ -38,7 +44,14 @@ def add_cloudwatch_logging(prefix) -> None:
     root_logger.addHandler(handler)
 
 
-def tail(prefix: str, start_time: datetime) -> None:
+def tail_logs(prefix: str, start_time: datetime.datetime, filter_warnings=False) -> None:
+    """
+    Fetch log lines from CloudWatch, filtering for `prefix` as the environment.
+
+    Args:
+        prefix: Top-level group of CloudWatch stream.
+        start_time: How far to go back when loading log lines.
+    """
     client = boto3.client("logs")
     log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
     logger.info(f"Searching log streams '{log_group}/{prefix}/*' (starting at '{start_time})'")
@@ -53,4 +66,8 @@ def tail(prefix: str, start_time: datetime) -> None:
         for event in response["events"]:
             stream_name = event["logStreamName"]
             message = json.loads(event["message"])
+            if filter_warnings and message["log_level"] in ("DEBUG", "INFO"):
+                continue
             print(f"{stream_name} {message['gmtime']} {message['log_level']} {message['message']}")
+            if "metrics" in message:
+                print(f"{stream_name} {message['gmtime']} (metrics) {message['metrics']}")

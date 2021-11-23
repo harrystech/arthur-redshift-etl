@@ -2,22 +2,27 @@
 Configuration files cover settings and DSNs.
 
 We use the term "config" files to refer to all files that may reside in the "config" directory:
-  * "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
-  * Environment files (with variables used in connections)
-  * Other files (like release notes)
+
+* "Settings" files (ending in '.yaml') which drive the data warehouse or resource settings
+* Environment files (with variables used in connections)
+* Other files (like release notes)
 
 For settings and environment files, files are loaded in alphabetical order and they keep updating
 values so that only the last one is kept. If you want to ensure a particular order, your best option
-is to prefix the files with a number sequence:
-  01_general.yaml
-  02_deploy.yaml
+is to prefix the files with a number sequence::
+
+    01_general.yaml
+    02_deploy.yaml
+
 and so on.
 
-To inspect the final value of settings (and see the order of files loaded), use:
-  arthur.py settings --verbose
+To inspect the final value of settings (and see the order of files loaded), use::
+
+    arthur.py settings --verbose
 """
 
 import datetime
+import itertools
 import logging
 import os
 import os.path
@@ -58,11 +63,11 @@ _mapped_config: Optional[Dict[str, str]] = None
 ETL_TMP_DIR = "/tmp/redshift_etl"
 
 
-def arthur_version(package_name="redshift_etl") -> str:
+def arthur_version(package_name: str = "redshift_etl") -> str:
     return f"v{pkg_resources.get_distribution(package_name).version}"
 
 
-def package_version(package_name="redshift_etl") -> str:
+def package_version(package_name: str = "redshift_etl") -> str:
     return f"{package_name} {arthur_version()}"
 
 
@@ -87,7 +92,7 @@ def get_config_int(name: str, default: Optional[int] = None) -> int:
     """
     Lookup a configuration value that is an integer.
 
-    It is an error if the value (even when using the default) is None.
+    It is an error if the value (even when using the default) is `None`.
 
     Args:
         name: dot-separated configuration parameter name
@@ -135,7 +140,15 @@ def get_config_map() -> Dict[str, str]:
     return dict(_mapped_config)
 
 
-def _flatten_hierarchy(prefix, props):
+def get_tags() -> List[str]:
+    dw_config = get_dw_config()
+    tags = set()
+    for schema in itertools.chain(dw_config.schemas, dw_config.external_schemas):
+        tags.update(schema.tags)
+    return sorted(tags)
+
+
+def _flatten_hierarchy(prefix: str, props):
     assert isinstance(props, dict), f"this should only be called with dicts, not {type(props)}"
     for key in sorted(props):
         full_key = f"{prefix}.{key}"
@@ -169,7 +182,7 @@ def load_environ_file(filename: str) -> None:
     """
     Set environment variables based on file contents.
 
-    Only lines that look like 'NAME=VALUE' or 'export NAME=VALUE' are used,
+    Only lines that look like `NAME=VALUE` or `export NAME=VALUE` are used,
     other lines are silently dropped.
     """
     logger.info(f"Loading environment variables from '{filename}'")
@@ -316,11 +329,17 @@ def validate_with_schema(obj: dict, schema_name: str) -> None:
 
 def gather_setting_files(config_files: Iterable[str]) -> List[str]:
     """
-    Gather all settings files (*.yaml and *.sh files) that should be deployed together.
+    Gather all settings files (i.e., `*.yaml` and `*.sh` files) that should be deployed together.
 
-    NOTE This drops any hierarchy in the config files. It is an error if we detect that there are
-    settings files in separate directories that have the same filename.
-    So trying '-c hello/world.yaml -c hola/world.yaml' triggers an exception.
+    Warning:
+        This drops any hierarchy in the config files. It is an error if we detect that there are
+        settings files in separate directories that have the same filename.
+        So trying `-c hello/world.yaml -c hola/world.yaml` triggers an exception.
+
+    Args:
+        config_files: List of files of file paths from where to collect settings files
+    Returns:
+        List of settings files with their full path
     """
     settings_found: Set[str] = set()
     settings_with_path = []
