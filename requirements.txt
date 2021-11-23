@@ -12,4 +12,4 @@ simplejson==3.17.5
 tabulate==0.8.9
 termcolor==1.1.0
 tqdm==4.62.3
-watchtower==1.0.6
+watchtower==2.0.0

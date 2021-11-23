@@ -21,20 +21,18 @@ def add_cloudwatch_logging(prefix: str) -> None:
     Args:
         prefix: Top-level group of CloudWatch stream.
     """
-    session = boto3.session.Session()
+    client = boto3.client("logs")
     log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
     now = datetime.datetime.utcnow()
     stream_name = f"{prefix}/{now.year}/{now.month}/{now.day}/{etl.monitor.Monitor.etl_id}"
-
     logger.info(f"Starting logging to CloudWatch stream '{log_group}/{stream_name}'")
     handler = watchtower.CloudWatchLogHandler(
-        boto3_session=session,
-        log_group=log_group,
+        boto3_client=client,
+        log_group_name=log_group,
         log_group_retention_days=180,
+        log_stream_name=stream_name,
         send_interval=10,
-        stream_name=stream_name,
     )
-
     log_level = get_config_value("arthur_settings.logging.cloudwatch.log_level")
     handler.setLevel(log_level)
     # The extra "str()" gets around the meta class approach to store the etl_id.
@@ -51,6 +49,7 @@ def tail_logs(prefix: str, start_time: datetime.datetime, filter_warnings=False)
     Args:
         prefix: Top-level group of CloudWatch stream.
         start_time: How far to go back when loading log lines.
+        filter_warnings: Boolean to decide whether to keep only warnings (and above).
     """
     client = boto3.client("logs")
     log_group = get_config_value("arthur_settings.logging.cloudwatch.log_group")
