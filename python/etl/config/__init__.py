@@ -53,7 +53,6 @@ VALIDATION_SCHEMA_ERRORS = (
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
 # Global config objects - always use accessors!
 _dw_config: Optional[DataWarehouseConfig] = None
 _mapped_config: Optional[Dict[str, str]] = None
@@ -69,6 +68,12 @@ def arthur_version(package_name: str = "redshift_etl") -> str:
 
 def package_version(package_name: str = "redshift_etl") -> str:
     return f"{package_name} {arthur_version()}"
+
+
+def is_config_set(name: str) -> bool:
+    if _mapped_config is not None:
+        return name in _mapped_config.keys()
+    return False
 
 
 def get_dw_config():

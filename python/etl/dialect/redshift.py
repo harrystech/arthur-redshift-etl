@@ -535,7 +535,10 @@ def set_wlm_slots(conn: Connection, slots: int, dry_run: bool) -> None:
     )
 
 
-def set_statement_timeout(conn: Connection, statement_timeout: int, dry_run: bool) -> None:
+def set_statement_timeout(conn: Connection, statement_timeout: Optional[int], dry_run: bool) -> None:
+    if statement_timeout is None:
+        logger.debug("Using default cluster statement timeout")
+        return
     etl.db.run(
         conn,
         f"Setting timeout for statements running in Redshift to {statement_timeout} ms",
