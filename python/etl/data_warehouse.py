@@ -15,7 +15,7 @@ For user management, we require to have passwords for all declared users in a ~/
 import logging
 from collections import defaultdict
 from contextlib import closing
-from typing import Iterable, Sequence
+from typing import Iterable, List, Sequence
 
 from psycopg2.extensions import connection as Connection  # only used for typing
 
@@ -150,11 +150,13 @@ def _promote_schemas(schemas: Iterable[DataWarehouseSchema], from_where: str, dr
             grant_schema_permissions(conn, schema)
 
 
-def backup_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> None:
+def backup_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.
 
     Once the access is revoked, the backup schemas "disappear" from BI tools.
+
+    This is a callback of a command.
     """
     schema_lookup = {schema.name: schema for schema in schemas}
     dsn_etl = etl.config.get_dw_config().dsn_etl
@@ -231,12 +233,11 @@ def create_groups(dry_run=False) -> None:
 
 def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> None:
     """Make sure that all groups in the list exist."""
+    found: List[str] = []
     with conn:
         for group in groups:
             if etl.db.group_exists(conn, group):
-                logger.info(
-                    "Skipping group '%s' which already exists", group
-                )  # lgtm[py/clear-text-logging-sensitive-data]
+                found.append(group)
                 continue
             if dry_run:
                 logger.info(
@@ -245,6 +246,10 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
                 continue
             logger.info("Creating group '%s'", group)  # lgtm[py/clear-text-logging-sensitive-data]
             etl.db.create_group(conn, group)
+    if found:
+        logger.info(
+            "%d group(s) already existed: %s", len(found), join_with_single_quotes(found)
+        )  # lgtm[py/clear-text-logging-sensitive-data]
 
 
 def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
@@ -285,10 +290,14 @@ def _update_search_path(conn: Connection, user: DataWarehouseUser, dry_run=False
     if user.schema == user.name:
         search_path[:0] = ["'$user'"]  # needs to be quoted per documentation
     if dry_run:
-        logger.info("Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path)
+        logger.info(
+            "Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path
+        )  # lgtm[py/clear-text-logging-sensitive-data]
         return
 
-    logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
+    logger.info(
+        "Setting search path for user '%s' to: %s", user.name, search_path
+    )  # lgtm[py/clear-text-logging-sensitive-data]
     etl.db.alter_search_path(conn, user.name, search_path)
 
 
