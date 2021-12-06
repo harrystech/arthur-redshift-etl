@@ -1360,7 +1360,7 @@ class CreateSchemasCommand(SubCommand):
             "create_schemas",
             "create schemas from data warehouse config",
             "Create schemas as configured and set permissions."
-            " Optionally move existing schemas to backup or create in staging position."
+            " Optionally move existing schemas to backup or create new schemas in staging position."
             " (Any patterns must be schema names.)",
         )
 
@@ -1412,12 +1412,40 @@ class PromoteSchemasCommand(SubCommand):
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         schema_names = args.pattern.selected_schemas()
-        schemas = [schema for schema in dw_config.schemas if schema.name in schema_names]
+        selected_schemas = [schema for schema in dw_config.schemas if schema.name in schema_names]
+        with etl.db.log_error():
+            # Avoid accidentally backing up everything just to find nothing in the staging position.
+            existing_schemas = etl.data_warehouse.filter_to_existing_schemas(
+                selected_schemas, args.from_position
+            )
+        if not existing_schemas:
+            logger.warning(
+                "Not one of the %d selected schema(s) exists in %s position",
+                len(selected_schemas),
+                args.from_position,
+            )
+            return
+        if len(selected_schemas) == len(existing_schemas):
+            logger.info(
+                "Found %d schema(s) ready in their %s position",
+                len(selected_schemas),
+                args.from_position,
+            )
+        else:
+            missing = [schema.name for schema in selected_schemas if schema not in existing_schemas]
+            logger.warning(
+                "%d schema(s) had nothing in their %s position: %s",
+                len(missing),
+                args.from_position,
+                join_with_single_quotes(missing),
+            )
+
         with etl.db.log_error():
             if args.from_position == "staging":
-                etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
+                etl.data_warehouse.backup_schemas(existing_schemas, dry_run=args.dry_run)
+                etl.data_warehouse.publish_schemas_from_staging(existing_schemas, dry_run=args.dry_run)
             elif args.from_position == "backup":
-                etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
+                etl.data_warehouse.restore_schemas_from_backup(existing_schemas, dry_run=args.dry_run)
 
 
 class ValidateDesignsCommand(SubCommand):

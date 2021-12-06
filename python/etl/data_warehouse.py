@@ -13,9 +13,9 @@ For user management, we require to have passwords for all declared users in a ~/
 """
 
 import logging
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from contextlib import closing
-from typing import Iterable, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 from psycopg2.extensions import connection as Connection  # only used for typing
 
@@ -56,7 +56,11 @@ def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dr
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         for schema in schemas:
-            create_schema_and_grant_access(conn, schema, use_staging=use_staging, dry_run=dry_run)
+            create_schema(conn, schema, use_staging=use_staging, dry_run=dry_run)
+            if not schema.groups or use_staging:
+                # Don't grant usage on staging schemas to readers/writers (if any)
+                continue
+            grant_access_to_schema(conn, schema, use_staging=use_staging, dry_run=dry_run)
 
 
 def create_external_schema_and_grant_access(conn, schema, dry_run=False) -> None:
@@ -78,95 +82,82 @@ def create_external_schema_and_grant_access(conn, schema, dry_run=False) -> None
     etl.db.grant_usage(conn, schema.name, schema.reader_groups)
 
 
-def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, dry_run=False) -> None:
-    group_names = join_with_single_quotes(schema.groups)
+def create_schema(conn, schema, owner=None, use_staging=False, dry_run=False) -> None:
     name = schema.staging_name if use_staging else schema.name
     if dry_run:
         logger.info("Dry-run: Skipping creating schema '%s'", name)
-    else:
-        logger.info("Creating schema '%s'", name)
-        etl.db.create_schema(conn, name, owner)
-        etl.db.grant_all_on_schema_to_user(conn, name, schema.owner)
-    if not schema.groups or use_staging:
-        # Don't grant usage on staging schemas to readers/writers (if any)
-        return None
+        return
+
+    logger.info("Creating schema '%s'", name)
+    etl.db.create_schema(conn, name, owner)
+    etl.db.grant_all_on_schema_to_user(conn, name, schema.owner)
+
+
+def grant_access_to_schema(conn, schema, use_staging=False, dry_run=False) -> None:
+    group_names = join_with_single_quotes(schema.groups)
+    name = schema.staging_name if use_staging else schema.name
     if dry_run:
         logger.info("Dry-run: Skipping granting access in '%s' to '%s'", name, group_names)
+        return
+
+    # Readers/writers are differentiated in table permissions, not schema permissions
+    logger.info("Granting access in '%s' to %s", name, group_names)
+    etl.db.grant_usage(conn, name, schema.groups)
+
+
+def filter_to_existing_schemas(
+    schemas: Iterable[DataWarehouseSchema], position: Optional[str] = None
+) -> List[DataWarehouseSchema]:
+    """
+    Filter the list of schemas to those that exist (given their position) in their warehouse.
+
+    If the position is omitted (or None, which is the default), then schemas are searched in their
+    standard position.
+    If the position is "backup", then the schemas are searched in their backup position,
+      which means their name is something like "etl_backup$dw".
+    If the position is "staging", then the schemas are searched in their staging position,
+      which means their name is something like "etl_staging$dw".
+    """
+    if position == "backup":
+        schema_lookup = OrderedDict([(schema.backup_name, schema) for schema in schemas])
+    elif position == "staging":
+        schema_lookup = OrderedDict([(schema.staging_name, schema) for schema in schemas])
     else:
-        # Readers/writers are differentiated in table permissions, not schema permissions
-        logger.info("Granting access in '%s' to %s", name, group_names)
-        etl.db.grant_usage(conn, name, schema.groups)
-
-
-def _promote_schemas(schemas: Iterable[DataWarehouseSchema], from_where: str, dry_run=False) -> None:
-    """
-    Promote (staging or backup) schemas into their standard names and permissions.
-
-    Changes schema.from_name_attr -> schema.name; expects from_name_attr to be 'backup_name'
-    or 'staging_name'
-    """
-    attr_name = from_where + "_name"
-    assert attr_name in ("backup_name", "staging_name")
-    from_name_schema_lookup = {getattr(schema, attr_name): schema for schema in schemas}
+        schema_lookup = OrderedDict([(schema.name, schema) for schema in schemas])
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=True)) as conn:
+        found = etl.db.select_schemas(conn, schema_lookup.keys())
+        return [schema_lookup[schema_position_name] for schema_position_name in found]
+
+
+def backup_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
+    """
+    For existing schemas, rename them (to their backup position) and drop access privileges.
+
+    Once the access is revoked, the backup schemas "disappear" from BI tools.
+
+    This is a callback for a command.
+    """
+    dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        need_promotion = etl.db.select_schemas(conn, from_name_schema_lookup.keys())
-        if not need_promotion:
-            logger.info("Found no %s schemas to promote", from_where)
+        found_names = etl.db.select_schemas(conn, [schema.name for schema in schemas])
+        if not found_names:
+            logger.info("Found no existing schemas to backup")
             return
 
-        # Always log the original names, not the ones found in need_promotion.
-        selected_names = join_with_single_quotes(
-            from_name_schema_lookup[from_name].name for from_name in need_promotion
-        )
         if dry_run:
             logger.info(
-                "Dry-run: Skipping promotion of %d schema(s) from %s position: %s",
-                len(need_promotion),
-                from_where,
-                selected_names,
+                "Dry-run: Skipping backup of %d schema(s): %s",
+                len(found_names),
+                join_with_single_quotes(found_names),
             )
             return
 
         logger.info(
-            "Promoting %d schema(s) from %s position: %s",
-            len(need_promotion),
-            from_where,
-            selected_names,
+            "Creating backup of %d schema(s): %s", len(found_names), join_with_single_quotes(found_names)
         )
-        for from_name in need_promotion:
-            schema = from_name_schema_lookup[from_name]
-            logger.info("Renaming schema '%s' from '%s'", schema.name, from_name)
-            etl.db.drop_schema(conn, schema.name)
-            etl.db.alter_schema_rename(conn, from_name, schema.name)
-            logger.info(
-                "Granting readers and writers access to schema '%s' after promotion", schema.name
-            )
-            grant_schema_permissions(conn, schema)
-
-
-def backup_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> None:
-    """
-    For existing schemas, rename them and drop access.
-
-    Once the access is revoked, the backup schemas "disappear" from BI tools.
-    """
-    schema_lookup = {schema.name: schema for schema in schemas}
-    dsn_etl = etl.config.get_dw_config().dsn_etl
-    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
-        found = etl.db.select_schemas(conn, schema_lookup.keys())
-        if not found:
-            logger.info("Found no existing schemas to backup")
-            return
-
-        selected_names = join_with_single_quotes(found)
-        if dry_run:
-            logger.info("Dry-run: Skipping backup of schema(s): %s", selected_names)
-            return
-
-        logger.info("Creating backup of schema(s) %s", selected_names)
-        for schema in [schema_lookup[name] for name in found]:
+        for schema in [schema for schema in schemas if schema.name in frozenset(found_names)]:
             logger.info(
                 "Revoking access from readers and writers to schema '%s' before backup", schema.name
             )
@@ -176,24 +167,66 @@ def backup_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> Non
             etl.db.alter_schema_rename(conn, schema.name, schema.backup_name)
 
 
-def restore_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> None:
+def _promote_schemas(schemas: Sequence[DataWarehouseSchema], from_where: str, dry_run=False) -> None:
+    """
+    Promote (staging or backup) schemas into their standard names and grant permissions.
+
+    Changes schema.from_name_attr to schema.name where from_name_attr is either "backup_name"
+    or "staging_name". So the argument "from_where" must be either "backup" or "staging".
+    """
+    standard_names = [schema.name for schema in schemas]
+    if from_where == "backup":
+        from_name_lookup = {schema.name: schema.backup_name for schema in schemas}
+    elif from_where == "staging":
+        from_name_lookup = {schema.name: schema.staging_name for schema in schemas}
+    else:
+        raise ValueError("unexpected 'from_where' value")
+    if dry_run:
+        logger.info(
+            "Dry-run: Skipping promotion of %d schema(s) from %s position: %s",
+            len(standard_names),
+            from_where,
+            join_with_single_quotes(standard_names),
+        )
+        return
+
+    dsn_etl = etl.config.get_dw_config().dsn_etl
+    with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
+        logger.info(
+            "Promoting %d schema(s) from %s position: %s",
+            len(standard_names),
+            from_where,
+            join_with_single_quotes(standard_names),
+        )
+        for schema in schemas:
+            logger.info("Renaming schema '%s' from '%s'", schema.name, from_name_lookup[schema.name])
+            etl.db.drop_schema(conn, schema.name)
+            etl.db.alter_schema_rename(conn, from_name_lookup[schema.name], schema.name)
+            logger.info(
+                "Granting readers and writers access to schema '%s' after promotion", schema.name
+            )
+            grant_schema_permissions(conn, schema)
+
+
+def restore_schemas_from_backup(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
     """
     For the schemas that we need or want, rename the backups and restore access.
 
-    This is the inverse of backup_schemas. Useful if bad data is in standard schemas
+    This is the inverse of backup_schemas. Useful if bad data is in standard schemas.
 
     This is a callback for a command.
     """
     _promote_schemas(schemas, "backup", dry_run=dry_run)
 
 
-def publish_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
+def publish_schemas_from_staging(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
     """
-    Backup current occupants of standard position and put staging schemas there.
+    Put staging schemas into the standard position.
+
+    Changed with v1.42.0: This no longer backups the schemas from their standard position first.
 
     This is a callback for a command.
     """
-    backup_schemas(schemas, dry_run=dry_run)
     _promote_schemas(schemas, "staging", dry_run=dry_run)
 
 
@@ -227,12 +260,11 @@ def create_groups(dry_run=False) -> None:
 
 def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> None:
     """Make sure that all groups in the list exist."""
+    found: List[str] = []
     with conn:
         for group in groups:
             if etl.db.group_exists(conn, group):
-                logger.info(
-                    "Skipping group '%s' which already exists", group
-                )  # lgtm[py/clear-text-logging-sensitive-data]
+                found.append(group)
                 continue
             if dry_run:
                 logger.info(
@@ -241,6 +273,8 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
                 continue
             logger.info("Creating group '%s'", group)  # lgtm[py/clear-text-logging-sensitive-data]
             etl.db.create_group(conn, group)
+    if found:
+        logger.info("%d group(s) already existed: %s", len(found), join_with_single_quotes(found))
 
 
 def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
@@ -271,7 +305,8 @@ def _create_schema_for_user(conn: Connection, user: DataWarehouseUser, etl_group
     user_schema = etl.config.dw.DataWarehouseSchema(
         {"name": user.schema, "owner": user.name, "readers": [user.group, etl_group]}
     )
-    create_schema_and_grant_access(conn, user_schema, owner=user.name, dry_run=dry_run)
+    create_schema(conn, user_schema, owner=user.name, dry_run=dry_run)
+    grant_access_to_schema(conn, user_schema, dry_run=dry_run)
 
 
 def _update_search_path(conn: Connection, user: DataWarehouseUser, dry_run=False):
@@ -281,9 +316,10 @@ def _update_search_path(conn: Connection, user: DataWarehouseUser, dry_run=False
         search_path[:0] = ["'$user'"]  # needs to be quoted per documentation
     if dry_run:
         logger.info("Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path)
-    else:
-        logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
-        etl.db.alter_search_path(conn, user.name, search_path)
+        return
+
+    logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
+    etl.db.alter_search_path(conn, user.name, search_path)
 
 
 def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
@@ -393,12 +429,26 @@ def create_or_update_user(
 
 
 def create_new_user(new_user, group=None, add_user_schema=False, dry_run=False):
+    """
+    Create a new user in the cluster, optionally adding them to a group.
+
+    This is a callback for a command.
+    """
+    create_or_update_user(
+        new_user, group, add_user_schema=add_user_schema, only_update=False, dry_run=dry_run
+    )
+
     create_or_update_user(
         new_user, group, add_user_schema=add_user_schema, only_update=False, dry_run=dry_run
     )
 
 
 def update_user(old_user, group=None, add_user_schema=False, dry_run=False):
+    """
+    Update a user in the cluster, optionally adding them to a group.
+
+    This is a callback for a command.
+    """
     create_or_update_user(
         old_user, group, add_user_schema=add_user_schema, only_update=True, dry_run=dry_run
     )
@@ -423,7 +473,7 @@ def list_users(transpose=False) -> None:
     print(etl.text.format_lines(rows, header_row=header))
 
 
-def list_open_transactions(cx):
+def list_open_transactions(cx: Connection):
     """
     Look for sessions that by other users that might interfere with the ETL.
 
@@ -456,7 +506,7 @@ def list_open_transactions(cx):
     return etl.db.query(cx, stmt)
 
 
-def terminate_sessions_with_transaction_locks(cx, dry_run=False) -> None:
+def terminate_sessions_with_transaction_locks(cx: Connection, dry_run=False) -> None:
     """
     Call Redshift's PG_TERMINATE_BACKEND to kick out other users with running queries.
 

@@ -650,22 +650,6 @@ def find_traversed_schemas(relations: Sequence[LoadableRelation]) -> List[DataWa
     return traversed_in_order
 
 
-def create_schemas_for_rebuild(
-    schemas: Sequence[DataWarehouseSchema], use_staging: bool, dry_run=False
-) -> None:
-    """
-    Create schemas necessary for a full rebuild of data warehouse.
-
-    If `use_staging`, only create new staging schemas.
-    Otherwise, move standard position schemas out of the way by renaming them. Then create new ones.
-    """
-    if use_staging:
-        etl.data_warehouse.create_schemas(schemas, use_staging=use_staging, dry_run=dry_run)
-    else:
-        etl.data_warehouse.backup_schemas(schemas, dry_run=dry_run)
-        etl.data_warehouse.create_schemas(schemas, dry_run=dry_run)
-
-
 # --- Section 3: Functions that tie table operations together
 
 
@@ -1189,7 +1173,10 @@ def load_data_warehouse(
         etl.db.print_result("List of sessions that have open transactions:", tx_info)
 
     etl.data_warehouse.create_groups(dry_run=dry_run)
-    create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
+    if not use_staging:
+        etl.data_warehouse.backup_schemas(traversed_schemas, dry_run=dry_run)
+    etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
+
     try:
         create_relations(
             relations,
@@ -1202,12 +1189,13 @@ def load_data_warehouse(
     except ETLRuntimeError:
         if not use_staging:
             logger.info("Restoring %d schema(s) after load failure", len(traversed_schemas))
-            etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
+            etl.data_warehouse.restore_schemas_from_backup(traversed_schemas, dry_run=dry_run)
         raise
 
     if use_staging:
         logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
-        etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
+        etl.data_warehouse.backup_schemas(traversed_schemas, dry_run=dry_run)
+        etl.data_warehouse.publish_schemas_from_staging(traversed_schemas, dry_run=dry_run)
 
 
 def upgrade_data_warehouse(
