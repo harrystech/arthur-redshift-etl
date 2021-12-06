@@ -12,7 +12,7 @@ def show_value(name: str, default: Optional[str]) -> None:
 
     This fails if the variable is not set and no default is provided.
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     value = etl.config.get_config_value(name, default)
     if value is None:
@@ -27,7 +27,7 @@ def show_vars(names: List[str]) -> None:
     This shows all known configuration settings as "variables" with their values or just
     the variables that are selected.
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     config_mapping = etl.config.get_config_map()
     all_keys = sorted(config_mapping)
