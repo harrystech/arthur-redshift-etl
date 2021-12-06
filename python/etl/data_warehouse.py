@@ -20,7 +20,7 @@ from typing import Iterable, List, Sequence
 from psycopg2.extensions import connection as Connection  # only used for typing
 
 import etl.config
-import etl.config.dw
+import etl.config.dw  # lgtm[py/import-and-import-from]
 import etl.db
 import etl.dialect.redshift
 from etl.config.dw import DataWarehouseSchema, DataWarehouseUser
@@ -241,15 +241,21 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
                 continue
             if dry_run:
                 logger.info(
-                    "Dry-run: Skipping creating group '%s'", group
-                )  # lgtm[py/clear-text-logging-sensitive-data]
+                    "Dry-run: Skipping creating group '%s'",
+                    group,  # lgtm[py/clear-text-logging-sensitive-data]
+                )
                 continue
-            logger.info("Creating group '%s'", group)  # lgtm[py/clear-text-logging-sensitive-data]
+            logger.info(
+                "Creating group '%s'",
+                group,  # lgtm[py/clear-text-logging-sensitive-data]
+            )
             etl.db.create_group(conn, group)
     if found:
         logger.info(
-            "%d group(s) already existed: %s", len(found), join_with_single_quotes(found)
-        )  # lgtm[py/clear-text-logging-sensitive-data]
+            "%d group(s) already existed: %s",
+            len(found),
+            join_with_single_quotes(found),  # lgtm[py/clear-text-logging-sensitive-data]
+        )
 
 
 def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
