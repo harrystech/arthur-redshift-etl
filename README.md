@@ -165,7 +165,8 @@ Don't forget to run `terminate_emr_cluster.sh` when you're done.
 | Sub-command   | Goal |
 | ---- | ---- |
 | `initialize`  | Create schemas, groups and users |
-| `create_user`    | Create (or configure) users that are not mentioned in the configuration file |
+| `create_groups` | Create groups that are mentioned in the configuration file |
+| `create_user` | Create (or configure) users that are not mentioned in the configuration file |
 
 ```shell
 # The commands to setup the data warehouse users and groups or any database is by ADMIN (connected to `dev`)

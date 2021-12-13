@@ -52,8 +52,8 @@ RUN python3 -m venv "/opt/local/$PROJ_NAME/venv" && \
     python3 -m pip install --upgrade pip==20.3.4 --disable-pip-version-check --no-cache-dir && \
     python3 -m pip install --requirement /tmp/requirements-all.txt --disable-pip-version-check --no-cache-dir
 
-# Create an empty .pgpass file to help with create_user and update_user commands.
-RUN echo '# Format to set password (used by create_user and update_user): *:5439:*:<user>:<password>' > /home/arthur/.pgpass \
+# Create an empty .pgpass file to help with the format of this file.
+RUN echo '# Format to set password when updating users: *:5439:*:<user>:<password>' > /home/arthur/.pgpass \
     && chmod go= /home/arthur/.pgpass
 
 # Note that at runtime we (can or may) mount the local directory here.

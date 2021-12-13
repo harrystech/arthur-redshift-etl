@@ -1360,7 +1360,7 @@ class CreateSchemasCommand(SubCommand):
             "create_schemas",
             "create schemas from data warehouse config",
             "Create schemas as configured and set permissions."
-            " Optionally move existing schemas to backup or create in staging position."
+            " Optionally move existing schemas to backup or create new schemas in staging position."
             " (Any patterns must be schema names.)",
         )
 
