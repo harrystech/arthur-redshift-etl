@@ -813,6 +813,7 @@ def create_source_tables_when_ready(
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+    source_relations = [relation for relation in relations if not relation.is_transformation]
 
     recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
@@ -1011,6 +1012,8 @@ def create_source_tables_in_parallel(
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
+    source_relations = [relation for relation in relations if not relation.is_transformation]
+
     futures: Dict[str, concurrent.futures.Future] = {}
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
@@ -1069,13 +1072,10 @@ def create_transformations_sequentially(
     N.B. It is not possible for a relation to be not required but have dependents that are
     (by construction).
     """
-    transformations = [relation for relation in relations if relation.is_transformation]
-    if not transformations:
-        logger.info("None of the selected relations are in transformation schemas")
-        return
-
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
+    transformations = [relation for relation in relations if relation.is_transformation]
+
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
         etl.dialect.redshift.set_statement_timeout(conn, statement_timeout, dry_run=dry_run)
@@ -1106,19 +1106,33 @@ def create_transformations_sequentially(
     )
 
 
-def create_relations(
+def create_sources(
     relations: Sequence[LoadableRelation],
     max_concurrency=1,
-    wlm_query_slots=1,
-    statement_timeout=0,
     concurrent_extract=False,
     dry_run=False,
 ) -> None:
-    """Build relations by creating them, granting access, and loading them (if they hold data)."""
+    """Build sources by creating them, granting access, and loading them (if they hold data)."""
+    if not any(not relation.is_transformation for relation in relations):
+        logger.info("None of the relations are in source schemas")
+        return
+
     if concurrent_extract:
         create_source_tables_when_ready(relations, max_concurrency, dry_run=dry_run)
     else:
         create_source_tables_in_parallel(relations, max_concurrency, dry_run=dry_run)
+
+
+def create_transformations(
+    relations: Sequence[LoadableRelation],
+    wlm_query_slots=1,
+    statement_timeout=0,
+    dry_run=False,
+) -> None:
+    """Build transformations by creating them, granting access, and loading them (if they hold data)."""
+    if not any(relation.is_transformation for relation in relations):
+        logger.info("None of the relations are in transformation schemas")
+        return
 
     create_transformations_sequentially(relations, wlm_query_slots, statement_timeout, dry_run=dry_run)
 
@@ -1191,12 +1205,11 @@ def load_data_warehouse(
     etl.data_warehouse.create_groups(dry_run=dry_run)
     create_schemas_for_rebuild(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
     try:
-        create_relations(
+        create_sources(relations, max_concurrency, concurrent_extract, dry_run=dry_run)
+        create_transformations(
             relations,
-            max_concurrency,
-            wlm_query_slots,
-            statement_timeout,
-            concurrent_extract=concurrent_extract,
+            wlm_query_slots=wlm_query_slots,
+            statement_timeout=statement_timeout,
             dry_run=dry_run,
         )
     except ETLRuntimeError:
@@ -1301,7 +1314,10 @@ def upgrade_data_warehouse(
         )
         etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
 
-    create_relations(relations, max_concurrency, wlm_query_slots, statement_timeout, dry_run=dry_run)
+    create_sources(relations, max_concurrency, dry_run=dry_run)
+    create_transformations(
+        relations, wlm_query_slots=wlm_query_slots, statement_timeout=statement_timeout, dry_run=dry_run
+    )
     return selected_relations
 
 
