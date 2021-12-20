@@ -346,14 +346,14 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
         logger.info(
             "Dry-run: Skipping drop and create of database '%s' with owner '%s'",
             database_name,
-            config.owner_name,
+            config.owner.name,
         )
     else:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True)) as conn:
             logger.info(
-                "Dropping and creating database '%s' with owner '%s'", database_name, config.owner_name
+                "Dropping and creating database '%s' with owner '%s'", database_name, config.owner.name
             )
-            etl.db.drop_and_create_database(conn, database_name, config.owner_name)
+            etl.db.drop_and_create_database(conn, database_name, config.owner.name)
 
     with closing(
         etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)
