@@ -14,6 +14,12 @@ if ! type docker >/dev/null ; then
   exit 1
 fi
 
+# Make sure Docker version is recent enough ("--pull always" was added in version 20)
+if [[ $(docker version --format '{{.Server.Version}}') =~ ^1[0-9].* ]]; then
+  echo "You need to upgrade your Docker environment to version >= 20." 1>&2
+  exit 1
+fi
+
 set -o errexit
 
 aws_profile="${AWS_PROFILE-${AWS_DEFAULT_PROFILE-default}}"
