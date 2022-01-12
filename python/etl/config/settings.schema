@@ -34,15 +34,26 @@
             "uniqueItems": true
         },
         "user_info": {
-            "type": "object",
+            "additionalProperties": false,
+            "not": { "required": [ "group", "groups" ] },
+            "oneOf": [
+                {"required": [ "name", "groups" ]},
+                {"required": [ "name", "group" ]}
+            ],
             "properties": {
-                "name": { "$ref": "#/$defs/identifier" },
+                "comment": { "type": "string" },
                 "description": { "type": "string" },
                 "group": { "$ref": "#/$defs/identifier" },
+                "groups": {
+                    "items": { "$ref": "#/$defs/identifier" },
+                    "maxItems": 1,
+                    "minItems": 1,
+                    "type": "array"
+                },
+                "name": { "$ref": "#/$defs/identifier" },
                 "schema": { "$ref": "#/$defs/identifier" }
             },
-            "required": [ "name", "group" ],
-            "additionalProperties": false
+            "type": "object"
         },
         "glob_pattern_list": {
             "type": "array",

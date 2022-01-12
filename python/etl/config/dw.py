@@ -1,6 +1,6 @@
 """Data warehouse configuration based on config files for setup, sources, transformations, users."""
 
-from typing import Dict, List
+from typing import Dict, Iterable, List
 
 import etl.config.env
 import etl.db
@@ -13,14 +13,20 @@ class DataWarehouseUser:
     """
     Data warehouse users have always a name and group associated with them.
 
-    Users may have a schema "belong" to them which they then have write access to.
-    This is useful for system users, mostly, since end users should treat the
-    data warehouse as read-only.
+    Users may have a schema "belong" to them which they then have write access to. This is useful
+    for system users, mostly, since end users should treat the data warehouse as read-only.
     """
 
     def __init__(self, user_info) -> None:
         self.name = user_info["name"]
-        self.group = user_info["group"]
+        self.comment = user_info.get("comment")
+        # TODO(tom): Support an array of group names using "#/$defs/identifier_list".
+        if "group" in user_info:
+            # Backward compatibility: support single group "group".
+            self.group = user_info["group"]
+        else:
+            # Forward compatibility: for now, just pick the only element from the list.
+            [self.group] = user_info["groups"]
         self.schema = user_info.get("schema")
 
 
@@ -29,13 +35,16 @@ class S3DataFormat:
     Enable specifying a data format (and options) for all source tables from one schema.
 
     The expected format in the configuration file is something like this:
-        "s3_data_format": {
-            "format": "JSON",
-            "compression": "GZIP"
-        }
+
+    >>> sdf = S3DataFormat({
+    ...    "s3_data_format": {
+    ...        "format": "JSON",
+    ...        "compression": "GZIP"
+    ...    }
+    ... })
     """
 
-    def __init__(self, s3_data_format) -> None:
+    def __init__(self, s3_data_format: dict) -> None:
         self.format = s3_data_format.get("format")
         self.format_option = s3_data_format.get("format_option")
         self.compression = s3_data_format.get("compression")
@@ -179,55 +188,76 @@ class DataWarehouseConfig:
         self._admin_access = dw_settings["admin_access"]
         self._etl_access = dw_settings["etl_access"]
         self._check_access_to_cluster()
-        root = DataWarehouseUser(dw_settings["owner"])
-        # Users are in the order from the config
-        other_users = [
-            DataWarehouseUser(user) for user in dw_settings.get("users", []) if user["name"] != "default"
-        ]
-
-        # Note that the "owner," which is our super-user of sorts, comes first.
-        self.users = [root] + other_users
-        schema_owner_map = {u.schema: u.name for u in self.users if u.schema}
+        self.users = self.parse_users(dw_settings)
+        schema_owner_map = {user.schema: user.name for user in self.users if user.schema}
 
         # Schemas (upstream sources followed by transformations, keeps order of settings file)
-        self.schemas = [
-            DataWarehouseSchema(
-                dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access
-            )
-            for info in schema_settings
-            if not info.get("external", False)
-        ]
+        self.schemas = self.parse_schemas(
+            filter(lambda info: not info.get("external"), schema_settings), schema_owner_map
+        )
         self._schema_lookup = {schema.name: schema for schema in self.schemas}
 
         # External schemas are kept separate (for example, we don't back them up).
-        self.external_schemas = [
-            DataWarehouseSchema(
-                dict(info, owner=schema_owner_map.get(info["name"], root.name)), self._etl_access
+        self.external_schemas = self.parse_schemas(
+            filter(lambda info: info.get("external", False), schema_settings), schema_owner_map
+        )
+
+        # Schemas may grant access to groups that have no bootstrapped users.
+        # So we "union" groups mentioned for users and groups mentioned for schemas.
+        self.groups = sorted(
+            {user.group for user in self.users}.union(
+                {group for schema in self.schemas for group in schema.groups}
             )
-            for info in schema_settings
-            if info.get("external", False)
-        ]
+        )
+        self.default_group = self.parse_default_group(dw_settings)
 
-        # Schemas may grant access to groups that have no bootstrapped users, so create all
-        # mentioned user groups.
-        other_groups = {u.group for u in other_users} | {
-            g for schema in self.schemas for g in schema.reader_groups
-        }
-
-        # Groups are in sorted order after the root group
-        self.groups = [root.group] + sorted(other_groups)
-        try:
-            [self.default_group] = [
-                user["group"] for user in dw_settings["users"] if user["name"] == "default"
-            ]
-        except ValueError:
-            raise ETLConfigError("Failed to find group of default user")
         # Relation glob patterns indicating unacceptable load failures; matches everything if unset
         required_patterns = dw_settings.get("required_for_success", [])
         self.required_in_full_load_selector = etl.names.TableSelector(required_patterns)
 
         # Map of SQL types to be able to automatically insert "expressions" into table design files.
         self.type_maps = settings["type_maps"]
+
+    @staticmethod
+    def parse_default_group(dw_settings: dict) -> str:
+        """Return default group for users based on a user called "default"."""
+        try:
+            [user_settings] = [user for user in dw_settings["users"] if user["name"] == "default"]
+        except ValueError:
+            raise ETLConfigError("failed to find user 'default'")
+        return DataWarehouseUser(user_settings).group
+
+    def parse_schemas(
+        self, partial_settings: Iterable[dict], schema_owner_map: dict
+    ) -> List[DataWarehouseSchema]:
+        """
+        Return list of schemas.
+
+        A schemas owner is set based on the configuration, tied back to users potentially.
+        Any schema that is not explicitly claimed belongs to the owner of the data warehouse.
+        """
+        return [
+            DataWarehouseSchema(
+                dict(info, owner=schema_owner_map.get(info["name"], self.owner.name)), self._etl_access
+            )
+            for info in partial_settings
+        ]
+
+    @staticmethod
+    def parse_users(dw_settings: dict) -> List[DataWarehouseUser]:
+        """
+        Return list of users (with the owner as the first user).
+
+        Users are in the order from the config (but skip pseudo user "default").
+        """
+        owner = DataWarehouseUser(dw_settings["owner"])
+        other_users = [
+            DataWarehouseUser(user)
+            for user in dw_settings["users"]
+            if user["name"] not in (owner.name, "default")
+        ]
+        # Note that the "owner," which is our super-user of sorts, must always come first.
+        return [owner] + other_users
 
     def _check_access_to_cluster(self):
         """

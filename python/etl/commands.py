@@ -727,7 +727,7 @@ class ListUsersCommand(SubCommand):
         super().__init__(
             "list_users",
             "list users as they are configured",
-            "List all users and their groups in the way that they are configurd.",
+            "List all users and their groups in the way that they are configured.",
         )
 
     def add_arguments(self, parser):
@@ -756,7 +756,7 @@ class UpdateUserCommand(SubCommand):
         parser.add_argument(
             "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
         )
-        parser.add_argument("username", help="name of existing user")
+        parser.add_argument("name", help="name of user")
 
     def callback(self, args):
         with etl.db.log_error():
@@ -1112,9 +1112,11 @@ class LoadDataWarehouseCommand(SubCommand):
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
-        statement_timeout = args.statement_timeout or etl.config.get_config_int(
-            "resources.RedshiftCluster.statement_timeout", 0
-        )
+        statement_timeout = args.statement_timeout
+        if statement_timeout is None and etl.config.is_config_set(
+            "resources.RedshiftCluster.statement_timeout"
+        ):
+            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1206,9 +1208,11 @@ class UpgradeDataWarehouseCommand(SubCommand):
         max_concurrency = args.max_concurrency or etl.config.get_config_int(
             "resources.RedshiftCluster.max_concurrency", 1
         )
-        statement_timeout = args.statement_timeout or etl.config.get_config_int(
-            "resources.RedshiftCluster.statement_timeout", 0
-        )
+        statement_timeout = args.statement_timeout
+        if statement_timeout is None and etl.config.is_config_set(
+            "resources.RedshiftCluster.statement_timeout"
+        ):
+            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1267,9 +1271,11 @@ class UpdateDataWarehouseCommand(SubCommand):
 
     def callback(self, args):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
-        statement_timeout = args.statement_timeout or etl.config.get_config_int(
-            "resources.RedshiftCluster.statement_timeout", 0
-        )
+        statement_timeout = args.statement_timeout
+        if statement_timeout is None and etl.config.is_config_set(
+            "resources.RedshiftCluster.statement_timeout"
+        ):
+            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1354,7 +1360,7 @@ class CreateSchemasCommand(SubCommand):
             "create_schemas",
             "create schemas from data warehouse config",
             "Create schemas as configured and set permissions."
-            " Optionally move existing schemas to backup or create in staging position."
+            " Optionally move existing schemas to backup or create new schemas in staging position."
             " (Any patterns must be schema names.)",
         )
 

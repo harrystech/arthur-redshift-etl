@@ -15,15 +15,15 @@ For user management, we require to have passwords for all declared users in a ~/
 import logging
 from collections import defaultdict
 from contextlib import closing
-from typing import Iterable, Sequence
+from typing import Iterable, List, Sequence
 
 from psycopg2.extensions import connection as Connection  # only used for typing
 
 import etl.config
-import etl.config.dw
+import etl.config.dw  # lgtm[py/import-and-import-from]
 import etl.db
 import etl.dialect.redshift
-from etl.config.dw import DataWarehouseSchema
+from etl.config.dw import DataWarehouseSchema, DataWarehouseUser
 from etl.errors import ETLConfigError, ETLRuntimeError
 from etl.text import join_with_single_quotes
 
@@ -37,7 +37,7 @@ def create_external_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=Fals
 
     It's ok if any of the schemas already exist, in which case the privileges are updated.
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
@@ -51,7 +51,7 @@ def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dr
 
     It's ok if any of the schemas already exist, in which case the owner and privileges are updated.
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     dsn_etl = etl.config.get_dw_config().dsn_etl
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
@@ -59,7 +59,9 @@ def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dr
             create_schema_and_grant_access(conn, schema, use_staging=use_staging, dry_run=dry_run)
 
 
-def create_external_schema_and_grant_access(conn, schema, dry_run=False) -> None:
+def create_external_schema_and_grant_access(
+    conn: Connection, schema: DataWarehouseSchema, dry_run=False
+) -> None:
     # TODO(tom): How do we make the ETL the owner of this schema?
     if not schema.database or not schema.iam_role:
         logger.warning("External schema '%s' is missing database name and IAM role", schema.name)
@@ -78,7 +80,9 @@ def create_external_schema_and_grant_access(conn, schema, dry_run=False) -> None
     etl.db.grant_usage(conn, schema.name, schema.reader_groups)
 
 
-def create_schema_and_grant_access(conn, schema, owner=None, use_staging=False, dry_run=False) -> None:
+def create_schema_and_grant_access(
+    conn: Connection, schema: DataWarehouseSchema, owner: str = None, use_staging=False, dry_run=False
+) -> None:
     group_names = join_with_single_quotes(schema.groups)
     name = schema.staging_name if use_staging else schema.name
     if dry_run:
@@ -146,11 +150,13 @@ def _promote_schemas(schemas: Iterable[DataWarehouseSchema], from_where: str, dr
             grant_schema_permissions(conn, schema)
 
 
-def backup_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> None:
+def backup_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
     """
     For existing schemas, rename them and drop access.
 
     Once the access is revoked, the backup schemas "disappear" from BI tools.
+
+    This is a callback of a command.
     """
     schema_lookup = {schema.name: schema for schema in schemas}
     dsn_etl = etl.config.get_dw_config().dsn_etl
@@ -182,7 +188,7 @@ def restore_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> No
 
     This is the inverse of backup_schemas. Useful if bad data is in standard schemas
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     _promote_schemas(schemas, "backup", dry_run=dry_run)
 
@@ -191,7 +197,7 @@ def publish_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> No
     """
     Backup current occupants of standard position and put staging schemas there.
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     backup_schemas(schemas, dry_run=dry_run)
     _promote_schemas(schemas, "staging", dry_run=dry_run)
@@ -215,32 +221,44 @@ def revoke_schema_permissions(conn: Connection, schema: DataWarehouseSchema) -> 
 
 
 def create_groups(dry_run=False) -> None:
-    """Create all groups from the data warehouse configuration or just those passed in."""
+    """
+    Create all groups from the data warehouse configuration.
+
+    This is a callback of a command.
+    """
     config = etl.config.get_dw_config()
-    groups = sorted(frozenset(group for schema in config.schemas for group in schema.groups))
     with closing(etl.db.connection(config.dsn_admin_on_etl_db, readonly=dry_run)) as conn:
-        _create_groups(conn, groups, dry_run=dry_run)
+        _create_groups(conn, sorted(config.groups), dry_run=dry_run)
 
 
 def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> None:
     """Make sure that all groups in the list exist."""
+    found: List[str] = []
     with conn:
         for group in groups:
             if etl.db.group_exists(conn, group):
-                logger.info(
-                    "Skipping group '%s' which already exists", group
-                )  # lgtm[py/clear-text-logging-sensitive-data]
+                found.append(group)
                 continue
             if dry_run:
                 logger.info(
-                    "Dry-run: Skipping creating group '%s'", group
-                )  # lgtm[py/clear-text-logging-sensitive-data]
+                    "Dry-run: Skipping creating group '%s'",
+                    group,  # lgtm[py/clear-text-logging-sensitive-data]
+                )
                 continue
-            logger.info("Creating group '%s'", group)  # lgtm[py/clear-text-logging-sensitive-data]
+            logger.info(
+                "Creating group '%s'",
+                group,  # lgtm[py/clear-text-logging-sensitive-data]
+            )
             etl.db.create_group(conn, group)
+    if found:
+        logger.info(
+            "%d group(s) already existed: %s",
+            len(found),
+            join_with_single_quotes(found),  # lgtm[py/clear-text-logging-sensitive-data]
+        )
 
 
-def _create_or_update_user(conn: Connection, user, only_update=False, dry_run=False):
+def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
     """
     Create user in its group, or add user to its group.
 
@@ -264,26 +282,32 @@ def _create_or_update_user(conn: Connection, user, only_update=False, dry_run=Fa
                 etl.db.create_user(conn, user.name, user.group)
 
 
-def _create_schema_for_user(conn, user, etl_group, dry_run=False):
+def _create_schema_for_user(conn: Connection, user: DataWarehouseUser, etl_group: str, dry_run=False):
+    groups = [user.group + etl_group]
     user_schema = etl.config.dw.DataWarehouseSchema(
-        {"name": user.schema, "owner": user.name, "readers": [user.group, etl_group]}
+        {"name": user.schema, "owner": user.name, "readers": groups}
     )
     create_schema_and_grant_access(conn, user_schema, owner=user.name, dry_run=dry_run)
 
 
-def _update_search_path(conn, user, dry_run=False):
+def _update_search_path(conn: Connection, user: DataWarehouseUser, dry_run=False) -> None:
     """Non-system users have their schema in the search path, others get nothing (only "public")."""
     search_path = ["public"]
     if user.schema == user.name:
         search_path[:0] = ["'$user'"]  # needs to be quoted per documentation
     if dry_run:
-        logger.info("Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path)
-    else:
-        logger.info("Setting search path for user '%s' to: %s", user.name, search_path)
-        etl.db.alter_search_path(conn, user.name, search_path)
+        logger.info(
+            "Dry-run: Skipping setting search path for user '%s' to: %s", user.name, search_path
+        )  # lgtm[py/clear-text-logging-sensitive-data]
+        return
+
+    logger.info(
+        "Setting search path for user '%s' to: %s", user.name, search_path
+    )  # lgtm[py/clear-text-logging-sensitive-data]
+    etl.db.alter_search_path(conn, user.name, search_path)
 
 
-def initial_setup(with_user_creation=False, force=False, dry_run=False):
+def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
     """
     Place named data warehouse database into initial state.
 
@@ -318,17 +342,18 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
             for user in config.users:
                 _create_or_update_user(conn, user, dry_run=dry_run)
 
-    owner_name = config.owner.name
     if dry_run:
         logger.info(
             "Dry-run: Skipping drop and create of database '%s' with owner '%s'",
             database_name,
-            owner_name,
+            config.owner.name,
         )
     else:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True)) as conn:
-            logger.info("Dropping and creating database '%s' with owner '%s'", database_name, owner_name)
-            etl.db.drop_and_create_database(conn, database_name, owner_name)
+            logger.info(
+                "Dropping and creating database '%s' with owner '%s'", database_name, config.owner.name
+            )
+            etl.db.drop_and_create_database(conn, database_name, config.owner.name)
 
     with closing(
         etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)
@@ -346,8 +371,8 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False):
 
 
 def create_or_update_user(
-    user_name, group_name=None, add_user_schema=False, only_update=False, dry_run=False
-):
+    user_name: str, group_name=None, add_user_schema=False, only_update=False, dry_run=False
+) -> None:
     """
     Add new user to cluster or update existing user.
 
@@ -415,12 +440,12 @@ def list_users(transpose=False) -> None:
             groups[user.group].append(user.name)
         rows = [[group, ", ".join(sorted(groups[group]))] for group in sorted(groups)]
     else:
-        header = ["user", "groups"]
-        rows = [[user.name, user.group] for user in config.users]
+        header = ["user", "groups", "comment"]
+        rows = [[user.name, user.group, user.comment or ""] for user in config.users]
     print(etl.text.format_lines(rows, header_row=header))
 
 
-def list_open_transactions(cx):
+def list_open_transactions(cx: Connection):
     """
     Look for sessions that by other users that might interfere with the ETL.
 
@@ -453,7 +478,7 @@ def list_open_transactions(cx):
     return etl.db.query(cx, stmt)
 
 
-def terminate_sessions_with_transaction_locks(cx, dry_run=False) -> None:
+def terminate_sessions_with_transaction_locks(cx: Connection, dry_run=False) -> None:
     """
     Call Redshift's PG_TERMINATE_BACKEND to kick out other users with running queries.
 
@@ -473,7 +498,7 @@ def terminate_sessions(dry_run=False) -> None:
     """
     Terminate sessions that currently hold locks on (user or system) tables.
 
-    This is a callback for a command.
+    This is a callback of a command.
     """
     dsn_admin = etl.config.get_dw_config().dsn_admin_on_etl_db
     with closing(etl.db.connection(dsn_admin, autocommit=True)) as conn:
