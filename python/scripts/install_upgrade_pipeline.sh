@@ -58,7 +58,7 @@ PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 
 # shellcheck disable=SC2064
-trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
+#trap "rm -f \"$PIPELINE_ID_FILE\"" EXIT
 
 arthur.py render_template --prefix "$PROJ_ENVIRONMENT" upgrade_pipeline > "$PIPELINE_DEFINITION_FILE"
 
@@ -80,11 +80,10 @@ fi
 aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
-        myStartDateTime="$START_DATE_TIME" \
         myUpgradeArguments="$UPGRADE_ARGUMENTS" \
     --pipeline-id "$PIPELINE_ID"
 
-aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
+#aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID"
 
 set +o xtrace
 echo
