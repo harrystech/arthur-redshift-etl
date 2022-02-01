@@ -1090,6 +1090,14 @@ class LoadDataWarehouseCommand(SubCommand):
             dest="use_staging_schemas",
         )
         parser.add_argument(
+            "--without-publish-staging",
+            default=True,
+            action="store_false",
+            help="Skip publishing staging schemas and keep result of the load step in"
+            " staging (default: publish schemas from staging)",
+            dest="publish_staging_schemas",
+        )
+        parser.add_argument(
             "--skip-loading-sources",
             action="store_true",
             default=False,
@@ -1130,6 +1138,7 @@ class LoadDataWarehouseCommand(SubCommand):
             skip_copy=args.skip_copy,
             skip_loading_sources=args.skip_loading_sources,
             use_staging=args.use_staging_schemas,
+            publish_staging=args.publish_staging_schemas,
             dry_run=args.dry_run,
         )
 

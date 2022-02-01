@@ -1133,6 +1133,7 @@ def load_data_warehouse(
     all_relations: Sequence[RelationDescription],
     selector: TableSelector,
     use_staging=True,
+    publish_staging=True,
     max_concurrency=1,
     wlm_query_slots=1,
     statement_timeout=0,
@@ -1205,7 +1206,7 @@ def load_data_warehouse(
             etl.data_warehouse.restore_schemas(traversed_schemas, dry_run=dry_run)
         raise
 
-    if use_staging:
+    if use_staging and publish_staging:
         logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
 
