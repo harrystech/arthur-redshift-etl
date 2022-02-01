@@ -5,7 +5,7 @@
 #
 # N.B. Make sure to keep the Dockerfile and bootstrap script in sync wrt. packages.
 
-FROM amazonlinux:2.0.20201218.1
+FROM amazonlinux:2.0.20201218.1 AS local
 
 # AWS Default Region so that building images doesn't stumble over a missing region information.
 ARG AWS_DEFAULT_REGION=us-east-1
@@ -75,4 +75,8 @@ EXPOSE 8086
 WORKDIR /opt/data-warehouse
 
 ENTRYPOINT ["/home/arthur/entrypoint.sh"]
+CMD ["/bin/bash", "--login"]
+
+FROM local AS remote
+ENTRYPOINT ["/home/arthur/entrypoint_remote.sh"]
 CMD ["/bin/bash", "--login"]

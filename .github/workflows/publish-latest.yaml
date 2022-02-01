@@ -42,6 +42,7 @@ jobs:
           type=semver,pattern=v{{major}}.{{minor}}
           type=semver,pattern=v{{version}}
           type=sha
+        target: local
 
     - name: Build and push with version tags
       id: docker_build

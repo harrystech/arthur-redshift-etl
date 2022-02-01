@@ -43,4 +43,4 @@ cd "$TOP_DIR"
 test -f Dockerfile
 
 bin/release_version.sh
-docker build --tag "arthur-redshift-etl:$tag" .
+docker build --target local --tag "arthur-redshift-etl:$tag" .

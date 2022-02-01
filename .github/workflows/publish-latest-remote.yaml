@@ -1,0 +1,50 @@
+name: Publish Docker image
+
+on:
+  push:
+    branches:
+      - ynaim94/deng-1287/arthur-container-ecs
+
+jobs:
+  build-and-push-image:
+    name: Push Docker image to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build Docker meta information
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl-remote
+          # Use the original tag ref, the SHA1, and versions derived from the tag.
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=semver,pattern=v{{version}}
+            type=sha
+          target: remote
+
+      - name: Build and push with version tags
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
