@@ -1108,6 +1108,11 @@ class LoadDataWarehouseCommand(SubCommand):
         dw_config = etl.config.get_dw_config()
         try:
             args.pattern.selected_schemas()
+            if not (args.publish_staging_schemas or args.use_staging_schemas):
+                raise ValueError(
+                    "The command is ambiguous, use either --without-publish-staging "
+                    "or --without-staging-schemas flag"
+                )
         except ValueError as exc:
             raise InvalidArgumentError(exc) from exc
 
