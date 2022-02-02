@@ -81,6 +81,4 @@ CMD ["/bin/bash", "--login"]
 # we use the Arthur image in a remote environment. entrypoint_remote.sh will fetch config
 # and schema files from S3
 FROM local AS remote
-# Make arthur.py available as a command
-RUN echo 'alias arthur.py=/opt/local/redshift_etl/venv/bin/arthur.py' >> ~/.bashrc
 ENTRYPOINT ["/home/arthur/entrypoint_remote.sh"]
