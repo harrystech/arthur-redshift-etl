@@ -1,10 +1,14 @@
-name: Publish Docker image
+name: Publish Docker image for arthur-etl remote stage
 
 on:
   push:
     branches:
       - ynaim94/deng-1287/arthur-container-ecs
-
+#    - master
+#    - next
+#  release:
+#    types:
+#    - published
 jobs:
   build-and-push-image:
     name: Push Docker image to GitHub Packages
@@ -38,7 +42,6 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{version}}
             type=sha
-          target: remote
 
       - name: Build and push with version tags
         id: docker_build
@@ -48,3 +51,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          target: remote
