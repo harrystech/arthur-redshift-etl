@@ -77,6 +77,10 @@ WORKDIR /opt/data-warehouse
 ENTRYPOINT ["/home/arthur/entrypoint.sh"]
 CMD ["/bin/bash", "--login"]
 
+# Second stage, overriding entrypoint in the image to not have to override it everytime
+# we use the Arthur image in a remote environment. entrypoint_remote.sh will fetch config
+# and schema files from S3
 FROM local AS remote
+# Make arthur.py available as a command
+RUN echo 'alias arthur.py=/opt/local/redshift_etl/venv/bin/arthur.py' >> ~/.bashrc
 ENTRYPOINT ["/home/arthur/entrypoint_remote.sh"]
-CMD ["/bin/bash", "--login"]
