@@ -47,6 +47,7 @@ jobs:
         with:
           context: .
           labels: ${{ steps.meta.outputs.labels }}
-          push: ${{ github.event.action == 'published' }}
+#          push: ${{ github.event.action == 'published' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           target: local
