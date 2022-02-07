@@ -1209,6 +1209,10 @@ def load_data_warehouse(
     if use_staging and publish_staging:
         logger.info("Publishing %d schema(s) after load success", len(traversed_schemas))
         etl.data_warehouse.publish_schemas(traversed_schemas, dry_run=dry_run)
+    elif use_staging:
+        logger.info(
+            f"Updated {len(traversed_schemas)} staging schema(s) without updating loaded schemas"
+        )
 
 
 def upgrade_data_warehouse(

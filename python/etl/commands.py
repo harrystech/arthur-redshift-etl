@@ -1110,8 +1110,8 @@ class LoadDataWarehouseCommand(SubCommand):
             args.pattern.selected_schemas()
             if not (args.publish_staging_schemas or args.use_staging_schemas):
                 raise ValueError(
-                    "The command is ambiguous, use either --without-publish-staging "
-                    "or --without-staging-schemas flag"
+                    "The command is ambiguous, use only one of --without-publish-staging or "
+                    "--without-staging-schemas flags"
                 )
         except ValueError as exc:
             raise InvalidArgumentError(exc) from exc
