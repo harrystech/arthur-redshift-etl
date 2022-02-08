@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+CURRENT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S")
 DEFAULT_TIMEOUT=6
 
 if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
@@ -43,7 +44,7 @@ set -o xtrace
 # Note: "key" and "value" are lower-case keywords here.
 AWS_TAGS="key=user:project,value=data-warehouse key=user:sub-project,value=dw-etl key=user:data-pipeline-type,value=on-demand-rebuild"
 
-PIPELINE_NAME="ETL On-Demand Rebuild Pipeline ($PROJ_ENVIRONMENT)"
+PIPELINE_NAME="ETL On-Demand Rebuild Pipeline ($PROJ_ENVIRONMENT @ $CURRENT_TIMESTAMP)"
 PIPELINE_DEFINITION_FILE="/tmp/pipeline_definition_${USER-nobody}_$$.json"
 PIPELINE_ID_FILE="/tmp/pipeline_id_${USER-nobody}_$$.json"
 
