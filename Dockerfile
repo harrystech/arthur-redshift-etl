@@ -81,4 +81,8 @@ CMD ["/bin/bash", "--login"]
 # we use the Arthur image in a remote environment. entrypoint_remote.sh will fetch config
 # and schema files from S3
 FROM local AS remote
+COPY --chown=arthur:arthur \
+    bin/bootstrap_remote_dw.sh \
+    "/opt/local/$PROJ_NAME/bin/"
+ENV PROJ_NAME=$PROJ_NAME
 ENTRYPOINT ["/home/arthur/entrypoint_remote.sh"]
