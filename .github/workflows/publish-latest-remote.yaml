@@ -1,4 +1,4 @@
-name: Publish Docker image for arthur-etl local stage
+name: Publish Docker image for arthur-etl remote stage
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v3
       with:
-        images: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl
+        images: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl-remote
         # Use the original tag ref, the SHA1, and versions derived from the tag.
         tags: |
           type=ref,event=tag
@@ -52,4 +52,4 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         push: ${{ github.event.action == 'published' }}
         tags: ${{ steps.meta.outputs.tags }}
-        target: local
+        target: remote
