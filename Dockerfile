@@ -5,7 +5,7 @@
 #
 # N.B. Make sure to keep the Dockerfile and bootstrap script in sync wrt. packages.
 
-FROM amazonlinux:2.0.20201218.1
+FROM amazonlinux:2.0.20201218.1 AS local
 
 # AWS Default Region so that building images doesn't stumble over a missing region information.
 ARG AWS_DEFAULT_REGION=us-east-1
@@ -76,3 +76,13 @@ WORKDIR /opt/data-warehouse
 
 ENTRYPOINT ["/home/arthur/entrypoint.sh"]
 CMD ["/bin/bash", "--login"]
+
+# Second stage, overriding entrypoint in the image to not have to override it everytime
+# we use the Arthur image in a remote environment. entrypoint_remote.sh will fetch config
+# and schema files from S3
+FROM local AS remote
+COPY --chown=arthur:arthur \
+    bin/bootstrap_remote_dw.sh \
+    "/opt/local/$PROJ_NAME/bin/"
+ENV PROJ_NAME=$PROJ_NAME
+ENTRYPOINT ["/home/arthur/entrypoint_remote.sh"]

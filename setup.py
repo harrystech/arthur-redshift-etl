@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-ARTHUR_VERSION = "1.57.0"
+ARTHUR_VERSION = "1.58.0"
 
 
 setup(
@@ -22,6 +22,7 @@ setup(
     scripts=[
         "python/scripts/compare_events.py",
         "python/scripts/install_extraction_pipeline.sh",
+        "python/scripts/install_ondemand_rebuild_pipeline.sh",
         "python/scripts/install_pizza_load_pipeline.sh",
         "python/scripts/install_pizza_pipeline.sh",
         "python/scripts/install_rebuild_pipeline.sh",
