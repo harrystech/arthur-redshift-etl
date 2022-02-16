@@ -3,17 +3,18 @@
 CURRENT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S")
 DEFAULT_TIMEOUT=6
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" = "-h" ]]; then
+show_usage_and_exit() {
   cat <<USAGE
 
 Rebuild ETL to extract, load (including transforms), and unload data.
 
-Usage: $(basename "$0") <environment> [timeout]
+Usage: $(basename "$0") <environment> [timeout] [myExtraLoadFlags]
 Optional timeout should be the number of hours pipeline is allowed to run. Defaults to $DEFAULT_TIMEOUT.
+Optional myExtraLoadFlags are passed to the rebuild load command
 
 USAGE
   exit 0
-fi
+}
 
 set -o errexit -o nounset
 
@@ -25,9 +26,32 @@ if [[ ! -d "$DEFAULT_CONFIG" ]]; then
   exit 1
 fi
 
+POSITIONAL_ARGS=()
+EXTRA_LOAD_FLAGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h)
+      show_usage_and_exit
+      ;;
+    -*)
+      EXTRA_LOAD_FLAGS+=("$1") # save flag
+      shift # past argument
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1") # save positional arg
+      shift # past argument
+      ;;
+  esac
+done
+
+set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
+
 PROJ_BUCKET=$(arthur.py show_value object_store.s3.bucket_name)
 PROJ_ENVIRONMENT="$1"
 TIMEOUT="${2:-$DEFAULT_TIMEOUT}"
+
+EXTRA_LOAD_FLAGS_STR="${EXTRA_LOAD_FLAGS[*]:-""}"
 
 # Verify that this bucket/environment pair is set up on S3
 BOOTSTRAP="s3://$PROJ_BUCKET/$PROJ_ENVIRONMENT/bin/bootstrap.sh"
@@ -72,10 +96,11 @@ aws datapipeline put-pipeline-definition \
     --pipeline-definition "file://$PIPELINE_DEFINITION_FILE" \
     --parameter-values \
         myTimeout="$TIMEOUT" \
+        myExtraLoadFlags="${EXTRA_LOAD_FLAGS_STR}" \
     --pipeline-id "$PIPELINE_ID"
 
 set +o xtrace
 echo
 echo "Your On-Demand Rebuild Pipeline ('$PIPELINE_ID') has been created!"
 echo "You can start the pipeline by running the following command:"
-echo "    aws datapipeline activate-pipeline --pipeline-id "$PIPELINE_ID""
+echo "    aws datapipeline activate-pipeline --pipeline-id \"$PIPELINE_ID\""
