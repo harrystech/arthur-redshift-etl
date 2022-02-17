@@ -369,8 +369,7 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
             create_view(conn, relation, dry_run=dry_run)
         else:
             create_table(conn, relation, dry_run=dry_run)
-        if not relation.use_staging:
-            grant_access(conn, relation, dry_run=dry_run)
+        grant_access(conn, relation, dry_run=dry_run)
     except Exception as exc:
         raise RelationConstructionError(exc) from exc
 
