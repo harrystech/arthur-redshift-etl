@@ -133,7 +133,7 @@
             "name": "Arthur Load (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ArthurCommandParent" },
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix} --concurrent-extract",
+            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ load --prolix --prefix ${object_store.s3.prefix} --concurrent-extract #{myExtraLoadFlags}",
             "dependsOn": { "ref": "ArthurTerminateSessions" }
         },
         {
@@ -177,9 +177,17 @@
             "description": "How many hours to allow the pipeline to run before terminating it",
             "watermark": "6",
             "helpText": "How long can the pipeline run?"
+        },
+        {
+            "id": "myExtraLoadFlags",
+            "type": "String",
+            "optional": "true",
+            "description": "Extra flags to add to the load command",
+            "helpText": "Extra flags to add to the load command other like skipping the use of staging "
         }
     ],
     "values": {
-        "myTimeout": "6"
+        "myTimeout": "6",
+        "myExtraLoadFlags": ""
     }
 }
