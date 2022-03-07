@@ -1,4 +1,4 @@
 myst-parser~=0.16
 Sphinx~=4.4
 sphinx-autodoc-typehints~=1.12
-sphinx-book-theme~=0.1
+sphinx-book-theme~=0.2
