@@ -283,7 +283,7 @@ def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_updat
 
 
 def _create_schema_for_user(conn: Connection, user: DataWarehouseUser, etl_group: str, dry_run=False):
-    groups = [user.group + etl_group]
+    groups = [user.group, etl_group]
     user_schema = etl.config.dw.DataWarehouseSchema(
         {"name": user.schema, "owner": user.name, "readers": groups}
     )
