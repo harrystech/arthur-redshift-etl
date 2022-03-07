@@ -761,7 +761,7 @@ class UpdateUserCommand(SubCommand):
     def callback(self, args):
         with etl.db.log_error():
             etl.data_warehouse.update_user(
-                args.username,
+                args.name,
                 group=args.group,
                 add_user_schema=args.add_user_schema,
                 dry_run=args.dry_run,
