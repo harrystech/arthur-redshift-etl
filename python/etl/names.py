@@ -237,7 +237,9 @@ class TableName:
         elif code == "x":
             return "'{:s}'".format(self.identifier)
         else:
-            raise ValueError("unknown format code '{}' for {}".format(code, self.__class__.__name__))
+            raise ValueError(
+                "unknown format code '{}' for {}".format(code, self.__class__.__name__)
+            )
 
     def __eq__(self, other: object):
         if not isinstance(other, TableName):
@@ -275,7 +277,9 @@ class TableName:
         """
         other_schema = other.schema
         other_table = other.table
-        return fnmatch.fnmatch(other_schema, self.schema) and fnmatch.fnmatch(other_table, self.table)
+        return fnmatch.fnmatch(other_schema, self.schema) and fnmatch.fnmatch(
+            other_table, self.table
+        )
 
     def match_pattern(self, pattern: str) -> bool:
         """

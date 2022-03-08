@@ -83,7 +83,9 @@ class DataWarehouseSchema:
         self.is_database_source = "read_access" in schema_info
         self.is_static_source = "s3_bucket" in schema_info and "s3_path_template" in schema_info
         self.is_external = schema_info.get("external", False)
-        self.is_upstream_source = self.is_database_source or self.is_static_source or self.is_external
+        self.is_upstream_source = (
+            self.is_database_source or self.is_static_source or self.is_external
+        )
         self.has_transformations = not self.is_upstream_source
         self.is_an_unload_target = (
             "s3_bucket" in schema_info and "s3_unload_path_template" in schema_info
@@ -145,7 +147,8 @@ class DataWarehouseSchema:
     def s3_unload_path_prefix(self) -> str:
         """Render S3 unload path prefix in particular wrt. prefix (environment) and dates."""
         return etl.templates.render_from_config(
-            self._s3_unload_path_template, context=f"s3_unload_path_template of schema '{self.name}'"
+            self._s3_unload_path_template,
+            context=f"s3_unload_path_template of schema '{self.name}'",
         )
 
     @property
@@ -238,7 +241,8 @@ class DataWarehouseConfig:
         """
         return [
             DataWarehouseSchema(
-                dict(info, owner=schema_owner_map.get(info["name"], self.owner.name)), self._etl_access
+                dict(info, owner=schema_owner_map.get(info["name"], self.owner.name)),
+                self._etl_access,
             )
             for info in partial_settings
         ]
@@ -275,7 +279,9 @@ class DataWarehouseConfig:
             if etl_dsn.get("port") != admin_dsn.get("port"):
                 raise InvalidEnvironmentError("Port is different between ETL and admin user")
             if etl_dsn["database"] == admin_dsn["database"]:
-                raise InvalidEnvironmentError("Database is not different between ETL and admin user")
+                raise InvalidEnvironmentError(
+                    "Database is not different between ETL and admin user"
+                )
         except (KeyError, ValueError):
             pass
 

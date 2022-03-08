@@ -56,7 +56,8 @@ def load_table_design(stream, table_name):
     constraints = table_design.get("constraints")
     if isinstance(constraints, dict):
         table_design["constraints"] = [
-            {constraint_type: constraints[constraint_type]} for constraint_type in sorted(constraints)
+            {constraint_type: constraints[constraint_type]}
+            for constraint_type in sorted(constraints)
         ]
 
     return validate_table_design(table_design, table_name)
@@ -126,7 +127,9 @@ def validate_identity_as_surrogate_key(table_design):
             identity_columns.append(column["name"])
 
     constraints = table_design.get("constraints", [])
-    surrogate_keys = [col for constraint in constraints for col in constraint.get("surrogate_key", [])]
+    surrogate_keys = [
+        col for constraint in constraints for col in constraint.get("surrogate_key", [])
+    ]
     if len(surrogate_keys) and not surrogate_keys == identity_columns:
         raise TableDesignSemanticError("surrogate key must be identity column")
     # TODO Complain if surrogate_key is missing but identity is present
@@ -190,7 +193,9 @@ def validate_semantics_of_table_or_ctas(table_design):
     for constraint in constraints:
         for constraint_type in constraint:
             if constraint_type in seen_constraint_types and constraint_type != "unique":
-                raise TableDesignSemanticError("multiple constraints of type {}".format(constraint_type))
+                raise TableDesignSemanticError(
+                    "multiple constraints of type {}".format(constraint_type)
+                )
             seen_constraint_types.add(constraint_type)
 
 

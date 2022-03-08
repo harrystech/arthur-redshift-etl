@@ -19,7 +19,9 @@ class StaticExtractor(Extractor):
         dry_run: bool,
     ) -> None:
         # For static sources, we go straight to failure when the success file does not exist
-        super().__init__("static", schemas, relations, keep_going, needs_to_wait=False, dry_run=dry_run)
+        super().__init__(
+            "static", schemas, relations, keep_going, needs_to_wait=False, dry_run=dry_run
+        )
         self.logger = logging.getLogger(__name__)
 
     @staticmethod

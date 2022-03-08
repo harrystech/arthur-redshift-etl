@@ -65,7 +65,8 @@ def validate_relation_description(
         if keep_going:
             _error_occurred.set()
             logger.exception(
-                "Ignoring failure to validate '%s' and proceeding as requested:", relation.identifier
+                "Ignoring failure to validate '%s' and proceeding as requested:",
+                relation.identifier,
             )
             return None
         else:
@@ -112,7 +113,9 @@ def compare_query_to_design(from_query: Iterable, from_design: Iterable) -> Opti
     not_in_query = join_with_single_quotes(design - actual)
 
     if not_in_design and not_in_query:
-        return "not listed in design = {}; not found from query = {}".format(not_in_design, not_in_query)
+        return "not listed in design = {}; not found from query = {}".format(
+            not_in_design, not_in_query
+        )
     elif not_in_design:
         return "not listed in design = {}".format(not_in_design)
     elif not_in_query:
@@ -186,10 +189,13 @@ def validate_column_ordering(
             relation.identifier,
             join_with_single_quotes(diff),
         )
-        raise TableDesignValidationError("invalid columns or column order in '%s'" % relation.identifier)
+        raise TableDesignValidationError(
+            "invalid columns or column order in '%s'" % relation.identifier
+        )
     else:
         logger.info(
-            "Order of columns in design of '%s' matches result of running SQL query", relation.identifier
+            "Order of columns in design of '%s' matches result of running SQL query",
+            relation.identifier,
         )
 
 
@@ -312,13 +318,15 @@ def validate_reload(
                             join_with_single_quotes(diff),
                         )
                         raise TableDesignValidationError(
-                            "unloaded relation '%s' failed to match counterpart" % unloaded.identifier
+                            "unloaded relation '%s' failed to match counterpart"
+                            % unloaded.identifier
                         )
         except TableDesignValidationError:
             if keep_going:
                 _error_occurred.set()
                 logger.exception(
-                    "Ignoring failure to validate '%s' and proceeding as requested:", unloaded.identifier
+                    "Ignoring failure to validate '%s' and proceeding as requested:",
+                    unloaded.identifier,
                 )
             else:
                 raise
@@ -353,7 +361,9 @@ def validate_upstream_columns(conn: Connection, table: RelationDescription) -> N
         raise UpstreamValidationError(
             "table '%s' is gone or has no columns left" % source_table_name.identifier
         )
-    logger.info("Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier)
+    logger.info(
+        "Found %d column(s) in relation '%s'", len(columns_info), source_table_name.identifier
+    )
 
     current_columns = frozenset(column.name for column in columns_info)
     design_columns = frozenset(
@@ -413,10 +423,14 @@ def validate_upstream_constraints(conn: Connection, table: RelationDescription) 
     current_constraint = etl.design.bootstrap.fetch_constraints(conn, table.source_table_name)
     design_constraint = table.table_design.get("constraints", [])
 
-    current_primary_key = frozenset(col for c in current_constraint for col in c.get("primary_key", []))
+    current_primary_key = frozenset(
+        col for c in current_constraint for col in c.get("primary_key", [])
+    )
     current_uniques = [frozenset(c["unique"]) for c in current_constraint if "unique" in c]
 
-    design_primary_key = frozenset(col for c in design_constraint for col in c.get("primary_key", []))
+    design_primary_key = frozenset(
+        col for c in design_constraint for col in c.get("primary_key", [])
+    )
     design_uniques = [frozenset(c["unique"]) for c in design_constraint if "unique" in c]
 
     # We'll pluck from the not_used info and report if anything wasn't used in the design.
@@ -491,7 +505,9 @@ def validate_upstream_table(
 
 
 def validate_upstream_sources(
-    schemas: List[DataWarehouseSchema], relations: List[RelationDescription], keep_going: bool = False
+    schemas: List[DataWarehouseSchema],
+    relations: List[RelationDescription],
+    keep_going: bool = False,
 ) -> None:
     """
     Validate the designs (and the current configuration) in comparison to upstream databases.
@@ -574,4 +590,6 @@ def validate_designs(
             logger.info("Validated transforms against data warehouse (%s)", timer)
 
     if _error_occurred.is_set():
-        raise ETLDelayedExit("At least one error occurred while validating with 'keep going' option")
+        raise ETLDelayedExit(
+            "At least one error occurred while validating with 'keep going' option"
+        )

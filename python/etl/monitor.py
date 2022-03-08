@@ -98,7 +98,10 @@ class MetaMonitor(type):
             if os.path.exists(job_flow):
                 with open(job_flow) as f:
                     data = json.load(f)
-                cluster_info = {"cluster_id": data["jobFlowId"], "instance_id": data["masterInstanceId"]}
+                cluster_info = {
+                    "cluster_id": data["jobFlowId"],
+                    "instance_id": data["masterInstanceId"],
+                }
                 parent_dir, current_dir = os.path.split(os.getcwd())
                 if parent_dir == "/mnt/var/lib/hadoop/steps":
                     cluster_info["step_id"] = current_dir
@@ -309,7 +312,9 @@ class MonitorPayload:
             if not payload[key]:
                 del payload[key]
 
-        compact_text = json.dumps(payload, cls=FancyJsonEncoder, separators=(",", ":"), sort_keys=True)
+        compact_text = json.dumps(
+            payload, cls=FancyJsonEncoder, separators=(",", ":"), sort_keys=True
+        )
         if dry_run:
             logger.debug("Dry-run: payload = %s", compact_text)
             return
@@ -416,7 +421,9 @@ class DynamoDBStorage(PayloadDispatcher):
         except botocore.exceptions.ClientError:
             # Something bad happened while talking to the service ... just try one more time.
             if _retry:
-                logger.warning("Trying to store payload a second time after this mishap:", exc_info=True)
+                logger.warning(
+                    "Trying to store payload a second time after this mishap:", exc_info=True
+                )
                 self._thread_local_table.table = None
                 delay = random.uniform(3, 10)
                 logger.debug("Snoozing for %.1fs", delay)
@@ -491,7 +498,9 @@ class MemoryStorage(PayloadDispatcher):
                 reverse=True,
             )
         else:
-            events_as_list = [event for event in self.events.values() if event["monitor_id"] == event_id]
+            events_as_list = [
+                event for event in self.events.values() if event["monitor_id"] == event_id
+            ]
         return etl.assets.Content(json=events_as_list)
 
     def create_handler(self):
@@ -666,7 +675,9 @@ def scan_etl_events(etl_id, selected_columns: Optional[Iterable[str]] = None) ->
     if selected_columns is None:
         selected_columns = available_columns
     # We will always select "target" and "event" to have a meaningful output.
-    columns = list(fy.filter(frozenset(selected_columns).union(["target", "event"]), available_columns))
+    columns = list(
+        fy.filter(frozenset(selected_columns).union(["target", "event"]), available_columns)
+    )
     keys = ["extra.rowcount" if column == "rowcount" else column for column in columns]
 
     # We need to scan here since the events are stored by "target" and not by "etl_id".
@@ -750,7 +761,8 @@ class EventsQuery:
         query["ExpressionAttributeValues"][":epoch_seconds"] = epoch_seconds
         response = table.query(**query)
         events = [
-            {key: fy.get_in(item, key.split(".")) for key in self.keys} for item in response["Items"]
+            {key: fy.get_in(item, key.split(".")) for key in self.keys}
+            for item in response["Items"]
         ]
         # Return latest event or None
         if events:
@@ -959,7 +971,8 @@ def tail_events(
         # Keep printing tail of table that accumulates the events.
         if len(events) > n_printed:
             lines = etl.text.format_lines(
-                [[event[header] for header in query.keys] for event in events], header_row=query.keys
+                [[event[header] for header in query.keys] for event in events],
+                header_row=query.keys,
             ).split("\n")
             if n_printed:
                 print("\n".join(lines[n_printed + 2 : -1]))  # skip header and final "(x rows)" line
@@ -980,7 +993,9 @@ def test_run():
     index = {"current": 0, "final": len(schema_names) * len(table_names)}
 
     host = MemoryStorage.SERVER_HOST if MemoryStorage.SERVER_HOST else "localhost"
-    print("Creating events ... follow along at http://{}:{}/".format(host, MemoryStorage.SERVER_PORT))
+    print(
+        "Creating events ... follow along at http://{}:{}/".format(host, MemoryStorage.SERVER_PORT)
+    )
 
     with Monitor("color.fruit", "test", index={"current": 1, "final": 1, "name": "outer"}):
         for i, names in enumerate(itertools.product(schema_names, table_names)):

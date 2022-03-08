@@ -339,9 +339,9 @@ def create_table_design_for_source(
         return table_design
 
     existing_table_design = existing_relation.table_design
-    if "description" in existing_table_design and not existing_table_design["description"].startswith(
-        ("Automatically generated on", "Automatically updated on")
-    ):
+    if "description" in existing_table_design and not existing_table_design[
+        "description"
+    ].startswith(("Automatically generated on", "Automatically updated on")):
         table_design["description"] = existing_table_design["description"].strip()
 
     existing_columns = {column["name"]: column for column in existing_table_design["columns"]}
@@ -368,7 +368,9 @@ def create_table_design_for_source(
             and column["sql_type"] != existing_column["sql_type"]
         ):
             logger.warning(
-                "Keeping previous SQL type and expression for '%s.%s'", source_table_name, column_name
+                "Keeping previous SQL type and expression for '%s.%s'",
+                source_table_name,
+                column_name,
             )
             for key in ("sql_type", "expression"):
                 if key in existing_column:
@@ -387,7 +389,9 @@ def create_table_design_for_source(
     if "constraints" not in table_design:
         return table_design
 
-    skipped_columns = {column["name"] for column in table_design["columns"] if column.get("skipped")}
+    skipped_columns = {
+        column["name"] for column in table_design["columns"] if column.get("skipped")
+    }
     new_constraints = []
     for constraint in table_design["constraints"]:
         [[_, constraint_columns]] = constraint.items()  # unpacking list of single dict
@@ -456,7 +460,9 @@ def create_partial_table_design_for_transformation(
         for column in table_design["columns"]:
             if column["name"] in existing_column:
                 # This modifies in-place until I have more time to fix this.
-                update_column_definition(relation.identifier, column, existing_column[column["name"]])
+                update_column_definition(
+                    relation.identifier, column, existing_column[column["name"]]
+                )
 
     # Now do the rest of the update keys which require less attention to details.
     remaining_keys = selected_update_keys.difference(("columns", "description")).intersection(
@@ -535,7 +541,9 @@ def update_column_definition(target_table: str, new_column: dict, old_column: di
     if new_numeric:
         old_numeric = numeric_re.search(old_sql_type)
         if old_numeric and new_numeric.groups() != old_numeric.groups():
-            new_column["sql_type"] = "numeric({precision},{scale})".format_map(new_numeric.groupdict())
+            new_column["sql_type"] = "numeric({precision},{scale})".format_map(
+                new_numeric.groupdict()
+            )
             logger.warning(
                 "Updating definition for '%s.%s' from '%s' to '%s'",
                 target_table,
@@ -626,7 +634,8 @@ def create_table_design_for_transformation(
             raise RuntimeError("failed to query for dependencies")
         if any(dependencies):
             logger.info(
-                "Looks like %s has external dependencies, proceeding with caution", relation.identifier
+                "Looks like %s has external dependencies, proceeding with caution",
+                relation.identifier,
             )
             if kind == "VIEW":
                 raise RuntimeError(
@@ -658,12 +667,16 @@ def save_table_design(
     etl.design.load.validate_table_design(table_design, target_table_name)
     this_table = target_table_name.identifier
     if dry_run:
-        logger.info("Dry-run: Skipping writing table design file for '%s' to '%s'", this_table, filename)
+        logger.info(
+            "Dry-run: Skipping writing table design file for '%s' to '%s'", this_table, filename
+        )
         return
 
     if os.path.exists(filename) and not overwrite:
         logger.warning(
-            "Skipping writing new table design for '%s' since '%s' already exists", this_table, filename
+            "Skipping writing new table design for '%s' since '%s' already exists",
+            this_table,
+            filename,
         )
         return
 
@@ -790,7 +803,9 @@ def bootstrap_sources(
 
     total = 0
     for schema in selected_database_schemas:
-        relations = [relation for relation in existing_relations if relation.source_name == schema.name]
+        relations = [
+            relation for relation in existing_relations if relation.source_name == schema.name
+        ]
         total += create_table_designs_from_source(
             schema, selector, table_design_dir, relations, update, replace, dry_run=dry_run
         )
@@ -799,7 +814,13 @@ def bootstrap_sources(
 
 
 def bootstrap_transformations(
-    local_dir, local_files, source_name, check_only=False, update=False, replace=False, dry_run=False
+    local_dir,
+    local_files,
+    source_name,
+    check_only=False,
+    update=False,
+    replace=False,
+    dry_run=False,
 ):
     """
     Download design information for transformations by test-running in the data warehouse.
@@ -810,8 +831,12 @@ def bootstrap_transformations(
     This is a callback of a command.
     """
     dw_config = etl.config.get_dw_config()
-    transformation_schema = {schema.name for schema in dw_config.schemas if schema.has_transformations}
-    transforms = [file_set for file_set in local_files if file_set.source_name in transformation_schema]
+    transformation_schema = {
+        schema.name for schema in dw_config.schemas if schema.has_transformations
+    }
+    transforms = [
+        file_set for file_set in local_files if file_set.source_name in transformation_schema
+    ]
     if not (check_only or replace or update):
         # Filter down to new transformations: SQL files without matching YAML file
         transforms = [file_set for file_set in transforms if not file_set.design_file_name]
@@ -834,10 +859,15 @@ def bootstrap_transformations(
     with closing(etl.db.connection(dw_config.dsn_etl, autocommit=True)) as conn:
         for index, relation in enumerate(relations):
             logger.info(
-                "Working on transformation '%s' (%d/%d)", relation.identifier, index + 1, len(relations)
+                "Working on transformation '%s' (%d/%d)",
+                relation.identifier,
+                index + 1,
+                len(relations),
             )
             # Be careful to not trigger a load of an unknown design file by accessing "source_name".
-            actual_kind = source_name or (relation.source_type if relation.design_file_name else None)
+            actual_kind = source_name or (
+                relation.source_type if relation.design_file_name else None
+            )
             try:
                 table_design = create_table_design_for_transformation(
                     conn, actual_kind, relation, update or check_only
@@ -856,7 +886,10 @@ def bootstrap_transformations(
                     print(f"Change detected in table design for {relation:x}")
                     print(
                         diff_table_designs(
-                            relation.table_design, table_design, relation.design_file_name, "bootstrap"
+                            relation.table_design,
+                            table_design,
+                            relation.design_file_name,
+                            "bootstrap",
                         )
                     )
                 continue

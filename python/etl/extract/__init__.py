@@ -109,6 +109,8 @@ def filter_relations_for_sources(
     if selected:
         sources = frozenset(relation.source_name for relation in selected)
         logger.info(
-            "Selected %d relation(s) from source(s): %s", len(selected), join_with_single_quotes(sources)
+            "Selected %d relation(s) from source(s): %s",
+            len(selected),
+            join_with_single_quotes(sources),
         )
     return selected

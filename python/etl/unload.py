@@ -47,7 +47,9 @@ def write_columns_file(
     }
     object_key = f"{prefix}/columns.yaml"
     if dry_run:
-        logger.info("Dry-run: Skipping writing columns file to 's3://%s/%s'", bucket_name, object_key)
+        logger.info(
+            "Dry-run: Skipping writing columns file to 's3://%s/%s'", bucket_name, object_key
+        )
         return
 
     logger.info("Writing columns file to 's3://%s/%s'", bucket_name, object_key)
@@ -81,11 +83,9 @@ def unload_relation(
     dry_run=False,
 ) -> None:
     """Unload data from table in the data warehouse using the UNLOAD command of Redshift."""
-    s3_key_prefix = (
-        "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
-            schema=schema,
-            source=relation.target_table_name,
-        )
+    s3_key_prefix = "{schema.s3_unload_path_prefix}/data/{schema.name}/{source.schema}-{source.table}/csv".format(
+        schema=schema,
+        source=relation.target_table_name,
     )
     unload_path = f"s3://{schema.s3_bucket}/{s3_key_prefix}/"
     aws_iam_role = str(etl.config.get_config_value("object_store.iam_role"))
@@ -93,13 +93,18 @@ def unload_relation(
     with etl.monitor.Monitor(
         relation.identifier,
         "unload",
-        source={"schema": relation.target_table_name.schema, "table": relation.target_table_name.table},
+        source={
+            "schema": relation.target_table_name.schema,
+            "table": relation.target_table_name.table,
+        },
         destination={"name": schema.name, "bucket_name": schema.s3_bucket, "prefix": s3_key_prefix},
         index=index,
         dry_run=dry_run,
     ):
         if dry_run:
-            logger.info("Dry-run: Skipping unload of '%s' to '%s'", relation.identifier, unload_path)
+            logger.info(
+                "Dry-run: Skipping unload of '%s' to '%s'", relation.identifier, unload_path
+            )
             return
 
         etl.dialect.redshift.unload(

@@ -23,7 +23,9 @@ def croak(error, exit_code: int) -> None:
     sys.exit(exit_code)
 
 
-def isoformat_datetime_string(argument: str, relative_to: Optional[str] = None) -> datetime.datetime:
+def isoformat_datetime_string(
+    argument: str, relative_to: Optional[str] = None
+) -> datetime.datetime:
     r"""
     Format the argument into a datetime object.
 
@@ -51,6 +53,8 @@ def isoformat_datetime_string(argument: str, relative_to: Optional[str] = None) 
         now = arrow.get(relative_to)
     # Patch arrow's mishandling of plurals, so "1 hour ago" must be passed in as "1 hours ago".
     argument = (
-        argument.replace(" day ", " days ").replace(" hour ", " hours ").replace(" minute ", " minutes ")
+        argument.replace(" day ", " days ")
+        .replace(" hour ", " hours ")
+        .replace(" minute ", " minutes ")
     )
     return now.dehumanize(argument).datetime

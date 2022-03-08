@@ -145,7 +145,9 @@ class UpdateTableError(RelationDataError):
 class MissingExtractEventError(RelationDataError):
     def __init__(self, source_relations, extracted_targets):
         missing_relations = [
-            relation for relation in source_relations if relation.identifier not in extracted_targets
+            relation
+            for relation in source_relations
+            if relation.identifier not in extracted_targets
         ]
         self.message = (
             "Some source relations did not have extract events after the step start time: "
@@ -173,7 +175,9 @@ class FailedConstraintError(RelationDataError):
 
 class RequiredRelationLoadError(ETLRuntimeError):
     def __init__(self, failed_relations, bad_apple=None):
-        self.message = f"required relation(s) with failure: {join_with_single_quotes(failed_relations)}"
+        self.message = (
+            f"required relation(s) with failure: {join_with_single_quotes(failed_relations)}"
+        )
         if bad_apple:
             self.message += f", triggered by load failure of '{bad_apple}'"
 

@@ -84,7 +84,9 @@ def explain_queries(dsn: dict, relations: List[RelationDescription]) -> None:
             logger.info("Retrieving query plan for '%s'", relation.identifier)
             plan = etl.db.explain(conn, relation.query_stmt)
             print(
-                "Query plan for query of '{0.identifier}':\n | {1}".format(relation, "\n | ".join(plan))
+                "Query plan for query of '{0.identifier}':\n | {1}".format(
+                    relation, "\n | ".join(plan)
+                )
             )
             if any(row == "" for row in plan):
                 queries_with_temps += 1

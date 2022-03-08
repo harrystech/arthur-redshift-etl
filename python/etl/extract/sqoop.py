@@ -56,7 +56,9 @@ class SqoopExtractor(DatabaseExtractor):
         try:
             table_size = self.fetch_source_table_size(source.dsn, relation)
         except psycopg2.OperationalError as exc:
-            raise DataExtractError("failed to fetch table size for '%s'" % relation.identifier) from exc
+            raise DataExtractError(
+                "failed to fetch table size for '%s'" % relation.identifier
+            ) from exc
 
         connection_params_file_path = self.write_connection_params()
         password_file_path = self.write_password_file(source.dsn["password"])

@@ -299,7 +299,9 @@ def test_connection(cx):
     """Send a test query to our connection."""
     is_alive = False
     try:
-        result = run(cx, f"Ping '{cx.info.dbname}'!", "SELECT 1 AS connection_test", return_result=True)
+        result = run(
+            cx, f"Ping '{cx.info.dbname}'!", "SELECT 1 AS connection_test", return_result=True
+        )
         if len(result) == 1 and "connection_test" in result[0]:
             is_alive = cx.closed == 0
     except psycopg2.OperationalError:
@@ -513,7 +515,9 @@ def revoke_usage(cx: Connection, schema: str, groups: Iterable[str]) -> None:
     execute(cx, f'REVOKE USAGE ON SCHEMA "{schema}" FROM {quoted_group_list}')
 
 
-def grant_select_on_all_tables_in_schema(cx: Connection, schema: str, groups: Iterable[str]) -> None:
+def grant_select_on_all_tables_in_schema(
+    cx: Connection, schema: str, groups: Iterable[str]
+) -> None:
     quoted_group_list = etl.text.join_with_double_quotes(groups, sep=", GROUP ", prefix="GROUP ")
     execute(cx, f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_group_list}')
 

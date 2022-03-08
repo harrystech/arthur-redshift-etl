@@ -105,7 +105,9 @@ def execute_or_bail(sub_command: str):
 
 def log_command_line() -> None:
     logger.info(
-        "Starting log for %s with ETL ID %s", etl.config.package_version(), etl.monitor.Monitor.etl_id
+        "Starting log for %s with ETL ID %s",
+        etl.config.package_version(),
+        etl.monitor.Monitor.etl_id,
     )
     logger.info('Command line: "%s"', " ".join(sys.argv))
     logger.debug("Current working directory: '%s'", os.getcwd())
@@ -154,10 +156,14 @@ def run_arg_as_command(my_name="arthur.py"):
             etl.config.set_config_value("data_lake.s3.prefix", args.prefix)
 
             # Create name used as prefix for resources, like DynamoDB tables or SNS topics
-            base_env = etl.config.get_config_value("resources.VPC.name").replace("dw-vpc-", "dw-etl-", 1)
+            base_env = etl.config.get_config_value("resources.VPC.name").replace(
+                "dw-vpc-", "dw-etl-", 1
+            )
             etl.config.set_safe_config_value("resource_prefix", f"{base_env}-{args.prefix}")
         elif etl.config.get_config_value("object_store.s3.prefix") is None:
-            etl.config.set_config_value("object_store.s3.prefix", etl.config.env.get_default_prefix())
+            etl.config.set_config_value(
+                "object_store.s3.prefix", etl.config.env.get_default_prefix()
+            )
 
         if etl.config.get_config_value("arthur_settings.logging.cloudwatch.enabled"):
             prefix = etl.config.get_config_value("object_store.s3.prefix")
@@ -526,7 +532,9 @@ class SubCommand(abc.ABC):
                 self.name, help=self.help, description=self.description, aliases=self.aliases
             )
         else:
-            parser = parent_parser.add_parser(self.name, help=self.help, description=self.description)
+            parser = parent_parser.add_parser(
+                self.name, help=self.help, description=self.description
+            )
         parser.set_defaults(func=self.callback)
         parser.set_defaults(uses_monitor=self.uses_monitor)
 
@@ -708,7 +716,10 @@ class CreateUserCommand(SubCommand):
         add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument(
-            "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
+            "-a",
+            "--add-user-schema",
+            help="add new schema, writable for the user",
+            action="store_true",
         )
         parser.add_argument("username", help="name for new user")
 
@@ -731,7 +742,9 @@ class ListUsersCommand(SubCommand):
         )
 
     def add_arguments(self, parser):
-        parser.add_argument("-t", "--transpose", help="group list by user's groups", action="store_true")
+        parser.add_argument(
+            "-t", "--transpose", help="group list by user's groups", action="store_true"
+        )
 
     def callback(self, args):
         with etl.db.log_error():
@@ -754,7 +767,10 @@ class UpdateUserCommand(SubCommand):
         add_standard_arguments(parser, ["dry-run"])
         parser.add_argument("-g", "--group", help="add user to specified group")
         parser.add_argument(
-            "-a", "--add-user-schema", help="add new schema, writable for the user", action="store_true"
+            "-a",
+            "--add-user-schema",
+            help="add new schema, writable for the user",
+            action="store_true",
         )
         parser.add_argument("name", help="name of user")
 
@@ -784,7 +800,11 @@ class RunSqlCommand(SubCommand):
         group.add_argument("template", help="name of SQL template", nargs="?")
         as_user = parser.add_mutually_exclusive_group()
         as_user.add_argument(
-            "-a", "--as-admin-user", help="connect as admin user", action="store_true", dest="use_admin"
+            "-a",
+            "--as-admin-user",
+            help="connect as admin user",
+            action="store_true",
+            dest="use_admin",
         )
         as_user.add_argument(
             "-e",
@@ -1027,7 +1047,9 @@ class ExtractToS3Command(SubCommand):
 
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
-        max_partitions = args.max_partitions or etl.config.get_config_int("resources.EMR.max_partitions")
+        max_partitions = args.max_partitions or etl.config.get_config_int(
+            "resources.EMR.max_partitions"
+        )
         if max_partitions < 1:
             raise InvalidArgumentError("option for max partitions must be >= 1")
 
@@ -1129,7 +1151,9 @@ class LoadDataWarehouseCommand(SubCommand):
         if statement_timeout is None and etl.config.is_config_set(
             "resources.RedshiftCluster.statement_timeout"
         ):
-            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
+            statement_timeout = etl.config.get_config_int(
+                "resources.RedshiftCluster.statement_timeout"
+            )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1204,7 +1228,9 @@ class UpgradeDataWarehouseCommand(SubCommand):
 
     def callback(self, args):
         if args.target_schema and len(args.pattern) == 0:
-            raise InvalidArgumentError("option '--into-schema' requires that relations are selected")
+            raise InvalidArgumentError(
+                "option '--into-schema' requires that relations are selected"
+            )
         if args.include_immediate_views and not args.only_selected:
             logger.warning(
                 "Option '--include-immediate-views' is default unless '--only-selected' is used"
@@ -1226,7 +1252,9 @@ class UpgradeDataWarehouseCommand(SubCommand):
         if statement_timeout is None and etl.config.is_config_set(
             "resources.RedshiftCluster.statement_timeout"
         ):
-            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
+            statement_timeout = etl.config.get_config_int(
+                "resources.RedshiftCluster.statement_timeout"
+            )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1289,7 +1317,9 @@ class UpdateDataWarehouseCommand(SubCommand):
         if statement_timeout is None and etl.config.is_config_set(
             "resources.RedshiftCluster.statement_timeout"
         ):
-            statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
+            statement_timeout = etl.config.get_config_int(
+                "resources.RedshiftCluster.statement_timeout"
+            )
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
@@ -1334,7 +1364,10 @@ class UnloadDataToS3Command(SubCommand):
     def callback(self, args):
         descriptions = self.find_relation_descriptions(args, default_scheme="s3")
         etl.unload.unload_to_s3(
-            descriptions, allow_overwrite=args.force, keep_going=args.keep_going, dry_run=args.dry_run
+            descriptions,
+            allow_overwrite=args.force,
+            keep_going=args.keep_going,
+            dry_run=args.dry_run,
         )
 
 
@@ -1382,7 +1415,11 @@ class CreateSchemasCommand(SubCommand):
         add_standard_arguments(parser, ["pattern", "dry-run"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
-            "-b", "--with-backup", help="backup any existing schemas", default=False, action="store_true"
+            "-b",
+            "--with-backup",
+            help="backup any existing schemas",
+            default=False,
+            action="store_true",
         )
         group.add_argument(
             "--with-staging",
@@ -1597,7 +1634,9 @@ class CreateIndexCommand(SubCommand):
             "--group", action="append", default=[], help="filter by reader group (repeat as needed)"
         )
         parser.add_argument(
-            "--with-columns", action="store_true", help="add detailed tables with column information"
+            "--with-columns",
+            action="store_true",
+            help="add detailed tables with column information",
         )
 
     def callback(self, args):
@@ -1642,7 +1681,9 @@ class ListFilesCommand(SubCommand):
 
     def callback(self, args):
         file_sets = etl.file_sets.find_file_sets(self.location(args), args.pattern)
-        etl.file_sets.list_files(file_sets, long_format=args.long_format, sort_by_time=args.sort_by_time)
+        etl.file_sets.list_files(
+            file_sets, long_format=args.long_format, sort_by_time=args.sort_by_time
+        )
 
 
 class PingCommand(SubCommand):
@@ -1692,7 +1733,8 @@ class PingCommand(SubCommand):
             except ValueError as exc:
                 raise InvalidArgumentError("patterns must match schemas") from exc
             logger.info(
-                "Selected upstream sources based on schema(s): %s", join_with_single_quotes(selected)
+                "Selected upstream sources based on schema(s): %s",
+                join_with_single_quotes(selected),
             )
             dsn_list = [schema.dsn for schema in dw_config.schemas if schema.name in selected]
         with etl.db.log_error():
@@ -1766,7 +1808,9 @@ class ShowDownstreamDependentsCommand(SubCommand):
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
-            args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
+            args,
+            required_relation_selector=dw_config.required_in_full_load_selector,
+            return_all=True,
         )
         etl.load.show_downstream_dependents(
             relations,
@@ -1792,7 +1836,9 @@ class ShowUpstreamDependenciesCommand(SubCommand):
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
-            args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
+            args,
+            required_relation_selector=dw_config.required_in_full_load_selector,
+            return_all=True,
         )
         etl.load.show_upstream_dependencies(relations, args.pattern)
 
@@ -1889,7 +1935,11 @@ class ShowPipelinesCommand(SubCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "-j", "--as-json", help="write output in JSON format", action="store_true", default=False
+            "-j",
+            "--as-json",
+            help="write output in JSON format",
+            action="store_true",
+            default=False,
         )
         parser.add_argument("selection", help="pick pipelines using a glob pattern", nargs="*")
 
@@ -2036,7 +2086,9 @@ class TailLogsCommand(SubCommand):
             help="skip INFO or DEBUG and focus on WARNING and above",
         )
         start_time = (
-            (datetime.utcnow() - timedelta(minutes=15)).replace(microsecond=0, tzinfo=None).isoformat()
+            (datetime.utcnow() - timedelta(minutes=15))
+            .replace(microsecond=0, tzinfo=None)
+            .isoformat()
         )
         parser.add_argument(
             "-t",

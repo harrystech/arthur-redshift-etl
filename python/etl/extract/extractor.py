@@ -110,7 +110,9 @@ class Extractor:
             self.failed_sources.add(source.name)
             if not relation.is_required:
                 self.logger.warning(
-                    "Extract failed for non-required relation '%s':", relation.identifier, exc_info=True
+                    "Extract failed for non-required relation '%s':",
+                    relation.identifier,
+                    exc_info=True,
                 )
                 return False
             if self.keep_going:
@@ -136,7 +138,9 @@ class Extractor:
         extract_jitter = etl.config.get_config_int("arthur_settings.extract_jitter", 0)
         if extract_jitter:
             jitter_sleep_duration = random.randint(0, extract_jitter)
-            self.logger.info("Sleeping %d seconds to jitter extraction startup.", jitter_sleep_duration)
+            self.logger.info(
+                "Sleeping %d seconds to jitter extraction startup.", jitter_sleep_duration
+            )
             time.sleep(jitter_sleep_duration)
         self.logger.info("Extracting %d relation(s) from source '%s'", len(relations), source.name)
         failed_tables = []
@@ -156,7 +160,9 @@ class Extractor:
     def extract_sources(self) -> None:
         """Iterate over sources to be extracted and parallelize extraction at the source level."""
         self.logger.info(
-            "Starting to extract %d relation(s) in %d schema(s)", len(self.relations), len(self.schemas)
+            "Starting to extract %d relation(s) in %d schema(s)",
+            len(self.relations),
+            len(self.schemas),
         )
         self.failed_sources.clear()
         max_workers = len(self.schemas)
@@ -198,7 +204,9 @@ class Extractor:
                 join_with_single_quotes(missing_tables),
             )
         if not_done:
-            raise DataExtractError("Extract failed to complete for {:d} source(s)".format(len(not_done)))
+            raise DataExtractError(
+                "Extract failed to complete for {:d} source(s)".format(len(not_done))
+            )
 
     def write_manifest_file(
         self, relation: RelationDescription, source_bucket: str, source_prefix: str

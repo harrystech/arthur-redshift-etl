@@ -59,7 +59,9 @@ def load_tests(loader, tests, pattern):
         return tests
 
     test_suite = loader.discover(start_dir)
-    print(f"Adding {test_suite.countTestCases()} unittests from '{start_dir}' directory", flush=True)
+    print(
+        f"Adding {test_suite.countTestCases()} unittests from '{start_dir}' directory", flush=True
+    )
     tests.addTests(test_suite)
     return tests
 

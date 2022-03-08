@@ -254,7 +254,9 @@ class RelationFileSet:
     @property
     def source_path_name(self):
         return "{}/{}-{}".format(
-            self.target_table_name.schema, self.source_table_name.schema, self.source_table_name.table
+            self.target_table_name.schema,
+            self.source_table_name.schema,
+            self.source_table_name.table,
         )
 
     def norm_path(self, filename: str) -> str:
@@ -391,7 +393,9 @@ def _find_file_sets_from(iterable, selector):
 
     file_sets = sorted(target_map.values())
     logger.info(
-        "Found %d matching file(s) for %d table(s)", sum(len(fs) for fs in file_sets), len(file_sets)
+        "Found %d matching file(s) for %d table(s)",
+        sum(len(fs) for fs in file_sets),
+        len(file_sets),
     )
     return file_sets
 
@@ -409,7 +413,9 @@ def delete_data_files_in_s3(
 ) -> None:
     """Delete all data files that match this prefix and selector pattern."""
     data_files = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/data")
-    deletable = [file_info.filename for file_info in _find_matching_files_from(data_files, selector)]
+    deletable = [
+        file_info.filename for file_info in _find_matching_files_from(data_files, selector)
+    ]
     if not deletable:
         logger.info("Found no matching files in 's3://%s/%s/data' to delete", bucket_name, prefix)
         return
@@ -421,9 +427,13 @@ def delete_schemas_files_in_s3(
 ) -> None:
     """Delete all table design and SQL files that match this prefix and selector pattern."""
     schemas_files = etl.s3.list_objects_for_prefix(bucket_name, prefix + "/schemas")
-    deletable = [file_info.filename for file_info in _find_matching_files_from(schemas_files, selector)]
+    deletable = [
+        file_info.filename for file_info in _find_matching_files_from(schemas_files, selector)
+    ]
     if not deletable:
-        logger.info("Found no matching files in 's3://%s/%s/schemas' to delete", bucket_name, prefix)
+        logger.info(
+            "Found no matching files in 's3://%s/%s/schemas' to delete", bucket_name, prefix
+        )
         return
     etl.s3.delete_objects(bucket_name, deletable, dry_run=dry_run)
 
@@ -458,7 +468,8 @@ def list_files(file_sets, long_format=False, sort_by_time=False) -> None:
                 else:
                     print(
                         "    Table: '{}' (with data from '{}')".format(
-                            file_set.target_table_name.identifier, file_set.source_table_name.identifier
+                            file_set.target_table_name.identifier,
+                            file_set.source_table_name.identifier,
                         )
                     )
                 for filename in file_set.files:

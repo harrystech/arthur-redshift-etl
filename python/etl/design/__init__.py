@@ -42,7 +42,15 @@ class ColumnDefinition:
     )
 
     def __init__(
-        self, name, source_sql_type, sql_type, expression, type_, not_null, identity=False, encoding=None
+        self,
+        name,
+        source_sql_type,
+        sql_type,
+        expression,
+        type_,
+        not_null,
+        identity=False,
+        encoding=None,
     ) -> None:
         self.name = name
         self.source_sql_type = source_sql_type
@@ -166,7 +174,8 @@ class TableDesign:
     def as_string(table_design: dict) -> str:
         # We use JSON pretty printing because it is prettier than YAML printing.
         return (
-            json.dumps(table_design, indent="    ", item_sort_key=TableDesign.make_item_sorter()) + "\n"
+            json.dumps(table_design, indent="    ", item_sort_key=TableDesign.make_item_sorter())
+            + "\n"
         )
 
 

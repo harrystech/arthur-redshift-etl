@@ -153,7 +153,9 @@ class DatabaseExtractor(Extractor):
 
         return statement
 
-    def fetch_source_table_size(self, dsn_dict: Dict[str, str], relation: RelationDescription) -> int:
+    def fetch_source_table_size(
+        self, dsn_dict: Dict[str, str], relation: RelationDescription
+    ) -> int:
         """
         Return size or estimated size of source table for this relation in bytes.
 

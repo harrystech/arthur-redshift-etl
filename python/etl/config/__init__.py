@@ -40,7 +40,12 @@ from simplejson.errors import JSONDecodeError
 
 import etl.config.dw
 from etl.config.dw import DataWarehouseConfig
-from etl.errors import ETLRuntimeError, InvalidArgumentError, SchemaInvalidError, SchemaValidationError
+from etl.errors import (
+    ETLRuntimeError,
+    InvalidArgumentError,
+    SchemaInvalidError,
+    SchemaValidationError,
+)
 from etl.text import join_with_single_quotes
 
 # The json_schema package doesn't have a nice parent class for its exceptions.
@@ -193,7 +198,9 @@ def load_environ_file(filename: str) -> None:
     logger.info(f"Loading environment variables from '{filename}'")
     assignment_re = re.compile(r"\s*(?:export\s+)?(\w+)=(\S+)")
     with open(filename) as content:
-        settings = [match.groups() for match in map(assignment_re.match, content) if match is not None]
+        settings = [
+            match.groups() for match in map(assignment_re.match, content) if match is not None
+        ]
     for name, value in settings:
         os.environ[name] = value
 
@@ -230,8 +237,10 @@ def load_settings_file(filename: str, settings: dict) -> None:
 
 def get_python_info() -> str:
     """Return minimal information about this Python version."""
-    return "Running Python {version_info[0]}.{version_info[1]}.{version_info[2]} ({platform})".format(
-        version_info=sys.version_info, platform=sys.platform
+    return (
+        "Running Python {version_info[0]}.{version_info[1]}.{version_info[2]} ({platform})".format(
+            version_info=sys.version_info, platform=sys.platform
+        )
     )
 
 

@@ -12,7 +12,9 @@ def get_etl_pipeline_ids(client):
     """Return a dict mapping pipeline ids to their names, filtering on ETL pipelines."""
     paginator = client.get_paginator("list_pipelines")
     response_iterator = paginator.paginate()
-    filtered_iterator = response_iterator.search("pipelineIdList[?contains(@.name, 'ETL') == `true`].id")
+    filtered_iterator = response_iterator.search(
+        "pipelineIdList[?contains(@.name, 'ETL') == `true`].id"
+    )
     return list(filtered_iterator)
 
 
@@ -43,7 +45,9 @@ def get_scheduled_component_ids(client, pipeline_id):
     response_iterator = paginator.paginate(
         pipelineId=pipeline_id,
         query={
-            "selectors": [{"fieldName": "@status", "operator": {"type": "EQ", "values": ["SCHEDULED"]}}]
+            "selectors": [
+                {"fieldName": "@status", "operator": {"type": "EQ", "values": ["SCHEDULED"]}}
+            ]
         },
         sphere="COMPONENT",
     )

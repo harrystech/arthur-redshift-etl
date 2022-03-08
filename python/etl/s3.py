@@ -147,7 +147,9 @@ def _keep_common_path(paths: Iterable[str]) -> str:
     return common_path or ""
 
 
-def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str, dry_run=False) -> None:
+def upload_files(
+    files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str, dry_run=False
+) -> None:
     """
     Upload local files to S3 from "local_name" to "s3://bucket_name/prefix/remote_name".
 
@@ -195,7 +197,12 @@ def upload_files(files: Sequence[Tuple[str, str]], bucket_name: str, prefix: str
 
 
 def delete_objects(
-    bucket_name: str, object_keys: Sequence[str], wait=False, hdfs_wait=False, _retry=True, dry_run=False
+    bucket_name: str,
+    object_keys: Sequence[str],
+    wait=False,
+    hdfs_wait=False,
+    _retry=True,
+    dry_run=False,
 ) -> None:
     """
     For each object key in object_keys, attempt to delete the key and its content from an S3 bucket.
@@ -210,7 +217,9 @@ def delete_objects(
 
     common_prefix = _keep_common_path(object_keys)
     description = "Deleting files in S3" if not dry_run else "Dry-run: Deleting files in S3"
-    tqdm_bar = tqdm(desc=description, disable=None, leave=False, total=len(object_keys), unit="file")
+    tqdm_bar = tqdm(
+        desc=description, disable=None, leave=False, total=len(object_keys), unit="file"
+    )
 
     failed: List[str] = []
     for this_chunk in funcy.chunks(chunk_size, object_keys):
@@ -257,7 +266,9 @@ def delete_objects(
         for key in object_keys:
             bucket.Object(key).wait_until_not_exists()
     if hdfs_wait and _retry:
-        logger.debug("Verifying %d object(s) no longer exist according to HDFS S3A.", len(object_keys))
+        logger.debug(
+            "Verifying %d object(s) no longer exist according to HDFS S3A.", len(object_keys)
+        )
         confirmed_deleted: Set[str] = set()
         total_waits = 0
         while len(confirmed_deleted) < len(object_keys) or total_waits > 10:
@@ -280,7 +291,9 @@ def delete_objects(
             raise S3ServiceError("Failed to confirm deletion of %d file(s)" % nondeleted_count)
 
 
-def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) -> Union[datetime, None]:
+def get_s3_object_last_modified(
+    bucket_name: str, object_key: str, wait=True
+) -> Union[datetime, None]:
     """
     Return the last_modified datetime timestamp for an S3 Object.
 
@@ -292,7 +305,9 @@ def get_s3_object_last_modified(bucket_name: str, object_key: str, wait=True) ->
         if wait:
             s3_object.wait_until_exists()
         timestamp = s3_object.last_modified
-        logger.debug("Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp)
+        logger.debug(
+            "Object in 's3://%s/%s' was last modified %s", bucket_name, object_key, timestamp
+        )
     except botocore.exceptions.WaiterError:
         logger.debug("Waiting for object in 's3://%s/%s' failed", bucket_name, object_key)
         timestamp = None
@@ -382,7 +397,9 @@ if __name__ == "__main__":
 
     if len(sys.argv) != 3:
         print("Usage: {} bucket_name prefix".format(sys.argv[0]))
-        print("This will create a test object under s3://[bucket_name]/[prefix] and delete afterwards.")
+        print(
+            "This will create a test object under s3://[bucket_name]/[prefix] and delete afterwards."
+        )
         sys.exit(1)
 
     etl.logs.configure_logging(log_level="DEBUG")

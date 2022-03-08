@@ -39,7 +39,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def upload_settings(config_paths: Iterable[str], bucket_name: str, prefix: str, dry_run=False) -> None:
+def upload_settings(
+    config_paths: Iterable[str], bucket_name: str, prefix: str, dry_run=False
+) -> None:
     """
     Upload warehouse configuration files (minus credentials) to target bucket/prefix's "config" dir.
 
@@ -54,7 +56,9 @@ def upload_settings(config_paths: Iterable[str], bucket_name: str, prefix: str, 
         prefix,
     )
 
-    files = [(local_file, f"config/{os.path.basename(local_file)}") for local_file in settings_files]
+    files = [
+        (local_file, f"config/{os.path.basename(local_file)}") for local_file in settings_files
+    ]
     etl.s3.upload_files(files, bucket_name, prefix, dry_run=dry_run)
 
 
@@ -82,7 +86,9 @@ def sync_with_s3(
     for relation in relations:
         if relation.is_transformation:
             if relation.sql_file_name is None:
-                raise MissingQueryError("missing matching SQL file for '%s'" % relation.design_file_name)
+                raise MissingQueryError(
+                    "missing matching SQL file for '%s'" % relation.design_file_name
+                )
             relation_files = [relation.design_file_name, relation.sql_file_name]
         else:
             relation_files = [relation.design_file_name]
@@ -98,7 +104,9 @@ def sync_with_s3(
         logger.info("As you wish: Configuration files are not changed in S3")
 
     if delete_data_pattern is not None:
-        etl.file_sets.delete_data_files_in_s3(bucket_name, prefix, delete_data_pattern, dry_run=dry_run)
+        etl.file_sets.delete_data_files_in_s3(
+            bucket_name, prefix, delete_data_pattern, dry_run=dry_run
+        )
 
     if delete_schemas_pattern is not None:
         etl.file_sets.delete_schemas_files_in_s3(

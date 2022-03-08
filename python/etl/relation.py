@@ -38,7 +38,12 @@ import etl.file_sets
 import etl.s3
 import etl.util.timer
 from etl.config.dw import DataWarehouseSchema
-from etl.errors import CyclicDependencyError, ETLRuntimeError, InvalidArgumentError, MissingQueryError
+from etl.errors import (
+    CyclicDependencyError,
+    ETLRuntimeError,
+    InvalidArgumentError,
+    MissingQueryError,
+)
 from etl.names import TableName, TableSelector, TempTableName
 from etl.text import join_with_single_quotes
 
@@ -100,7 +105,9 @@ class RelationDescription:
     @property
     def has_manifest(self):
         return (
-            etl.s3.get_s3_object_last_modified(self.bucket_name, self.manifest_file_name, wait=False)
+            etl.s3.get_s3_object_last_modified(
+                self.bucket_name, self.manifest_file_name, wait=False
+            )
             is not None
         )
 
@@ -131,7 +138,9 @@ class RelationDescription:
         elif code == "x":
             return "{:x}".format(self.target_table_name)
         else:
-            raise ValueError("unsupported format code '{}' passed to RelationDescription".format(code))
+            raise ValueError(
+                "unsupported format code '{}' passed to RelationDescription".format(code)
+            )
 
     def load(self, callback=None) -> None:
         """
@@ -175,7 +184,9 @@ class RelationDescription:
         for relation in remaining_relations[:parallel_start_index]:
             relation.load()
         if parallel_start_index == len(remaining_relations):
-            logger.info("Finished loading %d table design file(s) (%s)", len(remaining_relations), timer)
+            logger.info(
+                "Finished loading %d table design file(s) (%s)", len(remaining_relations), timer
+            )
             return
 
         # This section loads the remaining relations from the "parallel start index" onwards
@@ -267,7 +278,9 @@ class RelationDescription:
     def is_required(self) -> bool:
         if self._is_required is None:
             raise ETLRuntimeError(
-                "state of 'is_required' unknown for RelationDescription '{0.identifier}'".format(self)
+                "state of 'is_required' unknown for RelationDescription '{0.identifier}'".format(
+                    self
+                )
             )
         return self._is_required
 
@@ -332,7 +345,9 @@ class RelationDescription:
     @property
     def unquoted_columns(self) -> List[str]:
         """List of the column names of this relation."""
-        return [column["name"] for column in self.table_design["columns"] if not column.get("skipped")]
+        return [
+            column["name"] for column in self.table_design["columns"] if not column.get("skipped")
+        ]
 
     @property
     def columns(self) -> List[str]:
@@ -349,7 +364,9 @@ class RelationDescription:
         return any(column.get("identity") for column in self.table_design["columns"])
 
     @classmethod
-    def from_file_sets(cls, file_sets, required_relation_selector=None) -> List["RelationDescription"]:
+    def from_file_sets(
+        cls, file_sets, required_relation_selector=None
+    ) -> List["RelationDescription"]:
         """
         Return a list of relation descriptions based on a list of file sets.
 
@@ -527,7 +544,9 @@ def _sanitize_dependencies(descriptions: Sequence[SortableRelationDescription]) 
     known_unknowns = set()
 
     for description in descriptions:
-        unmanaged_dependencies = frozenset(dep for dep in description.dependencies if not dep.is_managed)
+        unmanaged_dependencies = frozenset(
+            dep for dep in description.dependencies if not dep.is_managed
+        )
         pg_catalog_dependencies = frozenset(
             dep for dep in description.dependencies if dep.schema == "pg_catalog"
         )
@@ -584,17 +603,25 @@ def _sort_by_dependencies(descriptions: Sequence[SortableRelationDescription]) -
         minimum_order, tie_breaker, description = queue.get()
 
         if minimum_order > nr_relations:
-            raise CyclicDependencyError("Cannot determine order, suspect cycle in DAG of dependencies")
+            raise CyclicDependencyError(
+                "Cannot determine order, suspect cycle in DAG of dependencies"
+            )
 
         if all(
-            relation_map[dep].order is not None for dep in description.dependencies if dep.is_managed
+            relation_map[dep].order is not None
+            for dep in description.dependencies
+            if dep.is_managed
         ):
             # Relation has no dependencies (all([]) == True) or has all its dependencies evaluated.
             latest_order += 1
             description.order = latest_order
 
             max_preceding_level = max(
-                (relation_map[dep].level or 0 for dep in description.dependencies if dep.is_managed),
+                (
+                    relation_map[dep].level or 0
+                    for dep in description.dependencies
+                    if dep.is_managed
+                ),
                 default=0,
             )
             description.level = max_preceding_level + 1
@@ -629,7 +656,8 @@ def order_by_dependencies(
     # Sorting is all-or-nothing so we get away with checking for just one relation's order.
     if relation_descriptions and relation_descriptions[0]._execution_order is not None:
         logger.info(
-            "Reusing previously computed execution order of %d relation(s)", len(relation_descriptions)
+            "Reusing previously computed execution order of %d relation(s)",
+            len(relation_descriptions),
         )
     else:
         sortable_descriptions = [
@@ -657,7 +685,9 @@ def set_required_relations(
 
     Side-effect: relations are sorted to determine dependencies and their order and level is set.
     """
-    logger.info("Loading table design for %d relation(s) to mark required relations", len(relations))
+    logger.info(
+        "Loading table design for %d relation(s) to mark required relations", len(relations)
+    )
     ordered_descriptions = order_by_dependencies(relations)
     # Start with all descriptions that are matching the required selector
     required_relations = [
@@ -669,7 +699,10 @@ def set_required_relations(
     # dependency fan-out.
     for description in ordered_descriptions[::-1]:
         if any(
-            [description.target_table_name in required.dependencies for required in required_relations]
+            [
+                description.target_table_name in required.dependencies
+                for required in required_relations
+            ]
         ):
             required_relations.append(description)
 
@@ -727,7 +760,9 @@ def find_immediate_dependencies(
             dependency.identifier in immediate for dependency in relation.dependencies
         ):
             immediate.add(relation.identifier)
-    return [relation for relation in relations if relation.identifier in (immediate - directly_selected)]
+    return [
+        relation for relation in relations if relation.identifier in (immediate - directly_selected)
+    ]
 
 
 def select_in_execution_order(
@@ -784,7 +819,9 @@ def select_in_execution_order(
             return transformations
         raise InvalidArgumentError("found no transformations to continue from")
 
-    logger.info("Trying to fast forward to '%s' within %d relation(s)", continue_from, len(selected))
+    logger.info(
+        "Trying to fast forward to '%s' within %d relation(s)", continue_from, len(selected)
+    )
     starting_from_match = list(
         fy.dropwhile(lambda relation: relation.identifier != continue_from, selected)
     )
@@ -832,11 +869,16 @@ def create_index(
             continue
         schema_name = relation.target_table_name.schema
         if schema_name not in schemas:
-            schemas[schema_name] = {"description": relation.schema_config.description, "relations": []}
+            schemas[schema_name] = {
+                "description": relation.schema_config.description,
+                "relations": [],
+            }
         schemas[schema_name]["relations"].append(relation)
 
     if not schemas:
-        logger.info("List of schemas is empty, selected groups: %s", join_with_single_quotes(group_set))
+        logger.info(
+            "List of schemas is empty, selected groups: %s", join_with_single_quotes(group_set)
+        )
         return
 
     print("# List Of Relations By Schema")
@@ -913,4 +955,6 @@ if __name__ == "__main__":
         descriptions = [d for d in descriptions if selector.match(d.target_table_name)]
 
     native = [d.table_design for d in descriptions]
-    print(json.dumps(native, indent="    ", item_sort_key=etl.design.TableDesign.make_item_sorter()))
+    print(
+        json.dumps(native, indent="    ", item_sort_key=etl.design.TableDesign.make_item_sorter())
+    )

@@ -53,7 +53,9 @@ class DataPipelineObject:
         self.name = description.get("name")
         self.object_id = description["id"]
         self.ref_values = {
-            field["key"]: field["refValue"] for field in description["fields"] if "refValue" in field
+            field["key"]: field["refValue"]
+            for field in description["fields"]
+            if "refValue" in field
         }
         self.string_values = {
             field["key"]: field["stringValue"]
@@ -233,7 +235,9 @@ class DataPipeline:
 
     def latest_instances(self):
         """Group instances by their component and and return latest within each group."""
-        component_lookup = {component.object_id: component for component in self.objects("COMPONENT")}
+        component_lookup = {
+            component.object_id: component for component in self.objects("COMPONENT")
+        }
         grouped_instances = funcy.group_by(attrgetter("component_parent"), self.objects("INSTANCE"))
         logger.info(
             "Pipeline '%s' has %d components and %d instances, looking for latest instances",
@@ -300,7 +304,11 @@ class DataPipeline:
         attempts gain referenced values from their instances.
         If evaluate_expressions is False, you will have to resolve references yourself.
         """
-        obj = {"pipelines": [pipeline.describe_pipeline(evaluate_expressions) for pipeline in pipelines]}
+        obj = {
+            "pipelines": [
+                pipeline.describe_pipeline(evaluate_expressions) for pipeline in pipelines
+            ]
+        }
         return json.dumps(obj, indent="    ", sort_keys=True)
 
     @staticmethod
@@ -409,7 +417,14 @@ def show_pipelines(selection: Sequence[str], as_json=False) -> None:
                 )
                 for pipeline in pipelines
             ],
-            header_row=["Pipeline ID", "Name", "Health", "State", "Latest Run Time", "Next Run Time"],
+            header_row=[
+                "Pipeline ID",
+                "Name",
+                "Health",
+                "State",
+                "Latest Run Time",
+                "Next Run Time",
+            ],
             max_column_width=80,
         )
     )
@@ -505,7 +520,9 @@ def delete_finished_pipelines(selection: Sequence[str], dry_run=False) -> None:
 
     for pipeline in pipelines:
         if dry_run:
-            logger.info("Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
+            logger.info(
+                "Skipping deletion of pipeline '%s': %s", pipeline.pipeline_id, pipeline.name
+            )
         else:
             logger.info("Trying to delete pipeline '%s': %s", pipeline.pipeline_id, pipeline.name)
             response = pipeline.delete_pipeline()

@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-def build_column_description(column: Dict[str, str], skip_identity=False, skip_references=False) -> str:
+def build_column_description(
+    column: Dict[str, str], skip_identity=False, skip_references=False
+) -> str:
     """
     Return the description of a table column suitable for a table creation.
 
@@ -40,7 +42,9 @@ def build_column_description(column: Dict[str, str], skip_identity=False, skip_r
     ... )
     '"my_key" INT REFERENCES "sch"."ble" ( "key" )'
     """
-    column_ddl = '"{name}" {sql_type}'.format(name=column["name"], sql_type=column["sql_type"].upper())
+    column_ddl = '"{name}" {sql_type}'.format(
+        name=column["name"], sql_type=column["sql_type"].upper()
+    )
     if column.get("identity", False) and not skip_identity:
         column_ddl += " IDENTITY(1, 1)"
     if "encoding" in column:
@@ -134,13 +138,17 @@ def build_table_attributes(table_design: dict) -> List[str]:
     elif compound_sort is not None:
         ddl_attributes.append(f"SORTKEY {compound_sort.upper()}")
     elif interleaved_sort is not None:
-        ddl_attributes.append(f"INTERLEAVED SORTKEY ( {join_with_double_quotes(interleaved_sort)} )")
+        ddl_attributes.append(
+            f"INTERLEAVED SORTKEY ( {join_with_double_quotes(interleaved_sort)} )"
+        )
     return ddl_attributes
 
 
 def add_auto_encoding(table_design: dict) -> None:
     """Modify table design in-place to add encodings of columns (in 'auto_encoding')."""
-    columns = {column["name"]: ColumnDefinition.from_dict(column) for column in table_design["columns"]}
+    columns = {
+        column["name"]: ColumnDefinition.from_dict(column) for column in table_design["columns"]
+    }
     # Use any encoding already defined in the table design.
     encoding = {
         column.name: column.encoding for column in columns.values() if column.encoding is not None
@@ -290,7 +298,9 @@ def log_load_error(cx):
                     "{key:{width}s} | {value}".format(key=k, value=row0[k], width=max_len)
                     for k in row0.keys()
                 ]
-                logger.warning("Load error information from stl_load_errors:\n  %s", "\n  ".join(info))
+                logger.warning(
+                    "Load error information from stl_load_errors:\n  %s", "\n  ".join(info)
+                )
             else:
                 logger.debug("There was no additional information in 'stl_load_errors'")
         raise
@@ -333,7 +343,9 @@ def copy_using_manifest(
         data_format, format_option, file_compression
     )
 
-    compupdate = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
+    compupdate = (
+        etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
+    )
     if compupdate == "AUTO":
         compupdate = "OFF"
 
@@ -357,7 +369,9 @@ def copy_using_manifest(
         compupdate=compupdate,
     )
     if dry_run:
-        logger.info("Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri)
+        logger.info(
+            "Dry-run: Skipping copying data into '%s' using '%s'", table_name.identifier, s3_uri
+        )
         etl.db.skip_query(conn, copy_stmt, (s3_uri, credentials))
         return
 
@@ -389,7 +403,8 @@ def query_load_commits(conn: Connection, table_name: TableName, s3_uri: str, dry
     )
     # TODO(tom): Check whether this is redundant with query_load_summary
     logger.info(
-        f"Copied {len(rows)} file(s) into '{table_name:x}' using manifest '{s3_uri}':\n" f"{summary}",
+        f"Copied {len(rows)} file(s) into '{table_name:x}' using manifest '{s3_uri}':\n"
+        f"{summary}",
         extra={"metrics": {"file_count": len(rows), "target": table_name.identifier}},
     )
 
@@ -531,11 +546,16 @@ def insert_from_query(
 
 def set_wlm_slots(conn: Connection, slots: int, dry_run: bool) -> None:
     etl.db.run(
-        conn, f"Using {slots} WLM queue slot(s)", f"SET wlm_query_slot_count TO {slots}", dry_run=dry_run
+        conn,
+        f"Using {slots} WLM queue slot(s)",
+        f"SET wlm_query_slot_count TO {slots}",
+        dry_run=dry_run,
     )
 
 
-def set_statement_timeout(conn: Connection, statement_timeout: Optional[int], dry_run: bool) -> None:
+def set_statement_timeout(
+    conn: Connection, statement_timeout: Optional[int], dry_run: bool
+) -> None:
     if statement_timeout is None:
         logger.debug("Using default cluster statement timeout")
         return

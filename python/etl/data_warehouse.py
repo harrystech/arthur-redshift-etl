@@ -45,7 +45,9 @@ def create_external_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=Fals
             create_external_schema_and_grant_access(conn, schema, dry_run=dry_run)
 
 
-def create_schemas(schemas: Iterable[DataWarehouseSchema], use_staging=False, dry_run=False) -> None:
+def create_schemas(
+    schemas: Iterable[DataWarehouseSchema], use_staging=False, dry_run=False
+) -> None:
     """
     Create schemas and grant access.
 
@@ -81,7 +83,11 @@ def create_external_schema_and_grant_access(
 
 
 def create_schema_and_grant_access(
-    conn: Connection, schema: DataWarehouseSchema, owner: str = None, use_staging=False, dry_run=False
+    conn: Connection,
+    schema: DataWarehouseSchema,
+    owner: str = None,
+    use_staging=False,
+    dry_run=False,
 ) -> None:
     group_names = join_with_single_quotes(schema.groups)
     name = schema.staging_name if use_staging else schema.name
@@ -102,7 +108,9 @@ def create_schema_and_grant_access(
         etl.db.grant_usage(conn, name, schema.groups)
 
 
-def _promote_schemas(schemas: Iterable[DataWarehouseSchema], from_where: str, dry_run=False) -> None:
+def _promote_schemas(
+    schemas: Iterable[DataWarehouseSchema], from_where: str, dry_run=False
+) -> None:
     """
     Promote (staging or backup) schemas into their standard names and permissions.
 
@@ -210,7 +218,9 @@ def grant_schema_permissions(conn: Connection, schema: DataWarehouseSchema) -> N
     if schema.reader_groups:
         etl.db.grant_select_on_all_tables_in_schema(conn, schema.name, schema.reader_groups)
     if schema.writer_groups:
-        etl.db.grant_select_and_write_on_all_tables_in_schema(conn, schema.name, schema.writer_groups)
+        etl.db.grant_select_and_write_on_all_tables_in_schema(
+            conn, schema.name, schema.writer_groups
+        )
 
 
 def revoke_schema_permissions(conn: Connection, schema: DataWarehouseSchema) -> None:
@@ -258,7 +268,9 @@ def _create_groups(conn: Connection, groups: Iterable[str], dry_run=False) -> No
         )
 
 
-def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False):
+def _create_or_update_user(
+    conn: Connection, user: DataWarehouseUser, only_update=False, dry_run=False
+):
     """
     Create user in its group, or add user to its group.
 
@@ -267,7 +279,9 @@ def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_updat
     with conn:
         if only_update or etl.db.user_exists(conn, user.name):
             if dry_run:
-                logger.info("Dry-run: Skipping adding user '%s' to group '%s'", user.name, user.group)
+                logger.info(
+                    "Dry-run: Skipping adding user '%s' to group '%s'", user.name, user.group
+                )
                 logger.info("Dry-run: Skipping updating password for user '%s'", user.name)
             else:
                 logger.info("Adding user '%s' to group '%s'", user.name, user.group)
@@ -276,13 +290,17 @@ def _create_or_update_user(conn: Connection, user: DataWarehouseUser, only_updat
                 etl.db.alter_password(conn, user.name, ignore_missing_password=True)
         else:
             if dry_run:
-                logger.info("Dry-run: Skipping creating user '%s' in group '%s'", user.name, user.group)
+                logger.info(
+                    "Dry-run: Skipping creating user '%s' in group '%s'", user.name, user.group
+                )
             else:
                 logger.info("Creating user '%s' in group '%s'", user.name, user.group)
                 etl.db.create_user(conn, user.name, user.group)
 
 
-def _create_schema_for_user(conn: Connection, user: DataWarehouseUser, etl_group: str, dry_run=False):
+def _create_schema_for_user(
+    conn: Connection, user: DataWarehouseUser, etl_group: str, dry_run=False
+):
     groups = [user.group, etl_group]
     user_schema = etl.config.dw.DataWarehouseSchema(
         {"name": user.schema, "owner": user.name, "readers": groups}
@@ -327,7 +345,9 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
     if database_name.startswith("validation"):
         logger.info("Initializing validation database '%s'", database_name)
     elif force:
-        logger.info("Initializing non-validation database '%s' forcefully as requested", database_name)
+        logger.info(
+            "Initializing non-validation database '%s' forcefully as requested", database_name
+        )
     else:
         raise ETLRuntimeError(
             "Refused to initialize non-validation database '%s' without the --force option"
@@ -351,7 +371,9 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
     else:
         with closing(etl.db.connection(config.dsn_admin, autocommit=True)) as conn:
             logger.info(
-                "Dropping and creating database '%s' with owner '%s'", database_name, config.owner.name
+                "Dropping and creating database '%s' with owner '%s'",
+                database_name,
+                config.owner.name,
             )
             etl.db.drop_and_create_database(conn, database_name, config.owner.name)
 
