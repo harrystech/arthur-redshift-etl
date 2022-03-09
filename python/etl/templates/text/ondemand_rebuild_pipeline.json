@@ -145,22 +145,13 @@
             "dependsOn": { "ref": "ArthurLoad" }
         },
         {
-            "id": "ArthurUnload",
-            "name": "Arthur Unload (EC2)",
-            "type": "ShellCommandActivity",
-            "parent": {"ref": "ArthurCommandParent"},
-            "command": "/tmp/redshift_etl/venv/bin/arthur.py --config /tmp/redshift_etl/config/ unload --keep-going --prolix --prefix ${object_store.s3.prefix}",
-            "dependsOn": {"ref": "ArthurLoad"}
-        },
-        {
             "id": "SendHealthCheckAfterEtl",
             "name": "Send Health Check After ETL (EC2)",
             "type": "ShellCommandActivity",
             "parent": { "ref": "ShellCommandParent" },
             "command": "bash /tmp/redshift_etl/bin/send_health_check.sh",
             "dependsOn": [
-                { "ref": "PublishAndBackup" },
-                { "ref": "ArthurUnload" }
+                { "ref": "PublishAndBackup" }
             ],
             "onSuccess": { "ref": "SuccessNotification" },
             "onFail": [
