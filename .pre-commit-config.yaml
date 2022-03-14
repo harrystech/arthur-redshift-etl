@@ -39,7 +39,7 @@ repos:
     hooks:
       - id: isort
   - repo: https://github.com/psf/black
-    rev: 21.12b0
+    rev: 22.1.0
     hooks:
       - id: black
   - repo: https://gitlab.com/pycqa/flake8
@@ -56,9 +56,9 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - "mypy-boto3~=1.20"
-          - "types-PyYAML==6.0.3"
-          - "types-setuptools==57.4.7"
+          - "mypy-boto3~=1.21"
+          - "types-PyYAML==6.0.4"
+          - "types-setuptools==57.4.9"
           - "types-simplejson==3.17.3"
           - "types-tabulate==0.8.5"
           - "types-termcolor==1.1.3"
