@@ -60,7 +60,7 @@ repos:
           - "types-PyYAML==6.0.7"
           - "types-setuptools==57.4.14"
           - "types-simplejson==3.17.6"
-          - "types-tabulate==0.8.7"
+          - "types-tabulate==0.8.8"
           - "types-termcolor==1.1.4"
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.7.2.1
