@@ -85,12 +85,12 @@ def get_config_value(name: str, default: Optional[str] = None) -> Optional[str]:
     Lookup configuration value in known and flattened settings -- pass in a fully-qualified name.
 
     Note the side effect here: once accessed, the settings remember the default if it wasn't set
-    before.
+    before. (That is, unless the default is None, which is not stored.)
     """
     assert _mapped_config is not None, "attempted to get config value before reading config map"
-    if default is None:
-        return _mapped_config.setdefault(name)
-    return _mapped_config.setdefault(name, default)
+    if default is not None:
+        return _mapped_config.setdefault(name, default)
+    return _mapped_config.get(name)
 
 
 def get_config_int(name: str, default: Optional[int] = None) -> int:
