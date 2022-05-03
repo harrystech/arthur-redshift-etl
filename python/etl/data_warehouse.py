@@ -355,6 +355,7 @@ def initial_setup(with_user_creation=False, force=False, dry_run=False) -> None:
             )
             etl.db.drop_and_create_database(conn, database_name, config.owner.name)
 
+    # TODO(tom): This fails if database is not actually created.
     with closing(
         etl.db.connection(config.dsn_admin_on_etl_db, autocommit=True, readonly=dry_run)
     ) as conn:

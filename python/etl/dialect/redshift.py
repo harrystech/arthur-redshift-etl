@@ -181,9 +181,7 @@ def add_auto_encoding(table_design: dict) -> None:
 
 def build_table_ddl(table_name: TableName, table_design: dict, is_temp=False) -> str:
     """Assemble the DDL of a table in a Redshift data warehouse."""
-    if (
-        etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
-    ) == "AUTO":
+    if etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding", "ON") == "AUTO":
         add_auto_encoding(table_design)
     columns = build_columns(table_design["columns"], is_temp=is_temp)
     constraints = build_table_constraints(table_design)
@@ -333,7 +331,7 @@ def copy_using_manifest(
         data_format, format_option, file_compression
     )
 
-    compupdate = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding") or "ON"
+    compupdate = etl.config.get_config_value("arthur_settings.redshift.relation_column_encoding", "ON")
     if compupdate == "AUTO":
         compupdate = "OFF"
 

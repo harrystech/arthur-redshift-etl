@@ -1,6 +1,6 @@
 # This is the set of packages need to run the code. All versions are pinned.
 arrow==1.2.2
-boto3==1.21.13
+boto3==1.21.42
 botocore~=1.24
 funcy==1.17
 jmespath==0.10.0
@@ -11,5 +11,5 @@ PyYAML==6.0
 simplejson==3.17.6
 tabulate==0.8.9
 termcolor==1.1.0
-tqdm==4.63.0
+tqdm==4.64.0
 watchtower==3.0.0
