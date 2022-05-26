@@ -1426,7 +1426,7 @@ def show_downstream_dependents(
     continue_from: Optional[str] = None,
     with_dependencies: Optional[bool] = False,
     with_dependents: Optional[bool] = False,
-) -> None:
+) -> List[RelationDescription]:
     """
     List the execution order of loads or updates.
 

@@ -43,7 +43,7 @@ import etl.sync
 import etl.templates
 import etl.unload
 import etl.validate
-from etl.dbt import DBTProject
+from etl.dbt import DBTProject, DbtModelIdentifier
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
 from etl.util import croak, isoformat_datetime_string
@@ -1771,28 +1771,28 @@ class ShowDownstreamDependentsCommand(SubCommand):
         )
 
     def callback(self, args):
-        # dw_config = etl.config.get_dw_config()
-        # relations = self.find_relation_descriptions(
-        #     args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
-        # )
-        # relations = etl.load.show_downstream_dependents(
-        #     relations,
-        #     args.pattern,
-        #     continue_from=args.continue_from,
-        #     with_dependencies=args.with_dependencies,
-        #     with_dependents=args.with_dependents,
-        # )
-        #
-        # if not args.with_dbt:
-        #     return
-        #
-        # dbt_model_identifiers = [relation.identifier.split('.') for relation in relations]
+        dw_config = etl.config.get_dw_config()
+        relations = self.find_relation_descriptions(
+            args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
+        )
+        relations = etl.load.show_downstream_dependents(
+            relations,
+            args.pattern,
+            continue_from=args.continue_from,
+            with_dependencies=args.with_dependencies,
+            with_dependents=args.with_dependents,
+        )
 
-        print(os.environ['DBT_ROOT'], os.environ['DBT_PROFILES_DIR'])
+        if not args.with_dbt:
+            return
+
+        dbt_model_identifiers = [DbtModelIdentifier(*relation.identifier.split('.')) for relation in relations]
         dbt_project = DBTProject(os.environ['DBT_ROOT'], os.environ['DBT_PROFILES_DIR'])
+        dbt_downstream = ' '.join([f"{parent}+" for parent in dbt_project.show_downstream_dbt_parents(dbt_model_identifiers)])
+
         ret = dbt_project.build_image()
-        # print([l for l in ret])
-        dbt_project.run_cmd("ls")
+        print(dbt_project.run_cmd(
+            f"dbt list -t dev --exclude redshift --output name  --resource-type model -s {dbt_downstream}"))
 
 
 class ShowUpstreamDependenciesCommand(SubCommand):
