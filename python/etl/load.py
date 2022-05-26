@@ -1533,6 +1533,7 @@ def show_downstream_dependents(
                         width=width_dep,
                     )
                 )
+    return selected_relations
 
 
 def show_upstream_dependencies(relations: Sequence[RelationDescription], selector: TableSelector):

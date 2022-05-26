@@ -28,11 +28,13 @@ RUN yum install -y \
         tmux \
         vim-minimal
 
+RUN amazon-linux-extras install docker
+
 # Run as non-priviledged user "arthur".
 RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
     mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl && \
-    chown -R arthur.arthur /opt/*
-USER arthur
+    chown -R arthur.arthur /opt/* /var/*
+
 
 # The .bashrc will ensure the virutal environment is activated when running interactive shells.
 COPY --chown=arthur:arthur docker/* /home/arthur/

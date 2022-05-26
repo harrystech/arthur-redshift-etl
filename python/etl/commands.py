@@ -12,6 +12,7 @@ import os
 import shlex
 import sys
 import uuid
+from collections import namedtuple
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, List, Optional
@@ -42,6 +43,7 @@ import etl.sync
 import etl.templates
 import etl.unload
 import etl.validate
+from etl.dbt import DBTProject
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
 from etl.util import croak, isoformat_datetime_string
@@ -198,11 +200,11 @@ def submit_step(cluster_id, sub_command):
                     "HadoopJarStep": {
                         "Jar": "command-runner.jar",
                         "Args": [
-                            etl.config.etl_tmp_dir("venv/bin/arthur.py"),
-                            "--config",
-                            etl.config.etl_tmp_dir("config"),
-                        ]
-                        + remaining,
+                                    etl.config.etl_tmp_dir("venv/bin/arthur.py"),
+                                    "--config",
+                                    etl.config.etl_tmp_dir("config"),
+                                ]
+                                + remaining,
                     },
                 }
             ],
@@ -438,7 +440,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             metavar="N",
             type=int,
             help="set max number of parallel loads to N (overrides "
-            "'resources.RedshiftCluster.max_concurrency')",
+                 "'resources.RedshiftCluster.max_concurrency')",
         )
     if "wlm-query-slots" in options:
         options.discard("wlm-query-slots")
@@ -448,7 +450,7 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             metavar="N",
             type=int,
             help="set the number of Redshift WLM query slots used for transformations"
-            " (overrides 'resources.RedshiftCluster.wlm_query_slots')",
+                 " (overrides 'resources.RedshiftCluster.wlm_query_slots')",
         )
     if "statement-timeout" in options:
         options.discard("statement-timeout")
@@ -458,8 +460,8 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
             metavar="MILLISECS",
             type=int,
             help="set the timeout before canceling a statement in Redshift. This time includes planning,"
-            " queueing in WLM, and execution time. (overrides "
-            "'resources.RedshiftCluster.statement_timeout')",
+                 " queueing in WLM, and execution time. (overrides "
+                 "'resources.RedshiftCluster.statement_timeout')",
         )
     if "skip-copy" in options:
         options.discard("skip-copy")
@@ -474,9 +476,9 @@ def add_standard_arguments(parser: argparse.ArgumentParser, option_names: Iterab
         parser.add_argument(
             "--continue-from",
             help="skip forward in execution until the specified relation, then work forward from it"
-            " (the special token '*' is allowed to signify continuing from the first relation,"
-            " use ':transformations' as the argument to continue from the first transformation,)"
-            " otherwise specify an exact relation or source name)",
+                 " (the special token '*' is allowed to signify continuing from the first relation,"
+                 " use ':transformations' as the argument to continue from the first transformation,)"
+                 " otherwise specify an exact relation or source name)",
         )
     if "pattern" in options:
         options.discard("pattern")
@@ -513,7 +515,7 @@ class SubCommand(abc.ABC):
     uses_monitor = False
 
     def __init__(
-        self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None
+            self, name: str, help_: str, description: str, aliases: Optional[List[str]] = None
     ) -> None:
         self.name = name
         self.help = help_
@@ -576,7 +578,7 @@ class SubCommand(abc.ABC):
         raise ETLSystemError("scheme invalid")
 
     def find_relation_descriptions(
-        self, args, default_scheme=None, required_relation_selector=None, return_all=False
+            self, args, default_scheme=None, required_relation_selector=None, return_all=False
     ):
         """
         Most commands need to collect file sets and create relation descriptions around those.
@@ -636,7 +638,7 @@ class InitializeSetupCommand(SubCommand):
             "-f",
             "--force",
             help="destructively initialize the referenced database regardless"
-            " of whether it looks like a validation database",
+                 " of whether it looks like a validation database",
             default=False,
             action="store_true",
         )
@@ -892,7 +894,7 @@ class BootstrapTransformationsCommand(SubCommand):
             "type",
             choices=["CTAS", "VIEW", "update", "check-only"],
             help="pick whether to create table designs for 'CTAS' or 'VIEW' relations"
-            " , update the current relation, or check the current designs",
+                 " , update the current relation, or check the current designs",
         )
         # Note that patterns must follow the choice of CTAS, VIEW, update etc.
         add_standard_arguments(parser, ["pattern"])
@@ -1002,7 +1004,7 @@ class ExtractToS3Command(SubCommand):
             const="manifest-only",
             dest="extractor",
             help="skip extraction and go straight to creating manifest files, "
-            "implied default for static sources",
+                 "implied default for static sources",
         )
         parser.add_argument(
             "-k",
@@ -1076,15 +1078,15 @@ class LoadDataWarehouseCommand(SubCommand):
         parser.add_argument(
             "--concurrent-extract",
             help="watch DynamoDB for extract step completion and load source tables as extracts"
-            " finish assuming another Arthur in this prefix is running extract"
-            " (default: %(default)s)",
+                 " finish assuming another Arthur in this prefix is running extract"
+                 " (default: %(default)s)",
             default=False,
             action="store_true",
         )
         parser.add_argument(
             "--without-staging-schemas",
             help="do NOT do all the work in hidden schemas and publish to standard names on"
-            " completion (default: use staging schemas)",
+                 " completion (default: use staging schemas)",
             default=True,
             action="store_false",
             dest="use_staging_schemas",
@@ -1094,7 +1096,7 @@ class LoadDataWarehouseCommand(SubCommand):
             default=True,
             action="store_false",
             help="Skip publishing staging schemas and keep result of the load step in"
-            " staging (default: publish schemas from staging)",
+                 " staging (default: publish schemas from staging)",
             dest="publish_staging_schemas",
         )
         parser.add_argument(
@@ -1127,7 +1129,7 @@ class LoadDataWarehouseCommand(SubCommand):
         )
         statement_timeout = args.statement_timeout
         if statement_timeout is None and etl.config.is_config_set(
-            "resources.RedshiftCluster.statement_timeout"
+                "resources.RedshiftCluster.statement_timeout"
         ):
             statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
@@ -1179,13 +1181,13 @@ class UpgradeDataWarehouseCommand(SubCommand):
             action="store_true",
             default=False,
             help="skip rebuilding relations that depend on the selected ones"
-            " (leaves warehouse in inconsistent state, for debugging only)",
+                 " (leaves warehouse in inconsistent state, for debugging only)",
         )
         parser.add_argument(
             "--include-immediate-views",
             action="store_true",
             help="include views that are downstream of selected relations without any CTAS before"
-            " (this is the default and only useful with '--only-selected', for debugging only)",
+                 " (this is the default and only useful with '--only-selected', for debugging only)",
         )
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
@@ -1194,7 +1196,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
             default=False,
             dest="use_staging_schemas",
             help="do all the work using hidden schemas (default: do not use staging schemas,"
-            " note this is the opposite of 'load' command)",
+                 " note this is the opposite of 'load' command)",
         )
         group.add_argument(
             "--into-schema",
@@ -1224,7 +1226,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
         )
         statement_timeout = args.statement_timeout
         if statement_timeout is None and etl.config.is_config_set(
-            "resources.RedshiftCluster.statement_timeout"
+                "resources.RedshiftCluster.statement_timeout"
         ):
             statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
@@ -1264,7 +1266,7 @@ class UpdateDataWarehouseCommand(SubCommand):
         parser.add_argument(
             "--only-selected",
             help="only load data into selected relations"
-            " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
+                 " (leaves warehouse in inconsistent state, for debugging only, default: %(default)s)",
             default=False,
             action="store_true",
         )
@@ -1274,7 +1276,7 @@ class UpdateDataWarehouseCommand(SubCommand):
             default=None,
             type=isoformat_datetime_string,
             help="require recent successful extract events for all selected source relations "
-            "after UTC time TIME (or, by default, don't require extract events)",
+                 "after UTC time TIME (or, by default, don't require extract events)",
         )
         parser.add_argument(
             "--vacuum",
@@ -1287,7 +1289,7 @@ class UpdateDataWarehouseCommand(SubCommand):
         relations = self.find_relation_descriptions(args, default_scheme="s3", return_all=True)
         statement_timeout = args.statement_timeout
         if statement_timeout is None and etl.config.is_config_set(
-            "resources.RedshiftCluster.statement_timeout"
+                "resources.RedshiftCluster.statement_timeout"
         ):
             statement_timeout = etl.config.get_config_int("resources.RedshiftCluster.statement_timeout")
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
@@ -1762,19 +1764,35 @@ class ShowDownstreamDependentsCommand(SubCommand):
             action="store_true",
             help="show list of dependents (upstream) for every relation",
         )
+        group.add_argument(
+            "--with-dbt",
+            action="store_true",
+            help="show list of dependents (upstream) for every relation",
+        )
 
     def callback(self, args):
-        dw_config = etl.config.get_dw_config()
-        relations = self.find_relation_descriptions(
-            args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
-        )
-        etl.load.show_downstream_dependents(
-            relations,
-            args.pattern,
-            continue_from=args.continue_from,
-            with_dependencies=args.with_dependencies,
-            with_dependents=args.with_dependents,
-        )
+        # dw_config = etl.config.get_dw_config()
+        # relations = self.find_relation_descriptions(
+        #     args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
+        # )
+        # relations = etl.load.show_downstream_dependents(
+        #     relations,
+        #     args.pattern,
+        #     continue_from=args.continue_from,
+        #     with_dependencies=args.with_dependencies,
+        #     with_dependents=args.with_dependents,
+        # )
+        #
+        # if not args.with_dbt:
+        #     return
+        #
+        # dbt_model_identifiers = [relation.identifier.split('.') for relation in relations]
+
+        print(os.environ['DBT_ROOT'], os.environ['DBT_PROFILES_DIR'])
+        dbt_project = DBTProject(os.environ['DBT_ROOT'], os.environ['DBT_PROFILES_DIR'])
+        ret = dbt_project.build_image()
+        # print([l for l in ret])
+        dbt_project.run_cmd("ls")
 
 
 class ShowUpstreamDependenciesCommand(SubCommand):
@@ -1929,7 +1947,7 @@ class QueryEventsCommand(SubCommand):
             action="append",
             choices=["step", "event", "elapsed", "rowcount"],
             help="select output column (in addition to target and timestamp),"
-            " use multiple times so add more columns",
+                 " use multiple times so add more columns",
         )
         parser.add_argument("etl_id", help="pick particular ETL from the past", nargs="?")
 
