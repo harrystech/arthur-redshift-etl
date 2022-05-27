@@ -1441,7 +1441,7 @@ def show_downstream_dependents(
         relations, selector, include_dependents=True, continue_from=continue_from
     )
     if not selected_relations:
-        return
+        return selected_relations
 
     directly_selected_relations = etl.relation.find_matches(selected_relations, selector)
     selected = frozenset(relation.identifier for relation in directly_selected_relations)

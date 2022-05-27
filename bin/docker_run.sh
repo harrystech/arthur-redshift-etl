@@ -175,7 +175,7 @@ case "$action" in
             --volume ~/.ssh:/root/.ssh:ro \
             --volume "$data_warehouse_path:/opt/data-warehouse" \
             --volume "$(pwd):/opt/src/arthur-redshift-etl" \
-            --volume /var/run/docker.sock:/var/run/docker.sock \
+            --volume /var/run/docker.sock:/var/run/docker.sock:ro \
             $publish_arg \
             $profile_arg \
             "arthur-redshift-etl:$tag"
@@ -186,12 +186,16 @@ case "$action" in
         docker run --rm --interactive --tty \
             --env ARTHUR_DEFAULT_PREFIX="$target_env" \
             --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+            --env DBT_ROOT="$data_warehouse_path/dbt" \
+            --env DBT_PROFILES_DIR="${HOME}/.dbt/profiles.yml" \
             --sysctl net.ipv4.tcp_keepalive_time=300 \
             --sysctl net.ipv4.tcp_keepalive_intvl=60 \
             --sysctl net.ipv4.tcp_keepalive_probes=9 \
             --volume ~/.aws:/root/.aws \
             --volume ~/.ssh:/root/.ssh:ro \
             --volume "$data_warehouse_path:/opt/data-warehouse" \
+            --volume "$(pwd):/opt/src/arthur-redshift-etl" \
+            --volume /var/run/docker.sock:/var/run/docker.sock:ro \
             $publish_arg \
             $profile_arg \
             "arthur-redshift-etl:$tag"

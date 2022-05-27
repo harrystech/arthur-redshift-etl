@@ -30,6 +30,8 @@ RUN yum install -y \
 
 RUN amazon-linux-extras install docker
 
+#  TODO(youssef): We should use a non root user, but the containers need access the docker socket which is owned by root
+
 RUN mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl
 
 # The .bashrc will ensure the virutal environment is activated when running interactive shells.
