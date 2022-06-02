@@ -1259,7 +1259,8 @@ class UpgradeDataWarehouseCommand(SubCommand):
         dbt_target = "etl_staging" if args.use_staging_schemas else "dev"
 
         arthur_table_identifiers = [
-            TableIdentifier(*relation.identifier.split(".")) for relation in selected_relations
+            TableIdentifier(*etl.names.TableName.from_identifier(relation.identifier).to_tuple())
+            for relation in selected_relations
         ]
         dbt_project = DBTProject.from_env()
         dbt_downstream_parents = " ".join(
@@ -1814,8 +1815,10 @@ class ShowDownstreamDependentsCommand(SubCommand):
             return
 
         arthur_table_identifier = [
-            TableIdentifier(*relation.identifier.split(".")) for relation in relations
+            TableIdentifier(*etl.names.TableName.from_identifier(relation.identifier).to_tuple())
+            for relation in relations
         ]
+
         dbt_project = DBTProject.from_env()
         dbt_downstream_parents = " ".join(
             [f"{parent}+" for parent in dbt_project.find_arthur_leaf_dbt_childs(arthur_table_identifier)]

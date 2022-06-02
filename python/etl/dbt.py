@@ -57,8 +57,8 @@ class DBTProject:
             dbt_stdout = []
             try:
                 # Print logs as they are received
-                while True:
-                    logline = next(gen).decode("utf-8").strip()
+                for raw_line in gen:
+                    logline = raw_line.decode("utf-8").strip()
                     logger.info(f"{self.tag} # {logline}")
                     dbt_stdout.append(logline)
             except StopIteration:
@@ -90,8 +90,7 @@ class DBTProject:
                     if dmi.schema == schema and dmi.table == table:
                         yield os.path.splitext(sql_file_path)[0]
 
-    def parse_dbt_run_stdout(self, res: list):
-        res_list = res
+    def parse_dbt_run_stdout(self, res_list: list):
         relations = []
         for e in res_list:
             try:
