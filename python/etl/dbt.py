@@ -40,7 +40,7 @@ class DBTProject:
                 cmd,
                 volumes={
                     self.dbt_root: {"bind": "/dbt", "mode": "rw"},
-                    self.dbt_profiles_dir: {"bind": "/root/.dbt/profiles.yml", "mode": "ro"},
+                    self.dbt_profiles_dir: {"bind": "/home/arthur/.dbt/profiles.yml", "mode": "ro"},
                 },
                 stderr=True,
                 stdout=True,
