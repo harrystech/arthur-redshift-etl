@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import re
-import time
 from collections import namedtuple
 from typing import Sequence
 
@@ -29,8 +28,11 @@ class DBTProject:
         img = self.client.api.build(
             path="dbt", tag=self.tag, dockerfile="Dockerfile", quiet=False, nocache=False
         )
-        time.sleep(5)  # The image is not immediately available to pull
-        return img
+
+        # Wait for the image to build
+        for _ in img:
+            continue
+        logging.info(f"{self.tag} docker image built")
 
     def run_cmd(self, cmd):
         try:
@@ -40,11 +42,10 @@ class DBTProject:
                 cmd,
                 volumes={
                     self.dbt_root: {"bind": "/dbt", "mode": "rw"},
-                    self.dbt_profiles_dir: {"bind": "/home/arthur/.dbt/profiles.yml", "mode": "ro"},
+                    self.dbt_profiles_dir: {"bind": "/root/.dbt/profiles.yml", "mode": "ro"},
                 },
                 stderr=True,
                 stdout=True,
-                auto_remove=True,
             ).decode("utf-8")
         except docker.errors.ContainerError as exc:
             print(exc.container.logs())

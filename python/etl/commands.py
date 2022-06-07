@@ -1764,7 +1764,7 @@ class ShowDownstreamDependentsCommand(SubCommand):
             help="show list of dependents (upstream) for every relation",
         )
         group.add_argument(
-            "--with-dbt",
+            "--include-dbt",
             action="store_true",
             help="show list of dependents (upstream) for every relation",
         )
@@ -1782,7 +1782,7 @@ class ShowDownstreamDependentsCommand(SubCommand):
             with_dependents=args.with_dependents,
         )
 
-        if not args.with_dbt:
+        if not args.include_dbt:
             return
 
         dbt_model_identifiers = [

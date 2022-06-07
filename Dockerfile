@@ -34,7 +34,6 @@ RUN amazon-linux-extras install docker
 
 # Run as non-priviledged user "arthur".
 RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
-    passwd -d arthur && \
     mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl && \
     chown -R arthur.arthur /opt/*
 
