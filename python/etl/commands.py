@@ -1792,7 +1792,11 @@ class ShowDownstreamDependentsCommand(SubCommand):
         dbt_downstream_parents = " ".join(
             [f"{parent}+" for parent in dbt_project.show_downstream_dbt_parents(dbt_model_identifiers)]
         )
+        if not dbt_downstream_parents:
+            logging.info("No dbt downstream dependents found")
+            return
 
+        logging.info("dbt downstream dependents found")
         dbt_project.build_image()
         dbt_stdout = dbt_project.run_cmd(
             f"dbt list -t dev --exclude redshift --output json "
