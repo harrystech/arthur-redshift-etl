@@ -20,18 +20,25 @@ RUN yum install -y \
         jq \
         libyaml-devel \
         openssh-clients \
+        passwd \
         postgresql \
         procps-ng \
         python3 \
         python3-devel \
+        sudo \
         tar \
         tmux \
         vim-minimal
 
+RUN amazon-linux-extras install docker
+
 # Run as non-priviledged user "arthur".
-RUN useradd --comment 'Arthur ETL' --user-group --create-home arthur && \
+RUN useradd --comment 'Arthur ETL' --user-group --groups wheel --create-home arthur  && \
     mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl && \
     chown -R arthur.arthur /opt/*
+
+RUN echo "arthur:arthur" | chpasswd
+
 USER arthur
 
 # The .bashrc will ensure the virutal environment is activated when running interactive shells.

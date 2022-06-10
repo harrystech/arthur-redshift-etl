@@ -1426,7 +1426,7 @@ def show_downstream_dependents(
     continue_from: Optional[str] = None,
     with_dependencies: Optional[bool] = False,
     with_dependents: Optional[bool] = False,
-) -> None:
+) -> List[RelationDescription]:
     """
     List the execution order of loads or updates.
 
@@ -1441,7 +1441,7 @@ def show_downstream_dependents(
         relations, selector, include_dependents=True, continue_from=continue_from
     )
     if not selected_relations:
-        return
+        return selected_relations
 
     directly_selected_relations = etl.relation.find_matches(selected_relations, selector)
     selected = frozenset(relation.identifier for relation in directly_selected_relations)
@@ -1533,6 +1533,7 @@ def show_downstream_dependents(
                         width=width_dep,
                     )
                 )
+    return selected_relations
 
 
 def show_upstream_dependencies(relations: Sequence[RelationDescription], selector: TableSelector):

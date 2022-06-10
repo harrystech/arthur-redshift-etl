@@ -31,4 +31,6 @@ if [[ -r "/opt/local/redshift_etl/venv/bin/activate" ]]; then
     fi
 fi
 
+echo arthur >> sudo chmod 777 /var/run/docker.sock
+
 exec "$@"
