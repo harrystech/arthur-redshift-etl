@@ -175,7 +175,7 @@ case "$action" in
             --volume ~/.ssh:/home/arthur/.ssh:ro \
             --volume "$data_warehouse_path:/opt/data-warehouse" \
             --volume "$(pwd):/opt/src/arthur-redshift-etl" \
-            --volume /var/run/docker.sock:/var/run/docker.sock:ro \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
             $publish_arg \
             $profile_arg \
             "arthur-redshift-etl:$tag"
@@ -194,7 +194,7 @@ case "$action" in
             --volume ~/.aws:/home/arthur/.aws \
             --volume ~/.ssh:/home/arthur/.ssh:ro \
             --volume "$data_warehouse_path:/opt/data-warehouse" \
-            --volume /var/run/docker.sock:/var/run/docker.sock:ro \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
             $publish_arg \
             $profile_arg \
             "arthur-redshift-etl:$tag"
