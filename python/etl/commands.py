@@ -1190,7 +1190,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
         )
 
         parser.add_argument(
-            "--with-dbt",
+            "--include-dbt",
             action="store_true",
             default=False,
             help="show list of dependents (upstream) for every relation",
@@ -1253,7 +1253,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
             dry_run=args.dry_run,
         )
 
-        if not args.with_dbt or args.only_selected:
+        if not args.include_dbt or args.only_selected:
             return
 
         dbt_target = "etl_staging" if args.use_staging_schemas else "dev"
@@ -1793,7 +1793,7 @@ class ShowDownstreamDependentsCommand(SubCommand):
             help="show list of dependents (upstream) for every relation",
         )
         group.add_argument(
-            "--with-dbt",
+            "--include-dbt",
             action="store_true",
             help="show list of dependents (upstream) for every relation",
         )
@@ -1811,7 +1811,7 @@ class ShowDownstreamDependentsCommand(SubCommand):
             with_dependents=args.with_dependents,
         )
 
-        if not args.with_dbt:
+        if not args.include_dbt:
             return
 
         arthur_table_identifier = [
@@ -1823,7 +1823,11 @@ class ShowDownstreamDependentsCommand(SubCommand):
         dbt_downstream_parents = " ".join(
             [f"{parent}+" for parent in dbt_project.find_arthur_leaf_dbt_childs(arthur_table_identifier)]
         )
+        if not dbt_downstream_parents:
+            logging.info("No dbt downstream dependents found")
+            return
 
+        logging.info("dbt downstream dependents found")
         dbt_project.build_image()
         dbt_stdout = dbt_project.run_cmd(
             f"dbt list -t dev --exclude redshift --output json "

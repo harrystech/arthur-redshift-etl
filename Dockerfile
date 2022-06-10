@@ -20,25 +20,33 @@ RUN yum install -y \
         jq \
         libyaml-devel \
         openssh-clients \
+        passwd \
         postgresql \
         procps-ng \
         python3 \
         python3-devel \
+        sudo \
         tar \
         tmux \
         vim-minimal
 
 RUN amazon-linux-extras install docker
 
-#  TODO(youssef): We should use a non root user, but the containers need access the docker socket which is owned by root
+# Run as non-priviledged user "arthur".
+RUN useradd --comment 'Arthur ETL' --user-group --groups wheel --create-home arthur  && \
+    mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl && \
+    chown -R arthur.arthur /opt/*
 
-RUN mkdir --parent /opt/data-warehouse "/opt/local/$PROJ_NAME" /opt/src/arthur-redshift-etl
+RUN echo "arthur:arthur" | chpasswd
+
+USER arthur
 
 # The .bashrc will ensure the virutal environment is activated when running interactive shells.
-COPY docker/* /root
+COPY --chown=arthur:arthur docker/* /home/arthur/
 
 # Install code under /opt/local/ (although it is under /tmp/ on an EC2 host).
-COPY bin/create_validation_credentials \
+COPY --chown=arthur:arthur \
+    bin/create_validation_credentials \
     bin/release_version.sh \
     bin/send_health_check.sh \
     bin/sync_env.sh \
@@ -52,13 +60,13 @@ RUN python3 -m venv "/opt/local/$PROJ_NAME/venv" && \
     python3 -m pip install --requirement /tmp/requirements-all.txt --disable-pip-version-check --no-cache-dir
 
 # Create an empty .pgpass file to help with the format of this file.
-RUN echo '# Format to set password when updating users: *:5439:*:<user>:<password>' > /root/.pgpass \
-    && chmod go= /root/.pgpass
+RUN echo '# Format to set password when updating users: *:5439:*:<user>:<password>' > /home/arthur/.pgpass \
+    && chmod go= /home/arthur/.pgpass
 
 # Note that at runtime we (can or may) mount the local directory here.
 # But we want to be independent of the source so copy everything over once.
 WORKDIR /opt/src/arthur-redshift-etl
-COPY ./ ./
+COPY --chown=arthur:arthur ./ ./
 
 # We run this here once in case somebody overrides the entrypoint.
 RUN source "/opt/local/$PROJ_NAME/venv/bin/activate" && \
@@ -73,14 +81,15 @@ EXPOSE 8086
 # The data warehouse (with schemas, config, etc.) will be mounted here:
 WORKDIR /opt/data-warehouse
 
-ENTRYPOINT ["/root/entrypoint.sh"]
+ENTRYPOINT ["/home/arthur/entrypoint.sh"]
 CMD ["/bin/bash", "--login"]
 
 # Second stage, overriding entrypoint in the image to not have to override it everytime
 # we use the Arthur image in a remote environment. entrypoint_remote.sh will fetch config
 # and schema files from S3
 FROM local AS remote
-COPY bin/bootstrap_remote_dw.sh \
+COPY --chown=arthur:arthur \
+    bin/bootstrap_remote_dw.sh \
     "/opt/local/$PROJ_NAME/bin/"
 ENV PROJ_NAME=$PROJ_NAME
-ENTRYPOINT ["/root/entrypoint_remote.sh"]
+ENTRYPOINT ["/home/arthur/entrypoint_remote.sh"]

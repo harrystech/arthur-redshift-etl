@@ -136,7 +136,7 @@ docker run --rm --interactive --tty \
     --sysctl net.ipv4.tcp_keepalive_time=300 \
     --sysctl net.ipv4.tcp_keepalive_intvl=60 \
     --sysctl net.ipv4.tcp_keepalive_probes=9 \
-    --volume ~/.aws:/root/.aws \
-    --volume ~/.ssh:/root/.ssh:ro \
+    --volume ~/.aws:/home/arthur/.aws \
+    --volume ~/.ssh:/home/arthur/.ssh:ro \
     --volume "$data_warehouse_path:/opt/data-warehouse" \
     "$docker_image:$tag"
