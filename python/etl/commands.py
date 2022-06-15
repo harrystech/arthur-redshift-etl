@@ -42,6 +42,7 @@ import etl.sync
 import etl.templates
 import etl.unload
 import etl.validate
+from etl.dbt import DBTProject, TableIdentifier
 from etl.errors import ETLError, ETLSystemError, InvalidArgumentError
 from etl.text import join_with_single_quotes
 from etl.util import croak, isoformat_datetime_string
@@ -1187,6 +1188,13 @@ class UpgradeDataWarehouseCommand(SubCommand):
             help="include views that are downstream of selected relations without any CTAS before"
             " (this is the default and only useful with '--only-selected', for debugging only)",
         )
+
+        parser.add_argument(
+            "--include-dbt",
+            action="store_true",
+            default=False,
+            help="show list of dependents (upstream) for every relation",
+        )
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--with-staging-schemas",
@@ -1213,7 +1221,7 @@ class UpgradeDataWarehouseCommand(SubCommand):
             logger.warning("Option '--into-schema' implies '--only-selected'")
             args.only_selected = True
         dw_config = etl.config.get_dw_config()
-        relations = self.find_relation_descriptions(
+        selected_relations = self.find_relation_descriptions(
             args,
             default_scheme="s3",
             required_relation_selector=dw_config.required_in_full_load_selector,
@@ -1230,8 +1238,8 @@ class UpgradeDataWarehouseCommand(SubCommand):
         wlm_query_slots = args.wlm_query_slots or etl.config.get_config_int(
             "resources.RedshiftCluster.wlm_query_slots", 1
         )
-        etl.load.upgrade_data_warehouse(
-            relations,
+        selected_relations = etl.load.upgrade_data_warehouse(
+            selected_relations,
             args.pattern,
             max_concurrency=max_concurrency,
             wlm_query_slots=wlm_query_slots,
@@ -1244,6 +1252,28 @@ class UpgradeDataWarehouseCommand(SubCommand):
             skip_copy=args.skip_copy,
             dry_run=args.dry_run,
         )
+
+        if not args.include_dbt or args.only_selected:
+            return
+
+        dbt_target = "etl_staging" if args.use_staging_schemas else "dev"
+
+        arthur_table_identifiers = [
+            TableIdentifier(*etl.names.TableName.from_identifier(relation.identifier).to_tuple())
+            for relation in selected_relations
+        ]
+        dbt_project = DBTProject.from_env()
+        dbt_downstream_parents = " ".join(
+            [
+                f"{parent}+"
+                for parent in dbt_project.find_arthur_leaf_dbt_childs(arthur_table_identifiers)
+            ]
+        )
+        if not dbt_downstream_parents:
+            logger.info("No downstream dbt model found")
+            return
+        dbt_project.build_image()
+        dbt_project.run_cmd(f"dbt build -t {dbt_target} -s {dbt_downstream_parents}")
 
 
 class UpdateDataWarehouseCommand(SubCommand):
@@ -1762,19 +1792,49 @@ class ShowDownstreamDependentsCommand(SubCommand):
             action="store_true",
             help="show list of dependents (upstream) for every relation",
         )
+        group.add_argument(
+            "--include-dbt",
+            action="store_true",
+            help="show list of dependents (upstream) for every relation",
+        )
 
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         relations = self.find_relation_descriptions(
             args, required_relation_selector=dw_config.required_in_full_load_selector, return_all=True
         )
-        etl.load.show_downstream_dependents(
+        relations = etl.load.show_downstream_dependents(
             relations,
             args.pattern,
             continue_from=args.continue_from,
             with_dependencies=args.with_dependencies,
             with_dependents=args.with_dependents,
         )
+
+        if not args.include_dbt:
+            return
+
+        arthur_table_identifier = [
+            TableIdentifier(*etl.names.TableName.from_identifier(relation.identifier).to_tuple())
+            for relation in relations
+        ]
+
+        dbt_project = DBTProject.from_env()
+        dbt_downstream_parents = " ".join(
+            [f"{parent}+" for parent in dbt_project.find_arthur_leaf_dbt_childs(arthur_table_identifier)]
+        )
+        if not dbt_downstream_parents:
+            logging.info("No dbt downstream dependents found")
+            return
+
+        logging.info("dbt downstream dependents found")
+        dbt_project.build_image()
+        dbt_stdout = dbt_project.run_cmd(
+            f"dbt list -t dev --exclude redshift --output json "
+            f" --resource-type model -s {dbt_downstream_parents}"
+        )
+        dbt_relations = dbt_project.parse_dbt_run_stdout(dbt_stdout)
+        dbt_project.render_dbt_list(dbt_relations)
 
 
 class ShowUpstreamDependenciesCommand(SubCommand):

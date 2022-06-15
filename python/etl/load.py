@@ -1227,7 +1227,7 @@ def upgrade_data_warehouse(
     target_schema: Optional[str] = None,
     skip_copy=False,
     dry_run=False,
-) -> None:
+) -> List[RelationDescription]:
     """
     Push new (structural) changes and fresh data through data warehouse.
 
@@ -1260,7 +1260,7 @@ def upgrade_data_warehouse(
         continue_from=continue_from,
     )
     if not selected_relations:
-        return
+        return selected_relations
 
     involved_execution_levels = frozenset(
         funcy.distinct(relation.execution_level for relation in selected_relations)
@@ -1302,6 +1302,7 @@ def upgrade_data_warehouse(
         etl.data_warehouse.create_schemas(traversed_schemas, use_staging=use_staging, dry_run=dry_run)
 
     create_relations(relations, max_concurrency, wlm_query_slots, statement_timeout, dry_run=dry_run)
+    return selected_relations
 
 
 def update_data_warehouse(
@@ -1426,7 +1427,7 @@ def show_downstream_dependents(
     continue_from: Optional[str] = None,
     with_dependencies: Optional[bool] = False,
     with_dependents: Optional[bool] = False,
-) -> None:
+) -> List[RelationDescription]:
     """
     List the execution order of loads or updates.
 
@@ -1441,7 +1442,7 @@ def show_downstream_dependents(
         relations, selector, include_dependents=True, continue_from=continue_from
     )
     if not selected_relations:
-        return
+        return selected_relations
 
     directly_selected_relations = etl.relation.find_matches(selected_relations, selector)
     selected = frozenset(relation.identifier for relation in directly_selected_relations)
@@ -1533,6 +1534,7 @@ def show_downstream_dependents(
                         width=width_dep,
                     )
                 )
+    return selected_relations
 
 
 def show_upstream_dependencies(relations: Sequence[RelationDescription], selector: TableSelector):
