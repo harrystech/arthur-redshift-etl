@@ -132,6 +132,8 @@ docker run --rm --interactive --tty \
     --env ARTHUR_DEFAULT_PREFIX="$target_env" \
     --env AWS_PROFILE="$aws_profile" \
     --env DATA_WAREHOUSE_CONFIG="/opt/data-warehouse/$config_path" \
+    --env DBT_ROOT="$data_warehouse_path/dbt" \
+    --env DBT_PROFILES_DIR="${HOME}/.dbt/profiles.yml" \
     --pull always \
     --sysctl net.ipv4.tcp_keepalive_time=300 \
     --sysctl net.ipv4.tcp_keepalive_intvl=60 \
@@ -139,4 +141,5 @@ docker run --rm --interactive --tty \
     --volume ~/.aws:/home/arthur/.aws \
     --volume ~/.ssh:/home/arthur/.ssh:ro \
     --volume "$data_warehouse_path:/opt/data-warehouse" \
+    --volume /var/run/docker.sock:/var/run/docker.sock \
     "$docker_image:$tag"
