@@ -193,13 +193,14 @@ def restore_schemas(schemas: Iterable[DataWarehouseSchema], dry_run=False) -> No
     _promote_schemas(schemas, "backup", dry_run=dry_run)
 
 
-def publish_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False) -> None:
+def publish_schemas(schemas: Sequence[DataWarehouseSchema], dry_run=False, backup=True) -> None:
     """
     Backup current occupants of standard position and put staging schemas there.
 
     This is a callback of a command.
     """
-    backup_schemas(schemas, dry_run=dry_run)
+    if backup:
+        backup_schemas(schemas, dry_run=dry_run)
     _promote_schemas(schemas, "staging", dry_run=dry_run)
 
 
