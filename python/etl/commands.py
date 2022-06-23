@@ -1453,13 +1453,22 @@ class PromoteSchemasCommand(SubCommand):
             required=True,
         )
 
+        parser.add_argument(
+            "--no-backup",
+            help="do not backup current data when promoting from staging",
+            action="store_true",
+            default=False,
+        )
+
     def callback(self, args):
         dw_config = etl.config.get_dw_config()
         schema_names = args.pattern.selected_schemas()
         schemas = [schema for schema in dw_config.schemas if schema.name in schema_names]
         with etl.db.log_error():
             if args.from_position == "staging":
-                etl.data_warehouse.publish_schemas(schemas, dry_run=args.dry_run)
+                etl.data_warehouse.publish_schemas(
+                    schemas, dry_run=args.dry_run, backup=not args.no_backup
+                )
             elif args.from_position == "backup":
                 etl.data_warehouse.restore_schemas(schemas, dry_run=args.dry_run)
 
