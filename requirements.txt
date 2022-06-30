@@ -10,7 +10,7 @@ pgpasslib==1.1.0
 psycopg2-binary==2.9.3
 PyYAML==6.0
 simplejson==3.17.6
-tabulate==0.8.9
+tabulate==0.8.10
 termcolor==1.1.0
 tqdm==4.64.0
 watchtower==3.0.0
