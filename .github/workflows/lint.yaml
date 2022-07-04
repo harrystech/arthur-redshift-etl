@@ -18,7 +18,7 @@ jobs:
     - name: Checkout out code
       uses: actions/checkout@v3
     - name: Set up Python 3.7
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
         python-version: 3.7
     - name: Cache pip
@@ -47,7 +47,7 @@ jobs:
     - name: Checkout out code
       uses: actions/checkout@v3
     - name: Set up Python 3.7
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
         python-version: 3.7
     - name: Cache pip
