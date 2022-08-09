@@ -18,6 +18,7 @@ RUN yum install -y \
         awscli \
         git \
         jq \
+        yq \
         libyaml-devel \
         openssh-clients \
         passwd \
