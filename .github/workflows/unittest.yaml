@@ -16,11 +16,11 @@ jobs:
     - name: Checkout out code
       uses: actions/checkout@v3
     - name: Set up Python 3.7
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
         python-version: 3.7
     - name: Cache pip
-      uses: actions/cache@v3.0.4
+      uses: actions/cache@v3.0.8
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('requirements-*.txt') }}
