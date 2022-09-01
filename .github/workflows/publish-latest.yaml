@@ -5,6 +5,7 @@ on:
     branches:
     - master
     - next
+    - tom/update-publish-with-repo
   release:
     types:
     - published
@@ -35,7 +36,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v3
       with:
-        images: ghcr.io/harrystech/arthur-redshift-etl/arthur-etl
+        images: ghcr.io/${{ github.repository }}/arthur-etl
         # Use the original tag ref, the SHA1, and versions derived from the tag.
         tags: |
           type=ref,event=tag
