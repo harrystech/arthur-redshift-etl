@@ -1,5 +1,5 @@
 # NOTE When changing versions here, be sure to keep .pre-commit-config.yaml consistent!
-black==22.6.0
+black==22.8.0
 flake8==5.0.4
 flake8-bugbear==22.8.23
 flake8-comprehensions==3.10.0
