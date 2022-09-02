@@ -4,6 +4,8 @@ updates:
   - assignees:
       - "thomas-vogels"
     directory: "/"
+    ignore:
+      - dependency-name: "Sphinx"
     open-pull-requests-limit: 10
     package-ecosystem: "pip"
     reviewers:
