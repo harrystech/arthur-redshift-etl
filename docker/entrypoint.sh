@@ -19,6 +19,7 @@ set -o errexit -o nounset
 export PATH="/opt/local/redshift_etl/bin:$PATH"
 
 if [[ -r "/opt/local/redshift_etl/venv/bin/activate" ]]; then
+    # shellcheck disable=SC1091
     source /opt/local/redshift_etl/venv/bin/activate
 
     # Using "--quiet" here to reduce the startup noise for "end users."
