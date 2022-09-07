@@ -1,5 +1,5 @@
-# This is the set of packages need to run the code. All versions are pinned.
-arrow==1.2.2
+# This is the set of packages needed to run the code. All versions are pinned.
+arrow==1.2.3
 boto3==1.23.10
 botocore~=1.26
 docker==5.0.3
