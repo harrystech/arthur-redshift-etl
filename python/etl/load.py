@@ -498,13 +498,18 @@ def load_ctas_directly(conn: Connection, relation: LoadableRelation, dry_run=Fal
     """
     Run query to fill CTAS relation.
 
-    Not to be used for dimensions etc.)
+    Not to be used for dimensions etc.
     """
     insert_from_query(conn, relation, dry_run=dry_run)
 
 
 def create_missing_dimension_row(columns: Sequence[dict]) -> List[str]:
-    """Return row that represents missing dimension values."""
+    """
+    Return row that represents missing dimension values.
+
+    Missing data will always be stored at a key of 0 and can be used in fact tables
+    if the dimension table is missing the representation.
+    """
     na_values_row = []
     for column in columns:
         if column.get("skipped", False):
@@ -613,25 +618,26 @@ def verify_constraints(conn: Connection, relation: LoadableRelation, dry_run=Fal
                 )
             )
             etl.db.skip_query(conn, statement)
-        else:
-            logger.info(
-                "Checking {} constraint in {:x} on column(s): {}".format(
-                    constraint_type, relation, join_with_single_quotes(columns)
-                )
+            return
+
+        logger.info(
+            "Checking {} constraint in {:x} on column(s): {}".format(
+                constraint_type, relation, join_with_single_quotes(columns)
             )
-            results = etl.db.query(conn, statement)
-            if results:
-                if len(results) == limit:
-                    logger.error(
-                        "Constraint check for {:x} failed on at least {:d} row(s)".format(
-                            relation, len(results)
-                        )
+        )
+        results = etl.db.query(conn, statement)
+        if results:
+            if len(results) == limit:
+                logger.error(
+                    "Constraint check for {:x} failed on at least {:d} row(s)".format(
+                        relation, len(results)
                     )
-                else:
-                    logger.error(
-                        "Constraint check for {:x} failed on {:d} row(s)".format(relation, len(results))
-                    )
-                raise FailedConstraintError(relation, constraint_type, columns, results)
+                )
+            else:
+                logger.error(
+                    "Constraint check for {:x} failed on {:d} row(s)".format(relation, len(results))
+                )
+            raise FailedConstraintError(relation, constraint_type, columns, results)
 
 
 # --- Section 2: Functions that work on schemas
@@ -813,7 +819,6 @@ def create_source_tables_when_ready(
 
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
-    source_relations = [relation for relation in relations if not relation.is_transformation]
 
     recent_cutoff = datetime.utcnow() - timedelta(minutes=look_back_minutes)
     cutoff_epoch = timegm(recent_cutoff.utctimetuple())
@@ -1012,7 +1017,6 @@ def create_source_tables_in_parallel(
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
-    source_relations = [relation for relation in relations if not relation.is_transformation]
 
     futures: Dict[str, concurrent.futures.Future] = {}
     try:
@@ -1072,9 +1076,9 @@ def create_transformations_sequentially(
     N.B. It is not possible for a relation to be not required but have dependents that are
     (by construction).
     """
+    transformations = [relation for relation in relations if relation.is_transformation]
     timer = Timer()
     dsn_etl = etl.config.get_dw_config().dsn_etl
-    transformations = [relation for relation in relations if relation.is_transformation]
 
     with closing(etl.db.connection(dsn_etl, autocommit=True, readonly=dry_run)) as conn:
         etl.dialect.redshift.set_wlm_slots(conn, wlm_query_slots, dry_run=dry_run)
@@ -1350,26 +1354,27 @@ def update_data_warehouse(
     selected_relations = etl.relation.select_in_execution_order(
         all_relations, selector, include_dependents=not only_selected
     )
-
     tables = [relation for relation in selected_relations if not relation.is_view_relation]
     if not tables:
         logger.warning("Found no tables matching: %s", selector)
         return
 
     source_relations = [relation for relation in selected_relations if not relation.is_transformation]
-    if source_relations and start_time is not None:
-        logger.info(
-            "Verifying that all source relations have extracts after %s;"
-            " fails if incomplete and no update for 1 hour" % start_time
-        )
-        extracted_targets = etl.monitor.recently_extracted_targets(source_relations, start_time)
-        if len(source_relations) > len(extracted_targets):
-            raise MissingExtractEventError(source_relations, extracted_targets)
-    elif source_relations:
-        logger.info(
-            "Attempting to use existing manifests for source relations without verifying recency."
-        )
+    if source_relations:
+        if start_time is not None:
+            logger.info(
+                "Verifying that all source relations have extracts after %s;"
+                " fails if incomplete and no update for 1 hour" % start_time
+            )
+            extracted_targets = etl.monitor.recently_extracted_targets(source_relations, start_time)
+            if len(source_relations) > len(extracted_targets):
+                raise MissingExtractEventError(source_relations, extracted_targets)
+        else:
+            logger.info(
+                "Attempting to use existing manifests for source relations without verifying recency."
+            )
 
+    timer = Timer()
     relations = LoadableRelation.from_descriptions(selected_relations, "update", in_transaction=True)
     logger.info("Starting to update %d tables(s) within a transaction", len(relations))
     dsn_etl = etl.config.get_dw_config().dsn_etl
@@ -1378,7 +1383,7 @@ def update_data_warehouse(
         etl.dialect.redshift.set_statement_timeout(conn, statement_timeout, dry_run=dry_run)
         for relation in relations:
             build_one_relation(conn, relation, dry_run=dry_run)
-
+    logger.info("Finished updating %d table(s) (%s)", len(tables), timer)
     if run_vacuum:
         vacuum(tables, dry_run=dry_run)
 
