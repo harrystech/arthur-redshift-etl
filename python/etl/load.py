@@ -55,7 +55,7 @@ from functools import partial
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 import funcy
-from psycopg2.extensions import connection  # only for type annotation
+from psycopg2.extensions import connection as Connection  # only for type annotation
 
 import etl
 import etl.data_warehouse
@@ -299,7 +299,7 @@ class LoadableRelation:
 
 
 def create_table(
-    conn: connection, relation: LoadableRelation, table_name: Optional[TableName] = None, dry_run=False
+    conn: Connection, relation: LoadableRelation, table_name: Optional[TableName] = None, dry_run=False
 ) -> None:
     """
     Create a table matching this design (but possibly under another name).
@@ -330,7 +330,7 @@ def create_table(
     etl.db.run(conn, message, ddl_stmt, dry_run=dry_run)
 
 
-def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def create_view(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """Create VIEW using the relation's query."""
     ddl_view_name = relation.target_table_name
     stmt = etl.dialect.redshift.build_view_ddl(
@@ -339,7 +339,7 @@ def create_view(conn: connection, relation: LoadableRelation, dry_run=False) -> 
     etl.db.run(conn, "Creating view {:x}".format(relation), stmt, dry_run=dry_run)
 
 
-def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def drop_relation_if_exists(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Run either DROP VIEW or DROP TABLE depending on type of existing relation.
 
@@ -356,7 +356,7 @@ def drop_relation_if_exists(conn: connection, relation: LoadableRelation, dry_ru
         raise RelationConstructionError(exc) from exc
 
 
-def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def create_or_replace_relation(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Create fresh VIEW or TABLE and grant groups access permissions.
 
@@ -374,7 +374,7 @@ def create_or_replace_relation(conn: connection, relation: LoadableRelation, dry
         raise RelationConstructionError(exc) from exc
 
 
-def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
+def grant_access(conn: Connection, relation: LoadableRelation, dry_run=False):
     """
     Grant privileges on (new) relation based on configuration.
 
@@ -419,13 +419,13 @@ def grant_access(conn: connection, relation: LoadableRelation, dry_run=False):
                 etl.db.grant_select_and_write(conn, target.schema, target.table, writer)
 
 
-def delete_whole_table(conn: connection, table: LoadableRelation, dry_run=False) -> None:
+def delete_whole_table(conn: Connection, table: LoadableRelation, dry_run=False) -> None:
     """Delete all rows from this table."""
     stmt = """DELETE FROM {}""".format(table)
     etl.db.run(conn, "Deleting all rows in table {:x}".format(table), stmt, dry_run=dry_run)
 
 
-def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
+def copy_data(conn: Connection, relation: LoadableRelation, dry_run=False):
     """
     Load data into table in the data warehouse using the COPY command.
 
@@ -465,7 +465,7 @@ def copy_data(conn: connection, relation: LoadableRelation, dry_run=False):
 
 
 def insert_from_query(
-    conn: connection,
+    conn: Connection,
     relation: LoadableRelation,
     table_name: Optional[TableName] = None,
     columns: Optional[Sequence[str]] = None,
@@ -494,7 +494,7 @@ def insert_from_query(
         call_with_retry(etl.config.get_config_int("arthur_settings.insert_data_retries"), insert_func)
 
 
-def load_ctas_directly(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def load_ctas_directly(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Run query to fill CTAS relation.
 
@@ -526,7 +526,7 @@ def create_missing_dimension_row(columns: Sequence[dict]) -> List[str]:
     return na_values_row
 
 
-def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def load_ctas_using_temp_table(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """Run query to fill temp table and copy data (option: with missing dimension) into target."""
     temp_name = TempTableName.for_table(relation.target_table_name)
     create_table(conn, relation, table_name=temp_name, dry_run=dry_run)
@@ -551,7 +551,7 @@ def load_ctas_using_temp_table(conn: connection, relation: LoadableRelation, dry
         etl.db.run(conn, "Dropping temporary table for {:x}".format(relation), stmt, dry_run=dry_run)
 
 
-def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
+def analyze(conn: Connection, table: LoadableRelation, dry_run=False) -> None:
     """Update table statistics."""
     etl.db.run(
         conn,
@@ -561,7 +561,7 @@ def analyze(conn: connection, table: LoadableRelation, dry_run=False) -> None:
     )
 
 
-def verify_constraints(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def verify_constraints(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Raise a FailedConstraintError if :relation's target table doesn't obey its declared constraints.
 
@@ -668,7 +668,7 @@ def create_schemas_for_rebuild(
 # --- Section 3: Functions that tie table operations together
 
 
-def update_table(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def update_table(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Update table contents either from CSV files from upstream sources or by running some SQL query.
 
@@ -700,7 +700,7 @@ def update_table(conn: connection, relation: LoadableRelation, dry_run=False) ->
         raise UpdateTableError(exc) from exc
 
 
-def build_one_relation(conn: connection, relation: LoadableRelation, dry_run=False) -> None:
+def build_one_relation(conn: Connection, relation: LoadableRelation, dry_run=False) -> None:
     """
     Empty out tables (either with delete or by create-or-replacing them) and fill 'em up.
 
