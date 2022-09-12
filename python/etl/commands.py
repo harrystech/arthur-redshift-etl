@@ -533,7 +533,7 @@ class SubCommand(abc.ABC):
 
         # Log level and prolix setting need to be always known since `run_arg_as_command` depends
         # on them.
-        # TODO move this into a parent parser and merge with --submit, --config
+        # TODO(tom): move this into a parent parser and merge with --submit, --config
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "-o", "--prolix", action="store_true", default=False, help="send full log to console"

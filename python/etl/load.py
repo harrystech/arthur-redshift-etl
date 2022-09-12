@@ -1013,7 +1013,9 @@ def create_source_tables_in_parallel(
     pool = etl.db.connection_pool(max_concurrency, dsn_etl)
     futures: Dict[str, concurrent.futures.Future] = {}
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_concurrency, thread_name_prefix="create-source"
+        ) as executor:
             for relation in source_relations:
                 future = executor.submit(build_one_relation_using_pool, pool, relation, dry_run=dry_run)
                 futures[relation.identifier] = future

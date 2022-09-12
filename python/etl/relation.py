@@ -638,7 +638,7 @@ def order_by_dependencies(
         _sanitize_dependencies(sortable_descriptions)
         _sort_by_dependencies(sortable_descriptions)
         # A functional approach would be to create new instances here. Instead we reach back. Shrug.
-        # TODO Sort by level first, then order.
+        # TODO(tom): Sort by level first, then order.
         for sortable in sortable_descriptions:
             sortable.original_description._execution_order = sortable.order
             sortable.original_description._execution_level = sortable.level

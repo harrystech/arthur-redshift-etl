@@ -9,7 +9,7 @@ from etl.relation import RelationDescription
 class StaticExtractor(Extractor):
     """Enable using files in S3 as an upstream data source."""
 
-    # TODO Describe expected file paths, existence of "_SUCCESS" file
+    # TODO(tom): Describe expected file paths, existence of "_SUCCESS" file
 
     def __init__(
         self,

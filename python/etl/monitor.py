@@ -670,7 +670,7 @@ def scan_etl_events(etl_id, selected_columns: Optional[Iterable[str]] = None) ->
     keys = ["extra.rowcount" if column == "rowcount" else column for column in columns]
 
     # We need to scan here since the events are stored by "target" and not by "etl_id".
-    # TODO Try to find all the "known" relations and query on them with a filter on the etl_id.
+    # TODO(tom): Try to find all the "known" relations and query on them with a filter on the etl_id.
     client = boto3.client("dynamodb")
     paginator = client.get_paginator("scan")
     response_iterator = paginator.paginate(

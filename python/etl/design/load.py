@@ -129,7 +129,7 @@ def validate_identity_as_surrogate_key(table_design):
     surrogate_keys = [col for constraint in constraints for col in constraint.get("surrogate_key", [])]
     if len(surrogate_keys) and not surrogate_keys == identity_columns:
         raise TableDesignSemanticError("surrogate key must be identity column")
-    # TODO Complain if surrogate_key is missing but identity is present
+    # TODO(tom): Complain if surrogate_key is missing but identity is present
 
 
 def validate_column_references(table_design):
