@@ -35,7 +35,7 @@ repos:
     hooks:
       - id: pyupgrade
   - repo: https://github.com/timothycrosley/isort
-    rev: 5.10.1
+    rev: 5.11.5
     hooks:
       - id: isort
   - repo: https://github.com/psf/black
@@ -61,7 +61,7 @@ repos:
           - "types-setuptools==65.3.0"
           - "types-simplejson==3.17.7"
           - "types-tabulate==0.8.11"
-          - "types-termcolor==1.1.5"
+          - "types-termcolor==1.1.6"
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.7.2.1
     hooks:
