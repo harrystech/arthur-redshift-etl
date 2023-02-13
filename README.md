@@ -18,6 +18,15 @@
 
 Arthur is an ETL tool for managing a data warehouse in the AWS ecosystem.
 
+---
+
+* __Update 2023-02-13__ We have decided to sunset development on this project. At this time, there are
+    other mature offerings that allow to build out an ELT such as `dbt`, `Airflow`, `meltano`.
+    We are going to only make updates necessary for production use given the current feature set and
+    will cease complete support in 6 months.
+
+---
+
 Arthur is designed to manage a warehouse in full-rebuild mode where the entire warehouse is rebuilt,
 from scratch, every night and then updated using refresh runs during the day.
 Arthur is not designed to support streaming or micro-batch ETLs.
