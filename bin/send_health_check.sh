@@ -29,6 +29,7 @@ set -o errexit
 FILENAME="/tmp/redshift_etl/config/environment.sh"
 echo "Attempting to read configuration environment variables from '$FILENAME'"
 if [ -r "$FILENAME" ]; then
+    # shellcheck disable=SC1090
     source "$FILENAME"
 else
     echo "Failed to find '$FILENAME'"

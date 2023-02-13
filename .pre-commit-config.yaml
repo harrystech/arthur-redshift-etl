@@ -39,29 +39,29 @@ repos:
     hooks:
       - id: isort
   - repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 22.8.0
     hooks:
       - id: black
   - repo: https://gitlab.com/pycqa/flake8
-    rev: 4.0.1
+    rev: 5.0.4
     hooks:
       - id: flake8
         additional_dependencies:
-          - "flake8-bugbear==22.4.25"
-          - "flake8-comprehensions==3.7.0"
+          - "flake8-bugbear==22.9.11"
+          - "flake8-comprehensions==3.10.0"
           - "flake8-docstrings==1.6.0"
           - "flake8-fixme==1.1.1"
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.950
+    rev: v0.971
     hooks:
       - id: mypy
         additional_dependencies:
-          - "mypy-boto3~=1.22"
-          - "types-PyYAML==6.0.7"
-          - "types-setuptools==57.4.14"
-          - "types-simplejson==3.17.6"
-          - "types-tabulate==0.8.8"
-          - "types-termcolor==1.1.4"
+          - "mypy-boto3~=1.24"
+          - "types-PyYAML==6.0.11"
+          - "types-setuptools==65.3.0"
+          - "types-simplejson==3.17.7"
+          - "types-tabulate==0.8.11"
+          - "types-termcolor==1.1.5"
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.7.2.1
     hooks:
