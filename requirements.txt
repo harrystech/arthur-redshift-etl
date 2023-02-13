@@ -3,13 +3,13 @@ arrow==1.2.3
 boto3==1.23.10
 botocore~=1.26
 docker==5.0.3
-funcy==1.17
+funcy==1.18
 jmespath==0.10.0
 jsonschema==3.2.0
 pgpasslib==1.1.0
-psycopg2-binary==2.9.3
+psycopg2-binary==2.9.5
 PyYAML==6.0
-simplejson==3.17.6
+simplejson==3.18.3
 tabulate==0.8.10
 termcolor==1.1.0
 tqdm==4.64.1
