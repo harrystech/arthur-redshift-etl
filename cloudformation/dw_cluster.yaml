@@ -74,6 +74,11 @@ Parameters:
         Type: String
         Default: ""
 
+    AdditionalClusterIAMRole6:
+        Description: (optional) ARN of an additional IAM role to associate with the Redshift cluster
+        Type: String
+        Default: ""
+
     PreferredMaintenanceWindow:
         Description: (optional) Preferred maintenance window for the Redshift cluster
         Type: String
@@ -102,6 +107,9 @@ Conditions:
     HasAdditionalRole5:
         !Not [ !Equals [ !Ref "AdditionalClusterIAMRole5", "" ] ]
 
+    HasAdditionalRole6:
+        !Not [ !Equals [ !Ref "AdditionalClusterIAMRole6", "" ] ]
+
 
 Resources:
 
@@ -121,12 +129,26 @@ Resources:
             Description: "Parameter group for Redshift cluster"
             ParameterGroupFamily: "redshift-1.0"
             Parameters:
+                - ParemeterName: "auto_analyze"
+                  ParemeterValue: "true"
+                - ParemeterName: "auto_mv"
+                  ParemeterValue: "true"
+                - ParemeterName: "datestyle	"
+                  ParemeterValue: "ISO, MDY"
                 - ParameterName: "require_ssl"
                   ParameterValue: "true"
+                - ParameterName: "enable_case_sensitive_identifier"
+                  ParameterValue: "false"
                 - ParameterName: "enable_user_activity_logging"
                   ParameterValue: "true"
+                - ParameterName: "extra_float_digits"
+                  ParameterValue: 0
+                - ParameterName: "max_concurrency_scaling_clusters"
+                  ParameterValue: 1
+                - ParameterName: "search_path"
+                  ParameterValue: "$user, public"
                 - ParameterName: "statement_timeout"
-                  ParameterValue: 7200000
+                  ParameterValue: 0
                 - ParameterName: "wlm_json_configuration"
                   ParameterValue: !Sub "[{ \"query_concurrency\": ${QueryConcurrency} }]"
             Tags:
@@ -162,6 +184,7 @@ Resources:
                 - !If [ HasAdditionalRole3, !Ref "AdditionalClusterIAMRole3", !Ref "AWS::NoValue" ]
                 - !If [ HasAdditionalRole4, !Ref "AdditionalClusterIAMRole4", !Ref "AWS::NoValue" ]
                 - !If [ HasAdditionalRole5, !Ref "AdditionalClusterIAMRole5", !Ref "AWS::NoValue" ]
+                - !If [ HasAdditionalRole6, !Ref "AdditionalClusterIAMRole6", !Ref "AWS::NoValue" ]
             MasterUsername:
                 !Ref MasterUsername
             MasterUserPassword:
