@@ -83,6 +83,12 @@ Parameters:
         Description: (optional) Preferred maintenance window for the Redshift cluster
         Type: String
         Default: "sun:18:30-sun:19:00"
+    DeletionPolicyParameter:
+        Description: Deletion policy defaulted to retain so that resources are retained when stack is deleted
+        Type: String
+        AllowedValues:
+        - Retain
+        Default: Retain
 
 Conditions:
 
@@ -117,6 +123,7 @@ Resources:
         Type: "AWS::Redshift::ClusterSubnetGroup"
         Properties:
             Description: "Cross-reference public subnet ID from VPC stack"
+            DeletionPolicy: !Ref DeletionPolicyParameter
             SubnetIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::public-subnet-id"
             Tags:
@@ -127,6 +134,7 @@ Resources:
         Type: "AWS::Redshift::ClusterParameterGroup"
         Properties:
             Description: "Parameter group for Redshift cluster"
+            DeletionPolicy: !Ref DeletionPolicyParameter
             ParameterGroupFamily: "redshift-1.0"
             Parameters:
                 - ParemeterName: "auto_analyze"
@@ -159,12 +167,14 @@ Resources:
         Type: "AWS::EC2::EIP"
         Properties:
             Domain: vpc
+            DeletionPolicy: !Ref DeletionPolicyParameter
 
     RedshiftCluster:
         Type: "AWS::Redshift::Cluster"
         Properties:
             AutomatedSnapshotRetentionPeriod:
                 30
+            DeletionPolicy: !Ref DeletionPolicyParameter
             AvailabilityZone:
                 Fn::ImportValue: !Sub "${VpcStackName}::vpc-az"
             ClusterParameterGroupName:
@@ -212,11 +222,13 @@ Resources:
 
     ClusterAlertTopic:
         Type: AWS::SNS::Topic
+        DeletionPolicy: !Ref DeletionPolicyParameter
 
     DiskSpaceUsageTooHighAlarm:
         Type: AWS::CloudWatch::Alarm
         Properties:
             AlarmDescription: "Disk space usage too high"
+            DeletionPolicy: !Ref DeletionPolicyParameter
             AlarmActions:
                 - !Ref ClusterAlertTopic
             OKActions:
@@ -234,6 +246,7 @@ Resources:
 
     ClusterUnhealthyAlarm:
         Type: AWS::CloudWatch::Alarm
+        DeletionPolicy: !Ref DeletionPolicyParameter
         Properties:
             AlarmDescription: "Cluster unhealthy"
             AlarmActions:
