@@ -99,6 +99,10 @@ Parameters:
     AdditionalSecurityGroupParam:
         Description: Add security group
         Type: String
+    Environment:
+        Description: specify env dev or prod
+        Type: String
+    
 Conditions:
 
     IsSingleNodeCluster:
@@ -229,9 +233,9 @@ Resources:
                 - Key: user:sub-project
                   Value: redshift-cluster
                 - Key: user:stack-env-name
-                  Value": dev
+                  Value: !Ref Environment
                 - Key: hs-environment
-                  Value: dev
+                  Value: !Ref Environment
                 - Key: hs-owner
                   Value: data
                 - Key: hs-cost_center
