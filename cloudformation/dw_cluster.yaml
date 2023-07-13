@@ -83,12 +83,6 @@ Parameters:
         Description: (optional) Preferred maintenance window for the Redshift cluster
         Type: String
         Default: "sun:18:30-sun:19:00"
-    DeletionPolicyParameter:
-        Description: Deletion policy defaulted to retain so that resources are retained when stack is deleted
-        Type: String
-        AllowedValues:
-        - Retain
-        Default: Retain
 
 Conditions:
 
@@ -121,9 +115,9 @@ Resources:
 
     RedshiftClusterSubnetGroup:
         Type: "AWS::Redshift::ClusterSubnetGroup"
+        DeletionPolicy: Retain
         Properties:
             Description: "Cross-reference public subnet ID from VPC stack"
-            DeletionPolicy: !Ref DeletionPolicyParameter
             SubnetIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::public-subnet-id"
             Tags:
@@ -132,9 +126,9 @@ Resources:
 
     RedshiftClusterParameterGroup:
         Type: "AWS::Redshift::ClusterParameterGroup"
+        DeletionPolicy: Retain
         Properties:
             Description: "Parameter group for Redshift cluster"
-            DeletionPolicy: !Ref DeletionPolicyParameter
             ParameterGroupFamily: "redshift-1.0"
             Parameters:
                 - ParemeterName: "auto_analyze"
@@ -165,16 +159,16 @@ Resources:
 
     RedshiftEIP:
         Type: "AWS::EC2::EIP"
+        DeletionPolicy: Retain
         Properties:
             Domain: vpc
-            DeletionPolicy: !Ref DeletionPolicyParameter
 
     RedshiftCluster:
         Type: "AWS::Redshift::Cluster"
+        DeletionPolicy: Retain
         Properties:
             AutomatedSnapshotRetentionPeriod:
                 30
-            DeletionPolicy: !Ref DeletionPolicyParameter
             AvailabilityZone:
                 Fn::ImportValue: !Sub "${VpcStackName}::vpc-az"
             ClusterParameterGroupName:
@@ -222,13 +216,13 @@ Resources:
 
     ClusterAlertTopic:
         Type: AWS::SNS::Topic
-        DeletionPolicy: !Ref DeletionPolicyParameter
+        DeletionPolicy: Retain
 
     DiskSpaceUsageTooHighAlarm:
         Type: AWS::CloudWatch::Alarm
+        DeletionPolicy: Retain
         Properties:
             AlarmDescription: "Disk space usage too high"
-            DeletionPolicy: !Ref DeletionPolicyParameter
             AlarmActions:
                 - !Ref ClusterAlertTopic
             OKActions:
@@ -246,7 +240,7 @@ Resources:
 
     ClusterUnhealthyAlarm:
         Type: AWS::CloudWatch::Alarm
-        DeletionPolicy: !Ref DeletionPolicyParameter
+        DeletionPolicy: Retain
         Properties:
             AlarmDescription: "Cluster unhealthy"
             AlarmActions:
