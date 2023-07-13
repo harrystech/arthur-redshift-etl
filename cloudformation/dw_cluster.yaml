@@ -96,11 +96,8 @@ Parameters:
         - Delete
         - Retain
         Default: Delete
-    AdditionalSecurityGroupParam1:
-        Description: Add security groups 
-        Type: String
-    AdditionalSecurityGroupParam2:
-        Description: Add security groups
+    AdditionalSecurityGroupParam:
+        Description: Add security group
         Type: String
 Conditions:
 
@@ -224,8 +221,8 @@ Resources:
             PreferredMaintenanceWindow:
                 !Ref PreferredMaintenanceWindow
             VpcSecurityGroupIds:
-                - !Ref AdditionalSecurityGroupParam1
-                - !Ref AdditionalSecurityGroupParam2
+                - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
+                - !Ref AdditionalSecurityGroupParam
             SnapshotIdentifier:
                 !If [ "HasSnapshotIdentifier", !Ref "SnapshotIdentifier", !Ref "AWS::NoValue" ]
             Tags:

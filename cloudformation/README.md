@@ -291,9 +291,10 @@ arthur.py initialize --force --with-user-creation
 
 example command to run a change set
 ```
+
 cloudformation/create-change-set_dw_cluster.sh dev VpcStackName=UsePreviousValue \
     MasterUsername=UsePreviousValue MasterUserPassword=UsePreviousValue \
-    NodeType=UsePreviousValue NumberOfNodes=UsePreviousValue QueryConcurrency=UsePreviousValue SnapshotIdentifier=UsePreviousValue AdditionalClusterIAMRole1=UsePreviousValue AdditionalClusterIAMRole2=UsePreviousValue AdditionalClusterIAMRole3=UsePreviousValue AdditionalClusterIAMRole4=UsePreviousValue AdditionalClusterIAMRole5=UsePreviousValue AdditionalClusterIAMRole6=UsePreviousValue PreferredMaintenanceWindow=UsePreviousValue DeletionPolicyParam=Retain AdditionalSecurityGroupParam1=sg-**** AdditionalSecurityGroupParam2=sg-***** Classic=true
+    NodeType=UsePreviousValue NumberOfNodes=UsePreviousValue QueryConcurrency=UsePreviousValue SnapshotIdentifier=UsePreviousValue AdditionalClusterIAMRole1=UsePreviousValue AdditionalClusterIAMRole2=UsePreviousValue AdditionalClusterIAMRole3=UsePreviousValue AdditionalClusterIAMRole4=UsePreviousValue AdditionalClusterIAMRole5=UsePreviousValue AdditionalClusterIAMRole6=UsePreviousValue PreferredMaintenanceWindow=UsePreviousValue DeletionPolicyParam=Retain AdditionalSecurityGroupParam=sg-******* Classic=true
 ```
 to review the changes go to the ui or use below command to review changes
 
