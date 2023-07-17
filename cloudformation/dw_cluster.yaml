@@ -99,6 +99,7 @@ Parameters:
     AdditionalSecurityGroupParam:
         Description: Add security group
         Type: String
+        Default: ""
     Environment:
         Description: specify env dev or prod
         Type: String
