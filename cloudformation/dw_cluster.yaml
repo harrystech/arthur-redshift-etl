@@ -2,7 +2,7 @@ Description: |-
     Create a Redshift cluster with its subnet group and parameter group.
 
 AWSTemplateFormatVersion: '2010-09-09'
-
+Transform: 'AWS::LanguageExtensions'
 
 Parameters:
 
@@ -31,6 +31,13 @@ Parameters:
             - dc2.8xlarge
             - ds2.xlarge
             - ds2.8xlarge
+    Classic:
+        Description: Classic resize option defaults to false
+        Type: String
+        Default: false
+        AllowedValues:
+            - false
+            - true
 
     NumberOfNodes:
         Description: (optional) The number of compute nodes in the cluster
@@ -83,7 +90,19 @@ Parameters:
         Description: (optional) Preferred maintenance window for the Redshift cluster
         Type: String
         Default: "sun:18:30-sun:19:00"
-
+    DeletionPolicyParam:
+        Type: String
+        AllowedValues:
+        - Delete
+        - Retain
+        Default: Delete
+    AdditionalSecurityGroupParam:
+        Description: Add security group
+        Type: String
+    Environment:
+        Description: specify env dev or prod
+        Type: String
+    
 Conditions:
 
     IsSingleNodeCluster:
@@ -115,6 +134,7 @@ Resources:
 
     RedshiftClusterSubnetGroup:
         Type: "AWS::Redshift::ClusterSubnetGroup"
+        DeletionPolicy: !Ref DeletionPolicyParam
         Properties:
             Description: "Cross-reference public subnet ID from VPC stack"
             SubnetIds:
@@ -125,16 +145,17 @@ Resources:
 
     RedshiftClusterParameterGroup:
         Type: "AWS::Redshift::ClusterParameterGroup"
+        DeletionPolicy: !Ref DeletionPolicyParam
         Properties:
             Description: "Parameter group for Redshift cluster"
             ParameterGroupFamily: "redshift-1.0"
             Parameters:
-                - ParemeterName: "auto_analyze"
-                  ParemeterValue: "true"
-                - ParemeterName: "auto_mv"
-                  ParemeterValue: "true"
-                - ParemeterName: "datestyle	"
-                  ParemeterValue: "ISO, MDY"
+                - ParameterName: "auto_analyze"
+                  ParameterValue: "true"
+                - ParameterName: "auto_mv"
+                  ParameterValue: "true"
+                - ParameterName: "datestyle"
+                  ParameterValue: "ISO, MDY"
                 - ParameterName: "require_ssl"
                   ParameterValue: "true"
                 - ParameterName: "enable_case_sensitive_identifier"
@@ -157,11 +178,13 @@ Resources:
 
     RedshiftEIP:
         Type: "AWS::EC2::EIP"
+        DeletionPolicy: !Ref DeletionPolicyParam
         Properties:
             Domain: vpc
 
     RedshiftCluster:
         Type: "AWS::Redshift::Cluster"
+        DeletionPolicy: !Ref DeletionPolicyParam
         Properties:
             AutomatedSnapshotRetentionPeriod:
                 30
@@ -191,6 +214,8 @@ Resources:
                 !Ref MasterUserPassword
             NodeType:
                 !Ref NodeType
+            Classic:
+                !Ref Classic
             ClusterType:
                 !If [ "IsSingleNodeCluster", "single-node", "multi-node" ]
             NumberOfNodes:
@@ -201,20 +226,33 @@ Resources:
                 !Ref PreferredMaintenanceWindow
             VpcSecurityGroupIds:
                 - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
+                - !Ref AdditionalSecurityGroupParam
             SnapshotIdentifier:
                 !If [ "HasSnapshotIdentifier", !Ref "SnapshotIdentifier", !Ref "AWS::NoValue" ]
             Tags:
                 - Key: user:sub-project
                   Value: redshift-cluster
+                - Key: user:stack-env-name
+                  Value: !Ref Environment
+                - Key: hs-environment
+                  Value: !Ref Environment
+                - Key: hs-owner
+                  Value: data
+                - Key: hs-cost_center
+                  Value: data
+                - Key: user:project
+                  Value: data-warehouse
 
     # Note that an option to set enhanced VPC routing is missing in CloudFormation, so this must be done using the CLI
     # aws redshift modify-cluster --cluster-identifier "[cluster identifier]" --enhanced-vpc-routing
 
     ClusterAlertTopic:
         Type: AWS::SNS::Topic
+        DeletionPolicy: !Ref DeletionPolicyParam
 
     DiskSpaceUsageTooHighAlarm:
         Type: AWS::CloudWatch::Alarm
+        DeletionPolicy: !Ref DeletionPolicyParam
         Properties:
             AlarmDescription: "Disk space usage too high"
             AlarmActions:
@@ -234,6 +272,7 @@ Resources:
 
     ClusterUnhealthyAlarm:
         Type: AWS::CloudWatch::Alarm
+        DeletionPolicy: !Ref DeletionPolicyParam
         Properties:
             AlarmDescription: "Cluster unhealthy"
             AlarmActions:
