@@ -286,3 +286,18 @@ arthur.py initialize --force --with-user-creation
 * Create a role to have permission to run CloudFormation (bootstrap role)
 * Use notifications during CloudFormation ("ETL News")
 * Automatically associate the VPC with the private hosted zone
+
+# Create a cloudformation change set
+
+example command to run a change set
+```
+
+cloudformation/create-change-set_dw_cluster.sh dev VpcStackName=UsePreviousValue \
+    MasterUsername=UsePreviousValue MasterUserPassword=UsePreviousValue \
+    NodeType=UsePreviousValue NumberOfNodes=UsePreviousValue QueryConcurrency=UsePreviousValue SnapshotIdentifier=UsePreviousValue AdditionalClusterIAMRole1=UsePreviousValue AdditionalClusterIAMRole2=UsePreviousValue AdditionalClusterIAMRole3=UsePreviousValue AdditionalClusterIAMRole4=UsePreviousValue AdditionalClusterIAMRole5=UsePreviousValue AdditionalClusterIAMRole6=UsePreviousValue PreferredMaintenanceWindow=UsePreviousValue DeletionPolicyParam=Retain AdditionalSecurityGroupParam=sg-******* Classic=true
+```
+to review the changes go to the ui or use below command to review changes
+
+```
+aws cloudformation describe-change-set --change-set-name #id of the change set#
+```
