@@ -8,7 +8,7 @@ jmespath==0.10.0
 jsonschema==3.2.0
 pgpasslib==1.1.0
 psycopg2-binary==2.9.5
-PyYAML==6.0
+PyYAML==6.0.1
 simplejson==3.18.3
 tabulate==0.8.10
 termcolor==1.1.0
