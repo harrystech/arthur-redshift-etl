@@ -1,23 +1,19 @@
 version: 2
 
 updates:
-  - assignees:
-      - "thomas-vogels"
-    directory: "/"
+  - directory: "/"
     ignore:
       - dependency-name: "Sphinx"
     open-pull-requests-limit: 10
     package-ecosystem: "pip"
     reviewers:
-      - "harrystech/data-eng"
+      - "harrystech/data-platform"
     schedule:
       interval: "weekly"
 
-  - assignees:
-      - "thomas-vogels"
-    directory: "/"
+  - directory: "/"
     package-ecosystem: "github-actions"
     reviewers:
-      - "harrystech/data-eng"
+      - "harrystech/data-platform"
     schedule:
       interval: "weekly"
