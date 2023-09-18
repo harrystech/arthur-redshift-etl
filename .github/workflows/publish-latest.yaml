@@ -33,7 +33,7 @@ jobs:
 
     - name: Build Docker meta information
       id: meta
-      uses: docker/metadata-action@v3
+      uses: docker/metadata-action@v5
       with:
         images: ghcr.io/${{ github.repository }}/arthur-etl
         # Use the original tag ref, the SHA1, and versions derived from the tag.
