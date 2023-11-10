@@ -96,9 +96,6 @@ Parameters:
         - Delete
         - Retain
         Default: Delete
-    AdditionalSecurityGroupParam:
-        Description: Add security group
-        Type: String
     Environment:
         Description: specify env dev or prod
         Type: String
@@ -169,7 +166,7 @@ Resources:
                 - ParameterName: "search_path"
                   ParameterValue: "$user, public"
                 - ParameterName: "statement_timeout"
-                  ParameterValue: 0
+                  ParameterValue: 7200000
                 - ParameterName: "wlm_json_configuration"
                   ParameterValue: !Sub "[{ \"query_concurrency\": ${QueryConcurrency} }]"
             Tags:
@@ -225,8 +222,7 @@ Resources:
             PreferredMaintenanceWindow:
                 !Ref PreferredMaintenanceWindow
             VpcSecurityGroupIds:
-                - Fn::ImportValue: !Sub "${VpcStackName}::redshift-public-sg"
-                - !Ref AdditionalSecurityGroupParam
+                - sg-eff0db9c
             SnapshotIdentifier:
                 !If [ "HasSnapshotIdentifier", !Ref "SnapshotIdentifier", !Ref "AWS::NoValue" ]
             Tags:

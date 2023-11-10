@@ -84,7 +84,7 @@ case "$DW_VERB" in
         --stack-name "$STACK_NAME" \
         --template-body "$TEMPLATE_URI" \
         --on-failure DO_NOTHING \
-        --capabilities CAPABILITY_NAMED_IAM \
+        --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
         --parameters $STACK_PARAMETERS \
         --tags \
             "Key=user:project,Value=data-warehouse" \
